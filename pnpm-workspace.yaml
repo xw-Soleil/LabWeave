@@ -31,3 +31,4 @@ minimumReleaseAgeExclude:
   - "@tauri-apps/cli-win32-ia32-msvc@2.12.4"
   - "@tauri-apps/cli-win32-x64-msvc@2.12.4"
   - "@tauri-apps/cli@2.12.4"
+  - '@ai-sdk/anthropic@3.0.137'
