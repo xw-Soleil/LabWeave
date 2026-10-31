@@ -63,15 +63,28 @@ describe("createChatModel", () => {
     });
   });
 
-  it("passes a custom Anthropic base URL through and omits an empty key", () => {
+  it("passes a custom Anthropic base URL through and sends no x-api-key when the key is empty", async () => {
+    const sentFetch = vi.fn(async () => new Response("{}"));
     createChatModel(
-      { aiApiFormat: "anthropic", aiApiBaseUrl: "https://proxy.example.com/v1", aiApiKey: "", aiModel: "claude-x" },
-      wireFetch,
+      { aiApiFormat: "anthropic", aiApiBaseUrl: "http://localhost:4000/v1", aiApiKey: "", aiModel: "claude-x" },
+      sentFetch as unknown as typeof globalThis.fetch,
     );
 
-    expect(mocks.createAnthropic).toHaveBeenCalledWith(
-      expect.objectContaining({ baseURL: "https://proxy.example.com/v1", apiKey: undefined }),
-    );
+    const options = mocks.createAnthropic.mock.calls[0][0];
+    expect(options).toEqual(expect.objectContaining({ baseURL: "http://localhost:4000/v1", apiKey: "" }));
+    await options.fetch("http://localhost:4000/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": "", "anthropic-version": "2023-06-01" },
+    });
+    expect(sentFetch).toHaveBeenCalledWith("http://localhost:4000/v1/messages", {
+      method: "POST",
+      headers: { "anthropic-version": "2023-06-01" },
+    });
+  });
+
+  it("keeps the wire fetch untouched when a key is set", () => {
+    createChatModel({ aiApiFormat: "anthropic", aiApiBaseUrl: "", aiApiKey: "sk-ant", aiModel: "claude-x" }, wireFetch);
+    expect(mocks.createAnthropic.mock.calls[0][0].fetch).toBe(wireFetch);
   });
 });
 
@@ -79,6 +92,18 @@ describe("AI provider settings helpers", () => {
   it("only defaults the base URL for the anthropic format", () => {
     expect(getEffectiveAIBaseUrl({ aiApiFormat: "anthropic", aiApiBaseUrl: "" })).toBe(DEFAULT_ANTHROPIC_BASE_URL);
     expect(getEffectiveAIBaseUrl({ aiApiFormat: "openai", aiApiBaseUrl: "" })).toBe("");
+  });
+
+  it("accepts Claude-compatible base URLs with or without /v1", () => {
+    const anthropic = (aiApiBaseUrl: string) => getEffectiveAIBaseUrl({ aiApiFormat: "anthropic", aiApiBaseUrl });
+    expect(anthropic("https://api.deepseek.com/anthropic")).toBe("https://api.deepseek.com/anthropic/v1");
+    expect(anthropic("https://api.deepseek.com/anthropic/")).toBe("https://api.deepseek.com/anthropic/v1");
+    expect(anthropic("https://proxy.example.com/v1")).toBe("https://proxy.example.com/v1");
+    expect(anthropic("https://proxy.example.com/v1/messages")).toBe("https://proxy.example.com/v1");
+    expect(anthropic("https://api.anthropic.com")).toBe("https://api.anthropic.com/v1");
+    expect(getEffectiveAIBaseUrl({ aiApiFormat: "openai", aiApiBaseUrl: "https://example.com" })).toBe(
+      "https://example.com",
+    );
   });
 
   it("lists what still has to be filled in", () => {

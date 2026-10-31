@@ -1078,7 +1078,9 @@ settings:
   aiApiBaseUrl:
     title: AI API Base URL
     description: |
-      Currently only supports OpenAI format API
+      Supports both the OpenAI-compatible format and the Claude (Anthropic) format; pick one under "AI API format".
+      For Claude, leave empty to use the official endpoint; third-party URLs work with or without /v1, e.g. https://api.deepseek.com/anthropic
+      Local servers (localhost) do not need a key
   aiApiKey:
     title: AI API Key
     description: |
@@ -1105,7 +1107,7 @@ settings:
   aiApiFormat:
     title: AI API format
     description: |
-      The API format your provider uses. Most providers are OpenAI-compatible; choose Claude for the official Claude API.
+      The API format your provider uses. Most providers are OpenAI-compatible; choose Claude for the official Claude API and Claude-compatible endpoints (e.g. the anthropic URLs of DeepSeek, Zhipu or Kimi).
     options:
       openai: OpenAI-compatible
       anthropic: Claude (Anthropic)
@@ -2710,6 +2712,7 @@ research:
     pdfBroken: "Could not read the PDF: {{error}}"
     pdfNoText: This PDF has no selectable text. It may be a scan
     thumbnailFailed: "Could not make a thumbnail: {{error}}"
+    targetClosed: "The board was closed before the cards were ready, so {{count}} card(s) were not placed. Please drop the files again"
   drop:
     title: Place on the board
     hint: Release to place the files on the board
@@ -2721,6 +2724,11 @@ research:
     failed: "Could not place the files: {{message}}"
     cancel: Cancel
     copied: "Copied {{count}} file(s) to {{folder}}"
+    copyFailed: "Some files could not be copied and were not placed:\n{{details}}"
+    missingFolder:
+      title: Can't open the research folder
+      description: "The research folder in Settings, {{folder}}, can't be used: {{error}}\nIt may have been renamed or moved, or the path is mistyped. Choose the research folder again, or skip copying and link to the original files."
+      notFound: The folder does not exist
     copy:
       title: These files are not in your research folder
       description: "Copy them to {{folder}} and then place them on the board?\n{{names}}"
@@ -2746,6 +2754,7 @@ research:
     save:
       sidecarFailed: "The workspace was saved, but its AI-readable copy (in the .workbench folder) couldn't be written: {{error}}"
       outsideFolder: "Not saved: please save the workspace inside the research folder ({{root}}). You picked {{path}}"
+      autoSaveFailed: "Autosave failed, so your changes are not in the file yet: {{error}}. It will try again later, or you can save manually."
   ai:
     title: AI assistant
     noWorkspace: Open a workspace first

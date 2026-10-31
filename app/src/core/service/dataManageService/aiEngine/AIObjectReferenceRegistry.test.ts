@@ -23,6 +23,16 @@ function createEdge(uuid: string): Association {
 }
 
 describe("AIObjectReferenceRegistry", () => {
+  it("快照丢失时不重用旧对话里出现过的引用号，旧引用视为失效", () => {
+    const { objects, registry } = createFixture();
+    registry.reserveRefsMentionedIn("[selected: n3 e2]\n看看 `n10`，e2e 不算");
+    expect(registry.exportSnapshot()).toEqual({ entries: [], nextNodeRef: 11, nextEdgeRef: 3 });
+    const node = createNode("node-new");
+    objects.set(node.uuid, node);
+    expect(registry.getOrCreateRef(node)).toBe("n11");
+    expect(registry.tryResolve("n3")).toBeUndefined();
+  });
+
   it("为节点和连线分配独立且稳定的短引用", () => {
     const { objects, registry } = createFixture();
     const firstNode = createNode("node-1");

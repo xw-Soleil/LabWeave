@@ -25,10 +25,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Project } from "@/core/Project";
 import { isResearchShell } from "@/core/research/ResearchShell";
-import { markResearchPanelTab } from "@/core/research/ResearchSession";
+import { isTabVisibleInWorkspace, markResearchPanelTab } from "@/core/research/ResearchSession";
 import {
   AIChatSessionStore,
   getAIChatProjectKey,
+  getAIChatViewKey,
+  setAIChatProjectOpenCheck,
   type AIChatSessionProjectState,
   type AIChatSessionSummary,
   type StoredAIChatSession,
@@ -130,8 +132,11 @@ export default function AIWindow({ tabId }: { tabId: string }) {
     );
   }
 
-  return <AIChatWorkspace key={getAIChatProjectKey(project)} project={project} tabId={tabId} />;
+  return <AIChatWorkspace key={getAIChatViewKey(project)} project={project} tabId={tabId} />;
 }
+
+// 判断两个工作区是否撞了 id 时，只和还开着的工程比
+setAIChatProjectOpenCheck((project) => store.get(tabsAtom).some((tab) => tab === project && !tab.closing));
 
 function AIConfigNotice({ problems }: { problems: AIConfigProblem[] }) {
   const { t } = useTranslation("research");
@@ -214,6 +219,12 @@ function createAnswerNode(message: UIMessage, project: Project) {
   project.camera.bombMove(node.geometryCenter);
 }
 
+/** 输入法正在组字（拼音、假名选词）时按的回车、Esc 是给输入法的；WKWebView 里这时 keyCode 是 229 */
+function isImeComposing(event: React.KeyboardEvent) {
+  const native = event.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
+  return native.isComposing === true || native.keyCode === 229;
+}
+
 type ActiveChatController = {
   save: () => Promise<void>;
 };
@@ -229,6 +240,8 @@ function formatSessionUpdatedAt(timestamp: number): string {
 
 function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }) {
   const projectUri = getAIChatProjectKey(project);
+  // 存储键换了但记录跟着搬过去时（草稿第一次存盘）viewKey 不变，不必重新载入
+  const viewKey = getAIChatViewKey(project);
   const [model] = Settings.use("aiModel");
   const [sessionState, setSessionState] = useState<AIChatSessionProjectState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -256,7 +269,10 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
     let cancelled = false;
     setSessionState(null);
     setLoadError(null);
-    Promise.all([project.aiEngine.prepareProjectReferences(project), AIChatSessionStore.initializeProject(projectUri)])
+    Promise.all([
+      project.aiEngine.prepareProjectReferences(project),
+      AIChatSessionStore.initializeProject(getAIChatProjectKey(project)),
+    ])
       .then(([, initialSessionState]) => {
         if (cancelled) return;
         setSessionState(initialSessionState);
@@ -268,7 +284,7 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
     return () => {
       cancelled = true;
     };
-  }, [project, projectUri]);
+  }, [project, viewKey]);
 
   async function saveCurrentSession() {
     await activeChatController.current?.save();
@@ -458,6 +474,7 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
                           disabled={operationInProgress}
                           onChange={(event) => setRenameDraft(event.target.value)}
                           onKeyDown={(event) => {
+                            if (isImeComposing(event)) return;
                             if (event.key === "Enter") handleRenameSession();
                             if (event.key === "Escape") setRenamingSessionId(null);
                           }}
@@ -647,6 +664,8 @@ function AIChatPanel({
   }, [apiBaseUrl, apiFormat, apiKey, manualContextWindow, model]);
 
   useEffect(() => {
+    // 引用快照找不回来时，新发的 n/e 引用不能和这段旧对话里出现过的重号
+    if (isResearchShell()) references.reserveRefsMentionedIn(JSON.stringify(session.messages));
     setMessages(session.messages);
     messagesRef.current = session.messages;
     lastSavedMessagesRef.current = session.messages;
@@ -720,8 +739,7 @@ function AIChatPanel({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       // 输入法选词时按的回车不算发送
-      const native = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
-      if (native.isComposing === true || native.keyCode === 229) {
+      if (isImeComposing(e)) {
         e.stopPropagation();
         return;
       }
@@ -1347,14 +1365,15 @@ AIWindow.open = () => {
   return tab;
 };
 
-/** 没打开就打开；已打开但不在前台就切到前台；已在前台就关掉 */
+/** 没打开就打开；已打开但被同组其他页挡住就切到前台；已经看得见就关掉（不看键盘焦点，免得第一下只是抢走白板的焦点） */
 AIWindow.toggle = () => {
   const existing = findOpenAIWindowTab();
   if (!existing) {
     AIWindow.open();
     return;
   }
-  if (store.get(activeTabAtom) === existing) {
+  const visible = isResearchShell() ? isTabVisibleInWorkspace(existing.id) : store.get(activeTabAtom) === existing;
+  if (visible) {
     const close = aiWindowCloseHandlers.get(existing.id);
     if (close) {
       close();

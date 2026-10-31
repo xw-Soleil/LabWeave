@@ -1,5 +1,9 @@
 import z from "zod/v4";
-import { builtInToolCatalog, getBuiltInToolDefinition, type BuiltInToolDefinition } from "./BuiltInToolRegistry";
+import {
+  getBuiltInToolDefinition,
+  getListedBuiltInToolCatalog,
+  type BuiltInToolDefinition,
+} from "./BuiltInToolRegistry";
 
 export type BuiltInToolCliEntry = {
   name: string;
@@ -16,10 +20,11 @@ function toCliEntry({ name, description, inputSchema }: BuiltInToolDefinition): 
 }
 
 export function getBuiltInToolCliEntries(): BuiltInToolCliEntry[] {
-  return builtInToolCatalog.map(toCliEntry);
+  return getListedBuiltInToolCatalog().map(toCliEntry);
 }
 
 export function getBuiltInToolCliEntry(name: string): BuiltInToolCliEntry | undefined {
   const definition = getBuiltInToolDefinition(name);
-  return definition ? toCliEntry(definition) : undefined;
+  if (!definition || !getListedBuiltInToolCatalog().includes(definition)) return undefined;
+  return toCliEntry(definition);
 }

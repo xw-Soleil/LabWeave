@@ -175,6 +175,8 @@ describe("macOS system menus", () => {
     recent.options.action();
     expect(state.openFile).toHaveBeenCalledOnce();
     expect(entries[0].options.items.map((item: any) => item.options.text)).toEqual(["settings", "Services", "Quit"]);
+    // 上游模式保留系统自带的「退出」
+    expect(entries[0].options.items[2].options.accelerator).toBeUndefined();
     entries[0].options.items[0].options.items[0].options.action();
     await vi.waitFor(() => expect(state.bindings.get("openSettings").onPress).toHaveBeenCalledOnce());
   });
@@ -270,6 +272,20 @@ describe("macOS system menus in the research shell", () => {
       "extensions",
       "window",
     ]);
+    // 系统的「退出」会跳过 onCloseRequested（关闭前自动保存、未保存提示），完整菜单里也要换掉
+    const quit = entries[0].options.items.at(-1);
+    expect(quit.options.text).toBe("Quit");
+    expect(quit.options.accelerator).toBe("CmdOrCtrl+Q");
+    expect(typeof quit.options.action).toBe("function");
+  });
+
+  it("routes Quit in the research menu through the window close flow", async () => {
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const quit = state.installed.options.items[0].options.items.at(-1);
+    expect(quit.options.accelerator).toBe("CmdOrCtrl+Q");
+    expect(typeof quit.options.action).toBe("function");
   });
 
   it("hides recent files outside the research folder", async () => {

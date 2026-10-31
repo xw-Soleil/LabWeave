@@ -7,6 +7,7 @@ import {
   createSessionMemoryCompactionPlan,
   formatSessionMemoryTranscript,
   getSessionMemoryWorkingMessages,
+  SUMMARY_TOOL_OUTPUT_CHARS,
 } from "@/core/service/dataManageService/aiEngine/AIChatSessionMemory";
 import { createBuiltInToolAgentTools } from "@/core/service/dataManageService/aiEngine/BuiltInToolAgentAdapter";
 import { AIMCPStore, materializeMCPServers, prepareMCPTools } from "@/core/service/dataManageService/aiEngine/AIMCP";
@@ -194,11 +195,9 @@ export class AIEngine {
         ? createSessionMemoryCompactionPlan({
             messages,
             memory: sessionMemory,
-            // 白板和文件清单每次都放进系统提示，压缩记忆时要把这部分占用扣掉
-            contextWindowTokens:
-              contextWindowTokenLimit && researchContext
-                ? Math.max(1, contextWindowTokenLimit - estimateResearchContextTokens(researchContext))
-                : contextWindowTokenLimit,
+            contextWindowTokens: contextWindowTokenLimit,
+            // 白板和文件清单每次都放进系统提示；只有按消息估算时才需要扣掉，服务端实测的输入 token 已经算进去了
+            reservedSystemTokens: researchContext ? estimateResearchContextTokens(researchContext) : 0,
           })
         : null;
 
@@ -210,7 +209,10 @@ export class AIEngine {
             "你负责维护一个 AI 会话的内部记忆。根据给出的旧会话记录生成简短、准确的续写记忆。只保留当前任务、已完成内容、关键约束或决定、未解决的问题和下一步。不要执行工具，不要与用户对话，不要编造未出现的事实。",
           prompt: [
             sessionMemory ? `已有会话记忆：\n${sessionMemory.summary}` : "尚无已有会话记忆。",
-            `需要压缩的旧会话记录：\n${formatSessionMemoryTranscript(compactionPlan.messagesToSummarize)}`,
+            `需要压缩的旧会话记录：\n${formatSessionMemoryTranscript(
+              compactionPlan.messagesToSummarize,
+              researchShell ? SUMMARY_TOOL_OUTPUT_CHARS : undefined,
+            )}`,
           ].join("\n\n"),
           maxOutputTokens: compactionPlan.maxOutputTokens,
           abortSignal: options?.signal ?? undefined,

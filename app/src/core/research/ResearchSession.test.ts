@@ -58,7 +58,12 @@ vi.mock("@/core/service/GlobalMenu", () => ({
 
 import { Project } from "@/core/Project";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { persistResearchSession, setResearchSessionTracking, startResearchSession } from "./ResearchSession";
+import {
+  isTabVisibleInWorkspace,
+  persistResearchSession,
+  setResearchSessionTracking,
+  startResearchSession,
+} from "./ResearchSession";
 
 function addProject(uri: URI) {
   const project = new (Project as unknown as new (uri: URI) => Project)(uri);
@@ -126,6 +131,60 @@ describe("ResearchSession", () => {
     expect(mocks.ensureRootRegistered).toHaveBeenCalledOnce();
     expect(mocks.calls).toEqual(["open:/research/a.prg", "open:/research/b.prg", "panel:files", "panel:ai"]);
     expect((store.get(activeTabAtom) as Project | undefined)?.uri.fsPath).toBe("/research/a.prg");
+    // 别的都在、只缺一个，说明它真被删了，从会话里去掉
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg", "b.prg"]);
+  });
+
+  it("keeps the saved workspaces when the research folder can't be reached at startup", async () => {
+    mocks.ensureRootRegistered.mockRejectedValue(new Error("No such file or directory"));
+    mocks.exists.mockResolvedValue(false);
+    mocks.settings.researchSession = {
+      openWorkspaces: ["a.prg", "notes/b.prg"],
+      active: "notes/b.prg",
+      panels: { files: true, ai: false },
+    };
+
+    const restored = await startResearchSession();
+
+    expect(restored).toBe(false);
+    expect(mocks.calls).toEqual(["draft", "panel:files"]);
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg", "notes/b.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("notes/b.prg");
+  });
+
+  it("keeps the saved workspaces when none of them can be found", async () => {
+    mocks.exists.mockResolvedValue(false);
+    mocks.settings.researchSession = {
+      openWorkspaces: ["/Volumes/usb/a.prg"],
+      active: "/Volumes/usb/a.prg",
+      panels: { files: true, ai: false },
+    };
+
+    await startResearchSession();
+
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["/Volumes/usb/a.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("/Volumes/usb/a.prg");
+  });
+
+  it("drops a kept workspace once it has been opened and closed again", async () => {
+    mocks.ensureRootRegistered.mockRejectedValue(new Error("No such file or directory"));
+    mocks.exists.mockResolvedValue(false);
+    mocks.settings.researchSession = {
+      openWorkspaces: ["a.prg", "b.prg"],
+      active: "a.prg",
+      panels: { files: true, ai: false },
+    };
+    await startResearchSession();
+
+    const reopened = addProject(URI.file("/research/a.prg"));
+    persistResearchSession();
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg", "b.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("a.prg");
+
+    reopened.closing = true;
+    persistResearchSession();
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["b.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("");
   });
 
   it("keeps a draft and reports nothing restored for an empty session", async () => {
@@ -141,5 +200,39 @@ describe("ResearchSession", () => {
     await startResearchSession();
 
     expect(mocks.toastError).toHaveBeenCalledWith("shell.setRootFailed");
+  });
+});
+
+describe("isTabVisibleInWorkspace", () => {
+  beforeEach(() => {
+    store.set(tabsAtom, []);
+    store.set(activeTabAtom, undefined);
+    store.set(activeResourceTabAtom, undefined);
+    store.set(tabGroupRootAtom, null);
+  });
+
+  it("treats the shown tab of its group as visible even when keyboard focus is elsewhere", () => {
+    const hidden = addProject(URI.file("/research/a.prg"));
+    const shown = addProject(URI.file("/research/b.prg"));
+    TabWorkspace.focus(shown.id);
+    store.set(activeTabAtom, undefined);
+
+    expect(isTabVisibleInWorkspace(shown.id)).toBe(true);
+    expect(isTabVisibleInWorkspace(hidden.id)).toBe(false);
+
+    TabWorkspace.focus(hidden.id);
+    expect(isTabVisibleInWorkspace(hidden.id)).toBe(true);
+    expect(isTabVisibleInWorkspace(shown.id)).toBe(false);
+  });
+
+  it("treats floating tabs as visible and closing or unknown tabs as hidden", () => {
+    const floating = new (Project as unknown as new (uri: URI) => Project)(URI.file("/research/f.prg"));
+    floating.layout = "floating";
+    TabWorkspace.open(floating);
+
+    expect(isTabVisibleInWorkspace(floating.id)).toBe(true);
+    floating.closing = true;
+    expect(isTabVisibleInWorkspace(floating.id)).toBe(false);
+    expect(isTabVisibleInWorkspace("missing")).toBe(false);
   });
 });

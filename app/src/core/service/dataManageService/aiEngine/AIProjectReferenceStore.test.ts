@@ -30,6 +30,25 @@ describe("AI Project Reference Store", () => {
     });
   });
 
+  it("keys research workspaces by their workbench id and falls back to the old path key", async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const workspace = {
+      ...project("/research/renamed.prg", "/research/renamed.prg"),
+      metadata: { workbench: { id: "w-refs" } },
+    };
+
+    await AIProjectReferenceStore.load(workspace);
+    expect(invoke).toHaveBeenCalledWith("load_project_reference_snapshot", {
+      projectUri: "workbench:w-refs",
+      legacyProjectUri: "file:///research/renamed.prg",
+    });
+    await AIProjectReferenceStore.save(workspace, snapshot);
+    expect(invoke).toHaveBeenLastCalledWith("save_project_reference_snapshot", {
+      projectUri: "workbench:w-refs",
+      references: snapshot,
+    });
+  });
+
   it("keeps renderer writes ordered while delegating atomic updates to Tauri", async () => {
     let releaseFirst: (() => void) | undefined;
     vi.mocked(invoke)

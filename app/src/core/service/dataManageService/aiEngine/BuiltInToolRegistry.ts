@@ -542,7 +542,7 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   defineTool({
     name: "dump_workspace",
     description:
-      "返回当前工作区的结构化内容：卡片（含文件卡片的路径和文字摘要）、分组、连线、超边和标签，格式与保存时写出的 .ai.json 相同。只读。",
+      "返回当前工作区的结构化内容：卡片（含文件卡片的路径和文字摘要）、分组、连线、超边和标签，格式与保存时写出的 .ai.json 相同。文件卡片的 file.path 相对工作区 .prg 所在文件夹。每张卡片的文字只给开头，总长度也有上限，超出时 truncated 为 true。只读。",
     inputSchema: z.object({}),
     capabilities: ["project"],
     projectReferences: { reads: false, allocates: false },
@@ -553,9 +553,12 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   defineTool({
     name: "create_file_card",
     description:
-      "为研究文件夹里的一个 PDF、图片或 Markdown 文件在白板上创建文件卡片。path 可以是绝对路径，也可以是相对研究文件夹的路径；x、y 是卡片左上角的世界坐标，不填时放在当前视野中心。只能用于已在桌面端打开的工作区。",
+      "为研究文件夹里的一个 PDF、图片或 Markdown 文件在白板上创建文件卡片。path 可以是绝对路径，也可以是相对路径：相对路径按工作区 .prg 所在文件夹解析，和 dump_workspace 里 file.path 的基准相同（还没保存的草稿按研究文件夹解析）；x、y 是卡片左上角的世界坐标，不填时放在当前视野中心。只能用于已在桌面端打开的工作区。",
     inputSchema: z.object({
-      path: z.string().min(1).describe("文件路径，绝对路径或相对研究文件夹的路径"),
+      path: z
+        .string()
+        .min(1)
+        .describe("文件路径：绝对路径，或相对工作区 .prg 所在文件夹的路径（与 dump_workspace 的 file.path 相同）"),
       x: z.number().optional().describe("卡片左上角的世界坐标 x"),
       y: z.number().optional().describe("卡片左上角的世界坐标 y"),
     }),
@@ -567,10 +570,19 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   }),
 ];
 
-// 命令行入口用 tsx 直接加载这个文件，那里没有 import.meta.env；命令行和科研模式一样默认带上科研工具
+// 科研工具只在科研模式下列出；命令行没有 import.meta.env 时由 isResearchShell 读运行时的 LR_RESEARCH_SHELL
 export const builtInToolCatalog: readonly BuiltInToolDefinition[] = Object.freeze(
   [...definitions, ...(isResearchShell() ? researchDefinitions : [])].map((definition) => deepFreeze(definition)),
 );
+
+const researchToolNames: ReadonlySet<string> = new Set(researchDefinitions.map(({ name }) => name));
+
+/** 目录在模块加载时定下；列给 agent 时再按当前开关过滤一次，免得开关变了还列出科研工具 */
+export function getListedBuiltInToolCatalog(): readonly BuiltInToolDefinition[] {
+  return isResearchShell()
+    ? builtInToolCatalog
+    : builtInToolCatalog.filter((definition) => !researchToolNames.has(definition.name));
+}
 
 const builtInToolsByName = new Map(builtInToolCatalog.map((definition) => [definition.name, definition]));
 

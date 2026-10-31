@@ -204,6 +204,10 @@ settings:
       cpu: CPU
       render: 渲染
       experimental: 開發中的功能
+    research:
+      title: 科研工作臺
+      folder: 研究文件夾
+      ai: AI 閱讀
   language:
     title: 語言
     options:
@@ -1161,7 +1165,9 @@ settings:
   aiApiBaseUrl:
     title: AI API 地址
     description: |
-      目前僅支持 OpenAI 格式的 API
+      支持 OpenAI 兼容格式和 Claude（Anthropic）格式，按下方“AI 接口格式”選擇。
+      Claude 格式留空時使用官方地址；第三方地址帶不帶 /v1 都可以，例如 https://api.deepseek.com/anthropic
+      本機服務（localhost）可以不填密鑰
   aiApiKey:
     title: AI API 密鑰
     description: |
@@ -1185,6 +1191,31 @@ settings:
     title: 自動批准 MCP 工具
     description: |
       啟用後，MCP 工具無需手動批准即可執行。本地 stdio 進程的首次啟動仍需單獨確認。
+  aiApiFormat:
+    title: AI 接口格式
+    description: |
+      服務商使用的接口格式。大多數服務兼容 OpenAI 格式；Claude 官方接口和 Claude 兼容接口（如 DeepSeek、智譜、Kimi 的 anthropic 地址）選 Claude
+    options:
+      openai: OpenAI 兼容
+      anthropic: Claude（Anthropic）
+  aiPdfTextPages:
+    title: 給 AI 讀的 PDF 頁數
+    description: |
+      把論文放到白板上時，抽取前幾頁的文字給 AI 參考。填 0 表示不抽取
+  researchFolderPath:
+    title: 研究文件夾
+    description: |
+      論文、圖片、筆記和工作區都放在這個文件夾裡
+  writeAiSidecarOnSave:
+    title: 保存時生成 AI 可讀的文字版
+    description: |
+      保存工作區時，在旁邊的 .workbench 文件夾裡寫一份 JSON 和 Markdown，方便 AI 工具讀懂白板
+  researchSession:
+    title: 上次打開的工作區和麵板
+  researchShowFullMenu:
+    title: 顯示完整菜單
+    description: |
+      打開後顯示原版 Project Graph 的全部菜單項
   textIntegerLocationAndSizeRender:
     title: 文本整數位置和大小渲染
     description: |
@@ -2751,3 +2782,206 @@ projectOwnership:
   releaseFailedMessage: "項目已關閉，但無法釋放它的所有權鎖。請選擇“重試”再次嘗試。\n\n錯誤信息：{{error}}"
   retry: 重試
   ok: 確定
+
+# 科研工作臺。每個工作單元只往自己的小節里加鍵
+research:
+  shell:
+    title: 科研工作臺
+    rail:
+      workspace: 工作區
+      ai: AI 對話
+      files: 文件
+      settings: 設置
+    setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
+    restoreFailed: "沒能重新打開工作區 {{path}}：{{message}}"
+    panelFailed: "沒能打開面板：{{message}}"
+    autoSaveFailed: "關閉前自動保存「{{name}}」失敗：{{message}}"
+    extensionsDisabled: 科研工作臺不運行擴展，數據只留在本機
+  menu:
+    title: 菜單
+    keyBindsGroup:
+      title: 科研工作臺
+      description: 工作區、AI 對話和文件面板的快捷鍵。在側邊面板或輸入框裡也能用。
+    items:
+      file:
+        title: 文件
+      edit:
+        title: 編輯
+      view:
+        title: 視圖
+      window:
+        title: 窗口
+      settings:
+        title: 設置
+      about:
+        title: 關於
+      cut:
+        title: 剪切
+      copy:
+        title: 拷貝
+      paste:
+        title: 粘貼
+      selectAll:
+        title: 全選
+      quit:
+        title: 退出科研工作臺
+      newResearchWorkspace:
+        title: 新建工作區
+        description: 在研究文件夾裡新建一個工作區並打開
+      researchChooseFolder:
+        title: 選擇研究文件夾…
+        description: 選一個放論文、圖片和筆記的文件夾
+      saveFile:
+        title: 保存
+      openCurrentProjectFileFolder:
+        title: 在 Finder 中顯示
+      researchFocusWorkspace:
+        title: 工作區
+        description: 回到當前工作區的白板
+      researchToggleAIChat:
+        title: AI 對話
+        description: 打開或收起右側的 AI 對話面板
+      researchToggleFileManager:
+        title: 文件
+        description: 打開或收起左側的文件面板
+      clickAppMenuSettingsButton:
+        title: 設置…
+      openAboutWindow:
+        title: 關於科研工作臺
+  files:
+    title: 文件
+    placeholder: 文件面板（建設中）
+    emptyHint: 選一個放論文、圖片和筆記的文件夾，這裡會列出裡面的文件。程序只在這個文件夾裡讀寫。
+    chooseResearchFolder: 選擇研究文件夾
+    chooseFolder: 選擇文件夾
+    chooseFolderDialogTitle: 選擇研究文件夾
+    refresh: 刷新
+    newWorkspace: 新建工作區
+    searchPlaceholder: 搜索文件名
+    loading: 正在讀取文件夾…
+    loadFailed: "讀不了這個文件夾：{{error}}"
+    retry: 重試
+    noMatch: 沒有找到匹配的文件
+    opened: 已打開
+    workspaceRowHint: 單擊打開這個工作區
+    fileRowHint: 雙擊用默認程序打開，拖到白板上生成卡片
+    truncated: "文件太多，只列出了前 {{count}} 個"
+    unreadableDirs: "有 {{count}} 個子文件夾讀不了，已跳過"
+    setRootFailed: "沒能設置研究文件夾：{{error}}"
+    noRoot: 請先選擇研究文件夾
+    outsideFolder: "這個文件不在研究文件夾裡，沒有打開：{{path}}"
+    sections:
+      workspace: 工作區
+      pdf: 論文
+      image: 圖片
+      markdown: 筆記
+    sectionEmpty:
+      workspace: 還沒有工作區，點上面的「新建工作區」建一個
+      pdf: 把 PDF 放進研究文件夾，就會出現在這裡
+      image: 還沒有圖片
+      markdown: 還沒有 Markdown 筆記
+    workspaceName:
+      empty: 工作區名字不能為空
+      invalidChars: '名字裡不能有這些字符：\ / : * ? " < > |'
+      hidden: 名字不能以「.」或「~$」開頭，也不能包含「_backup」，否則文件面板裡看不到它
+      exists: "「{{name}}.prg」已經有了，換個名字吧"
+  card:
+    title: 文件卡片
+    kind:
+      pdf: PDF
+      image: 圖片
+      markdown: 筆記
+    pages: "{{count}} 頁"
+    creating: "正在讀取 {{count}} 個文件，做成卡片……"
+    missing: 文件不見了
+    missingHint: 原文件不見了，可能被移走、改名或刪除了
+    missingToast: "文件不見了：{{path}}"
+    openHint: 雙擊打開原文件
+    unsupported: "這些文件做不成卡片（只支持 PDF、圖片和 Markdown）：{{names}}"
+    readProblem: "「{{name}}」{{problem}}"
+    readFailed: "有文件沒讀出來：\n{{details}}"
+    pdfLocked: 這個 PDF 有密碼，讀不出內容
+    pdfBroken: "PDF 讀取出錯：{{error}}"
+    pdfNoText: 這個 PDF 裡沒有能複製的文字，可能是掃描件
+    thumbnailFailed: "縮略圖沒做出來：{{error}}"
+    targetClosed: 要放卡片的白板已經關掉了，{{count}} 張卡片沒有放上去，請重新拖一次
+  drop:
+    title: 放到白板上
+    hint: 鬆開鼠標，把文件放到白板上
+    hintDetail: 支持 PDF、圖片和 Markdown；.prg 文件會作為工作區打開
+    unsupported: 暫不支持的文件類型：{{names}}
+    separator: 、
+    andMore: " 等 {{count}} 個"
+    noBoard: 先打開或新建一個工作區，再把文件拖進來
+    failed: 放置文件時出錯：{{message}}
+    cancel: 取消
+    copied: 已複製 {{count}} 個文件到 {{folder}}
+    copyFailed: "有文件沒複製成，沒有放上白板：\n{{details}}"
+    missingFolder:
+      title: 研究文件夾打不開
+      description: "設置裡的研究文件夾 {{folder}} 用不了：{{error}}\n它可能被改名、移走或者路徑填錯了。重新選一個研究文件夾，或者先不復制，直接引用原文件。"
+      notFound: 文件夾不存在
+    copy:
+      title: 這些文件不在研究文件夾裡
+      description: "複製到 {{folder}} 再放上白板？\n{{names}}"
+      confirm: 複製並放上白板
+    noFolder:
+      title: 還沒有選研究文件夾
+      description: "選一個研究文件夾後，這些文件會先複製到它的「導入」子文件夾，再放上白板。\n也可以先不復制，直接引用文件原來的位置。"
+      choose: 選擇研究文件夾
+      useOriginal: 直接引用原文件
+  workspace:
+    title: 工作區
+    noFolder: 還沒有選擇研究文件夾
+    empty: 研究文件夾裡還沒有工作區
+    opened: 已打開
+    new: 新建工作區
+    chooseFolder: 選擇研究文件夾
+    changeFolder: 換文件夾
+    listFailed: "讀取工作區列表失敗：{{message}}"
+    failed: "操作失敗：{{message}}"
+    newTitle: 新建工作區
+    newDescription: 給工作區起個名字，它會保存成研究文件夾裡的一個 .prg 文件
+    newPlaceholder: 例如：文獻綜述
+    save:
+      sidecarFailed: "工作區已保存，但給 AI 讀的文字版（.workbench 文件夾）沒能寫出來：{{error}}"
+      outsideFolder: "沒有保存：請把工作區存到研究文件夾（{{root}}）裡面。你選的位置是 {{path}}"
+      autoSaveFailed: "自動保存失敗，改動還沒有寫進文件：{{error}}。稍後會自動再試，也可以手動保存。"
+  ai:
+    title: AI 助手
+    noWorkspace: 先打開一個工作區
+    noWorkspaceHint: AI 會讀當前白板上的卡片、連線和分組，打開工作區後就能問它了。
+    setupTitle: 先在設置裡填 AI 接口
+    setupDescription: 還沒有填：{{missing}}。填好後就可以問 AI 了。
+    setupMissingSeparator: 、
+    setupMissing:
+      baseUrl: 接口地址
+      model: 模型名稱
+      apiKey: API Key
+    openSettings: 打開 AI 設置
+    emptyTitle: 問問 AI 你的思路
+    emptyDescription: AI 會讀當前白板上的卡片、連線、分組和文件摘要，幫你理一理思路、找找缺口。它只讀白板，不會改動。
+    quickPrompts:
+      lineOfThought: 我的思路是什麼？
+      whatIsMissing: 還缺什麼？
+    inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
+  welcome:
+    title: 歡迎使用科研工作臺
+    subtitle: 把論文、圖片和筆記擺到白板上，理清思路，再請 AI 幫你看看還缺什麼
+    folder: 研究文件夾
+    chooseFolder: 選擇研究文件夾
+    changeFolder: 換一個文件夾
+    noFolderHint: 先選一個放論文和筆記的文件夾，工作區也會保存在裡面
+    workspaces: 工作區
+    newWorkspace: 新建工作區
+    noWorkspaces: 這個文件夾裡還沒有工作區，新建一個開始吧
+    draft: 先隨便畫畫（臨時草稿）
+    openOther: 打開其他工作區文件
+    settings: 設置
+    howTo:
+      title: 三步上手
+      step1: 選擇研究文件夾，把論文（PDF）、圖片和筆記放進去
+      step2: 新建工作區，從左邊的文件面板把文件拖到白板上，連線、分組、寫下想法
+      step3: 打開 AI 對話，讓它根據白板上的內容幫你梳理思路、找出缺口
+  settings:
+    title: 科研工作臺

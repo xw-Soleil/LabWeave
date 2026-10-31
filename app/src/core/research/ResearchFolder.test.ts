@@ -36,4 +36,43 @@ describe("ResearchFolder path helpers", () => {
     expect(ResearchFolder.toAbsolute("/elsewhere/a.pdf")).toBe("/elsewhere/a.pdf");
     expect(ResearchFolder.toAbsolute("papers\\a.pdf", "C:\\Research")).toBe("C:/Research/papers/a.pdf");
   });
+
+  describe("Windows UNC paths (network shares, mapped drives)", () => {
+    const uncRoot = "\\\\nas\\share\\Research";
+
+    it("keeps the \\\\server\\share prefix when resolving", () => {
+      expect(ResearchFolder.toAbsolute("导入", uncRoot)).toBe("//nas/share/Research/导入");
+      expect(ResearchFolder.toAbsolute("papers/a.pdf", "//nas/share/Research/topic")).toBe(
+        "//nas/share/Research/topic/papers/a.pdf",
+      );
+      expect(ResearchFolder.toAbsolute("\\\\nas\\share\\Research/a.pdf")).toBe("//nas/share/Research/a.pdf");
+      // 退不到共享根外面
+      expect(ResearchFolder.toAbsolute("../../../a.pdf", "//nas/share/R")).toBe("//nas/share/a.pdf");
+    });
+
+    it("makes relative paths only within the same share", () => {
+      expect(ResearchFolder.toRelative("\\\\nas\\share\\Research\\papers\\a.pdf", uncRoot)).toBe("papers/a.pdf");
+      expect(ResearchFolder.toRelative("//NAS/share/Research/notes/b.md", "//nas/share/Research/topic")).toBe(
+        "../notes/b.md",
+      );
+      expect(ResearchFolder.toRelative("\\\\other\\share\\a.pdf", uncRoot)).toBe("//other/share/a.pdf");
+      expect(ResearchFolder.toRelative("C:\\local\\a.pdf", uncRoot)).toBe("C:/local/a.pdf");
+      expect(ResearchFolder.toRelative("\\\\nas\\share\\a.pdf", "C:\\Research")).toBe("//nas/share/a.pdf");
+    });
+
+    it("checks containment against a UNC root", async () => {
+      const { Settings } = await import("@/core/service/Settings");
+      const saved = Settings.researchFolderPath;
+      Settings.researchFolderPath = uncRoot;
+      try {
+        expect(ResearchFolder.isInside("\\\\nas\\share\\Research\\papers\\a.pdf")).toBe(true);
+        expect(ResearchFolder.isInside("//nas/share/Research")).toBe(true);
+        expect(ResearchFolder.isInside("/nas/share/Research/a.pdf")).toBe(false);
+        expect(ResearchFolder.isInside("\\\\nas\\other\\Research\\a.pdf")).toBe(false);
+        expect(ResearchFolder.toAbsolute("papers/a.pdf")).toBe("//nas/share/Research/papers/a.pdf");
+      } finally {
+        Settings.researchFolderPath = saved;
+      }
+    });
+  });
 });

@@ -2,7 +2,11 @@ import { EventEmitter } from "events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/utils/platform", () => ({ family: () => "unix" }));
 
-vi.mock("@/core/Project", () => ({ Project: class {}, service: () => () => {}, ProjectState: { Unsaved: "unsaved" } }));
+vi.mock("@/core/Project", () => ({
+  Project: class {},
+  service: () => () => {},
+  ProjectState: { Saved: "saved", Unsaved: "unsaved" },
+}));
 vi.mock("@/core/service/Settings", () => ({
   Settings: {
     autoSave: true,
@@ -24,9 +28,10 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   remove: vi.fn(),
   mkdir: vi.fn(),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
 
-import { AutoSaveBackupService, SAVE_AFTER_EDIT_DELAY_MS } from "./AutoSaveBackupService";
+import { AutoSaveBackupService, SAVE_AFTER_EDIT_DELAY_MS, SAVE_RETRY_FIRST_DELAY_MS } from "./AutoSaveBackupService";
+import { toast } from "sonner";
 import { Settings } from "@/core/service/Settings";
 import type { Project } from "@/core/Project";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -135,13 +140,95 @@ describe("saving soon after an edit", () => {
     expect(project.save).toHaveBeenCalledExactlyOnceWith({ includeThumbnail: false });
   });
 
-  it("also saves after undo marks the project unsaved", () => {
+  it("also saves after undo or redo (history-change)", () => {
     vi.useFakeTimers();
     const project = fileProject();
     new AutoSaveBackupService(project as unknown as Project);
+    project.emit("history-change");
+    vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledOnce();
+  });
+
+  it("schedules a save when the state turns unsaved, but not on repeated unsaved events from isSaving toggles", () => {
+    vi.useFakeTimers();
+    const project = Object.assign(fileProject(), { projectState: "saved" });
+    new AutoSaveBackupService(project as unknown as Project);
+    project.emit("state-change", "saved");
+    vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).not.toHaveBeenCalled();
+
+    project.projectState = "unsaved";
     project.emit("state-change", "unsaved");
     vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS);
     expect(project.save).toHaveBeenCalledOnce();
+
+    project.emit("state-change", "unsaved");
+    project.emit("state-change", "unsaved");
+    vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS * 3);
+    expect(project.save).toHaveBeenCalledOnce();
+  });
+
+  it("schedules another round when the project is still unsaved after a save (edit during the write)", async () => {
+    vi.useFakeTimers();
+    const project = fileProject();
+    project.save
+      .mockImplementationOnce(async () => {})
+      .mockImplementation(async () => {
+        project.projectState = "saved";
+      });
+    new AutoSaveBackupService(project as unknown as Project);
+    project.emit("stage-commit");
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS * 3);
+    expect(project.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops retrying a failing save until there is a new edit or the back-off has passed, and warns once", async () => {
+    vi.useFakeTimers();
+    vi.mocked(toast.error).mockClear();
+    const project = Object.assign(fileProject(), {
+      editRevision: 1,
+      save: vi.fn(async () => {
+        // 和 Project 一样：保存开始和结束时 isSaving 切换，各发一次 state-change(Unsaved)
+        project.emit("state-change", "unsaved");
+        project.emit("state-change", "unsaved");
+        throw new Error("volume unplugged");
+      }),
+    });
+    const service = new AutoSaveBackupService(project as unknown as Project);
+    project.emit("stage-commit");
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledOnce();
+    expect(toast.error).toHaveBeenCalledOnce();
+
+    // 没有新编辑：5 秒定时器不再重排，tick 也在退避期内跳过
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS * 4);
+    service.tick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(project.save).toHaveBeenCalledOnce();
+
+    // 退避期过了，tick 会再试一次，仍失败也不再弹第二条提示
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_FIRST_DELAY_MS);
+    service.tick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(project.save).toHaveBeenCalledTimes(2);
+    expect(toast.error).toHaveBeenCalledOnce();
+
+    // 有新编辑就照常在 5 秒后保存
+    project.editRevision = 2;
+    project.emit("stage-commit");
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledTimes(3);
+
+    project.save.mockImplementation(async () => {});
+    project.editRevision = 3;
+    project.emit("stage-commit");
+    await vi.advanceTimersByTimeAsync(SAVE_AFTER_EDIT_DELAY_MS);
+    expect(project.save).toHaveBeenCalledTimes(4);
+    expect(toast.dismiss).toHaveBeenCalledWith("research-autosave-failed:file:///research/a.prg");
   });
 
   it("waits for a running save instead of starting a second one", () => {

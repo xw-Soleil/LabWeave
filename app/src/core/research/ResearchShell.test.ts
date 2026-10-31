@@ -19,6 +19,18 @@ describe("isResearchShell", () => {
     vi.stubEnv("LR_RESEARCH_SHELL", "true");
     expect(isResearchShell()).toBe(true);
   });
+
+  it("reads the runtime process.env when import.meta.env does not carry the flag (command line)", () => {
+    vi.stubEnv("LR_RESEARCH_SHELL", undefined);
+    const previous = process.env.LR_RESEARCH_SHELL;
+    process.env.LR_RESEARCH_SHELL = "false";
+    try {
+      expect(isResearchShell()).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.LR_RESEARCH_SHELL;
+      else process.env.LR_RESEARCH_SHELL = previous;
+    }
+  });
 });
 
 describe("fileKindOf", () => {

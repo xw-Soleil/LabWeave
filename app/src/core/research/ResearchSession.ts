@@ -5,7 +5,7 @@ import { onResearchEvent } from "@/core/research/ResearchShell";
 import { closeEmptyDrafts, onNewDraft, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { ComponentTab, Tab } from "@/core/Tab";
-import { getTabGroups, isFixedSideGroupId } from "@/core/TabGroup";
+import { findTabGroupByTabId, getTabGroups, isFixedSideGroupId } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabGroupRootAtom, tabsAtom } from "@/state";
 // 静态 import 让文件面板模块常驻，它在模块加载时注册 toggleFiles 监听
@@ -78,6 +78,25 @@ export function findResearchPanelTab(panel: ResearchPanel, tabs: Tab[] = store.g
   return alive.find((tab) => panelTabIds[panel].has(tab.id)) ?? alive.find((tab) => looksLikePanel(panel, tab));
 }
 
+/**
+ * 标签页现在是否在屏幕上：浮动的只要没在关闭就算；停靠的要是所在分组正在显示的那一页。
+ * 面板的开关按钮按这个判断，不能看 activeTabAtom：那是键盘焦点，面板看得见时焦点通常在白板上。
+ */
+export function isTabVisibleInWorkspace(tabId: string): boolean {
+  const tabs = store.get(tabsAtom);
+  const tab = tabs.find((candidate) => candidate.id === tabId);
+  if (!tab || tab.closing) return false;
+  if (tab.layout !== "docked") return true;
+  const group = findTabGroupByTabId(store.get(tabGroupRootAtom), tabId);
+  if (!group) return false;
+  // 和 DockedArea 挑显示页的规则一致：activeTabId 指向的停靠页，没有就显示最后一个停靠页
+  const dockedIds = group.tabIds.filter((id) =>
+    tabs.some((candidate) => candidate.id === id && candidate.layout === "docked"),
+  );
+  const shownId = group.activeTabId && dockedIds.includes(group.activeTabId) ? group.activeTabId : dockedIds.at(-1);
+  return shownId === tabId;
+}
+
 /** 主编辑区（不是左右固定侧栏）里正在显示的工作区 */
 function findMainProject(): Project | undefined {
   const active = store.get(activeResourceTabAtom);
@@ -130,7 +149,9 @@ export async function openResearchWorkspace(absPath: string) {
 export async function chooseResearchFolder(): Promise<string | null> {
   const root = await ResearchFolder.chooseRoot();
   if (root === null) return null;
-  // 换了文件夹以后会话里的相对路径要按新文件夹重算
+  // 换了文件夹以后会话里的相对路径要按新文件夹重算；旧文件夹里没打开的那些记录也不再适用
+  unreachableWorkspaces = [];
+  unreachableActive = "";
   persistResearchSession();
   return root;
 }
@@ -159,6 +180,11 @@ export async function openResearchPanel(panel: ResearchPanel) {
 // 启动恢复完成前、关闭窗口逐个关标签页时都不能写会话，否则会把上次的记录冲掉
 let sessionTracking = false;
 
+// 启动时因为研究文件夹（或它所在的外接盘、网络盘）暂时访问不到而没能恢复的工作区。
+// 写会话时把它们留在列表里，下次启动再试；打开过一次以后就按正常的打开/关闭记录。
+let unreachableWorkspaces: string[] = [];
+let unreachableActive = "";
+
 export function setResearchSessionTracking(enabled: boolean) {
   sessionTracking = enabled;
 }
@@ -167,12 +193,15 @@ export function setResearchSessionTracking(enabled: boolean) {
 export function persistResearchSession() {
   if (!sessionTracking) return;
   const active = store.get(activeResourceTabAtom);
+  const openWorkspaces = openFileProjects().map((project) => toStoredPath(project.uri.fsPath));
+  unreachableWorkspaces = unreachableWorkspaces.filter((path) => !openWorkspaces.some((open) => samePath(open, path)));
+  if (!unreachableWorkspaces.some((path) => samePath(path, unreachableActive))) unreachableActive = "";
   const next = {
-    openWorkspaces: openFileProjects().map((project) => toStoredPath(project.uri.fsPath)),
+    openWorkspaces: [...openWorkspaces, ...unreachableWorkspaces],
     active:
       active instanceof Project && !active.closing && active.uri.scheme === "file"
         ? toStoredPath(active.uri.fsPath)
-        : "",
+        : unreachableActive,
     panels: { files: !!findResearchPanelTab("files"), ai: !!findResearchPanelTab("ai") },
   };
   if (JSON.stringify(next) !== JSON.stringify(Settings.researchSession)) {
@@ -188,10 +217,12 @@ export function persistResearchSession() {
 export async function startResearchSession(): Promise<boolean> {
   // 调 Rust 的 set_research_root，把研究文件夹加进文件访问范围；同一路径只登记一次
   const root = ResearchFolder.getRoot();
+  let rootUnavailable = false;
   if (root) {
     try {
       await ResearchFolder.ensureRootRegistered();
     } catch (error) {
+      rootUnavailable = true;
       toast.error(t("shell.setRootFailed", { path: root, message: String(error) }));
     }
   }
@@ -199,15 +230,25 @@ export async function startResearchSession(): Promise<boolean> {
   const session = Settings.researchSession;
   const preopened = openFileProjects()[0];
   let restored = false;
+  const missing: string[] = [];
+  let reachable = 0;
   for (const storedPath of session.openWorkspaces) {
     const absPath = ResearchFolder.toAbsolute(storedPath);
     try {
-      if (!(await exists(absPath))) continue;
+      if (!(await exists(absPath))) {
+        missing.push(storedPath);
+        continue;
+      }
+      reachable++;
       if (await onOpenFile(URI.file(absPath), "科研工作台-恢复会话")) restored = true;
     } catch (error) {
       toast.error(t("shell.restoreFailed", { path: storedPath, message: String(error) }));
     }
   }
+  // 文件夹登记失败，或者上次的工作区一个都找不到（多半是盘还没挂上），找不到的先别从会话里删；
+  // 只缺几个而别的都在，说明是真删掉或挪走了，照常丢掉
+  unreachableWorkspaces = rootUnavailable || reachable === 0 ? missing : [];
+  unreachableActive = unreachableWorkspaces.some((path) => samePath(path, session.active)) ? session.active : "";
 
   if (!store.get(tabsAtom).some((tab) => tab instanceof Project && !tab.closing)) {
     await onNewDraft();

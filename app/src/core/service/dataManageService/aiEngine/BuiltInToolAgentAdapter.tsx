@@ -4,8 +4,8 @@ import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEn
 import { encode } from "@toon-format/toon";
 import { tool, type ToolSet } from "ai";
 import {
-  builtInToolCatalog,
   classifyBuiltInToolException,
+  getListedBuiltInToolCatalog,
   createLiveProjectBuiltInToolRuntimeHost,
   invokeBuiltInTool,
   type BuiltInToolCapability,
@@ -27,7 +27,8 @@ export function isReadOnlyBuiltInTool(definition: BuiltInToolDefinition): boolea
 }
 
 export function getAgentBuiltInToolCatalog(): readonly BuiltInToolDefinition[] {
-  return isResearchShell() ? builtInToolCatalog.filter(isReadOnlyBuiltInTool) : builtInToolCatalog;
+  const catalog = getListedBuiltInToolCatalog();
+  return isResearchShell() ? catalog.filter(isReadOnlyBuiltInTool) : catalog;
 }
 
 export function createBuiltInToolAgentTools(project: Project, references: AIObjectReferenceRegistry): ToolSet {

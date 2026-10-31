@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   settings: { researchFolderPath: "/Users/me/Research" },
   buttons: vi.fn(),
-  createFileCards: vi.fn(async () => []),
+  createFileCards: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
+  release: vi.fn(),
+  markFileCardsPending: vi.fn(),
   onOpenFile: vi.fn(async () => undefined),
   getDropTarget: vi.fn(),
   focus: vi.fn(),
-  copyFile: vi.fn(async () => undefined),
+  copyFile: vi.fn<(source: string, destination: string) => Promise<undefined>>(async () => undefined),
   exists: vi.fn(async (path: string) => path === ""),
   mkdir: vi.fn(async () => undefined),
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn() },
@@ -18,7 +20,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: mocks.buttons } }));
 vi.mock("@/core/Project", () => ({ Project: class Project {} }));
-vi.mock("@/core/research/FileCardFactory", () => ({ createFileCards: mocks.createFileCards }));
+vi.mock("@/core/research/FileCardFactory", () => ({
+  createFileCards: mocks.createFileCards,
+  markFileCardsPending: mocks.markFileCardsPending,
+}));
 vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: mocks.onOpenFile }));
 vi.mock("@/core/stage/stageObject/collisionBox/collisionBox", () => ({ CollisionBox: class CollisionBox {} }));
 vi.mock("@/core/stage/stageObject/entity/TextNode", () => ({ TextNode: class TextNode {} }));
@@ -84,7 +89,12 @@ beforeEach(() => {
   // 复制进 导入/ 后会发 research:files-changed 让文件面板刷新；node 环境没有 window
   vi.stubGlobal("window", { dispatchEvent: mocks.dispatchEvent });
   mocks.settings.researchFolderPath = "/Users/me/Research";
-  mocks.exists.mockImplementation(async () => false);
+  // 研究文件夹本身在，导入/ 和里面的文件都还没有
+  mocks.exists.mockImplementation(async (path: string) => path === mocks.settings.researchFolderPath);
+  mocks.markFileCardsPending.mockImplementation(() => mocks.release);
+  mocks.copyFile.mockImplementation(async () => undefined);
+  mocks.createFileCards.mockImplementation(async () => []);
+  vi.spyOn(ResearchFolder, "ensureRootRegistered").mockResolvedValue(undefined);
   store.set(tabsAtom, []);
   store.set(tabGroupRootAtom, null);
   store.set(activeTabAtom, undefined);
@@ -160,6 +170,8 @@ describe("resolveDropTarget", () => {
 });
 
 describe("dropFilesAtClientPoint", () => {
+  const withRetarget = expect.objectContaining({ retarget: expect.any(Function) });
+
   it("places files inside the research folder without asking, then opens workspaces", async () => {
     const board = makeBoard("b1");
     showBoard(board);
@@ -173,6 +185,7 @@ describe("dropFilesAtClientPoint", () => {
       board,
       ["/Users/me/Research/papers/a.pdf"],
       new Vector(1200, 100),
+      withRetarget,
     );
     expect(mocks.onOpenFile).toHaveBeenCalledTimes(1);
     expect(mocks.createFileCards.mock.invocationCallOrder[0]).toBeLessThan(
@@ -185,14 +198,18 @@ describe("dropFilesAtClientPoint", () => {
     const board = makeBoard("b1");
     showBoard(board);
     mocks.buttons.mockResolvedValueOnce("copy");
-    mocks.exists.mockImplementation(async (path: string) => path === "/Users/me/Research/导入/a.pdf");
+    mocks.exists.mockImplementation(async (path: string) =>
+      ["/Users/me/Research", "/Users/me/Research/导入/a.pdf"].includes(path),
+    );
     await dropFilesAtClientPoint(["/Users/me/Research/in.md", "/Users/me/Downloads/a.pdf"], 300, 150);
-    expect(mocks.mkdir).toHaveBeenCalledWith("/Users/me/Research/导入", { recursive: true });
+    // 只建 导入/ 这一层，不递归重建研究文件夹
+    expect(mocks.mkdir).toHaveBeenCalledWith("/Users/me/Research/导入");
     expect(mocks.copyFile).toHaveBeenCalledWith("/Users/me/Downloads/a.pdf", "/Users/me/Research/导入/a (2).pdf");
     expect(mocks.createFileCards).toHaveBeenCalledWith(
       board,
       ["/Users/me/Research/in.md", "/Users/me/Research/导入/a (2).pdf"],
       new Vector(1200, 100),
+      withRetarget,
     );
     expect(mocks.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: RESEARCH_FILES_CHANGED_EVENT }));
   });
@@ -219,7 +236,12 @@ describe("dropFilesAtClientPoint", () => {
     mocks.buttons.mockResolvedValueOnce("original");
     await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
     expect(mocks.copyFile).not.toHaveBeenCalled();
-    expect(mocks.createFileCards).toHaveBeenCalledWith(board, ["/Users/me/Downloads/a.pdf"], new Vector(1200, 100));
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Downloads/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
   });
 
   it("lets the user choose a research folder and copies without asking twice", async () => {
@@ -235,7 +257,128 @@ describe("dropFilesAtClientPoint", () => {
     expect(chooseRoot).toHaveBeenCalledTimes(1);
     expect(mocks.buttons).toHaveBeenCalledTimes(1);
     expect(mocks.copyFile).toHaveBeenCalledWith("/Users/me/Downloads/a.pdf", "/Users/me/New/导入/a.pdf");
-    expect(mocks.createFileCards).toHaveBeenCalledWith(board, ["/Users/me/New/导入/a.pdf"], new Vector(1200, 100));
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/New/导入/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
     chooseRoot.mockRestore();
+  });
+
+  it("does not recreate a research folder that was renamed or mistyped", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.settings.researchFolderPath = "/Users/me/Gone";
+    mocks.exists.mockImplementation(async () => false);
+    mocks.buttons.mockResolvedValueOnce("original");
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.buttons).toHaveBeenCalledWith(
+      "drop.missingFolder.title",
+      "drop.missingFolder.description",
+      expect.any(Array),
+    );
+    expect(mocks.mkdir).not.toHaveBeenCalled();
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Downloads/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
+  });
+
+  it("offers to choose again when the research folder can't be registered", async () => {
+    showBoard(makeBoard("b1"));
+    vi.mocked(ResearchFolder.ensureRootRegistered).mockRejectedValueOnce(new Error("无法打开研究文件夹"));
+    mocks.buttons.mockResolvedValueOnce("cancel");
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.buttons).toHaveBeenCalledWith(
+      "drop.missingFolder.title",
+      "drop.missingFolder.description",
+      expect.any(Array),
+    );
+    expect(mocks.mkdir).not.toHaveBeenCalled();
+    expect(mocks.createFileCards).not.toHaveBeenCalled();
+  });
+
+  it("places the files that were copied when another file in the batch fails", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.buttons.mockResolvedValueOnce("copy");
+    mocks.copyFile.mockImplementation(async (source: string) => {
+      if (source.endsWith("offline.pdf")) throw new Error("iCloud 文件没下载");
+      return undefined;
+    });
+    await dropFilesAtClientPoint(
+      ["/Users/me/Downloads/a.pdf", "/Users/me/Downloads/offline.pdf", "/Users/me/Downloads/c.md"],
+      300,
+      150,
+    );
+    expect(mocks.copyFile).toHaveBeenCalledTimes(3);
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Research/导入/a.pdf", "/Users/me/Research/导入/c.md"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
+    expect(mocks.toast.success).toHaveBeenCalledOnce();
+    expect(mocks.toast.error).toHaveBeenCalledWith("drop.copyFailed");
+    expect(mocks.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: RESEARCH_FILES_CHANGED_EVENT }));
+  });
+
+  it("still opens dropped workspaces when making the cards fails, then reports the error", async () => {
+    showBoard(makeBoard("b1"));
+    mocks.createFileCards.mockRejectedValueOnce(new Error("boom"));
+    await expect(
+      dropFilesAtClientPoint(["/Users/me/Research/a.pdf", "/Users/me/Research/w.prg"], 300, 150),
+    ).rejects.toThrow("boom");
+    expect(mocks.onOpenFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the target marked as pending until the cards are placed", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.createFileCards.mockImplementationOnce(async () => {
+      expect(mocks.release).not.toHaveBeenCalled();
+      return [];
+    });
+    await dropFilesAtClientPoint(["/Users/me/Research/a.pdf"], 300, 150);
+    expect(mocks.markFileCardsPending).toHaveBeenCalledWith(board);
+    expect(mocks.release).toHaveBeenCalledOnce();
+  });
+
+  it("moves the cards to the active board when the target was closed during the copy prompt", async () => {
+    const draft = makeBoard("draft");
+    showBoard(draft);
+    const other = makeBoard("other");
+    mocks.buttons.mockImplementationOnce(async () => {
+      // 用户还在看复制对话框时，空草稿被 closeEmptyDrafts 关掉，换成了别的工作区
+      Object.assign(draft, { closing: true });
+      store.set(tabsAtom, [other]);
+      store.set(activeResourceTabAtom, other);
+      return "copy";
+    });
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      other,
+      ["/Users/me/Research/导入/a.pdf"],
+      new Vector(5, 6),
+      withRetarget,
+    );
+  });
+
+  it("warns instead of placing cards when the target was closed and no board is left", async () => {
+    const draft = makeBoard("draft");
+    showBoard(draft);
+    mocks.buttons.mockImplementationOnce(async () => {
+      store.set(tabsAtom, []);
+      store.set(activeResourceTabAtom, undefined);
+      return "copy";
+    });
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.createFileCards).not.toHaveBeenCalled();
+    expect(mocks.toast.warning).toHaveBeenCalledWith("card.targetClosed");
+    expect(mocks.release).toHaveBeenCalledOnce();
   });
 });

@@ -6,7 +6,7 @@ import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
-import { resolveSourcePath, toStoredSourcePath } from "@/core/research/FileCardFactory";
+import { resolveSourcePath, rewriteSerializedFileCardPaths, toStoredSourcePath } from "@/core/research/FileCardFactory";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
@@ -62,12 +62,11 @@ export class CopyEngine {
 
     // 深拷贝一下数据，只有在粘贴的时候才刷新uuid
     const serializedCopiedStageObjects = serialize(copiedStageObjects);
-    // 文件卡片存的是相对本工程的路径，可能粘贴到别的文件夹里的工程，先换成绝对路径，粘贴时再换回来
-    for (const serializedObject of serializedCopiedStageObjects) {
-      if (serializedObject?._ === "FileCardNode" && typeof serializedObject.sourcePath === "string") {
-        serializedObject.sourcePath = resolveSourcePath(this.project, serializedObject.sourcePath);
-      }
-    }
+    // 文件卡片存的是相对本工程的路径，可能粘贴到别的文件夹里的工程，先换成绝对路径，粘贴时再换回来。
+    // 选中 Section 时，里面的卡片内联在 Section 的 children 里，顶层只剩一个引用，所以要整棵树找
+    rewriteSerializedFileCardPaths(serializedCopiedStageObjects, (sourcePath) =>
+      resolveSourcePath(this.project, sourcePath),
+    );
 
     // 将舞台对象和附件一起存储到虚拟粘贴板
     VirtualClipboard.copy({

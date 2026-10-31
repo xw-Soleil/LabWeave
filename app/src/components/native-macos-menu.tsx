@@ -118,6 +118,26 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
       );
     };
 
+    // 系统自带的「退出」直接结束进程，不经过 onCloseRequested，关闭前的自动保存和未保存提示都会被跳过；
+    // 科研模式下（包括打开了完整菜单时）换成关主窗口，走同一条关闭流程
+    const replaceQuit = async (applicationMenu: Submenu) => {
+      const quitIndex = (await applicationMenu.items()).length - 1;
+      const previousQuit = await applicationMenu.removeAt(quitIndex);
+      if (previousQuit) own(previousQuit);
+      await applicationMenu.insert(
+        own(
+          await MenuItem.new({
+            text: t(researchMenuTitleKey("quit"), "Quit"),
+            accelerator: "CmdOrCtrl+Q",
+            action: () => {
+              void getCurrentWindow().close();
+            },
+          }),
+        ),
+        quitIndex,
+      );
+    };
+
     // 科研模式：应用菜单里是「关于」「设置…」，然后是 文件、编辑、视图、窗口，都用文字标题。
     const installResearchMenu = async (menu: Menu, defaults: NativeMenuEntry[]): Promise<Submenu> => {
       let systemWindowItems: NativeMenuEntry[] = [];
@@ -146,23 +166,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
         const built = await buildItem(item);
         if (built) await applicationMenu.insert(built, applicationIndex++);
       }
-      // 系统自带的「退出」直接结束进程，不经过 onCloseRequested，关闭前的自动保存和未保存提示都会被跳过；
-      // 换成关主窗口，走同一条关闭流程
-      const quitIndex = (await applicationMenu.items()).length - 1;
-      const previousQuit = await applicationMenu.removeAt(quitIndex);
-      if (previousQuit) own(previousQuit);
-      await applicationMenu.insert(
-        own(
-          await MenuItem.new({
-            text: titleOf("quit", "Quit"),
-            accelerator: "CmdOrCtrl+Q",
-            action: () => {
-              void getCurrentWindow().close();
-            },
-          }),
-        ),
-        quitIndex,
-      );
+      await replaceQuit(applicationMenu);
       const file = topMenu("file");
       if (file) {
         const built = await buildItem(file);
@@ -215,6 +219,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
             const built = await buildItem(item);
             if (built) await applicationMenu.insert(built, applicationIndex++);
           }
+          if (isResearchShell()) await replaceQuit(applicationMenu);
           for (const id of nativeMacosMenuIds) {
             if (id === "settings" || id === "about") continue;
             const top = config.find((item) => item.id === id && item.type === "topMenu");

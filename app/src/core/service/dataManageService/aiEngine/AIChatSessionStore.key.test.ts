@@ -1,12 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const memory = vi.hoisted(() => new Map<string, unknown>());
+
 vi.mock("@tauri-apps/plugin-store", () => ({
   LazyStore: class {
     async init() {}
+    async get(key: string) {
+      return memory.get(key);
+    }
+    async set(key: string, value: unknown) {
+      memory.set(key, structuredClone(value));
+    }
+    async delete(key: string) {
+      memory.delete(key);
+    }
+    async save() {}
   },
 }));
 
-import { getAIChatProjectKey } from "./AIChatSessionStore";
+import {
+  AIChatSessionStore,
+  getAIChatProjectKey,
+  getAIChatViewKey,
+  setAIChatProjectOpenCheck,
+} from "./AIChatSessionStore";
 
 function project(uri: string, metadata?: unknown) {
   const [scheme] = uri.split(":");
@@ -16,6 +33,7 @@ function project(uri: string, metadata?: unknown) {
 describe("getAIChatProjectKey", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    setAIChatProjectOpenCheck(() => true);
   });
 
   it("keys chats by the workspace id in research mode", () => {
@@ -34,6 +52,39 @@ describe("getAIChatProjectKey", () => {
     expect(getAIChatProjectKey(first)).toMatch(/^draft-session:/);
     expect(getAIChatProjectKey(first)).toBe(getAIChatProjectKey(first));
     expect(getAIChatProjectKey(second)).not.toBe(getAIChatProjectKey(first));
+  });
+
+  it("moves the chats to the workspace id key when a draft gets its id, keeping the view key", async () => {
+    const draft = project("draft:1") as { uri: { scheme: string; toString(): string }; metadata?: unknown };
+    const draftKey = getAIChatProjectKey(draft);
+    const viewKey = getAIChatViewKey(draft);
+    const initial = await AIChatSessionStore.initializeProject(draftKey);
+
+    draft.metadata = { workbench: { id: "w-migrate" } };
+    draft.uri = { scheme: "file", toString: () => "file:///root/new.prg" };
+
+    expect(getAIChatProjectKey(draft)).toBe("workbench:w-migrate");
+    expect(getAIChatViewKey(draft)).toBe(viewKey);
+    const migrated = await AIChatSessionStore.initializeProject("workbench:w-migrate");
+    expect(migrated.activeSession.id).toBe(initial.activeSession.id);
+    await expect(AIChatSessionStore.loadSession(draftKey, initial.activeSession.id)).rejects.toThrow();
+  });
+
+  it("uses the URI for a second open project that carries the same workspace id", () => {
+    const original = project("file:///root/a.prg", { workbench: { id: "w-copy" } });
+    const copy = project("file:///root/a copy.prg", { workbench: { id: "w-copy" } });
+    expect(getAIChatProjectKey(original)).toBe("workbench:w-copy");
+    expect(getAIChatProjectKey(copy)).toBe("file:///root/a copy.prg");
+    expect(getAIChatProjectKey(copy)).toBe("file:///root/a copy.prg");
+    expect(getAIChatProjectKey(original)).toBe("workbench:w-copy");
+  });
+
+  it("lets a later project use the id once the earlier one is closed", () => {
+    const closed = project("file:///root/b.prg", { workbench: { id: "w-closed" } });
+    expect(getAIChatProjectKey(closed)).toBe("workbench:w-closed");
+    setAIChatProjectOpenCheck((candidate) => candidate !== closed);
+    const reopened = project("file:///root/b.prg", { workbench: { id: "w-closed" } });
+    expect(getAIChatProjectKey(reopened)).toBe("workbench:w-closed");
   });
 
   it("keeps the upstream URI key when the research shell is off", () => {

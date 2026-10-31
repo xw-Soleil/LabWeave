@@ -73,6 +73,7 @@ import type { TagManager } from "@/core/stage/stageManager/concreteMethods/Stage
 import { HistoryManager } from "@/core/stage/stageManager/StageHistoryManager";
 import type { StageManager } from "@/core/stage/stageManager/StageManager";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
+import type { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
 import { isResearchShell, SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, WORKBENCH_DIR } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
@@ -105,6 +106,31 @@ import { Tab } from "./Tab";
 async function loadResearchFolder() {
   return (await import("@/core/research/ResearchFolder")).ResearchFolder;
 }
+
+function isAbsolutePath(path: string): boolean {
+  return /^([a-zA-Z]:)?[\\/]/.test(path);
+}
+
+/** 不同磁盘（Windows 盘符、macOS 的 /Volumes/<名字>）之间不存相对路径 */
+function volumeOf(path: string): string {
+  const posixPath = path.replaceAll("\\", "/");
+  const drive = /^([a-zA-Z]):\//.exec(posixPath);
+  if (drive) return `${drive[1].toUpperCase()}:`;
+  const mounted = /^\/Volumes\/([^/]+)/.exec(posixPath);
+  return mounted ? `/Volumes/${mounted[1]}` : "/";
+}
+
+/** 另存为进行中时的目标：getFileContent 据此写工作区信息和文件卡片路径 */
+interface SaveAsTarget {
+  uri: URI;
+  /** 文件卡片 → 相对新 .prg 所在文件夹重新算出的 sourcePath（只列出有变化的） */
+  sourcePaths: Map<FileCardNode, string>;
+  /** 把已存盘的工作区另存成副本：副本要有自己的 id，AI 对话记录才不会和原文件共用 */
+  isCopy: boolean;
+}
+
+/** 科研模式拒绝存到研究文件夹外面：抛出前已经弹过提示，调用方不用再提示一遍 */
+export class ResearchSaveRefusedError extends Error {}
 
 /** 提示按纯文本显示，路径和报错里的 / & 不能被转成 HTML 实体 */
 function researchText(key: string, values: Record<string, string>): string {
@@ -147,6 +173,11 @@ export class Project extends Tab {
    */
   private _uri: URI;
   private _projectState: ProjectState = ProjectState.Unsaved;
+  /**
+   * 每次标成未保存（编辑、撤销、重做等）都加一，状态本来就是未保存时也加。
+   * 保存要等写盘完成才标成已保存，这期间又有编辑的话，刚写下去的是旧内容，不能标成已保存。
+   */
+  private _editRevision = 0;
   private _isSaving = false;
   private readonly projectOwnership = new ProjectOwnershipLifecycle(this);
   public stage: StageObject[] = [];
@@ -253,6 +284,7 @@ export class Project extends Tab {
    */
   async init() {
     if (!(await this.fs.exists(this.uri))) {
+      this.ensureWorkbenchId();
       return;
     }
     try {
@@ -305,6 +337,19 @@ export class Project extends Tab {
       return;
     }
     this.projectState = ProjectState.Saved;
+    // 旧文件刚补上的 id 要写回去：否则只聊天不改内容就关掉，下次打开又是新 id，这次的 AI 对话记录就找不回来了
+    if (this.ensureWorkbenchId()) this.projectState = ProjectState.Unsaved;
+  }
+
+  /**
+   * 科研模式下，工作区一打开（草稿一创建）就有固定的 id。AI 对话记录按它存，
+   * 不能等到第一次保存或备份才生成，否则对话中途换了 key，记录就丢了。
+   * 返回这次是否新生成了 id。
+   */
+  private ensureWorkbenchId(): boolean {
+    if (!isResearchShell() || readWorkbenchMetadata(this.metadata)) return false;
+    this.metadata = { ...this.metadata, workbench: { id: crypto.randomUUID(), createdAt: Date.now() } };
+    return true;
   }
 
   get isDraft() {
@@ -330,7 +375,8 @@ export class Project extends Tab {
   }
   set uri(uri: URI) {
     this._uri = uri;
-    this.projectState = ProjectState.Unsaved;
+    // 换位置不算编辑：另存为写完才改 uri，这一步不能让 editRevision 变化
+    this.applyProjectState(ProjectState.Unsaved);
   }
 
   /**
@@ -350,25 +396,23 @@ export class Project extends Tab {
   async save(options: { includeThumbnail?: boolean } = {}) {
     if (this.isDraft || this.isCollab) {
       // 科研模式：草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
-      const researchFolder = isResearchShell() ? await loadResearchFolder() : null;
-      const researchRoot = researchFolder?.getRoot() ?? "";
+      const researchRoot = isResearchShell() ? (await loadResearchFolder()).getRoot() : "";
       const path = await saveDialog({
         title: this.isDraft ? "保存草稿" : "保存协作工程",
         filters: [{ name: "Project Graph", extensions: ["prg"] }],
         defaultPath: researchRoot || undefined,
       });
       if (!path) throw new Error("未选择路径");
-      if (researchRoot && !researchFolder!.isInside(path)) {
-        throw new Error(researchText("workspace.save.outsideFolder", { path, root: researchRoot }));
-      }
       await this.saveAs(URI.file(path), options);
       return;
     }
     try {
       this.isSaving = true;
+      const revision = this._editRevision;
       const content = await this.getFileContent(options);
       await this.fs.write(this.uri, content);
-      this.projectState = ProjectState.Saved;
+      this.adoptSavedWorkbench(content);
+      this.markSavedIfUnchangedSince(revision);
       await this.writeAiSidecar(this.uri, content);
     } finally {
       this.isSaving = false;
@@ -379,19 +423,74 @@ export class Project extends Tab {
     if (targetUri.scheme !== "file") throw new Error("Project Save As requires a file URI");
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!fileSystemProvider) throw new Error("File Project provider is not registered");
+    const saveAsTarget = isResearchShell() ? await this.prepareResearchSaveAs(targetUri) : null;
 
     try {
       this.isSaving = true;
-      this.saveAsTargetUri = targetUri;
+      const revision = this._editRevision;
+      this.saveAsTarget = saveAsTarget;
       const content = await this.getFileContent(options);
-      this.saveAsTargetUri = null;
+      this.saveAsTarget = null;
       await this.projectOwnership.saveAs(targetUri, () => fileSystemProvider.write(targetUri, content));
-      this.projectState = ProjectState.Saved;
+      // 写盘成功、uri 已换成新位置后再改内存里的路径：失败时原工程保持原样
+      for (const [card, sourcePath] of saveAsTarget?.sourcePaths ?? []) {
+        card.sourcePath = sourcePath;
+      }
+      this.adoptSavedWorkbench(content);
+      this.markSavedIfUnchangedSince(revision);
       await this.writeAiSidecar(targetUri, content);
     } finally {
-      this.saveAsTargetUri = null;
+      this.saveAsTarget = null;
       this.isSaving = false;
     }
+  }
+
+  /**
+   * 科研模式的另存为（草稿保存也走这里）：程序只在研究文件夹里读写，目标在外面就拒绝；
+   * 文件卡片存的是相对 .prg 所在文件夹的路径，换了文件夹要重新算。
+   */
+  private async prepareResearchSaveAs(targetUri: URI): Promise<SaveAsTarget> {
+    const ResearchFolder = await loadResearchFolder();
+    const researchRoot = ResearchFolder.getRoot();
+    if (researchRoot && !ResearchFolder.isInside(targetUri.fsPath)) {
+      const message = researchText("workspace.save.outsideFolder", { path: targetUri.fsPath, root: researchRoot });
+      // 菜单和快捷键调用另存为时不接异常，用户只能从提示里知道没存
+      toast.error(message, { id: "research-save-outside-folder" });
+      throw new ResearchSaveRefusedError(message);
+    }
+    const isCopy = this.uri.scheme === "file" && this.uri.toString() !== targetUri.toString();
+    const sourcePaths = new Map<FileCardNode, string>();
+    // 草稿里的卡片存的是绝对路径，按接口约定保存时不改写；同一个文件夹里另存，相对路径也不用变
+    const sameFolder = Utils.dirname(this.uri).toString() === Utils.dirname(targetUri).toString();
+    if (this.uri.scheme !== "file" || sameFolder) return { uri: targetUri, sourcePaths, isCopy };
+    const [{ FileCardNode }, { resolveSourcePath }] = await Promise.all([
+      import("@/core/stage/stageObject/entity/FileCardNode"),
+      import("@/core/research/FileCardFactory"),
+    ]);
+    const targetFolder = Utils.dirname(targetUri).fsPath;
+    for (const stageObject of this.stage) {
+      if (!(stageObject instanceof FileCardNode) || isAbsolutePath(stageObject.sourcePath)) continue;
+      // this.uri 还是原来的位置，按原文件夹解析
+      const absolutePath = resolveSourcePath(this, stageObject.sourcePath);
+      const storedPath =
+        volumeOf(absolutePath) === volumeOf(targetFolder)
+          ? ResearchFolder.toRelative(absolutePath, targetFolder)
+          : absolutePath;
+      if (storedPath !== stageObject.sourcePath) sourcePaths.set(stageObject, storedPath);
+    }
+    return { uri: targetUri, sourcePaths, isCopy };
+  }
+
+  /** 研究模式下，写盘期间又有新编辑就保持未保存，让自动保存下一轮把它写进去 */
+  private markSavedIfUnchangedSince(revision: number) {
+    if (isResearchShell() && this._editRevision !== revision) return;
+    this.projectState = ProjectState.Saved;
+  }
+
+  /** 写盘成功后才把这次存下的工作区信息（id、视野、位置）记到内存里；备份不改元数据 */
+  private adoptSavedWorkbench(content: Uint8Array) {
+    const workbench = this.workbenchByContent.get(content);
+    if (workbench) this.metadata = { ...this.metadata, workbench };
   }
 
   // 反向引用数据
@@ -405,8 +504,9 @@ export class Project extends Tab {
    * save / saveAs 写完 .prg 后用它生成 AI 文字版，不必再 serialize 一遍，getFileContent 的返回值也不用改。
    */
   private readonly serializedStageByContent = new WeakMap<Uint8Array, unknown[]>();
-  /** 另存为进行中时的目标位置：getFileContent 据此记录工作区在研究文件夹里的相对路径 */
-  private saveAsTargetUri: URI | null = null;
+  /** getFileContent 生成的字节 → 里面写的工作区信息。只有保存成功才记回内存，备份不动 this.metadata */
+  private readonly workbenchByContent = new WeakMap<Uint8Array, WorkbenchMetadata>();
+  private saveAsTarget: SaveAsTarget | null = null;
 
   private restoreSavedCamera() {
     const camera = readWorkbenchMetadata(this.metadata)?.camera;
@@ -416,14 +516,14 @@ export class Project extends Tab {
   }
 
   /**
-   * 保证工作区有 id，并记下当前视野、相对研究文件夹的位置。
-   * 命令行里没有摄像机服务，原来存的视野保持不变。
+   * 要写进文件的工作区信息：当前视野、相对研究文件夹的位置；另存成副本时换一个新 id。
+   * id 平时在 init 里就有了，这里补生成只是兜底（比如没走 init 的工程）。
+   * 命令行里没有摄像机服务，原来存的视野保持不变。不修改 this.metadata。
    */
-  private async updateWorkbenchMetadata(targetUri: URI) {
-    const workbench: WorkbenchMetadata = readWorkbenchMetadata(this.metadata) ?? {
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
-    };
+  private async workbenchForSave(targetUri: URI, isCopy: boolean): Promise<WorkbenchMetadata> {
+    const existing = readWorkbenchMetadata(this.metadata);
+    const workbench: WorkbenchMetadata =
+      existing && !isCopy ? existing : { ...existing, id: crypto.randomUUID(), createdAt: Date.now() };
     const camera = this.getService("camera");
     if (camera?.isInitialViewSettled) {
       workbench.camera = { x: camera.location.x, y: camera.location.y, scale: camera.currentScale };
@@ -436,7 +536,7 @@ export class Project extends Tab {
         delete workbench.workspacePath;
       }
     }
-    this.metadata = { ...this.metadata, workbench };
+    return workbench;
   }
 
   /**
@@ -481,8 +581,18 @@ export class Project extends Tab {
   // 备份也要用到这个
   async getFileContent(options: { includeThumbnail?: boolean } = {}) {
     const includeThumbnail = options.includeThumbnail !== false;
-    if (isResearchShell()) await this.updateWorkbenchMetadata(this.saveAsTargetUri ?? this.uri);
+    const saveAsTarget = this.saveAsTarget;
+    const workbench = isResearchShell()
+      ? await this.workbenchForSave(saveAsTarget?.uri ?? this.uri, saveAsTarget?.isCopy ?? false)
+      : undefined;
+    const metadata = workbench ? { ...this.metadata, workbench } : this.metadata;
     const serializedStage: unknown[] = serialize(this.stage);
+    if (saveAsTarget) {
+      this.stage.forEach((stageObject, index) => {
+        const sourcePath = saveAsTarget.sourcePaths.get(stageObject as FileCardNode);
+        if (sourcePath !== undefined) (serializedStage[index] as { sourcePath: string }).sourcePath = sourcePath;
+      });
+    }
     const encodedStage = this.encoder.encode(serializedStage);
     const uwriter = new Uint8ArrayWriter();
 
@@ -491,7 +601,7 @@ export class Project extends Tab {
     await writer.add("stage.msgpack", new Uint8ArrayReader(encodedStage), { level: 0 });
     await writer.add("tags.msgpack", new Uint8ArrayReader(this.encoder.encode(this.tags)), { level: 0 });
     await writer.add("reference.msgpack", new Uint8ArrayReader(this.encoder.encode(this.references)), { level: 0 });
-    await writer.add("metadata.msgpack", new Uint8ArrayReader(this.encoder.encode(this.metadata)), { level: 0 });
+    await writer.add("metadata.msgpack", new Uint8ArrayReader(this.encoder.encode(metadata)), { level: 0 });
     if (this.readme) {
       await writer.add("README.md", new Uint8ArrayReader(new TextEncoder().encode(this.readme)), { level: 0 });
     }
@@ -516,6 +626,7 @@ export class Project extends Tab {
 
     const fileContent = await uwriter.getData();
     this.serializedStageByContent.set(fileContent, serializedStage);
+    if (workbench) this.workbenchByContent.set(fileContent, workbench);
     return fileContent;
   }
 
@@ -543,9 +654,18 @@ export class Project extends Tab {
   }
 
   set projectState(state: ProjectState) {
+    if (state === ProjectState.Unsaved) this._editRevision++;
+    this.applyProjectState(state);
+  }
+
+  private applyProjectState(state: ProjectState) {
     if (state === this._projectState) return;
     this._projectState = state;
     this.emit("state-change", state);
+  }
+
+  get editRevision(): number {
+    return this._editRevision;
   }
 
   get projectState(): ProjectState {

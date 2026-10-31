@@ -1,5 +1,5 @@
 import { Dialog } from "@/components/ui/dialog";
-import { Project, ProjectState } from "@/core/Project";
+import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
 import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
@@ -419,6 +419,18 @@ const researchKeyBinds: KeyBindItem[] = [
     onPress: () => emitResearchEvent("chooseFolder"),
   },
 ];
+
+/**
+ * 快捷键、菜单、命令面板都不 await onPress，不在这里提示的话保存失败（比如草稿存到研究文件夹外面）用户看不到。
+ * 科研模式下提示后返回 true；没选路径算用户取消，拒绝存到研究文件夹外面时 Project 已经提示过。
+ */
+function reportResearchSaveError(error: unknown): boolean {
+  if (!isResearchShell()) return false;
+  if (error instanceof ResearchSaveRefusedError) return true;
+  if (error instanceof Error && error.message === "未选择路径") return true;
+  toast.error(error instanceof Error ? error.message : String(error));
+  return true;
+}
 
 export const allKeyBinds: KeyBindItem[] = [
   {
@@ -1578,7 +1590,12 @@ export const allKeyBinds: KeyBindItem[] = [
     onPress: async (project) => {
       if (!project) return;
       project.camera.clearMoveCommander();
-      await project.save();
+      try {
+        await project.save();
+      } catch (error) {
+        if (!reportResearchSaveError(error)) throw error;
+        return;
+      }
       if (Settings.clearHistoryWhenManualSave) {
         project.historyManager.clearHistory();
       }
@@ -3395,12 +3412,22 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenHasProject,
     onPress: async (project) => {
       const p = project!;
+      // 科研模式只在研究文件夹里读写，对话框默认打开到研究文件夹
+      const researchRoot = isResearchShell()
+        ? (await import("@/core/research/ResearchFolder")).ResearchFolder.getRoot()
+        : "";
       const path = await save({
         title: i18next.t("file.saveAs", { ns: "globalMenu" }),
         filters: [{ name: "Project Graph", extensions: ["prg"] }],
+        defaultPath: researchRoot || undefined,
       });
       if (!path) return;
-      await p.saveAs(URI.file(path));
+      try {
+        await p.saveAs(URI.file(path));
+      } catch (error) {
+        if (!reportResearchSaveError(error)) throw error;
+        return;
+      }
       await RecentFileManager.addRecentFileByUri(p.uri);
     },
   },

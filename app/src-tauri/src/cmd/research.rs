@@ -14,7 +14,8 @@ pub fn set_research_root<R: Runtime>(
     path: String,
 ) -> Result<String, String> {
     let canonical = resolve_research_root(&path)?;
-    let display = strip_windows_verbatim_prefix(&canonical);
+    let stripped = strip_windows_verbatim_prefix(&canonical);
+    let display = display_root(&canonical, &path);
 
     let scope = app
         .try_fs_scope()
@@ -22,7 +23,11 @@ pub fn set_research_root<R: Runtime>(
     // The scope check may see either the canonical form (\\?\C:\..., /private/var/...) or the
     // form the user picked, so allow all of them; they name the same directory.
     let mut allowed: Vec<PathBuf> = vec![canonical.clone()];
-    for candidate in [PathBuf::from(&display), PathBuf::from(&path)] {
+    for candidate in [
+        PathBuf::from(&stripped),
+        PathBuf::from(&display),
+        PathBuf::from(&path),
+    ] {
         if candidate.is_absolute() && !allowed.contains(&candidate) {
             allowed.push(candidate);
         }
@@ -61,9 +66,44 @@ fn strip_windows_verbatim_prefix(path: &Path) -> String {
     path.into_owned()
 }
 
+/// The root the frontend stores and builds every path from. canonicalize turns a mapped network
+/// drive (Z:\papers) into \\?\UNC\server\share\papers; keep the drive letter the user picked, so
+/// files dropped from Explorer as Z:\... still count as inside the folder.
+fn display_root(canonical: &Path, picked: &str) -> String {
+    let stripped = strip_windows_verbatim_prefix(canonical);
+    if stripped.starts_with(r"\\") && is_drive_letter_path(picked) {
+        return normalize_drive_path(picked);
+    }
+    stripped
+}
+
+fn is_drive_letter_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+}
+
+/// Z:/a/./b\..\c\ -> Z:\a\c
+fn normalize_drive_path(path: &str) -> String {
+    let (drive, rest) = path.split_at(2);
+    let mut parts: Vec<&str> = Vec::new();
+    for part in rest.split(|c| c == '\\' || c == '/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    format!(r"{}\{}", drive.to_ascii_uppercase(), parts.join(r"\"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resolve_research_root, strip_windows_verbatim_prefix};
+    use super::{display_root, resolve_research_root, strip_windows_verbatim_prefix};
     use std::path::Path;
 
     #[test]
@@ -100,6 +140,22 @@ mod tests {
         );
         assert_eq!(
             strip_windows_verbatim_prefix(Path::new("/Users/alice/Research")),
+            "/Users/alice/Research"
+        );
+    }
+
+    #[test]
+    fn keeps_the_mapped_drive_the_user_picked() {
+        let unc = Path::new(r"\\?\UNC\nas\share\papers");
+        assert_eq!(display_root(unc, r"z:\papers\"), r"Z:\papers");
+        assert_eq!(display_root(unc, r"Z:/lab/./x/../papers"), r"Z:\lab\papers");
+        assert_eq!(display_root(unc, r"\\nas\share\papers"), r"\\nas\share\papers");
+        assert_eq!(
+            display_root(Path::new(r"\\?\C:\Research"), r"c:\Research"),
+            r"C:\Research"
+        );
+        assert_eq!(
+            display_root(Path::new("/Users/alice/Research"), "/Users/alice/Research/"),
             "/Users/alice/Research"
         );
     }

@@ -70,14 +70,26 @@ function readWorkbenchId(metadata: unknown): string | undefined {
   return typeof id === "string" && id.length > 0 ? id : undefined;
 }
 
-/**
- * 聊天记录按什么存。科研模式下优先用工作区 id（存在 .prg 元数据里，改名、移动、草稿存盘都不变）；
- * 草稿的 URI 每次启动都从 draft:1 重新数，不能拿来当键，改用这个草稿对象自己的随机 id。
- */
-export function getAIChatProjectKey(project: { uri: { scheme: string; toString(): string }; metadata?: unknown }) {
-  if (!isResearchShell()) return project.uri.toString();
-  const workbenchId = readWorkbenchId(project.metadata);
-  if (workbenchId) return `workbench:${workbenchId}`;
+type AIChatKeyProject = { uri: { scheme: string; toString(): string }; metadata?: unknown };
+
+type ResolvedChatKey = {
+  key: string;
+  /** 换键时记录跟着搬过去就不变；面板用它决定要不要重新载入 */
+  viewKey: string;
+  /** 和另一个已打开的工作区撞了 id，固定用 URI，之后也不再换 */
+  pinned: boolean;
+};
+
+const resolvedChatKeys = new WeakMap<object, ResolvedChatKey>();
+const workbenchKeyOwners = new Map<string, WeakRef<object>>();
+let isChatProjectOpen: (project: object) => boolean = () => true;
+
+/** 由界面层告诉这里哪些工程还开着，用来判断工作区 id 是否和别的已打开工程重复 */
+export function setAIChatProjectOpenCheck(check: (project: object) => boolean) {
+  isChatProjectOpen = check;
+}
+
+function getFallbackChatKey(project: AIChatKeyProject): string {
   if (project.uri.scheme !== "draft") return project.uri.toString();
   let key = draftChatKeys.get(project);
   if (!key) {
@@ -85,6 +97,78 @@ export function getAIChatProjectKey(project: { uri: { scheme: string; toString()
     draftChatKeys.set(project, key);
   }
   return key;
+}
+
+function isWorkbenchKeyHeldByOther(project: object, workbenchKey: string): boolean {
+  const owner = workbenchKeyOwners.get(workbenchKey)?.deref();
+  return (
+    owner !== undefined &&
+    owner !== project &&
+    resolvedChatKeys.get(owner)?.key === workbenchKey &&
+    isChatProjectOpen(owner)
+  );
+}
+
+function resolveChatKey(project: AIChatKeyProject): ResolvedChatKey {
+  const previous = resolvedChatKeys.get(project);
+  if (previous?.pinned) return previous;
+  const workbenchId = readWorkbenchId(project.metadata);
+  if (!workbenchId) return previous ?? { key: getFallbackChatKey(project), viewKey: "", pinned: false };
+  const workbenchKey = `workbench:${workbenchId}`;
+  if (previous?.key === workbenchKey) return previous;
+  if (isWorkbenchKeyHeldByOther(project, workbenchKey)) {
+    // 复制出来的 .prg 带着原文件的 id；两个都开着时后打开的那个改按 URI 存，免得两份对话混在一起
+    const key = previous?.key ?? getFallbackChatKey(project);
+    return { key, viewKey: previous?.viewKey ?? key, pinned: true };
+  }
+  workbenchKeyOwners.set(workbenchKey, new WeakRef(project));
+  if (previous && !previous.key.startsWith("workbench:")) {
+    // 草稿或旧文件第一次拿到 id：把已有对话搬到新键下，面板不用重新载入
+    migrateChatKey(previous.key, workbenchKey);
+    return { key: workbenchKey, viewKey: previous.viewKey, pinned: false };
+  }
+  // id 换了（另存为副本）：副本从新的对话开始，原文件的记录留在原来的键下
+  return { key: workbenchKey, viewKey: workbenchKey, pinned: false };
+}
+
+function resolveAndRemember(project: AIChatKeyProject): ResolvedChatKey {
+  const resolved = resolveChatKey(project);
+  const complete = resolved.viewKey ? resolved : { ...resolved, viewKey: resolved.key };
+  resolvedChatKeys.set(project, complete);
+  return complete;
+}
+
+/**
+ * 聊天记录按什么存。科研模式下优先用工作区 id（存在 .prg 元数据里，改名、移动、草稿存盘都不变）；
+ * 草稿的 URI 每次启动都从 draft:1 重新数，不能拿来当键，改用这个草稿对象自己的随机 id。
+ */
+export function getAIChatProjectKey(project: AIChatKeyProject) {
+  if (!isResearchShell()) return project.uri.toString();
+  return resolveAndRemember(project).key;
+}
+
+/** 面板的 React key：对话跟着换了存储键时不变，避免正在进行的对话被卸载 */
+export function getAIChatViewKey(project: AIChatKeyProject) {
+  if (!isResearchShell()) return project.uri.toString();
+  return resolveAndRemember(project).viewKey;
+}
+
+function migrateChatKey(fromKey: string, toKey: string) {
+  void enqueueWrite(async (initializedStore) => {
+    const index = await readIndex(initializedStore, fromKey);
+    if (!index) return;
+    if ((await initializedStore.get<unknown>(getIndexKey(toKey))) != null) return;
+    for (const summary of index.sessions) {
+      const session = await initializedStore.get<unknown>(getSessionKey(fromKey, summary.id));
+      if (session !== undefined) await initializedStore.set(getSessionKey(toKey, summary.id), session);
+    }
+    await initializedStore.set(getIndexKey(toKey), index);
+    for (const summary of index.sessions) await initializedStore.delete(getSessionKey(fromKey, summary.id));
+    await initializedStore.delete(getIndexKey(fromKey));
+    await initializedStore.save();
+  }).catch((error) => {
+    window.dispatchEvent(new ErrorEvent("error", { error }));
+  });
 }
 
 function getIndexKey(projectUri: string): string {
@@ -246,8 +330,8 @@ export namespace AIChatSessionStore {
   }
 
   export async function loadSession(projectUri: string, sessionId: string): Promise<StoredAIChatSession> {
-    const initializedStore = await getStore();
-    return readRequiredSession(initializedStore, projectUri, sessionId);
+    // 排在写入队列里读：换键搬记录时要等搬完
+    return enqueueWrite((initializedStore) => readRequiredSession(initializedStore, projectUri, sessionId));
   }
 
   export async function getSessionMemory(

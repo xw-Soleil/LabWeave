@@ -24,6 +24,43 @@ function createConversation(turnCount: number, lastStepInputTokens?: number): UI
 }
 
 describe("session memory compaction", () => {
+  it("compares measured input tokens with the full window, since they already include the system prompt", () => {
+    const plan = createSessionMemoryCompactionPlan({
+      messages: createConversation(6, 58_000),
+      memory: undefined,
+      contextWindowTokens: 128_000,
+      reservedSystemTokens: 32_000,
+    });
+    expect(plan).toBeNull();
+  });
+
+  it("subtracts the reserved system tokens only when estimating from the messages", () => {
+    const messages = createConversation(6);
+    expect(createSessionMemoryCompactionPlan({ messages, memory: undefined, contextWindowTokens: 1_000 })).toBeNull();
+    expect(
+      createSessionMemoryCompactionPlan({
+        messages,
+        memory: undefined,
+        contextWindowTokens: 1_000,
+        reservedSystemTokens: 950,
+      }),
+    ).not.toBeNull();
+  });
+
+  it("can cap long tool outputs in the summary transcript", () => {
+    const messages = [
+      {
+        id: "a",
+        role: "assistant" as const,
+        parts: [{ type: "tool-dump_workspace", state: "output-available", input: {}, output: "x".repeat(10_000) }],
+      },
+    ] as unknown as UIMessage<AIMessageMetadata>[];
+    const capped = formatSessionMemoryTranscript(messages, 100);
+    expect(capped.length).toBeLessThan(300);
+    expect(capped).toContain("truncated");
+    expect(formatSessionMemoryTranscript(messages).length).toBeGreaterThan(10_000);
+  });
+
   it("summarizes only complete oldest turns and preserves the latest four turns", () => {
     const messages = createConversation(6, 650);
 

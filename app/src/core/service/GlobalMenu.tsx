@@ -163,19 +163,34 @@ export async function onLeaveCollaboration() {
 
 /** 关闭未编辑的空草稿（打开真实文件后清理启动草稿） */
 export async function closeEmptyDrafts(except?: Project) {
-  const { TabWorkspace } = await import("@/core/TabWorkspace");
+  const [{ TabWorkspace }, { hasPendingFileCards }] = await Promise.all([
+    import("@/core/TabWorkspace"),
+    import("@/core/research/FileCardFactory"),
+  ]);
+  // 同一批拖进来的文件卡片还在生成时，草稿看着是空的，关掉的话卡片就没地方放了
   const empties = store
     .get(tabsAtom)
     .filter(
       (tab): tab is Project =>
-        tab instanceof Project && tab !== except && !tab.closing && tab.isDraft && tab.stage.length === 0,
+        tab instanceof Project &&
+        tab !== except &&
+        !tab.closing &&
+        tab.isDraft &&
+        tab.stage.length === 0 &&
+        !hasPendingFileCards(tab),
     );
   await Promise.all(empties.map((tab) => TabWorkspace.close(tab.id)));
 }
 
-function focusExistingTab(tab: Project | Extension) {
-  store.set(activeTabAtom, tab);
-  if (isResourceTab(tab)) store.set(activeResourceTabAtom, tab);
+async function focusExistingTab(tab: Project | Extension) {
+  if (isResearchShell()) {
+    // 只改 activeTabAtom 的话分组的 activeTabId 不变，界面上还是原来那个工作区，保存和 AI 却改成对着这个
+    const { TabWorkspace } = await import("@/core/TabWorkspace");
+    TabWorkspace.focus(tab.id);
+  } else {
+    store.set(activeTabAtom, tab);
+    if (isResourceTab(tab)) store.set(activeResourceTabAtom, tab);
+  }
   if (tab instanceof Project) tab.loop();
   if (Settings.pauseRenderWhenTabUnfocused) {
     store
@@ -205,7 +220,7 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
         (tab instanceof Project || tab instanceof Extension) && tab.uri.toString() === uri.toString(),
     );
   if (textuallyMatchingTab) {
-    focusExistingTab(textuallyMatchingTab);
+    await focusExistingTab(textuallyMatchingTab);
     return textuallyMatchingTab as any;
   }
 
@@ -290,7 +305,7 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
       }
       const existing = registered ?? (await opening.promise);
       if (!existing) throw new ProjectOwnershipError("PROJECT_BUSY");
-      focusExistingTab(existing);
+      await focusExistingTab(existing);
       return existing;
     }
     tab = result.value;

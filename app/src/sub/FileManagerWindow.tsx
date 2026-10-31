@@ -14,7 +14,7 @@ import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { activeTabAtom, store, tabsAtom } from "@/state";
+import { store, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
@@ -471,16 +471,22 @@ FileManagerWindow.open = () => {
   return tab;
 };
 
-/** 没打开就打开；已打开但不在前台就切到前台；已在前台就关掉 */
-FileManagerWindow.toggle = () => {
+/**
+ * 没打开就打开；打开了但被同一组里别的标签页挡住就切到前台；看得见就关掉。
+ * 按可见性判断而不是按键盘焦点：面板看得见时焦点一般在白板上，按焦点判断的话第一下只会把焦点抢走
+ */
+FileManagerWindow.toggle = async () => {
   const existing = findOpenTab();
   if (!existing) {
     FileManagerWindow.open();
     return;
   }
-  if (store.get(activeTabAtom) === existing) {
+  // ResearchSession 静态 import 了本模块，这里用动态 import 避免循环依赖
+  const { isTabVisibleInWorkspace } = await import("@/core/research/ResearchSession");
+  if (existing.closing) return;
+  if (isTabVisibleInWorkspace(existing.id)) {
     fileManagerTabIds.delete(existing.id);
-    void TabWorkspace.close(existing.id);
+    await TabWorkspace.close(existing.id);
     return;
   }
   TabWorkspace.focus(existing.id);
@@ -488,6 +494,8 @@ FileManagerWindow.toggle = () => {
 
 // 这个模块需要被常驻模块静态 import，监听才会生效。chooseFolder / newWorkspace 由 ResearchSession 处理
 if (isResearchShell()) {
-  const unsubscribe = onResearchEvent("toggleFiles", () => FileManagerWindow.toggle());
+  const unsubscribe = onResearchEvent("toggleFiles", () => {
+    FileManagerWindow.toggle().catch(showError);
+  });
   import.meta.hot?.dispose(unsubscribe);
 }

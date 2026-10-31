@@ -30,10 +30,29 @@ export function loadBuiltInToolExecutor(name: string): BuiltInToolExecutor {
   return loadExecutor();
 }
 
-// 工具结果里只放摘要开头，完整摘要用 dump_workspace 取
+// 工具结果里只放摘要开头
 const FILE_CARD_EXCERPT_HEAD_LENGTH = 500;
 
-function toAgentObjectInfo(object: StageObject, references: AIObjectReferenceRegistry) {
+function isAbsoluteFsPath(path: string): boolean {
+  return path.startsWith("/") || path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
+ * 给模型看的文件卡片路径：相对 .prg 所在文件夹（和 dump_workspace 的 file.path、create_file_card 的输入同一基准）。
+ * 草稿里存的是绝对路径，只给文件名，不把用户的目录结构交给 AI。
+ */
+function toModelFacingSourcePath(project: Pick<Project, "uri">, sourcePath: string): string {
+  if (!isAbsoluteFsPath(sourcePath)) return sourcePath;
+  const posix = sourcePath.replaceAll("\\", "/").normalize("NFC");
+  if (project.uri.scheme === "file") {
+    const projectPath = project.uri.fsPath.replaceAll("\\", "/").normalize("NFC");
+    const projectDir = projectPath.slice(0, projectPath.lastIndexOf("/"));
+    if (projectDir && posix.startsWith(`${projectDir}/`)) return posix.slice(projectDir.length + 1);
+  }
+  return posix.slice(posix.lastIndexOf("/") + 1);
+}
+
+function toAgentObjectInfo(object: StageObject, references: AIObjectReferenceRegistry, project: Pick<Project, "uri">) {
   const rect = object.collisionBox.getRectangle();
   const info: Record<string, unknown> = {
     ref: references.getOrCreateRef(object),
@@ -51,7 +70,7 @@ function toAgentObjectInfo(object: StageObject, references: AIObjectReferenceReg
   if (object instanceof FileCardNode) {
     info.title = object.title;
     info.fileKind = object.fileKind;
-    info.path = object.sourcePath;
+    info.path = toModelFacingSourcePath(project, object.sourcePath);
     info.pageCount = object.pageCount;
     info.excerpt = object.excerpt.slice(0, FILE_CARD_EXCERPT_HEAD_LENGTH);
   }
@@ -124,7 +143,7 @@ function deleteEntities(project: Project, entities: Entity[]) {
 }
 
 addExecutor("get_all_nodes", () => (project, _data, references) => ({
-  objects: project.stage.map((object) => toAgentObjectInfo(object, references)),
+  objects: project.stage.map((object) => toAgentObjectInfo(object, references, project)),
 }));
 addExecutor("delete_node", () => (project, { ref }, references) => {
   return deleteEntities(project, resolveEntityRefs([ref], references));
@@ -431,8 +450,8 @@ addExecutor("batch_change_color", () => (project, { refs, color }, references) =
 addExecutor(
   "get_object_details",
   () =>
-    (_project, { refs }, references) =>
-      refs.map((ref: string) => toAgentObjectInfo(references.resolve(ref), references)),
+    (project, { refs }, references) =>
+      refs.map((ref: string) => toAgentObjectInfo(references.resolve(ref), references, project)),
 );
 addExecutor("check_connections", () => (project, { pairs }, references) => {
   const results: { fromRef: string; toRef: string; connected: boolean }[] = [];
@@ -548,7 +567,7 @@ addExecutor("select_objects", () => (project, { refs, clearOthers }, references)
 });
 addExecutor("get_selected_nodes", () => (project, _data, references) => ({
   objects: [...project.stageManager.getSelectedEntities(), ...project.stageManager.getSelectedAssociations()].map(
-    (object) => toAgentObjectInfo(object, references),
+    (object) => toAgentObjectInfo(object, references, project),
   ),
 }));
 
@@ -559,7 +578,7 @@ addExecutor("get_nodes_in_viewport", () => (project, _data, references) => {
   for (const entity of project.stageManager.getEntities()) {
     const rect = entity.collisionBox.getRectangle();
     if (rect.isAbsoluteIn(viewRect)) {
-      results.push(toAgentObjectInfo(entity, references));
+      results.push(toAgentObjectInfo(entity, references, project));
     }
   }
 
@@ -851,16 +870,20 @@ addExecutor("recognize_image", () => async (project, { ref, prompt }, references
 });
 
 addExecutor("dump_workspace", () => async (project) => {
-  const { buildAiSidecar } = await import("@/core/research/AiSidecarBuilder");
-  return buildAiSidecar({
+  const [{ buildAiSidecar }, { capWorkspaceDump }] = await Promise.all([
+    import("@/core/research/AiSidecarBuilder"),
+    import("./ResearchContext"),
+  ]);
+  const sidecar = buildAiSidecar({
     serializedStage: serialize(project.stage),
     tags: project.tags,
     metadata: project.metadata,
     workspaceFile: project.uri.scheme === "file" ? (project.uri.path.split("/").pop() ?? "") : "",
   }).json;
+  return capWorkspaceDump(sidecar);
 });
 addExecutor("create_file_card", () => async (project, { path, x, y }, references) => {
-  const [{ createFileCards }, { ResearchFolder }, { fileKindOf }] = await Promise.all([
+  const [{ createFileCards, resolveSourcePath }, { ResearchFolder }, { fileKindOf }] = await Promise.all([
     import("@/core/research/FileCardFactory"),
     import("@/core/research/ResearchFolder"),
     import("@/core/research/ResearchShell"),
@@ -871,7 +894,8 @@ addExecutor("create_file_card", () => async (project, { path, x, y }, references
   if (!ResearchFolder.getRoot()) {
     return { success: false, error: "还没有选择研究文件夹" };
   }
-  const absPath = ResearchFolder.toAbsolute(path);
+  // 相对路径按 .prg 所在文件夹解析（草稿按研究文件夹），和 dump_workspace / 卡片信息里的 path 同一个基准
+  const absPath = resolveSourcePath(project, path);
   if (!ResearchFolder.isInside(absPath)) {
     return { success: false, error: "文件不在研究文件夹里" };
   }
@@ -888,7 +912,7 @@ addExecutor("create_file_card", () => async (project, { path, x, y }, references
     ref: references.getOrCreateRef(card),
     title: card.title,
     fileKind: card.fileKind,
-    path: card.sourcePath,
+    path: toModelFacingSourcePath(project, card.sourcePath),
   };
 });
 

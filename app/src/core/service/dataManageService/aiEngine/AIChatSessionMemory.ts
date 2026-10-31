@@ -28,13 +28,16 @@ export function createSessionMemoryCompactionPlan({
   messages,
   memory,
   contextWindowTokens,
+  reservedSystemTokens = 0,
 }: {
   messages: UIMessage<AIMessageMetadata>[];
   memory: AIChatSessionMemory | undefined;
   contextWindowTokens: number | undefined;
+  /** 每次都放进系统提示、但不在消息里的内容（如科研模式的白板上下文）大约占多少 token */
+  reservedSystemTokens?: number;
 }): SessionMemoryCompactionPlan | null {
   if (!Number.isInteger(contextWindowTokens) || !contextWindowTokens || contextWindowTokens <= 0) return null;
-  if (!shouldCompact(messages, contextWindowTokens)) return null;
+  if (!shouldCompact(messages, contextWindowTokens, reservedSystemTokens)) return null;
 
   const coveredMessageCount = getCoveredMessageCount(messages, memory);
   const recentTurnStart = getRecentTurnStart(messages);
@@ -48,19 +51,34 @@ export function createSessionMemoryCompactionPlan({
   };
 }
 
-export function formatSessionMemoryTranscript(messages: UIMessage<AIMessageMetadata>[]): string {
+// 科研模式交给模型做摘要时，单个工具结果最多带这么多字符，免得一个大结果把摘要请求也撑爆
+export const SUMMARY_TOOL_OUTPUT_CHARS = 4_000;
+
+export function formatSessionMemoryTranscript(
+  messages: UIMessage<AIMessageMetadata>[],
+  maxToolOutputChars = Infinity,
+): string {
   return messages
     .map((message) => {
-      const parts = message.parts.map(formatMessagePart).filter(Boolean).join("\n");
+      const parts = message.parts
+        .map((part) => formatMessagePart(part, maxToolOutputChars))
+        .filter(Boolean)
+        .join("\n");
       return `${message.role}:\n${parts || "[no retained content]"}`;
     })
     .join("\n\n");
 }
 
-function shouldCompact(messages: UIMessage<AIMessageMetadata>[], contextWindowTokens: number): boolean {
+function shouldCompact(
+  messages: UIMessage<AIMessageMetadata>[],
+  contextWindowTokens: number,
+  reservedSystemTokens: number,
+): boolean {
+  // 服务端报的输入 token 已经包含系统提示，不能再从窗口里扣一次
   const lastInputTokens = getLastInputTokens(messages);
   if (lastInputTokens !== undefined) return lastInputTokens >= contextWindowTokens * INPUT_TRIGGER_RATIO;
-  return estimateSessionTokens(messages) >= contextWindowTokens * ESTIMATED_INPUT_TRIGGER_RATIO;
+  const availableTokens = Math.max(1, contextWindowTokens - Math.max(0, reservedSystemTokens));
+  return estimateSessionTokens(messages) >= availableTokens * ESTIMATED_INPUT_TRIGGER_RATIO;
 }
 
 function getLastInputTokens(messages: UIMessage<AIMessageMetadata>[]): number | undefined {
@@ -93,7 +111,12 @@ function getRecentTurnStart(messages: UIMessage<AIMessageMetadata>[]): number {
   return firstRecentTurn > 0 ? userMessageIndexes[firstRecentTurn] : 0;
 }
 
-function formatMessagePart(part: UIMessage<AIMessageMetadata>["parts"][number]): string {
+function truncateForSummary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}…[truncated ${text.length - maxChars} chars]`;
+}
+
+function formatMessagePart(part: UIMessage<AIMessageMetadata>["parts"][number], maxToolOutputChars: number): string {
   if (part.type === "text") return part.text;
   if (part.type === "reasoning" || part.type === "step-start") return "";
 
@@ -108,7 +131,7 @@ function formatMessagePart(part: UIMessage<AIMessageMetadata>["parts"][number]):
     return [
       `[${toolPart.type} ${String(toolPart.state ?? "")}]`,
       `input: ${JSON.stringify(toolPart.input)}`,
-      `output: ${JSON.stringify(toolPart.output)}`,
+      `output: ${truncateForSummary(JSON.stringify(toolPart.output) ?? "undefined", maxToolOutputChars)}`,
       toolPart.errorText === undefined ? "" : `error: ${String(toolPart.errorText)}`,
     ]
       .filter(Boolean)

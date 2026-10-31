@@ -62,16 +62,26 @@ function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || path.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
+/**
+ * 盘符（"C:"）或 UNC 共享根（"//server/share"）这种自带根的首段。
+ * Windows 上把研究文件夹选在网络共享或映射网络盘上时，Rust 端给回来的是 \\server\share\...
+ */
+function isRootSegment(segment: string | undefined): boolean {
+  return segment !== undefined && (/^[a-zA-Z]:$/.test(segment) || segment.startsWith("//"));
+}
+
 function splitSegments(path: string): string[] {
-  return toPosix(path)
-    .split("/")
-    .filter((segment) => segment !== "" && segment !== ".");
+  const posix = toPosix(path);
+  const unc = /^\/\/([^/]+)(?:\/([^/]+))?/.exec(posix);
+  const rootSegments = unc ? [unc[2] ? `//${unc[1]}/${unc[2]}` : `//${unc[1]}`] : [];
+  const rest = unc ? posix.slice(unc[0].length) : posix;
+  return [...rootSegments, ...rest.split("/").filter((segment) => segment !== "" && segment !== ".")];
 }
 
 function joinSegments(segments: string[], absolute: boolean): string {
   const joined = segments.join("/");
-  // Windows 盘符路径（C:/...）本身就是绝对路径，不需要再加前导 /
-  if (absolute && !/^[a-zA-Z]:$/.test(segments[0] ?? "")) return `/${joined}`;
+  // 盘符路径（C:/...）和 UNC 路径（//server/share/...）本身就是绝对路径，不需要再加前导 /
+  if (absolute && !isRootSegment(segments[0])) return `/${joined}`;
   return joined;
 }
 
@@ -84,6 +94,8 @@ function resolveSegments(segments: string[]): string[] {
   const resolved: string[] = [];
   for (const segment of segments) {
     if (segment === "..") {
+      // 不能退到盘符或 UNC 共享根的外面
+      if (resolved.length === 1 && isRootSegment(resolved[0])) continue;
       resolved.pop();
     } else {
       resolved.push(segment);
@@ -301,9 +313,9 @@ export const ResearchFolder = {
     ) {
       common++;
     }
-    // 不同盘符之间没有相对路径
-    if (common === 0 && (/^[a-zA-Z]:$/.test(fromSegments[0] ?? "") || /^[a-zA-Z]:$/.test(toSegments[0] ?? ""))) {
-      return toPosix(absPath);
+    // 不同盘符、不同网络共享之间没有相对路径
+    if (common === 0 && (isRootSegment(fromSegments[0]) || isRootSegment(toSegments[0]))) {
+      return joinSegments(toSegments, isAbsolutePath(absPath));
     }
     const ups = fromSegments.slice(common).map(() => "..");
     return [...ups, ...toSegments.slice(common)].join("/");

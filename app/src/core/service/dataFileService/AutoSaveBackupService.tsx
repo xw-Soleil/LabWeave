@@ -4,11 +4,15 @@ import { appCacheDir } from "@tauri-apps/api/path";
 import { join } from "@tauri-apps/api/path";
 import { exists, writeFile, readDir, stat, remove, mkdir } from "@tauri-apps/plugin-fs";
 import { Settings } from "@/core/service/Settings";
+import i18next from "i18next";
 import { toast } from "sonner";
 import { PathString } from "@/utils/pathString";
 
 /** 科研模式下，最后一次编辑之后多久自动保存 */
 export const SAVE_AFTER_EDIT_DELAY_MS = 5000;
+/** 科研模式下自动保存失败、又没有新编辑时，多久之后再试；之后每次翻倍，最长 10 分钟 */
+export const SAVE_RETRY_FIRST_DELAY_MS = 30_000;
+const SAVE_RETRY_MAX_DELAY_MS = 600_000;
 
 /**
  * 自动保存与备份系统
@@ -27,17 +31,27 @@ export class AutoSaveBackupService {
   private lastSaveTime = 0;
   private isBackingUp = false;
   private saveAfterEditTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 上一次看到的保存状态：只有真正变成未保存时才安排保存，isSaving 来回切换发的 state-change 不算 */
+  private lastProjectState: ProjectState;
+  /**
+   * 科研模式下自动保存连续失败的情况。没有新编辑（editRevision 没变）时，到 retryAt 之前不再重试，
+   * 间隔逐次翻倍；有新编辑就照常保存。
+   */
+  private saveFailure: { revision: number; retryAt: number; delay: number } | undefined;
 
   constructor(private readonly project: Project) {
     this.lastBackupTime = Date.now();
+    this.lastProjectState = project.projectState;
     if (isResearchShell()) {
       this.project.on("stage-commit", this.scheduleSaveAfterEdit);
+      this.project.on("history-change", this.scheduleSaveAfterEdit);
       this.project.on("state-change", this.onProjectStateChange);
     }
   }
 
   dispose() {
     this.project.off("stage-commit", this.scheduleSaveAfterEdit);
+    this.project.off("history-change", this.scheduleSaveAfterEdit);
     this.project.off("state-change", this.onProjectStateChange);
     clearTimeout(this.saveAfterEditTimer);
     this.saveAfterEditTimer = undefined;
@@ -61,9 +75,14 @@ export class AutoSaveBackupService {
     }, SAVE_AFTER_EDIT_DELAY_MS);
   };
 
-  /** 撤销、重做不发 stage-commit，只会把状态改成未保存 */
+  /**
+   * 撤销、重做发的是 history-change；这里接住其他直接把工程标成未保存的地方（比如附件窗口删附件）。
+   * 保存失败时状态一直是未保存，isSaving 切换又会发 state-change，只看「变成」未保存，免得每 5 秒重试一次。
+   */
   private readonly onProjectStateChange = (state: ProjectState) => {
-    if (state === ProjectState.Unsaved) this.scheduleSaveAfterEdit();
+    const previousState = this.lastProjectState;
+    this.lastProjectState = state;
+    if (state === ProjectState.Unsaved && previousState !== ProjectState.Unsaved) this.scheduleSaveAfterEdit();
   };
 
   /**
@@ -92,9 +111,44 @@ export class AutoSaveBackupService {
       // 临时草稿先不备份
       return;
     }
-    if (this.project.projectState === ProjectState.Unsaved) {
+    if (this.project.projectState !== ProjectState.Unsaved) return;
+    if (!isResearchShell()) {
       await this.project.save({ includeThumbnail: false });
+      return;
     }
+    const revision = this.project.editRevision;
+    const failure = this.saveFailure;
+    if (failure && failure.revision === revision && Date.now() < failure.retryAt) return;
+    try {
+      await this.project.save({ includeThumbnail: false });
+    } catch (error) {
+      const delay = failure ? Math.min(failure.delay * 2, SAVE_RETRY_MAX_DELAY_MS) : SAVE_RETRY_FIRST_DELAY_MS;
+      this.saveFailure = { revision, retryAt: Date.now() + delay, delay };
+      // 同一串失败只提示一次；保存成功后收起
+      if (!failure) {
+        toast.error(
+          i18next.t("workspace.save.autoSaveFailed", {
+            ns: "research",
+            error: String(error),
+            interpolation: { escapeValue: false },
+          }),
+          { id: this.saveFailureToastId(), duration: Infinity },
+        );
+      }
+      return;
+    }
+    if (failure) {
+      this.saveFailure = undefined;
+      toast.dismiss(this.saveFailureToastId());
+    }
+    // 写盘期间又有编辑时 Project 不会标成已保存；那次编辑若没发 stage-commit，这里补排一轮
+    if (this.project.projectState === ProjectState.Unsaved && this.saveAfterEditTimer === undefined) {
+      this.scheduleSaveAfterEdit();
+    }
+  }
+
+  private saveFailureToastId() {
+    return `research-autosave-failed:${this.project.uri.toString()}`;
   }
 
   private async runAutoBackup() {

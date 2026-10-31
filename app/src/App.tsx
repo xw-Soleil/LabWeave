@@ -6,7 +6,7 @@ import ThemeModeSwitch from "@/components/theme-mode-switch";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
-import { Project, ProjectState } from "@/core/Project";
+import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import {
   persistResearchSession,
   registerResearchSession,
@@ -49,6 +49,13 @@ import { KeyBindsUI } from "./core/service/controlService/shortcutKeysEngine/Key
 import { checkAndFixShortcutStorage } from "./core/service/controlService/shortcutKeysEngine/ShortcutKeyFixer";
 import { cn } from "./utils/cn";
 import { isLinux, isMac, isWindows } from "./utils/platform";
+
+/** 科研模式下关标签页失败时提示用户；取消、没选路径不算失败，拒绝存到研究文件夹外面时 Project 已经提示过 */
+function reportResearchCloseError(error: unknown) {
+  if (error instanceof ResearchSaveRefusedError) return;
+  if (error instanceof Error && (error.message === "取消操作" || error.message === "未选择路径")) return;
+  toast.error(error instanceof Error ? error.message : String(error));
+}
 
 export default function App() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -297,9 +304,10 @@ export default function App() {
             console.log("尝试关闭", tab);
             await closeTab(tab);
           }
-        } catch {
+        } catch (error) {
           Telemetry.event("关闭应用提示是否保存文件选择了取消");
           if (isResearchShell()) {
+            reportResearchCloseError(error);
             setResearchSessionTracking(true);
             persistResearchSession();
           }
@@ -314,28 +322,31 @@ export default function App() {
         unlisten1 = it;
       });
 
+    const onStateChange = () => {
+      // 强制重新渲染一次
+      setTabs([...tabs]);
+    };
+    const onContextMenu = ({ x, y }: { x: number; y: number }) => {
+      contextMenuTriggerRef.current?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+      setTabs([...tabs]);
+    };
     for (const tab of tabs) {
-      tab.on("state-change", () => {
-        // 强制重新渲染一次
-        setTabs([...tabs]);
-      });
-      tab.on("contextmenu", ({ x, y }) => {
-        contextMenuTriggerRef.current?.dispatchEvent(
-          new MouseEvent("contextmenu", {
-            bubbles: true,
-            clientX: x,
-            clientY: y,
-          }),
-        );
-        setTabs([...tabs]);
-      });
+      tab.on("state-change", onStateChange);
+      tab.on("contextmenu", onContextMenu);
     }
 
     return () => {
       unlisten1?.();
+      // 只摘自己挂的监听：科研模式的自动保存也监听 state-change，不能一起删掉
       for (const tab of tabs) {
-        tab.removeAllListeners("state-change");
-        tab.removeAllListeners("contextmenu");
+        tab.off("state-change", onStateChange);
+        tab.off("contextmenu", onContextMenu);
       }
     };
   }, [tabs.length]);
@@ -368,7 +379,13 @@ export default function App() {
 
   const handleTabClose = useCallback(
     async (tab: Tab) => {
-      await closeTab(tab);
+      try {
+        await closeTab(tab);
+      } catch (error) {
+        // 标签栏不接这个异常，科研模式下保存失败（比如存到研究文件夹外面）要提示，不能当成取消
+        if (!isResearchShell()) throw error;
+        reportResearchCloseError(error);
+      }
     },
     [closeTab],
   );
@@ -502,7 +519,7 @@ export default function App() {
         </div>
 
         {/* NOT zoomed - 使用固定/全屏定位的组件，缩放会破坏它们的坐标计算 */}
-        <FloatingTabs zoomStyle={zoomStyle} onTabClose={closeTab} />
+        <FloatingTabs zoomStyle={zoomStyle} onTabClose={handleTabClose} />
         <PieMenu />
 
         {/* 右上角关闭的触发角 */}

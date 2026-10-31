@@ -1165,7 +1165,9 @@ settings:
   aiApiBaseUrl:
     title: AI API 地址
     description: |
-      目前仅支持 OpenAI 格式的 API
+      支持 OpenAI 兼容格式和 Claude（Anthropic）格式，按下方“AI 接口格式”选择。
+      Claude 格式留空时使用官方地址；第三方地址带不带 /v1 都可以，例如 https://api.deepseek.com/anthropic
+      本机服务（localhost）可以不填密钥
   aiApiKey:
     title: AI API 密钥
     description: |
@@ -1192,7 +1194,7 @@ settings:
   aiApiFormat:
     title: AI 接口格式
     description: |
-      服务商使用的接口格式。大多数服务兼容 OpenAI 格式；用 Claude 官方接口时选 Claude
+      服务商使用的接口格式。大多数服务兼容 OpenAI 格式；Claude 官方接口和 Claude 兼容接口（如 DeepSeek、智谱、Kimi 的 anthropic 地址）选 Claude
     options:
       openai: OpenAI 兼容
       anthropic: Claude（Anthropic）
@@ -2902,6 +2904,7 @@ research:
     pdfBroken: "PDF 读取出错：{{error}}"
     pdfNoText: 这个 PDF 里没有能复制的文字，可能是扫描件
     thumbnailFailed: "缩略图没做出来：{{error}}"
+    targetClosed: 要放卡片的白板已经关掉了，{{count}} 张卡片没有放上去，请重新拖一次
   drop:
     title: 放到白板上
     hint: 松开鼠标，把文件放到白板上
@@ -2913,6 +2916,11 @@ research:
     failed: 放置文件时出错：{{message}}
     cancel: 取消
     copied: 已复制 {{count}} 个文件到 {{folder}}
+    copyFailed: "有文件没复制成，没有放上白板：\n{{details}}"
+    missingFolder:
+      title: 研究文件夹打不开
+      description: "设置里的研究文件夹 {{folder}} 用不了：{{error}}\n它可能被改名、移走或者路径填错了。重新选一个研究文件夹，或者先不复制，直接引用原文件。"
+      notFound: 文件夹不存在
     copy:
       title: 这些文件不在研究文件夹里
       description: "复制到 {{folder}} 再放上白板？\n{{names}}"
@@ -2938,6 +2946,7 @@ research:
     save:
       sidecarFailed: "工作区已保存，但给 AI 读的文字版（.workbench 文件夹）没能写出来：{{error}}"
       outsideFolder: "没有保存：请把工作区存到研究文件夹（{{root}}）里面。你选的位置是 {{path}}"
+      autoSaveFailed: "自动保存失败，改动还没有写进文件：{{error}}。稍后会自动再试，也可以手动保存。"
   ai:
     title: AI 助手
     noWorkspace: 先打开一个工作区

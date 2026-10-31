@@ -65,7 +65,63 @@ export function scheduleFileCardMissingCheck(project: Project, card: FileCardNod
   });
 }
 
-async function createFileCard(project: Project, absPath: string, location: Vector): Promise<FileCardNode> {
+/**
+ * 复制粘贴用：把序列化结果里每张文件卡片的 sourcePath 换掉，包括 Section 里面内联序列化的卡片。
+ * 指向已序列化对象的引用（{ $: "/0/children/0" }）没有 `_`，跳过即可，它和被引用的是同一张卡片。
+ */
+export function rewriteSerializedFileCardPaths(value: unknown, rewrite: (sourcePath: string) => string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) rewriteSerializedFileCardPaths(item, rewrite);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Record<string, unknown>;
+  if (record._ === "FileCardNode" && typeof record.sourcePath === "string") {
+    record.sourcePath = rewrite(record.sourcePath);
+  }
+  for (const child of Object.values(record)) rewriteSerializedFileCardPaths(child, rewrite);
+}
+
+const pendingFileCards = new Map<Project, number>();
+
+/** 标记这块白板上还有卡片没放上去（文件还在复制或解析）；返回撤销标记的函数，多次调用只撤销一次 */
+export function markFileCardsPending(project: Project): () => void {
+  pendingFileCards.set(project, (pendingFileCards.get(project) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const count = (pendingFileCards.get(project) ?? 1) - 1;
+    if (count > 0) {
+      pendingFileCards.set(project, count);
+    } else {
+      pendingFileCards.delete(project);
+    }
+  };
+}
+
+/** 这块白板看着是空的，其实卡片马上要放上来；自动关闭空草稿时应该跳过它 */
+export function hasPendingFileCards(project: Project): boolean {
+  return pendingFileCards.has(project);
+}
+
+export interface FileCardTarget {
+  project: Project;
+  worldPos: Vector;
+}
+
+export interface CreateFileCardsOptions {
+  /** 解析期间目标白板被关掉时，改放到哪里；返回 null 或不传时提示用户，不建卡片 */
+  retarget?: () => FileCardTarget | null;
+}
+
+interface ParsedFile {
+  absPath: string;
+  fileKind: NonNullable<ReturnType<typeof fileKindOf>>;
+  content: Awaited<ReturnType<typeof extractFileCardContent>>;
+}
+
+async function parseFile(absPath: string): Promise<ParsedFile> {
   const fileKind = fileKindOf(absPath)!;
   const fileName = fileNameOf(absPath);
   const bytes = await readFile(absPath);
@@ -73,6 +129,10 @@ async function createFileCard(project: Project, absPath: string, location: Vecto
   if (content.problem) {
     toast.warning(cardText("readProblem", { name: fileName, problem: content.problem }));
   }
+  return { absPath, fileKind, content };
+}
+
+function buildFileCard(project: Project, { absPath, fileKind, content }: ParsedFile, location: Vector): FileCardNode {
   const card = new FileCardNode(project, {
     title: content.title,
     sourcePath: toStoredSourcePath(project, absPath),
@@ -90,50 +150,75 @@ async function createFileCard(project: Project, absPath: string, location: Vecto
  * 只处理 pdf / image / markdown；从 worldPos（第一张卡片的左上角）起排成网格。
  * 加到舞台后调一次 updateReferences 和一次 historyManager.recordStep()，这样工程才会被标记为未保存。
  * 某个文件读不了时跳过它并提示，其他文件照常建卡片。
+ * 先把所有文件解析完再建卡片：解析要好几秒，期间目标白板可能被关掉（比如打开工作区时自动关掉了空草稿），
+ * 这时卡片和缩略图都要放到 options.retarget 给的白板上，不能加到已关闭的工程里。
  */
-export async function createFileCards(project: Project, absPaths: string[], worldPos: Vector): Promise<FileCardNode[]> {
+export async function createFileCards(
+  project: Project,
+  absPaths: string[],
+  worldPos: Vector,
+  options: CreateFileCardsOptions = {},
+): Promise<FileCardNode[]> {
   const supportedPaths = absPaths.filter((path) => fileKindOf(path) !== null);
   const unsupported = absPaths.filter((path) => fileKindOf(path) === null).map(fileNameOf);
   if (unsupported.length > 0) {
     toast.warning(cardText("unsupported", { names: unsupported.join("、") }));
   }
 
-  const columns = Math.max(1, Math.ceil(Math.sqrt(supportedPaths.length)));
-  const cards: FileCardNode[] = [];
-  const failures: string[] = [];
-  // 解析 PDF 要一两秒，文件多时更久，给个进度提示
-  const slow = supportedPaths.length > 3 || supportedPaths.some((path) => fileKindOf(path) === "pdf");
-  const loadingToast = slow ? toast.loading(cardText("creating", { count: supportedPaths.length })) : undefined;
+  const release = markFileCardsPending(project);
   try {
-    for (const [index, absPath] of supportedPaths.entries()) {
-      const location = worldPos.add(
-        new Vector(
-          (index % columns) * (FileCardNode.width + GRID_GAP),
-          Math.floor(index / columns) * (FileCardNode.height + GRID_GAP),
-        ),
-      );
-      try {
-        cards.push(await createFileCard(project, absPath, location));
-      } catch (error) {
-        failures.push(`${fileNameOf(absPath)}: ${error instanceof Error ? error.message : String(error)}`);
+    const parsed: ParsedFile[] = [];
+    const failures: string[] = [];
+    // 解析 PDF 要一两秒，文件多时更久，给个进度提示
+    const slow = supportedPaths.length > 3 || supportedPaths.some((path) => fileKindOf(path) === "pdf");
+    const loadingToast = slow ? toast.loading(cardText("creating", { count: supportedPaths.length })) : undefined;
+    try {
+      for (const absPath of supportedPaths) {
+        try {
+          parsed.push(await parseFile(absPath));
+        } catch (error) {
+          failures.push(`${fileNameOf(absPath)}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
+    } finally {
+      if (loadingToast !== undefined) toast.dismiss(loadingToast);
     }
-  } finally {
-    if (loadingToast !== undefined) toast.dismiss(loadingToast);
-  }
-  if (failures.length > 0) {
-    toast.error(cardText("readFailed", { details: failures.join("\n") }));
-  }
-  if (cards.length === 0) return cards;
+    if (failures.length > 0) {
+      toast.error(cardText("readFailed", { details: failures.join("\n") }));
+    }
+    if (parsed.length === 0) return [];
 
-  for (const card of cards) {
-    project.stageManager.add(card, true);
+    const target = project.closing ? (options.retarget?.() ?? null) : { project, worldPos };
+    if (!target || target.project.closing) {
+      toast.warning(cardText("targetClosed", { count: parsed.length }));
+      return [];
+    }
+
+    const columns = Math.max(1, Math.ceil(Math.sqrt(parsed.length)));
+    const cards = parsed.map((file, index) =>
+      buildFileCard(
+        target.project,
+        file,
+        target.worldPos.add(
+          new Vector(
+            (index % columns) * (FileCardNode.width + GRID_GAP),
+            Math.floor(index / columns) * (FileCardNode.height + GRID_GAP),
+          ),
+        ),
+      ),
+    );
+    const { stageManager, sectionMethods, historyManager } = target.project;
+    for (const card of cards) {
+      stageManager.add(card, true);
+    }
+    stageManager.updateReferences();
+    for (const card of cards) {
+      const section = sectionMethods.getSectionsByInnerLocation(card.geometryCenter)[0];
+      if (section) stageManager.goInSection([card], section);
+    }
+    historyManager.recordStep();
+    return cards;
+  } finally {
+    release();
   }
-  project.stageManager.updateReferences();
-  for (const card of cards) {
-    const section = project.sectionMethods.getSectionsByInnerLocation(card.geometryCenter)[0];
-    if (section) project.stageManager.goInSection([card], section);
-  }
-  project.historyManager.recordStep();
-  return cards;
 }

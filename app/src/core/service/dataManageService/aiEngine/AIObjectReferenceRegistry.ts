@@ -99,6 +99,18 @@ export class AIObjectReferenceRegistry {
     this.nextEdgeRef = nextEdgeRef;
   }
 
+  /**
+   * 引用快照丢了（比如旧版本按路径存，文件改名后找不到）而对话记录还在时，
+   * 新发的引用不能和旧对话里出现过的 n3、e2 重号，否则旧消息会指到别的对象；没登记的旧引用就当失效。
+   */
+  reserveRefsMentionedIn(text: string): void {
+    for (const match of text.matchAll(/\b([ne])([1-9]\d{0,6})\b/g)) {
+      const next = Number(match[2]) + 1;
+      if (match[1] === "n") this.nextNodeRef = Math.max(this.nextNodeRef, next);
+      else this.nextEdgeRef = Math.max(this.nextEdgeRef, next);
+    }
+  }
+
   getOrCreateRef(object: StageObject): AIObjectRef {
     const existing = this.uuidToRef.get(object.uuid);
     if (existing) return existing;

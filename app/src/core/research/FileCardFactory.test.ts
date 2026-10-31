@@ -26,18 +26,23 @@ vi.mock("sonner", () => ({
 
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { Vector } from "@graphif/data-structures";
+import { serialize } from "@graphif/serializer";
 import { URI } from "vscode-uri";
 import {
   createFileCards,
+  hasPendingFileCards,
+  markFileCardsPending,
   refreshFileCardMissing,
   resolveFileCardPath,
   resolveSourcePath,
+  rewriteSerializedFileCardPaths,
   toStoredSourcePath,
 } from "./FileCardFactory";
 
 function makeProject(uri: URI) {
   return {
     uri,
+    closing: false,
     attachments: new Map<string, Blob>(),
     addAttachment: vi.fn(),
     stage: [] as unknown[],
@@ -80,6 +85,36 @@ describe("file card paths", () => {
     expect(mocks.exists).toHaveBeenCalledWith("/Users/me/Research/topic/papers/a.pdf");
     expect(card.missing).toBe(true);
     expect(resolveFileCardPath(project as never, card)).toBe("/Users/me/Research/topic/papers/a.pdf");
+  });
+
+  it("rewrites cards serialized inside a Section, not just top-level ones", () => {
+    const source = savedProject();
+    const card = new FileCardNode(source as never, { sourcePath: "papers/x.pdf" });
+    // 复制 Section 时，卡片内联在 Section 的 children 里，顶层那一项只是 { $: "/0/0" } 引用
+    const serialized = serialize([[card], card]);
+    expect(serialized[1]).toEqual({ $: "/0/0" });
+
+    rewriteSerializedFileCardPaths(serialized, (sourcePath) => resolveSourcePath(source as never, sourcePath));
+
+    expect(serialized[0][0].sourcePath).toBe("/Users/me/Research/topic/papers/x.pdf");
+    expect(serialized[1]).toEqual({ $: "/0/0" });
+    const target = makeProject(URI.file("/Users/me/Research/b.prg"));
+    expect(toStoredSourcePath(target as never, resolveSourcePath(target as never, serialized[0][0].sourcePath))).toBe(
+      "topic/papers/x.pdf",
+    );
+  });
+});
+
+describe("pending file cards", () => {
+  it("counts nested marks and releases each one only once", () => {
+    const project = draftProject();
+    const releaseA = markFileCardsPending(project as never);
+    const releaseB = markFileCardsPending(project as never);
+    releaseA();
+    releaseA();
+    expect(hasPendingFileCards(project as never)).toBe(true);
+    releaseB();
+    expect(hasPendingFileCards(project as never)).toBe(false);
   });
 });
 
@@ -139,6 +174,52 @@ describe("createFileCards", () => {
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
     expect(mocks.toastError).toHaveBeenCalledOnce();
     expect(project.historyManager.recordStep).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the board marked as pending while files are parsed", async () => {
+    const project = draftProject();
+    let pendingDuringRead = false;
+    mocks.readFile.mockImplementation(async () => {
+      pendingDuringRead = hasPendingFileCards(project as never);
+      return new TextEncoder().encode("正文");
+    });
+    await createFileCards(project as never, ["/Users/me/Research/a.md"], Vector.getZero());
+    expect(pendingDuringRead).toBe(true);
+    expect(hasPendingFileCards(project as never)).toBe(false);
+    expect(project.stageManager.add).toHaveBeenCalledOnce();
+  });
+
+  it("puts the cards on the fallback board when the target was closed during parsing", async () => {
+    const closed = draftProject();
+    const fallback = savedProject();
+    mocks.readFile.mockImplementation(async () => {
+      closed.closing = true;
+      return new TextEncoder().encode("正文");
+    });
+
+    const cards = await createFileCards(closed as never, ["/Users/me/Research/topic/a.md"], Vector.getZero(), {
+      retarget: () => ({ project: fallback as never, worldPos: new Vector(7, 8) }),
+    });
+
+    expect(closed.stageManager.add).not.toHaveBeenCalled();
+    expect(fallback.stageManager.add).toHaveBeenCalledWith(cards[0], true);
+    expect(cards[0].sourcePath).toBe("a.md");
+    expect(cards[0].rectangle.location).toEqual(new Vector(7, 8));
+    expect(fallback.historyManager.recordStep).toHaveBeenCalledOnce();
+  });
+
+  it("warns instead of adding cards to a closed board when there is nowhere else to put them", async () => {
+    const closed = draftProject();
+    mocks.readFile.mockImplementation(async () => {
+      closed.closing = true;
+      return new TextEncoder().encode("正文");
+    });
+
+    await expect(createFileCards(closed as never, ["/Users/me/Research/a.md"], Vector.getZero())).resolves.toEqual([]);
+
+    expect(closed.stageManager.add).not.toHaveBeenCalled();
+    expect(closed.addAttachment).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).toHaveBeenCalledOnce();
   });
 
   it("does not touch history when no card was created", async () => {
