@@ -381,6 +381,8 @@ export default function App() {
         className={cn(
           "has-[[data-pg-settings-view]]:bg-background/[0.9516] relative flex h-full w-full flex-col overflow-clip sm:gap-2",
           !isMac && "rounded-lg",
+          // 窗口本身是透明的,原版只有画布自己画背景;科研模式下侧边面板也要不透明,不然会透出后面的窗口
+          showActivityRail && "bg-background",
         )}
         style={{ "--pg-ui-scale": uiScalePercent / 100 } as React.CSSProperties}
         onMouseDownCapture={(event) => {

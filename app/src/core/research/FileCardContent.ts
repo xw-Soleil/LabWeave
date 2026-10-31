@@ -148,37 +148,65 @@ function pdfJsAssetUrls() {
   };
 }
 
+// 不在这里调 page.cleanup(),整个文档最后由 loadingTask.destroy() 统一释放。
 async function renderPdfFirstPage(document: PdfDocument): Promise<Blob> {
   const page = await document.getPage(1);
-  try {
-    const baseViewport = page.getViewport({ scale: 1 });
-    const scale = Math.min(THUMBNAIL_MAX_SIZE / baseViewport.width, (THUMBNAIL_MAX_SIZE * 2) / baseViewport.height);
-    const viewport = page.getViewport({ scale });
-    const { canvas, context } = createCanvas(viewport.width, viewport.height);
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, viewport }).promise;
-    return await canvasToBlob(canvas);
-  } finally {
-    page.cleanup();
-  }
+  const baseViewport = page.getViewport({ scale: 1 });
+  const scale = Math.min(THUMBNAIL_MAX_SIZE / baseViewport.width, (THUMBNAIL_MAX_SIZE * 2) / baseViewport.height);
+  const viewport = page.getViewport({ scale });
+  const { canvas, context } = createCanvas(viewport.width, viewport.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvas, viewport }).promise;
+  return await canvasToBlob(canvas);
 }
 
+/** 等下一块文字;超过 ms 毫秒没来就当这一页读完了 */
+const TEXT_CHUNK_TIMEOUT_MS = 3000;
+
+type TextChunk = { done: boolean; value?: { items: Array<{ str?: string; hasEOL?: boolean }> } };
+
+function readWithTimeout(reader: ReadableStreamDefaultReader<unknown>, ms: number): Promise<TextChunk | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    reader.read().then(
+      (chunk) => {
+        clearTimeout(timer);
+        resolve(chunk as TextChunk);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * 不用 page.getTextContent():实测在 Tauri 的 WebView(WKWebView)里,文字块都能收到,
+ * 但流的结束信号一直不来,getTextContent 会永远等下去。这里自己读流,
+ * 收到结束信号、字数够了、或者一段时间没有新内容,就停下读下一页。
+ */
 async function extractPdfText(document: PdfDocument, pageLimit: number): Promise<string> {
   let text = "";
   for (let pageNumber = 1; pageNumber <= pageLimit && text.length < MAX_EXCERPT_LENGTH; pageNumber++) {
     const page = await document.getPage(pageNumber);
+    const reader = page.streamTextContent().getReader();
     try {
-      const content = await page.getTextContent();
-      for (const item of content.items) {
-        if (!("str" in item)) continue;
-        text += item.str;
-        if (item.hasEOL) text += "\n";
+      while (text.length < MAX_EXCERPT_LENGTH) {
+        const chunk = await readWithTimeout(reader, TEXT_CHUNK_TIMEOUT_MS);
+        if (!chunk || chunk.done || !chunk.value) break;
+        for (const item of chunk.value.items) {
+          if (typeof item.str !== "string") continue;
+          text += item.str;
+          if (item.hasEOL) text += "\n";
+        }
       }
-      text += "\n\n";
     } finally {
-      page.cleanup();
+      // 取消可能已经结束的流会被拒绝,这里只是释放读取器,结果不需要
+      reader.cancel().catch(() => undefined);
     }
+    text += "\n\n";
   }
   return normalizeExcerpt(text);
 }
@@ -219,11 +247,7 @@ async function extractPdfContent(
     } catch (error) {
       problems.push(cardText("pdfBroken", { error: errorMessage(error) }));
     }
-    try {
-      result.thumbnail = await renderPdfFirstPage(document);
-    } catch (error) {
-      problems.push(cardText("thumbnailFailed", { error: errorMessage(error) }));
-    }
+    // 先抽文字再渲染缩略图:渲染失败不影响 AI 读到正文
     if (textPages > 0) {
       try {
         result.excerpt = await extractPdfText(document, Math.min(textPages, document.numPages));
@@ -231,6 +255,11 @@ async function extractPdfContent(
       } catch (error) {
         problems.push(cardText("pdfBroken", { error: errorMessage(error) }));
       }
+    }
+    try {
+      result.thumbnail = await renderPdfFirstPage(document);
+    } catch (error) {
+      problems.push(cardText("thumbnailFailed", { error: errorMessage(error) }));
     }
     result.problem = problems.join("；");
     return result;
