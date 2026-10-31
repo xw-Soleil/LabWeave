@@ -9,6 +9,7 @@ import originalClassName from "unplugin-original-class-name/vite";
 import { createLogger, defineConfig } from "vite";
 import svgr from "vite-plugin-svgr";
 import { i18nAutoTW } from "./vite-plugins/i18n-auto-tw";
+import { pdfjsAssets } from "./vite-plugins/pdfjs-assets";
 
 const host = process.env.TAURI_DEV_HOST ?? "localhost";
 
@@ -30,6 +31,8 @@ export default defineConfig({
     ViteYaml(),
     // zh_CN 自动转 zh_TW
     i18nAutoTW(),
+    // pdf.js 的 CMap / 标准字体 / wasm 数据文件（科研工作台的文件卡片用）
+    pdfjsAssets(),
     // react插件
     react(),
     // 分析组件性能

@@ -3,9 +3,14 @@ import type { CreateRoomResponse, JoinRoomResponse } from "./CollabProtocol";
 import { resolveCollabHttpBase } from "./CollabTransport";
 import type { StageMapDoc } from "./stageMap";
 
-async function collabFetch(path: string, token: string, init?: RequestInit) {
+function requireCollabHttpBase() {
   const base = resolveCollabHttpBase();
   if (!base) throw new Error("协作服务地址未配置（LR_COLLAB_BASE_URL / LR_API_BASE_URL）");
+  return base;
+}
+
+async function collabFetch(path: string, token: string, init?: RequestInit) {
+  const base = requireCollabHttpBase();
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
@@ -60,7 +65,7 @@ export async function uploadCollabAttachment(
   attachmentId: string,
   blob: Blob,
 ): Promise<void> {
-  const response = await fetch(`${resolveCollabHttpBase()}${attachmentPath(roomId, attachmentId)}`, {
+  const response = await fetch(`${requireCollabHttpBase()}${attachmentPath(roomId, attachmentId)}`, {
     method: "PUT",
     body: blob,
     headers: {
@@ -72,7 +77,7 @@ export async function uploadCollabAttachment(
 }
 
 export async function downloadCollabAttachment(token: string, roomId: string, attachmentId: string): Promise<Blob> {
-  const response = await fetch(`${resolveCollabHttpBase()}${attachmentPath(roomId, attachmentId)}`, {
+  const response = await fetch(`${requireCollabHttpBase()}${attachmentPath(roomId, attachmentId)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) throw new Error(`附件下载失败：HTTP ${response.status}`);

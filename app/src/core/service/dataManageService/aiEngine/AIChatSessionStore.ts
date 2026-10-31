@@ -1,5 +1,6 @@
 import type { AIMessageMetadata } from "@/core/service/dataManageService/aiEngine/AIEngine";
 import type { AIChatSessionMemory } from "@/core/service/dataManageService/aiEngine/AIChatSessionMemory";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { isActivatedSkillSnapshot } from "./AISkillSession";
 import type { ActivatedSkillSnapshot } from "./AISkills";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -57,6 +58,33 @@ function enqueueWrite<T>(operation: (initializedStore: LazyStore) => Promise<T>)
     () => undefined,
   );
   return result;
+}
+
+const draftChatKeys = new WeakMap<object, string>();
+
+function readWorkbenchId(metadata: unknown): string | undefined {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const workbench = (metadata as { workbench?: unknown }).workbench;
+  if (!workbench || typeof workbench !== "object") return undefined;
+  const id = (workbench as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+/**
+ * 聊天记录按什么存。科研模式下优先用工作区 id（存在 .prg 元数据里，改名、移动、草稿存盘都不变）；
+ * 草稿的 URI 每次启动都从 draft:1 重新数，不能拿来当键，改用这个草稿对象自己的随机 id。
+ */
+export function getAIChatProjectKey(project: { uri: { scheme: string; toString(): string }; metadata?: unknown }) {
+  if (!isResearchShell()) return project.uri.toString();
+  const workbenchId = readWorkbenchId(project.metadata);
+  if (workbenchId) return `workbench:${workbenchId}`;
+  if (project.uri.scheme !== "draft") return project.uri.toString();
+  let key = draftChatKeys.get(project);
+  if (!key) {
+    key = `draft-session:${crypto.randomUUID()}`;
+    draftChatKeys.set(project, key);
+  }
+  return key;
 }
 
 function getIndexKey(projectUri: string): string {

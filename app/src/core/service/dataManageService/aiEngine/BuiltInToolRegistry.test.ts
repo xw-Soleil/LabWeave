@@ -9,7 +9,7 @@ vi.mock("./BuiltInToolExecutors", () => {
 
 import { builtInToolCatalog, classifyBuiltInToolProjectContext } from "./BuiltInToolRegistry";
 
-const expectedToolNames = [
+const upstreamToolNames = [
   "get_all_nodes",
   "delete_node",
   "delete_nodes",
@@ -41,6 +41,10 @@ const expectedToolNames = [
   "recognize_image",
 ] as const;
 
+// vitest 里没有设置 LR_RESEARCH_SHELL，科研模式默认开，目录末尾多两个科研工作台工具
+const researchToolNames = ["dump_workspace", "create_file_card"] as const;
+const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
+
 function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
   if (value === null || typeof value !== "object" || value instanceof RegExp || seen.has(value)) return;
   seen.add(value);
@@ -51,10 +55,35 @@ function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
 }
 
 describe("Built-in Tool Registry catalog", () => {
-  it("exposes the closed, ordered set of 29 built-in tools without loading executors", () => {
+  it("exposes the closed, ordered set of 29 upstream tools plus 2 research tools without loading executors", () => {
     expect(builtInToolCatalog.map(({ name }) => name)).toEqual(expectedToolNames);
     expect(new Set(expectedToolNames).size).toBe(expectedToolNames.length);
     expect(executorModule.loaded).toBe(false);
+  });
+
+  it("keeps exactly the 29 upstream tools when the research shell is off", async () => {
+    vi.stubEnv("LR_RESEARCH_SHELL", "false");
+    vi.resetModules();
+    try {
+      const registry = await import("./BuiltInToolRegistry");
+      expect(registry.builtInToolCatalog.map(({ name }) => name)).toEqual(upstreamToolNames);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
+  it("keeps dump_workspace read-only and create_file_card open-project-only", () => {
+    const dumpWorkspace = builtInToolCatalog.find(({ name }) => name === "dump_workspace")!;
+    const createFileCard = builtInToolCatalog.find(({ name }) => name === "create_file_card")!;
+
+    expect(dumpWorkspace.capabilities).toEqual(["project"]);
+    expect(dumpWorkspace.persistence).toBe("none");
+    expect(classifyBuiltInToolProjectContext(dumpWorkspace)).toBe("closed-capable");
+    expect(createFileCard.capabilities).toContain("history");
+    expect(classifyBuiltInToolProjectContext(createFileCard)).toBe("live-viewport");
+    expect(createFileCard.inputSchema.parse({ path: "papers/a.pdf" })).toEqual({ path: "papers/a.pdf" });
+    expect(() => createFileCard.inputSchema.parse({ path: "" })).toThrow();
   });
 
   it("keeps every definition and its metadata immutable and complete", () => {
@@ -98,13 +127,14 @@ describe("Built-in Tool Registry catalog", () => {
       "sort_selected_nodes_by_y",
       "sort_selected_nodes_by_x",
       "search_and_add_image_node",
+      "create_file_card",
     ]);
     expect(
       builtInToolCatalog.filter(({ cancellation }) => cancellation === "cooperative").map(({ name }) => name),
     ).toEqual(["search_and_add_image_node"]);
   });
 
-  it("classifies the complete catalog into 19 closed, 6 live-selection, and 4 live-viewport tools", () => {
+  it("classifies the complete catalog into 20 closed, 6 live-selection, and 5 live-viewport tools", () => {
     const namesFor = (projectContext: ReturnType<typeof classifyBuiltInToolProjectContext>) =>
       builtInToolCatalog
         .filter((definition) => classifyBuiltInToolProjectContext(definition) === projectContext)
@@ -130,6 +160,7 @@ describe("Built-in Tool Registry catalog", () => {
       "breadth_expand_node",
       "depth_expand_node",
       "recognize_image",
+      "dump_workspace",
     ]);
     expect(namesFor("live-selection")).toEqual([
       "delete_selected_nodes",
@@ -144,6 +175,7 @@ describe("Built-in Tool Registry catalog", () => {
       "generate_node_tree_by_text",
       "get_nodes_in_viewport",
       "search_and_add_image_node",
+      "create_file_card",
     ]);
   });
 

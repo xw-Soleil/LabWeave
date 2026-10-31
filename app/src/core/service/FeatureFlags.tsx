@@ -1,7 +1,8 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { authClient } from "./AuthClient";
 
-// 账户使用官方默认服务；其他云功能仍由显式配置启用。
-const hasApiBaseUrl = (import.meta.env.LR_API_BASE_URL ?? "").trim() !== "";
+// 账户使用官方默认服务；其他云功能仍由显式配置启用。科研工作台模式下一律关闭。
+const hasApiBaseUrl = !isResearchShell() && (import.meta.env.LR_API_BASE_URL ?? "").trim() !== "";
 
 export namespace FeatureFlags {
   /**

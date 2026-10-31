@@ -1,10 +1,14 @@
 import { Project, ProjectState, service } from "@/core/Project";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { appCacheDir } from "@tauri-apps/api/path";
 import { join } from "@tauri-apps/api/path";
 import { exists, writeFile, readDir, stat, remove, mkdir } from "@tauri-apps/plugin-fs";
 import { Settings } from "@/core/service/Settings";
 import { toast } from "sonner";
 import { PathString } from "@/utils/pathString";
+
+/** 科研模式下，最后一次编辑之后多久自动保存 */
+export const SAVE_AFTER_EDIT_DELAY_MS = 5000;
 
 /**
  * 自动保存与备份系统
@@ -22,10 +26,45 @@ export class AutoSaveBackupService {
 
   private lastSaveTime = 0;
   private isBackingUp = false;
+  private saveAfterEditTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly project: Project) {
     this.lastBackupTime = Date.now();
+    if (isResearchShell()) {
+      this.project.on("stage-commit", this.scheduleSaveAfterEdit);
+      this.project.on("state-change", this.onProjectStateChange);
+    }
   }
+
+  dispose() {
+    this.project.off("stage-commit", this.scheduleSaveAfterEdit);
+    this.project.off("state-change", this.onProjectStateChange);
+    clearTimeout(this.saveAfterEditTimer);
+    this.saveAfterEditTimer = undefined;
+  }
+
+  /**
+   * 编辑后停手约 5 秒就保存，用定时器而不是 tick：
+   * 后台标签页（pauseRenderWhenTabUnfocused）和最小化的窗口不跑 requestAnimationFrame，tick 里的自动保存会停。
+   */
+  private readonly scheduleSaveAfterEdit = () => {
+    clearTimeout(this.saveAfterEditTimer);
+    this.saveAfterEditTimer = setTimeout(() => {
+      this.saveAfterEditTimer = undefined;
+      if (!Settings.autoSave) return;
+      if (this.isBackingUp || this.project.isSaving) {
+        this.scheduleSaveAfterEdit();
+        return;
+      }
+      this.lastSaveTime = Date.now();
+      void this.autoSave();
+    }, SAVE_AFTER_EDIT_DELAY_MS);
+  };
+
+  /** 撤销、重做不发 stage-commit，只会把状态改成未保存 */
+  private readonly onProjectStateChange = (state: ProjectState) => {
+    if (state === ProjectState.Unsaved) this.scheduleSaveAfterEdit();
+  };
 
   /**
    * 高频率调用的tick函数，内部实现降频操作
@@ -79,7 +118,8 @@ export class AutoSaveBackupService {
     const strategy = Settings.autoBackupStrategy;
 
     // New strategies: backup near the original file
-    if (strategy === "sideBySide" || strategy === "subfolder") {
+    // 科研模式下不在研究文件夹里留 *_backup* 文件，这两种策略都改走应用缓存目录
+    if (!isResearchShell() && (strategy === "sideBySide" || strategy === "subfolder")) {
       const ok = await this.localAutoBackup(strategy);
       if (ok) {
         this.lastBackupHash = currentHash;

@@ -13,6 +13,10 @@ import { open } from "@tauri-apps/plugin-shell";
 import { MouseLocation } from "../../MouseLocation";
 import { Renderer } from "@/core/render/canvas2d/renderer";
 import LatexEditWindow from "@/sub/LatexEditWindow";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
+import { cardText } from "@/core/research/FileCardContent";
+import { refreshFileCardMissing, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { toast } from "sonner";
 /**
  * 包含编辑节点文字，编辑详细信息等功能的控制器
  *
@@ -85,8 +89,20 @@ export class ControllerNodeEditClass extends ControllerClass {
         return;
       }
       MediaPlaybackManager.togglePlay(this.project, clickedEntity);
+    } else if (clickedEntity instanceof FileCardNode) {
+      await this.openFileCardSource(clickedEntity);
     }
   };
+
+  /** 双击文件卡片：用系统默认程序打开原文件 */
+  private async openFileCardSource(card: FileCardNode) {
+    const absPath = resolveFileCardPath(this.project, card);
+    if (await refreshFileCardMissing(this.project, card)) {
+      toast.error(cardText("missingToast", { path: absPath }));
+      return;
+    }
+    await open(absPath);
+  }
 
   mouseup = (event: MouseEvent) => {
     if (event.button !== 0) {

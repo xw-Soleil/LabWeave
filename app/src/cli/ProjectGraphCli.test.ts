@@ -396,7 +396,8 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     const tools = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
-    expect(tools).toHaveLength(29);
+    // 29 个上游工具 + 科研模式的 dump_workspace / create_file_card（命令行默认是科研模式）
+    expect(tools).toHaveLength(31);
     expect(tools[0]).toMatchObject({
       name: "get_all_nodes",
       description: expect.any(String),
@@ -1043,7 +1044,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
 
     const settingsHome = mkdtempSync(join(tmpdir(), "project-graph-cli-settings-"));
     temporaryDirectories.push(settingsHome);
-    const settingsDirectory = join(settingsHome, "Library", "Application Support", "liren.project-graph");
+    const settingsDirectory = join(settingsHome, "Library", "Application Support", "com.ai4know.researchworkbench");
     mkdirSync(settingsDirectory, { recursive: true });
     writeFileSync(
       join(settingsDirectory, "settings.json"),

@@ -15,14 +15,19 @@ vi.mock("./service/Settings", () => ({ Settings: { maxFps: 60, maxFpsUnfocused: 
 vi.mock("./service/Telemetry", () => ({ Telemetry: { event: vi.fn() } }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: vi.fn() } }));
 
+import { URI } from "vscode-uri";
 import { Tab } from "./Tab";
-import { createTabGroup } from "./TabGroup";
+import { createTabGroup, findTabGroupByTabId, FIXED_SIDE_GROUP_IDS, getTabGroups, splitTabGroup } from "./TabGroup";
 import { TabWorkspace } from "./TabWorkspace";
 
 class TestTab extends Tab {
   getComponent() {
     return () => null;
   }
+}
+
+class TestResourceTab extends TestTab {
+  readonly uri = URI.parse("draft:test");
 }
 
 function openTestTab() {
@@ -141,5 +146,71 @@ describe("TabWorkspace close lifecycle", () => {
 
     await expect(closeResult).resolves.toBe(cleanupError);
     expect(store.get(tabsAtom)).not.toContain(tab);
+  });
+});
+
+describe("TabWorkspace opening resource tabs next to side panels", () => {
+  beforeEach(() => {
+    store.set(tabsAtom, []);
+    store.set(activeTabAtom, undefined);
+    store.set(activeDockedTabAtom, undefined);
+    store.set(activeResourceTabAtom, undefined);
+    store.set(tabGroupRootAtom, null);
+    store.set(activeGroupIdAtom, undefined);
+  });
+
+  function openSidePanel(mainTab?: Tab) {
+    const panel = new TestTab({});
+    const side = createTabGroup([panel.id], FIXED_SIDE_GROUP_IDS.left);
+    if (mainTab) {
+      const main = createTabGroup([mainTab.id], "main-group");
+      store.set(tabsAtom, [mainTab, panel]);
+      store.set(tabGroupRootAtom, splitTabGroup(main, main.id, side, "left"));
+    } else {
+      store.set(tabsAtom, [panel]);
+      store.set(tabGroupRootAtom, side);
+    }
+    store.set(activeGroupIdAtom, side.id);
+    return panel;
+  }
+
+  it("puts a project into the main group when a fixed side group is active", () => {
+    const existing = new TestResourceTab({});
+    openSidePanel(existing);
+
+    const project = TabWorkspace.open(new TestResourceTab({}));
+
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), project.id)?.id).toBe("main-group");
+    expect(store.get(activeGroupIdAtom)).toBe("main-group");
+  });
+
+  it("creates a main group beside the side panel when no main group exists", () => {
+    openSidePanel();
+
+    const project = TabWorkspace.open(new TestResourceTab({}));
+
+    const root = store.get(tabGroupRootAtom);
+    const group = findTabGroupByTabId(root, project.id);
+    expect(group?.id).not.toBe(FIXED_SIDE_GROUP_IDS.left);
+    expect(getTabGroups(root).map((candidate) => candidate.id)).toEqual([FIXED_SIDE_GROUP_IDS.left, group?.id]);
+    expect(root?.type === "split" && root.sizes[1]).toBeGreaterThan(50);
+  });
+
+  it("still stacks component tabs into the active side group", () => {
+    openSidePanel(new TestResourceTab({}));
+
+    const component = TabWorkspace.open(new TestTab({}));
+
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), component.id)?.id).toBe(FIXED_SIDE_GROUP_IDS.left);
+  });
+
+  it("synchronizes a missing project into the main group", () => {
+    openSidePanel(new TestResourceTab({}));
+    const project = new TestResourceTab({});
+    store.set(tabsAtom, [...store.get(tabsAtom), project]);
+
+    TabWorkspace.synchronizeGroups();
+
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), project.id)?.id).toBe("main-group");
   });
 });

@@ -1,4 +1,6 @@
 import type { Project } from "@/core/Project";
+// 命令行入口用 tsx 直接加载这个文件，不认 @/ 别名，值导入只能写相对路径
+import { isResearchShell } from "../../../research/ResearchShell";
 import type { AIObjectReferenceErrorCode, AIObjectReferenceRegistry } from "./AIObjectReferenceRegistry";
 import z from "zod/v4";
 
@@ -535,8 +537,39 @@ const definitions: BuiltInToolDefinition[] = [
   }),
 ];
 
+// 给外部 agent（命令行 / 桥接）和应用内聊天用的科研工作台工具
+const researchDefinitions: BuiltInToolDefinition[] = [
+  defineTool({
+    name: "dump_workspace",
+    description:
+      "返回当前工作区的结构化内容：卡片（含文件卡片的路径和文字摘要）、分组、连线、超边和标签，格式与保存时写出的 .ai.json 相同。只读。",
+    inputSchema: z.object({}),
+    capabilities: ["project"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "create_file_card",
+    description:
+      "为研究文件夹里的一个 PDF、图片或 Markdown 文件在白板上创建文件卡片。path 可以是绝对路径，也可以是相对研究文件夹的路径；x、y 是卡片左上角的世界坐标，不填时放在当前视野中心。只能用于已在桌面端打开的工作区。",
+    inputSchema: z.object({
+      path: z.string().min(1).describe("文件路径，绝对路径或相对研究文件夹的路径"),
+      x: z.number().optional().describe("卡片左上角的世界坐标 x"),
+      y: z.number().optional().describe("卡片左上角的世界坐标 y"),
+    }),
+    capabilities: ["project", "references", "history", "attachments", "dom", "settings", "viewport"],
+    projectReferences: { reads: false, allocates: true },
+    cancellation: "none",
+    transaction: "non-transactional",
+    persistence: "project-and-references",
+  }),
+];
+
+// 命令行入口用 tsx 直接加载这个文件，那里没有 import.meta.env；命令行和科研模式一样默认带上科研工具
 export const builtInToolCatalog: readonly BuiltInToolDefinition[] = Object.freeze(
-  definitions.map((definition) => deepFreeze(definition)),
+  [...definitions, ...(isResearchShell() ? researchDefinitions : [])].map((definition) => deepFreeze(definition)),
 );
 
 const builtInToolsByName = new Map(builtInToolCatalog.map((definition) => [definition.name, definition]));

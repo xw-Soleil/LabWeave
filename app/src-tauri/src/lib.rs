@@ -23,13 +23,54 @@ use tauri::{Manager, State};
 use std::path::Path;
 
 pub static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+/// Files the OS asked us to open (macOS Finder double-click / "Open With").
+/// Until the frontend has called `take_pending_open_files` they are queued here; afterwards they
+/// are emitted as `open-file-from-os` events.
 #[derive(Default)]
-struct PendingOpenFiles(Mutex<Vec<String>>);
+struct PendingOpenFiles(Mutex<PendingOpenFilesState>);
+
+#[derive(Default)]
+struct PendingOpenFilesState {
+    files: Vec<String>,
+    taken: bool,
+}
 
 #[tauri::command]
 fn take_pending_open_files(state: State<PendingOpenFiles>) -> Vec<String> {
-    let mut guard = state.0.lock().unwrap();
-    std::mem::take(&mut *guard)
+    let mut guard = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard.taken = true;
+    std::mem::take(&mut guard.files)
+}
+
+#[cfg(target_os = "macos")]
+fn handle_os_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
+    use tauri::Emitter;
+
+    // Deep links (rwb://) also arrive as Opened events; tauri-plugin-deep-link handles those.
+    let paths: Vec<String> = urls
+        .iter()
+        .filter(|url| url.scheme() == "file")
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("prg"))
+        })
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    let state = app.state::<PendingOpenFiles>();
+    {
+        let mut guard = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !guard.taken {
+            guard.files.extend(paths);
+            return;
+        }
+    }
+    for path in paths {
+        if let Err(error) = app.emit("open-file-from-os", &path) {
+            eprintln!("[open-file-from-os] failed to forward {path}: {error}");
+        }
+    }
 }
 
 #[tauri::command]
@@ -61,13 +102,15 @@ pub fn run() {
     }
 
     let builder = tauri::Builder::default();
+    #[cfg(all(desktop, not(feature = "research-shell")))]
+    let builder = builder.manage(cmd::mcp::McpStdioManager::default());
 
-    builder
+    let app = builder
         .manage(PendingOpenFiles::default())
         .manage(Arc::new(
             project_ownership::DesktopProjectOwnershipManager::default(),
         ))
-        .manage(cmd::mcp::McpStdioManager::default())
+        .manage(cmd::research::ResearchRoot::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
@@ -98,10 +141,17 @@ pub fn run() {
                 app.handle().plugin(tauri_plugin_system_info::init())?;
                 app.handle()
                     .plugin(tauri_plugin_window_state::Builder::new().build())?;
-                app.handle()
-                    .plugin(tauri_plugin_updater::Builder::new().build())?;
-                app.handle()
-                    .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+                #[cfg(not(feature = "research-shell"))]
+                {
+                    // The updater plugin fails to initialize without plugins.updater.pubkey,
+                    // which this fork's tauri.conf.json does not ship.
+                    if app.config().plugins.0.contains_key("updater") {
+                        app.handle()
+                            .plugin(tauri_plugin_updater::Builder::new().build())?;
+                    }
+                    app.handle()
+                        .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+                }
             }
             #[cfg(target_os = "windows")]
             custom_drag_drop::install(app.handle().clone());
@@ -128,27 +178,45 @@ pub fn run() {
             project_reference_store::load_project_reference_snapshot,
             project_reference_store::save_project_reference_snapshot,
             project_runtime_bridge::respond_project_runtime_bridge,
+            cmd::research::set_research_root,
+            // Still called by "generate from folder" and the recent-files folder import.
             cmd::fs::read_folder_structure,
-            cmd::fs::exists,
-            cmd::fs::read_folder,
             cmd::fs::read_folder_recursive,
+            #[cfg(not(feature = "research-shell"))]
+            cmd::fs::exists,
+            #[cfg(not(feature = "research-shell"))]
+            cmd::fs::read_folder,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::delete_file,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::read_text_file,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::read_file_base64,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::write_text_file,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::write_file_base64,
+            #[cfg(not(feature = "research-shell"))]
             cmd::fs::create_folder,
+            #[cfg(not(feature = "research-shell"))]
             cmd::shell::run_command,
             cmd::device::get_distribution,
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(feature = "research-shell")))]
             cmd::mcp::mcp_stdio_start,
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(feature = "research-shell")))]
             cmd::mcp::mcp_stdio_list_tools,
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(feature = "research-shell")))]
             cmd::mcp::mcp_stdio_call_tool,
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(feature = "research-shell")))]
             cmd::mcp::mcp_stdio_stop,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app_handle, _event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = _event {
+            handle_os_open_urls(_app_handle, urls);
+        }
+    });
 }

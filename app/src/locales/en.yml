@@ -1102,6 +1102,31 @@ settings:
     title: Automatically approve MCP tools
     description: |
       When enabled, MCP tools can run without manual approval. The first launch of a local stdio process still requires separate confirmation.
+  aiApiFormat:
+    title: AI API format
+    description: |
+      The API format your provider uses. Most providers are OpenAI-compatible; choose Claude for the official Claude API.
+    options:
+      openai: OpenAI-compatible
+      anthropic: Claude (Anthropic)
+  aiPdfTextPages:
+    title: PDF pages read by the AI
+    description: |
+      When a paper is placed on the board, the text of this many first pages is extracted for the AI. 0 means no text is extracted.
+  researchFolderPath:
+    title: Research folder
+    description: |
+      The folder that holds your papers, images, notes and workspaces.
+  writeAiSidecarOnSave:
+    title: Write an AI-readable copy when saving
+    description: |
+      When a workspace is saved, a JSON and a Markdown copy of the board are written to the .workbench folder next to it, so AI tools can read it.
+  researchSession:
+    title: Last open workspaces and panels
+  researchShowFullMenu:
+    title: Show the full menu
+    description: |
+      Shows every menu item of the original Project Graph.
   soundPitchVariationRange:
     title: Sound Pitch Variation
     description: Controls how much the pitch of sound effects varies randomly. Range for 0-1200 cents (1200 cents = 1 octave, 100 cents = 1 semitone). Higher values create more noticeable variations.
@@ -2563,3 +2588,199 @@ projectOwnership:
   releaseFailedMessage: "The Project was closed, but its ownership lock could not be released. Select Retry to try again.\n\nError: {{error}}"
   retry: Retry
   ok: OK
+
+# Research Workbench. Each work unit adds keys only to its own subsection.
+research:
+  shell:
+    title: Research Workbench
+    rail:
+      workspace: Workspace
+      ai: AI chat
+      files: Files
+      settings: Settings
+    setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
+    restoreFailed: "Couldn't reopen workspace {{path}}: {{message}}"
+    panelFailed: "Couldn't open the panel: {{message}}"
+    autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
+    extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
+  menu:
+    title: Menu
+    keyBindsGroup:
+      title: Research Workbench
+      description: Shortcuts for the workspace, AI chat and file panel. They also work while a side panel or a text box has focus.
+    items:
+      file:
+        title: File
+      edit:
+        title: Edit
+      view:
+        title: View
+      window:
+        title: Window
+      settings:
+        title: Settings
+      about:
+        title: About
+      cut:
+        title: Cut
+      copy:
+        title: Copy
+      paste:
+        title: Paste
+      selectAll:
+        title: Select All
+      quit:
+        title: Quit Research Workbench
+      newResearchWorkspace:
+        title: New Workspace
+        description: Create a workspace in the research folder and open it
+      researchChooseFolder:
+        title: Choose Research Folder…
+        description: Pick the folder that holds your papers, images and notes
+      saveFile:
+        title: Save
+      openCurrentProjectFileFolder:
+        title: Show in Finder
+      researchFocusWorkspace:
+        title: Workspace
+        description: Go back to the current workspace board
+      researchToggleAIChat:
+        title: AI Chat
+        description: Show or hide the AI chat panel on the right
+      researchToggleFileManager:
+        title: Files
+        description: Show or hide the file panel on the left
+      clickAppMenuSettingsButton:
+        title: Settings…
+      openAboutWindow:
+        title: About Research Workbench
+  files:
+    title: Files
+    placeholder: File panel (coming soon)
+    emptyHint: Pick the folder that holds your papers, images and notes. Its files will be listed here. The app only reads and writes inside this folder.
+    chooseResearchFolder: Choose research folder
+    chooseFolder: Choose folder
+    chooseFolderDialogTitle: Choose research folder
+    refresh: Refresh
+    newWorkspace: New workspace
+    searchPlaceholder: Search file names
+    loading: Reading folder…
+    loadFailed: "Can't read this folder: {{error}}"
+    retry: Retry
+    noMatch: No matching files
+    opened: Opened
+    workspaceRowHint: Click to open this workspace
+    fileRowHint: Double-click to open with the default app, drag onto the board to make a card
+    truncated: "Too many files, only the first {{count}} are listed"
+    unreadableDirs: "{{count}} subfolder(s) couldn't be read and were skipped"
+    setRootFailed: "Couldn't set the research folder: {{error}}"
+    noRoot: Choose a research folder first
+    outsideFolder: "This file is outside the research folder and was not opened: {{path}}"
+    sections:
+      workspace: Workspaces
+      pdf: Papers
+      image: Images
+      markdown: Notes
+    sectionEmpty:
+      workspace: No workspaces yet. Use "New workspace" above to create one
+      pdf: Put PDFs into the research folder and they show up here
+      image: No images yet
+      markdown: No Markdown notes yet
+    workspaceName:
+      empty: The workspace name can't be empty
+      invalidChars: 'Names can''t contain any of: \ / : * ? " < > |'
+      hidden: Names can't start with "." or "~$" or contain "_backup", or the file panel would hide them
+      exists: '"{{name}}.prg" already exists, please pick another name'
+  card:
+    title: File card
+    kind:
+      pdf: PDF
+      image: Image
+      markdown: Note
+    pages: "{{count}} pages"
+    creating: "Reading {{count}} file(s) to make cards…"
+    missing: File missing
+    missingHint: The original file is gone. It may have been moved, renamed or deleted
+    missingToast: "File missing: {{path}}"
+    openHint: Double-click to open the original file
+    unsupported: "These files can't become cards (only PDF, images and Markdown): {{names}}"
+    readProblem: "\"{{name}}\": {{problem}}"
+    readFailed: "Some files could not be read:\n{{details}}"
+    pdfLocked: This PDF is password protected, so its content can't be read
+    pdfBroken: "Could not read the PDF: {{error}}"
+    pdfNoText: This PDF has no selectable text. It may be a scan
+    thumbnailFailed: "Could not make a thumbnail: {{error}}"
+  drop:
+    title: Place on the board
+    hint: Release to place the files on the board
+    hintDetail: PDF, images and Markdown are supported; .prg files open as workspaces
+    unsupported: "File type not supported yet: {{names}}"
+    separator: ", "
+    andMore: " and others ({{count}} in total)"
+    noBoard: Open or create a workspace first, then drag the files in again
+    failed: "Could not place the files: {{message}}"
+    cancel: Cancel
+    copied: "Copied {{count}} file(s) to {{folder}}"
+    copy:
+      title: These files are not in your research folder
+      description: "Copy them to {{folder}} and then place them on the board?\n{{names}}"
+      confirm: Copy and place
+    noFolder:
+      title: No research folder yet
+      description: "Choose a research folder and these files will be copied into its \"导入\" (import) subfolder, then placed on the board.\nOr skip copying and link to the files where they are now."
+      choose: Choose research folder
+      useOriginal: Link original files
+  workspace:
+    title: Workspace
+    noFolder: No research folder chosen yet
+    empty: No workspaces in the research folder yet
+    opened: Open
+    new: New workspace
+    chooseFolder: Choose research folder
+    changeFolder: Change folder
+    listFailed: "Couldn't read the workspace list: {{message}}"
+    failed: "Something went wrong: {{message}}"
+    newTitle: New workspace
+    newDescription: Give the workspace a name. It is saved as a .prg file in your research folder.
+    newPlaceholder: "e.g. Literature review"
+    save:
+      sidecarFailed: "The workspace was saved, but its AI-readable copy (in the .workbench folder) couldn't be written: {{error}}"
+      outsideFolder: "Not saved: please save the workspace inside the research folder ({{root}}). You picked {{path}}"
+  ai:
+    title: AI assistant
+    noWorkspace: Open a workspace first
+    noWorkspaceHint: The AI reads the cards, links and groups on the current board. Open a workspace and start asking.
+    setupTitle: Set up the AI API in Settings first
+    setupDescription: "Still missing: {{missing}}. Fill these in and you can start asking."
+    setupMissingSeparator: ", "
+    setupMissing:
+      baseUrl: API URL
+      model: model name
+      apiKey: API key
+    openSettings: Open AI settings
+    emptyTitle: Ask the AI about your line of thought
+    emptyDescription: The AI reads the cards, links, groups and file excerpts on the current board to sum up your reasoning and find gaps. It only reads the board and never changes it.
+    quickPrompts:
+      lineOfThought: What is my line of thought?
+      whatIsMissing: What is missing?
+    inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
+  welcome:
+    title: Welcome to Research Workbench
+    subtitle: Lay out papers, images and notes on a board, sort out your ideas, then ask the AI what is still missing
+    folder: Research folder
+    chooseFolder: Choose research folder
+    changeFolder: Choose another folder
+    noFolderHint: Pick the folder that holds your papers and notes. Workspaces are saved there too.
+    workspaces: Workspaces
+    newWorkspace: New workspace
+    noWorkspaces: No workspaces in this folder yet. Create one to get started.
+    draft: Just sketch for now (temporary draft)
+    openOther: Open another workspace file
+    settings: Settings
+    howTo:
+      title: Get started in three steps
+      step1: Choose a research folder and put your papers (PDF), images and notes in it
+      step2: Create a workspace, drag files from the file panel onto the board, then connect, group and write down ideas
+      step3: Open the AI chat and let it help you organize the board and spot gaps
+  settings:
+    title: Research Workbench

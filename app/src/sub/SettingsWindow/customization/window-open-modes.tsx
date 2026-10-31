@@ -37,6 +37,7 @@ const WINDOW_LABELS: Record<SubWindowId, string> = {
   CollaborationWindow: "协作",
   EditUrlNodeLinkWindow: "编辑 URL 节点链接",
   ExportPngWindow: "导出 PNG",
+  FileManagerWindow: "文件面板",
   FindWindow: "搜索",
   FormWindow: "表单",
   GenerateNodeTree: "生成节点群",

@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { FeatureFlags } from "@/core/service/FeatureFlags";
 import { getDeviceId } from "@/utils/otherApi";
 import { fetch } from "@tauri-apps/plugin-http";
@@ -13,6 +14,7 @@ export namespace Telemetry {
    * @returns
    */
   export async function event(event: string, data: any = {}) {
+    if (isResearchShell()) return; // 科研工作台的数据只留在本机
     if (import.meta.env.DEV) return; // 本地开发模式就不发了
     if (!FeatureFlags.TELEMETRY) return;
     if (!Settings.telemetry) return;

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   config: [] as any[],
+  settings: {} as Record<string, unknown>,
   project: undefined as unknown,
   bindings: new Map<string, any>(),
   installed: undefined as any,
@@ -23,7 +24,9 @@ vi.mock("./native-menu-icon", () => ({
 }));
 
 vi.mock("@/core/Project", () => ({ Project: class {} }));
-vi.mock("@/core/service/Settings", () => ({ Settings: { use: () => [state.config] } }));
+vi.mock("@/core/service/Settings", () => ({
+  Settings: { use: (key: string) => [key === "globalMenuConfig" ? state.config : state.settings[key]] },
+}));
 vi.mock("@/core/service/controlService/shortcutKeysEngine/KeyBindsUI", () => ({
   KeyBindsUI: { getUIKeyBind: (id: string) => state.bindings.get(id) },
 }));
@@ -125,9 +128,11 @@ beforeEach(() => {
     { type: "topMenu", id: "actions", children: [] },
     { type: "topMenu", id: "extensions", children: [] },
   ];
+  state.settings = { researchShowFullMenu: false };
   state.bindings.clear();
   state.bindings.set("openSettings", { onPress: vi.fn() });
   state.bindings.set("openAboutWindow", { onPress: vi.fn() });
+  state.bindings.set("clickAppMenuSettingsButton", { onPress: vi.fn() });
   state.project = undefined;
   state.installed = undefined;
   state.fail = false;
@@ -147,6 +152,11 @@ beforeEach(() => {
 });
 
 describe("macOS system menus", () => {
+  beforeEach(() => {
+    vi.stubEnv("LR_RESEARCH_SHELL", "false");
+    return () => vi.unstubAllEnvs();
+  });
+
   it("replaces About with Settings in the application menu and preserves system actions", async () => {
     const ready = vi.fn();
     NativeMacosMenu({ onReady: ready });
@@ -193,5 +203,81 @@ describe("macOS system menus", () => {
     NativeMacosMenu({ onReady: ready });
     await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(false));
     expect(state.errors).toHaveBeenCalledOnce();
+  });
+});
+
+describe("macOS system menus in the research shell", () => {
+  it("shows About and Settings first, then File, Edit, View and Window with text titles", async () => {
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const entries = state.installed.options.items;
+    expect(entries.map((entry: any) => entry.options.text)).toEqual([
+      "Project Graph",
+      "file",
+      "edit",
+      "view",
+      "window",
+    ]);
+    expect(entries.slice(1).every((entry: any) => entry.options.icon === undefined)).toBe(true);
+    expect(state.invoke).toHaveBeenCalledWith("style_macos_menu_icons", { icons: [] });
+
+    const application = entries[0].options.items;
+    expect(application.map((item: any) => item.options.text ?? item.options.item)).toEqual([
+      "openAboutWindow",
+      "Separator",
+      "clickAppMenuSettingsButton",
+      "Services",
+      "Quit",
+    ]);
+    application[0].options.action();
+    await vi.waitFor(() => expect(state.bindings.get("openAboutWindow").onPress).toHaveBeenCalledOnce());
+
+    expect(entries[1].options.items.map((item: any) => item.options.text ?? item.options.item)).toEqual([
+      "newResearchWorkspace",
+      "researchChooseFolder",
+      "Separator",
+      "saveFile",
+      "openCurrentProjectFileFolder",
+    ]);
+    expect(entries[2].options.items.map((item: any) => item.options.item)).toEqual([
+      "Cut",
+      "Copy",
+      "Paste",
+      "SelectAll",
+    ]);
+    expect(entries[3].options.items.map((item: any) => item.options.text)).toEqual([
+      "researchFocusWorkspace",
+      "researchToggleAIChat",
+      "researchToggleFileManager",
+    ]);
+    expect(entries[4].options.items[0].options.text).toBe("Minimize");
+    expect(entries[4].options.systemWindowMenu).toBe(true);
+  });
+
+  it("falls back to the full menu when researchShowFullMenu is on", async () => {
+    state.settings.researchShowFullMenu = true;
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const entries = state.installed.options.items;
+    expect(entries.map((entry: any) => entry.options.text)).toEqual([
+      "Project Graph",
+      "file",
+      "actions",
+      "view",
+      "ai",
+      "extensions",
+      "window",
+    ]);
+  });
+
+  it("hides recent files outside the research folder", async () => {
+    state.settings.researchShowFullMenu = true;
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const file = state.installed.options.items.find((entry: any) => entry.options.text === "file");
+    expect(file.options.items[0].options.items).toEqual([]);
   });
 });

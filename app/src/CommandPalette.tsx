@@ -1,6 +1,9 @@
+import { isRecentFileVisible, keyBindI18nKey, RESEARCH_COMMAND_IDS } from "@/core/research/ResearchMenu";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { onOpenFile } from "@/core/service/GlobalMenu";
+import { Settings } from "@/core/service/Settings";
 import { formatKeyBindSequenceToString } from "@/utils/keyDisplay";
 import { PathString } from "@/utils/pathString";
 import { useAtom } from "jotai";
@@ -25,14 +28,19 @@ export default function CommandPalette({ zoomStyle }: { zoomStyle?: React.CSSPro
   const [commandPaletteVisible, setCommandPaletteVisible] = useAtom(commandPaletteVisibleAtom);
   const [tab] = useAtom(activeResourceTabAtom);
   const { t } = useTranslation("keyBinds");
-  const uiKeyBinds = KeyBindsUI.use();
+  const allUIKeyBinds = KeyBindsUI.use();
+  const [showFullMenu] = Settings.use("researchShowFullMenu");
+  const researchCommandsOnly = isResearchShell() && !showFullMenu;
+  const uiKeyBinds = researchCommandsOnly
+    ? allUIKeyBinds.filter((kb) => RESEARCH_COMMAND_IDS.has(kb.id))
+    : allUIKeyBinds;
   const [recentFiles, setRecentFiles] = useState<RecentFileManager.RecentFile[]>([]);
 
   useEffect(() => {
     if (!commandPaletteVisible) return;
     void (async () => {
       await RecentFileManager.sortTimeRecentFiles();
-      setRecentFiles(await RecentFileManager.getRecentFiles());
+      setRecentFiles((await RecentFileManager.getRecentFiles()).filter((file) => isRecentFileVisible(file.uri)));
     })();
   }, [commandPaletteVisible]);
 
@@ -69,7 +77,9 @@ export default function CommandPalette({ zoomStyle }: { zoomStyle?: React.CSSPro
           )}
           <CommandGroup heading="命令">
             {uiKeyBinds.map((kb) => {
-              const i18n = t(kb.id, { returnObjects: true }) as { title?: string; description?: string } | undefined;
+              const i18n = t(keyBindI18nKey(kb.id), { returnObjects: true }) as
+                | { title?: string; description?: string }
+                | undefined;
               const title = i18n?.title ?? kb.id;
               const description = i18n?.description ?? "";
               const shortcut = kb.key ? formatKeyBindSequenceToString(kb.key, "+", ", ") : "";
@@ -78,7 +88,13 @@ export default function CommandPalette({ zoomStyle }: { zoomStyle?: React.CSSPro
                   key={kb.id}
                   value={`command ${kb.id} ${title} ${description} ${shortcut}`}
                   keywords={[kb.id, title, description, shortcut]}
-                  onSelect={() => {
+                  onSelect={async () => {
+                    if (researchCommandsOnly) {
+                      setCommandPaletteVisible(false);
+                      const project = tab instanceof Project ? tab : undefined;
+                      if (await kb.when(project)) kb.onPress(project);
+                      return;
+                    }
                     kb.onPress(tab as Project);
                     setCommandPaletteVisible(false);
                   }}

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
-const APP_IDENTIFIER = "liren.project-graph";
+const APP_IDENTIFIER = "com.ai4know.researchworkbench";
 const PROJECT_OWNERSHIP_DIRECTORY = "project-ownership";
 
 export function resolveProjectGraphAppDataDirectories(

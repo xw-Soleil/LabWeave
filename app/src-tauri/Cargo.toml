@@ -12,6 +12,12 @@ default-run = "project-graph"
 name = "project_graph_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[features]
+default = ["research-shell"]
+# Research Workbench build: no updater, no OS-global hotkeys, no run_command / MCP stdio / raw std::fs commands.
+# Build with --no-default-features to get the upstream Project Graph command set back.
+research-shell = []
+
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
 

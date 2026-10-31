@@ -1,4 +1,10 @@
 import { Project } from "@/core/Project";
+import {
+  RESEARCH_DISABLED_KEYBIND_IDS,
+  RESEARCH_KEYBIND_DEFAULTS_MARKER,
+  RESEARCH_SHELL_SCOPE_KEYBIND_IDS,
+} from "@/core/research/ResearchMenu";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { activeResourceTabAtom, activeTabAtom, store } from "@/state";
 import {
   formatEmacsKey,
@@ -213,6 +219,9 @@ export namespace KeyBindsUI {
    */
   export async function registerAllUIKeyBinds() {
     const store = await createStore("keybinds2.json");
+    // 默认键位第一次启动就写进了 keybinds2.json，改代码里的默认值管不到已有的文件；
+    // 所以第一次以科研模式启动时，把冲突的那几个改成科研模式的默认值，之后尊重用户自己的修改
+    const applyResearchDefaults = isResearchShell() && !(await store.get(RESEARCH_KEYBIND_DEFAULTS_MARKER));
     for (const keybind of allKeyBinds.filter((keybindItem) => !keybindItem.isGlobal)) {
       const savedData = await store.get<any>(keybind.id);
       let key: string;
@@ -224,6 +233,10 @@ export namespace KeyBindsUI {
         if (isMac) {
           key = transEmacsKeyWinToMac(key);
         }
+        isEnabled = keybind.defaultEnabled !== false;
+        await store.set(keybind.id, { key, isEnabled });
+      } else if (applyResearchDefaults && RESEARCH_DISABLED_KEYBIND_IDS.has(keybind.id)) {
+        key = isMac ? transEmacsKeyWinToMac(keybind.defaultKey) : keybind.defaultKey;
         isEnabled = keybind.defaultEnabled !== false;
         await store.set(keybind.id, { key, isEnabled });
       } else if (typeof savedData === "string") {
@@ -247,6 +260,9 @@ export namespace KeyBindsUI {
         keybind.when,
         keybind.icon,
       );
+    }
+    if (applyResearchDefaults) {
+      await store.set(RESEARCH_KEYBIND_DEFAULTS_MARKER, true);
     }
     await store.save();
   }
@@ -490,6 +506,35 @@ export namespace KeyBindsUI {
     );
   }
 
+  /** 焦点在侧边面板（ComponentTab）上时，科研模式的外壳快捷键改用最近激活的白板，Cmd+S 才能保存 */
+  function projectForKeyBind(id: string, focusedProject: Project | undefined): Project | undefined {
+    if (focusedProject || !isResearchShell() || !RESEARCH_SHELL_SCOPE_KEYBIND_IDS.has(id)) return focusedProject;
+    return getActiveProject();
+  }
+
+  /**
+   * 科研模式下在文本框（比如 AI 对话）里打字时，Cmd+S、Cmd+1/2/3 这几个外壳快捷键也要能用。
+   * 只认带 Ctrl/Cmd 的单键快捷键，不会吞掉正常输入；preventDefault 必须在第一个 await 之前调用才有效。
+   */
+  async function runShellKeyBindInTextInput(event: KeyboardEvent) {
+    if (!isResearchShell() || event.isComposing || !(event.ctrlKey || event.metaKey)) return;
+    const keyBind = allUIKeyBinds.find(
+      (uiKeyBind) =>
+        uiKeyBind.isEnabled &&
+        !uiKeyBind.isContinuous &&
+        RESEARCH_SHELL_SCOPE_KEYBIND_IDS.has(uiKeyBind.id) &&
+        uiKeyBind.key.trim() !== "" &&
+        !/\s/.test(uiKeyBind.key.trim()) &&
+        matchEmacsKeyPress(uiKeyBind.key, [event]),
+    );
+    if (!keyBind) return;
+    event.preventDefault();
+    const project = getActiveProject();
+    if (await keyBind.when(project)) {
+      keyBind.onPress(project);
+    }
+  }
+
   async function check(): Promise<boolean> {
     // 如果有文本输入元素获得焦点，不处理键盘事件
     if (!shouldProcessKeyboardEvent()) {
@@ -497,8 +542,7 @@ export namespace KeyBindsUI {
       userEventQueue.clear();
       return false;
     }
-    const tab = store.get(activeTabAtom);
-    const activeProject = tab instanceof Project ? tab : undefined;
+    const activeProject = getFocusedProject();
 
     // 收集所有匹配的快捷键，按序列长度降序尝试执行，只执行最长匹配
     const matched: { uiKeyBind: (typeof allUIKeyBinds)[number]; seqLength: number }[] = [];
@@ -516,8 +560,9 @@ export namespace KeyBindsUI {
     let maxExecutedLength = -1;
     for (const { uiKeyBind, seqLength } of matched) {
       if (maxExecutedLength >= 0 && seqLength < maxExecutedLength) break;
-      if (!(await uiKeyBind.when(activeProject))) continue;
-      uiKeyBind.onPress(uiKeyBind.id.startsWith("ext:") && activeProject ? proxy(activeProject) : activeProject);
+      const project = projectForKeyBind(uiKeyBind.id, activeProject);
+      if (!(await uiKeyBind.when(project))) continue;
+      uiKeyBind.onPress(uiKeyBind.id.startsWith("ext:") && project ? proxy(project) : project);
       if (uiKeyBind.onRelease && uiKeyBind.key.length === 1) {
         pressedSingleKeyBinds.add(uiKeyBind.key);
       }
@@ -548,6 +593,7 @@ export namespace KeyBindsUI {
     if (!shouldProcessKeyboardEvent()) {
       // 清空队列，防止事件积累
       userEventQueue.clear();
+      await runShellKeyBindInTextInput(event);
       return;
     }
     if (["control", "alt", "shift", "meta"].includes(event.key.toLowerCase())) return;

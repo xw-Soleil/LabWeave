@@ -5,6 +5,7 @@ import { ConnectableEntity } from "@/core/stage/stageObject/abstract/Connectable
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
 import { ExtensionEntity } from "@/core/stage/stageObject/entity/ExtensionEntity";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
@@ -18,6 +19,7 @@ import { DetailsManager } from "@/core/stage/stageObject/tools/entityDetailsMana
 import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { ExtensionEntityRenderer } from "./ExtensionEntityRenderer";
+import { renderFileCard } from "./FileCardRenderer";
 
 /**
  * 处理节点相关的绘制
@@ -195,6 +197,8 @@ export class EntityRenderer {
       this.project.referenceBlockRenderer.render(entity);
     } else if (entity instanceof ExtensionEntity) {
       this.extensionEntityRenderer.render(entity);
+    } else if (entity instanceof FileCardNode) {
+      renderFileCard(this.project, entity);
     }
     // details右上角小按钮
     if (this.project.camera.currentScale > 0.065) {

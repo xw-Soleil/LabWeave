@@ -13,6 +13,8 @@ import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
+// 除了提供 getFileCardNodes，这个 import 还让桌面端和命令行在反序列化前都登记了 FileCardNode 类
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
@@ -129,6 +131,9 @@ export class StageManager {
   }
   getUrlNodes(): UrlNode[] {
     return this.project.stage.filter((node) => node instanceof UrlNode);
+  }
+  getFileCardNodes(): FileCardNode[] {
+    return this.project.stage.filter((node) => node instanceof FileCardNode);
   }
   // getPortalNodes(): PortalNode[] {
   //   return this.project.stage.filter((node) => node instanceof PortalNode);

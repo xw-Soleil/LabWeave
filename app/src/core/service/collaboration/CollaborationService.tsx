@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import type { Service } from "@/core/interfaces/Service";
 import { UserState } from "@/core/service/UserState";
 import { Vector } from "@graphif/data-structures";
@@ -49,6 +50,7 @@ export type RemoteCursorChat = RemoteCursor & {
   text: string;
 };
 
+const RESEARCH_SHELL_NO_COLLAB = "科研工作台只在本机工作，不支持多人协作。";
 const CURSOR_SEND_INTERVAL_MS = 33;
 const CURSOR_CHAT_TIMEOUT_MS = 5_000;
 
@@ -268,6 +270,7 @@ export class CollaborationService implements Service {
   }
 
   async createRoom(): Promise<{ roomId: string; inviteCode: string }> {
+    if (isResearchShell()) throw new Error(RESEARCH_SHELL_NO_COLLAB);
     const session = await UserState.getSession();
     if (!session?.token) throw new Error("请先登录 Graphif 账号");
 
@@ -295,6 +298,7 @@ export class CollaborationService implements Service {
   }
 
   async joinRoom(inviteCode: string): Promise<void> {
+    if (isResearchShell()) throw new Error(RESEARCH_SHELL_NO_COLLAB);
     const session = await UserState.getSession();
     if (!session?.token) throw new Error("请先登录 Graphif 账号");
 

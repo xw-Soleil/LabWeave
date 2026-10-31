@@ -1,5 +1,7 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project, ProjectState } from "@/core/Project";
+import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
+import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { ViewFlashEffect } from "@/core/service/feedbackService/effectEngine/concrete/ViewFlashEffect";
@@ -58,7 +60,7 @@ import { Color, Vector } from "@graphif/data-structures";
 import { serialize } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
 import { Encoder } from "@msgpack/msgpack";
-import { appCacheDir, appDataDir, dataDir, join, tempDir } from "@tauri-apps/api/path";
+import { appCacheDir, appDataDir, join, tempDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { exists, mkdir, writeFile } from "@tauri-apps/plugin-fs";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -378,6 +380,45 @@ async function exportDeepLinkWithDialog(
   if (!url) return;
   await Dialog.copy("导出 prg 协议链接", description, url);
 }
+
+// 只发事件，真正干活的面板和工作区模块自己监听。whenAlways 让它们在侧边面板有焦点时也能触发。
+const researchKeyBinds: KeyBindItem[] = [
+  {
+    id: "researchFocusWorkspace",
+    defaultKey: "C-1",
+    icon: LayoutDashboard,
+    when: whenAlways,
+    onPress: () => emitResearchEvent("focusWorkspace"),
+  },
+  {
+    id: "researchToggleAIChat",
+    defaultKey: "C-2",
+    icon: Bot,
+    when: whenAlways,
+    onPress: () => emitResearchEvent("toggleAI"),
+  },
+  {
+    id: "researchToggleFileManager",
+    defaultKey: "C-3",
+    icon: FolderTree,
+    when: whenAlways,
+    onPress: () => emitResearchEvent("toggleFiles"),
+  },
+  {
+    id: "newResearchWorkspace",
+    defaultKey: "C-n",
+    icon: FilePlus,
+    when: whenAlways,
+    onPress: () => emitResearchEvent("newWorkspace"),
+  },
+  {
+    id: "researchChooseFolder",
+    defaultKey: "",
+    icon: FolderOpen,
+    when: whenAlways,
+    onPress: () => emitResearchEvent("chooseFolder"),
+  },
+];
 
 export const allKeyBinds: KeyBindItem[] = [
   {
@@ -1533,17 +1574,15 @@ export const allKeyBinds: KeyBindItem[] = [
     defaultKey: "C-s",
     icon: Save,
     when: whenHasProject,
-    onPress: async () => {
-      const tab = store.get(activeTabAtom);
-      const activeProject = tab instanceof Project ? tab : undefined;
-      if (activeProject) {
-        activeProject.camera.clearMoveCommander();
-        await activeProject.save();
-        if (Settings.clearHistoryWhenManualSave) {
-          activeProject.historyManager.clearHistory();
-        }
-        await RecentFileManager.addRecentFileByUri(activeProject.uri);
+    // 用传进来的工程：菜单传的是最近激活的白板，侧边面板有焦点时 activeTabAtom 不是工程
+    onPress: async (project) => {
+      if (!project) return;
+      project.camera.clearMoveCommander();
+      await project.save();
+      if (Settings.clearHistoryWhenManualSave) {
+        project.historyManager.clearHistory();
       }
+      await RecentFileManager.addRecentFileByUri(project.uri);
     },
   },
   {
@@ -1626,14 +1665,12 @@ export const allKeyBinds: KeyBindItem[] = [
     defaultKey: "C-S-l",
     icon: Folder,
     when: whenHasProject,
-    onPress: () => {
-      const tab = store.get(activeTabAtom);
-      const activeProject = tab instanceof Project ? tab : undefined;
-      if (!activeProject || activeProject.isDraft) {
+    onPress: (project) => {
+      if (!project || project.isDraft) {
         toast.error("当前没有可用的工程文件");
         return;
       }
-      openCurrentProjectFolder(activeProject);
+      openCurrentProjectFolder(project);
     },
   },
 
@@ -3853,7 +3890,7 @@ export const allKeyBinds: KeyBindItem[] = [
     icon: FolderCog,
     when: whenAlways,
     onPress: async () => {
-      shellOpen(await join(await dataDir(), "liren.project-graph"));
+      shellOpen(await appDataDir());
     },
   },
   {
@@ -4482,7 +4519,17 @@ export const allKeyBinds: KeyBindItem[] = [
       store.set(commandPaletteVisibleAtom, !store.get(commandPaletteVisibleAtom));
     },
   },
+  ...(isResearchShell() ? researchKeyBinds : []),
 ];
+
+if (isResearchShell()) {
+  for (const keyBind of allKeyBinds) {
+    if (RESEARCH_DISABLED_KEYBIND_IDS.has(keyBind.id)) {
+      keyBind.defaultKey = "";
+      keyBind.defaultEnabled = false;
+    }
+  }
+}
 
 export function getKeyBindTypeById(id: string): "global" | "software" {
   for (const keyBind of allKeyBinds) {

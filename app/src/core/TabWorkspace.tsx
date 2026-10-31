@@ -15,6 +15,7 @@ import { startTransition } from "react";
 import { ComponentTab, ComponentTabOptions, isResourceTab, Tab } from "./Tab";
 import {
   createTabGroup,
+  DEFAULT_SIDE_SPLIT_RATIO,
   findTabGroup,
   findTabGroupByTabId,
   FIXED_SIDE_GROUP_IDS,
@@ -78,6 +79,29 @@ function dockToSideGroup(tabId: string, edge: FixedSideEdge) {
   store.set(activeGroupIdAtom, fixedId);
 }
 
+/**
+ * Insert a newly opened docked tab into the active group.
+ * Resource tabs (projects) skip a focused fixed side group, so opening a file from a side panel
+ * never buries the project inside that narrow panel.
+ */
+function insertDockedTab(root: TabGroupNode | null, tab: Tab): TabGroupNode | null {
+  const active = findTabGroup(root, store.get(activeGroupIdAtom) ?? "") ?? getTabGroups(root)[0];
+  if (!active) {
+    const group = createTabGroup([tab.id]);
+    store.set(activeGroupIdAtom, group.id);
+    return group;
+  }
+  if (!isResourceTab(tab) || !isFixedSideGroupId(active.id)) return insertTabIntoGroup(root, active.id, tab.id);
+  const main = getTabGroups(root).find((group) => !isFixedSideGroupId(group.id));
+  if (main) return insertTabIntoGroup(root, main.id, tab.id);
+  // Only side panels are open: give the project its own main group next to them.
+  const mainOnLeft = active.id === FIXED_SIDE_GROUP_IDS.right;
+  const sizes: [number, number] = mainOnLeft
+    ? [100 - DEFAULT_SIDE_SPLIT_RATIO, DEFAULT_SIDE_SPLIT_RATIO]
+    : [DEFAULT_SIDE_SPLIT_RATIO, 100 - DEFAULT_SIDE_SPLIT_RATIO];
+  return splitTabGroup(root, active.id, createTabGroup([tab.id]), mainOnLeft ? "left" : "right", undefined, sizes);
+}
+
 function constrainRect(rect: Rectangle) {
   const result = rect.clone();
   if (result.width >= 0 && result.left + result.width > innerWidth) {
@@ -118,14 +142,7 @@ export namespace TabWorkspace {
     const knownIds = new Set(getTabGroups(root).flatMap((group) => group.tabIds));
     const missing = dockedTabs.filter((tab) => !knownIds.has(tab.id));
     if (missing.length === 0) return;
-    const target = findTabGroup(root, store.get(activeGroupIdAtom) ?? "") ?? getTabGroups(root)[0];
-    if (!target) {
-      const group = createTabGroup(missing.map((tab) => tab.id));
-      store.set(tabGroupRootAtom, group);
-      store.set(activeGroupIdAtom, group.id);
-      return;
-    }
-    for (const tab of missing) root = insertTabIntoGroup(root, target.id, tab.id);
+    for (const tab of missing) root = insertDockedTab(root, tab);
     store.set(tabGroupRootAtom, root);
   }
 
@@ -134,15 +151,7 @@ export namespace TabWorkspace {
     tab.zIndex = maxZIndex() + 1;
     store.set(tabsAtom, [...store.get(tabsAtom), tab]);
     if (tab.layout === "docked") {
-      const root = store.get(tabGroupRootAtom);
-      const target = findTabGroup(root, store.get(activeGroupIdAtom) ?? "") ?? getTabGroups(root)[0];
-      if (target) {
-        store.set(tabGroupRootAtom, insertTabIntoGroup(root, target.id, tab.id));
-      } else {
-        const group = createTabGroup([tab.id]);
-        store.set(tabGroupRootAtom, group);
-        store.set(activeGroupIdAtom, group.id);
-      }
+      store.set(tabGroupRootAtom, insertDockedTab(store.get(tabGroupRootAtom), tab));
     }
     focus(tab.id);
 

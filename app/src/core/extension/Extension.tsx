@@ -6,9 +6,11 @@ import KeyBind from "@/components/ui/key-bind";
 import Markdown from "@/components/ui/markdown";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Themes } from "@/core/service/Themes";
 import { PrgMetadata } from "@/types/metadata";
 import { Decoder, Encoder } from "@msgpack/msgpack";
+import i18next from "i18next";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { mkdir, writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
@@ -242,6 +244,11 @@ export class Extension extends Tab {
                     </Button>
                   )}
                 </>
+              ) : isResearchShell() ? (
+                // ExtensionManager 在科研模式下不运行扩展，装上也用不了，所以不给安装按钮
+                <span className="text-muted-foreground text-sm">
+                  {i18next.t("shell.extensionsDisabled", { ns: "research" })}
+                </span>
               ) : (
                 <Button
                   onClick={async () => {

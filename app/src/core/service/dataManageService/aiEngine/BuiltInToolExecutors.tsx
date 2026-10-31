@@ -5,15 +5,16 @@ import { ConnectableEntity } from "@/core/stage/stageObject/abstract/Connectable
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import type { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { Color, Vector } from "@graphif/data-structures";
+import { serialize } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
 import type { BuiltInToolExecutor } from "./BuiltInToolRegistry";
 import { findFirstImageInChildren } from "./imageNodeFinder";
 import type { ImageOrientation, OpenverseImageCandidate } from "./OpenverseImageSearch";
-import { parseAIRequestHeaders } from "./AIRequestHeaders";
 import { resolveHttpRequestBody } from "./AIHttpBody";
 
 const builtInToolExecutorLoaders: Record<string, () => BuiltInToolExecutor> = {};
@@ -28,6 +29,9 @@ export function loadBuiltInToolExecutor(name: string): BuiltInToolExecutor {
   if (!loadExecutor) throw new Error(`Missing built-in tool executor: ${name}`);
   return loadExecutor();
 }
+
+// 工具结果里只放摘要开头，完整摘要用 dump_workspace 取
+const FILE_CARD_EXCERPT_HEAD_LENGTH = 500;
 
 function toAgentObjectInfo(object: StageObject, references: AIObjectReferenceRegistry) {
   const rect = object.collisionBox.getRectangle();
@@ -44,6 +48,13 @@ function toAgentObjectInfo(object: StageObject, references: AIObjectReferenceReg
   }
   const color = "color" in object ? object.color : undefined;
   if (color instanceof Color) info.color = (color as { toArray(): unknown }).toArray();
+  if (object instanceof FileCardNode) {
+    info.title = object.title;
+    info.fileKind = object.fileKind;
+    info.path = object.sourcePath;
+    info.pageCount = object.pageCount;
+    info.excerpt = object.excerpt.slice(0, FILE_CARD_EXCERPT_HEAD_LENGTH);
+  }
   if (object instanceof Section) {
     info.childRefs = object.children.map((child) => references.getOrCreateRef(child));
   }
@@ -839,30 +850,72 @@ addExecutor("recognize_image", () => async (project, { ref, prompt }, references
   }
 });
 
+addExecutor("dump_workspace", () => async (project) => {
+  const { buildAiSidecar } = await import("@/core/research/AiSidecarBuilder");
+  return buildAiSidecar({
+    serializedStage: serialize(project.stage),
+    tags: project.tags,
+    metadata: project.metadata,
+    workspaceFile: project.uri.scheme === "file" ? (project.uri.path.split("/").pop() ?? "") : "",
+  }).json;
+});
+addExecutor("create_file_card", () => async (project, { path, x, y }, references) => {
+  const [{ createFileCards }, { ResearchFolder }, { fileKindOf }] = await Promise.all([
+    import("@/core/research/FileCardFactory"),
+    import("@/core/research/ResearchFolder"),
+    import("@/core/research/ResearchShell"),
+  ]);
+  if (!fileKindOf(path)) {
+    return { success: false, error: "只支持 PDF、图片（png/jpg/jpeg/webp/gif）和 Markdown 文件" };
+  }
+  if (!ResearchFolder.getRoot()) {
+    return { success: false, error: "还没有选择研究文件夹" };
+  }
+  const absPath = ResearchFolder.toAbsolute(path);
+  if (!ResearchFolder.isInside(absPath)) {
+    return { success: false, error: "文件不在研究文件夹里" };
+  }
+  const location =
+    x !== undefined && y !== undefined
+      ? new Vector(x, y)
+      : getViewportCenteredLocation(project, new Vector(FileCardNode.width, FileCardNode.height));
+  const [card] = await createFileCards(project, [absPath], location);
+  if (!card) {
+    return { success: false, error: "没有创建出卡片" };
+  }
+  return {
+    success: true,
+    ref: references.getOrCreateRef(card),
+    title: card.title,
+    fileKind: card.fileKind,
+    path: card.sourcePath,
+  };
+});
+
 Object.freeze(builtInToolExecutorLoaders);
 
 async function recognizeImage(dataUrl: string, prompt: string): Promise<string> {
   const { getCliDesktopAcceptanceRecognition } = await import("./CliDesktopAcceptanceAdapter");
   const acceptanceRecognition = getCliDesktopAcceptanceRecognition();
   if (acceptanceRecognition) return acceptanceRecognition;
-  const [{ Settings }, { createOpenAICompatible }, { fetch }, { generateText }] = await Promise.all([
+  const [{ Settings }, { createChatModel, mergeAIRequestHeaders }, { fetch }, { generateText }] = await Promise.all([
     import("@/core/service/Settings"),
-    import("@ai-sdk/openai-compatible"),
+    import("./AIProvider"),
     import("@tauri-apps/plugin-http"),
     import("ai"),
   ]);
-  const provider = createOpenAICompatible({
-    name: "project-graph",
-    baseURL: Settings.aiApiBaseUrl,
-    apiKey: Settings.aiApiKey || undefined,
-    fetch: async (url: any, init: any) => {
+  const model = createChatModel(
+    {
+      aiApiFormat: Settings.aiApiFormat,
+      aiApiBaseUrl: Settings.aiApiBaseUrl,
+      aiApiKey: Settings.aiApiKey,
+      aiModel: Settings.aiModel,
+    },
+    async (url: any, init: any) => {
       const response = await fetch(url.toString(), {
         ...init,
         body: await resolveHttpRequestBody(init?.body),
-        headers: {
-          ...(init?.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init?.headers),
-          ...parseAIRequestHeaders(Settings.aiCustomHeaders),
-        },
+        headers: mergeAIRequestHeaders(init?.headers, Settings.aiCustomHeaders),
         mode: "cors",
       });
       if (!response.ok) {
@@ -871,9 +924,9 @@ async function recognizeImage(dataUrl: string, prompt: string): Promise<string> 
       }
       return response;
     },
-  });
+  );
   const result = await generateText({
-    model: provider.chatModel(Settings.aiModel),
+    model,
     messages: [
       {
         role: "user",

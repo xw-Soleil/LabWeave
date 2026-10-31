@@ -73,17 +73,23 @@ import type { TagManager } from "@/core/stage/stageManager/concreteMethods/Stage
 import { HistoryManager } from "@/core/stage/stageManager/StageHistoryManager";
 import type { StageManager } from "@/core/stage/stageManager/StageManager";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
+import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
+import { isResearchShell, SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, WORKBENCH_DIR } from "@/core/research/ResearchShell";
+import { Settings } from "@/core/service/Settings";
 import { nextProjectIdAtom, store, tabsAtom } from "@/state";
-import { createDefaultMetadata, PrgMetadata } from "@/types/metadata";
+import { createDefaultMetadata, PrgMetadata, readWorkbenchMetadata, WorkbenchMetadata } from "@/types/metadata";
+import { Vector } from "@graphif/data-structures";
 import { deserialize, serialize } from "@graphif/serializer";
 import { Decoder, Encoder } from "@msgpack/msgpack";
 import { BlobReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import i18next from "i18next";
 import { File } from "lucide-react";
 import md5 from "md5";
 import mime from "mime";
 import React from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { URI } from "vscode-uri";
+import { toast } from "sonner";
+import { URI, Utils } from "vscode-uri";
 import { CollaborationService } from "./service/collaboration/CollaborationService";
 import { AutoSaveBackupService } from "./service/dataFileService/AutoSaveBackupService";
 import { generateThumbnail } from "./service/dataGenerateService/generateThumbnail";
@@ -92,6 +98,18 @@ import { compareProjectVersions, parseProjectFile } from "./ProjectFile";
 import { ProjectUpgrader } from "./stage/ProjectUpgrader";
 import { ReferenceManager } from "./stage/stageManager/concreteMethods/StageReferenceManager";
 import { Tab } from "./Tab";
+
+/**
+ * 按需导入：ResearchFolder 负责新建和打开工作区，依赖界面层的模块，静态导入容易和 Project 成环
+ */
+async function loadResearchFolder() {
+  return (await import("@/core/research/ResearchFolder")).ResearchFolder;
+}
+
+/** 提示按纯文本显示，路径和报错里的 / & 不能被转成 HTML 实体 */
+function researchText(key: string, values: Record<string, string>): string {
+  return i18next.t(key, { ns: "research", ...values, interpolation: { escapeValue: false } });
+}
 
 export enum ProjectState {
   /**
@@ -265,6 +283,7 @@ export class Project extends Tab {
       this.references = references;
       this.metadata = upgradedMetadata;
       this.readme = readme;
+      if (isResearchShell()) this.restoreSavedCamera();
 
       // 更新引用关系，包括双向线的偏移状态
       // 注意：这里需要在服务加载后才能调用，所以需要检查服务是否已加载
@@ -330,18 +349,27 @@ export class Project extends Tab {
   }
   async save(options: { includeThumbnail?: boolean } = {}) {
     if (this.isDraft || this.isCollab) {
+      // 科研模式：草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
+      const researchFolder = isResearchShell() ? await loadResearchFolder() : null;
+      const researchRoot = researchFolder?.getRoot() ?? "";
       const path = await saveDialog({
         title: this.isDraft ? "保存草稿" : "保存协作工程",
         filters: [{ name: "Project Graph", extensions: ["prg"] }],
+        defaultPath: researchRoot || undefined,
       });
       if (!path) throw new Error("未选择路径");
+      if (researchRoot && !researchFolder!.isInside(path)) {
+        throw new Error(researchText("workspace.save.outsideFolder", { path, root: researchRoot }));
+      }
       await this.saveAs(URI.file(path), options);
       return;
     }
     try {
       this.isSaving = true;
-      await this.fs.write(this.uri, await this.getFileContent(options));
+      const content = await this.getFileContent(options);
+      await this.fs.write(this.uri, content);
       this.projectState = ProjectState.Saved;
+      await this.writeAiSidecar(this.uri, content);
     } finally {
       this.isSaving = false;
     }
@@ -354,10 +382,14 @@ export class Project extends Tab {
 
     try {
       this.isSaving = true;
+      this.saveAsTargetUri = targetUri;
       const content = await this.getFileContent(options);
+      this.saveAsTargetUri = null;
       await this.projectOwnership.saveAs(targetUri, () => fileSystemProvider.write(targetUri, content));
       this.projectState = ProjectState.Saved;
+      await this.writeAiSidecar(targetUri, content);
     } finally {
+      this.saveAsTargetUri = null;
       this.isSaving = false;
     }
   }
@@ -368,10 +400,89 @@ export class Project extends Tab {
   public readme?: string;
   public wasUpgraded = false;
 
+  /**
+   * getFileContent 生成的字节 → 同一次 serialize 的结果。
+   * save / saveAs 写完 .prg 后用它生成 AI 文字版，不必再 serialize 一遍，getFileContent 的返回值也不用改。
+   */
+  private readonly serializedStageByContent = new WeakMap<Uint8Array, unknown[]>();
+  /** 另存为进行中时的目标位置：getFileContent 据此记录工作区在研究文件夹里的相对路径 */
+  private saveAsTargetUri: URI | null = null;
+
+  private restoreSavedCamera() {
+    const camera = readWorkbenchMetadata(this.metadata)?.camera;
+    if (camera && this.getService("camera")) {
+      this.camera.applySavedView(new Vector(camera.x, camera.y), camera.scale);
+    }
+  }
+
+  /**
+   * 保证工作区有 id，并记下当前视野、相对研究文件夹的位置。
+   * 命令行里没有摄像机服务，原来存的视野保持不变。
+   */
+  private async updateWorkbenchMetadata(targetUri: URI) {
+    const workbench: WorkbenchMetadata = readWorkbenchMetadata(this.metadata) ?? {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+    const camera = this.getService("camera");
+    if (camera?.isInitialViewSettled) {
+      workbench.camera = { x: camera.location.x, y: camera.location.y, scale: camera.currentScale };
+    }
+    if (targetUri.scheme === "file") {
+      const ResearchFolder = await loadResearchFolder();
+      if (ResearchFolder.isInside(targetUri.fsPath)) {
+        workbench.workspacePath = ResearchFolder.toRelative(targetUri.fsPath);
+      } else {
+        delete workbench.workspacePath;
+      }
+    }
+    this.metadata = { ...this.metadata, workbench };
+  }
+
+  /**
+   * 在 <.prg 所在文件夹>/.workbench/ 下写 AI 读的文字版（.ai.json 和 .ai.md）。
+   * 只提示、不抛错：文字版写不出来不能让保存本身失败。
+   * file 协议的 FileSystemProvider 写入本身就是「临时文件 + 改名」（命令行版换成 node:fs 实现，也一样）。
+   */
+  private async writeAiSidecar(targetUri: URI, content: Uint8Array) {
+    if (!isResearchShell() || targetUri.scheme !== "file" || !Settings.writeAiSidecarOnSave) return;
+    const serializedStage = this.serializedStageByContent.get(content);
+    const fileSystemProvider = this.fileSystemProviders.get("file");
+    if (!serializedStage || !fileSystemProvider) return;
+    try {
+      const { json, markdown } = buildAiSidecar({
+        serializedStage,
+        tags: this.tags,
+        metadata: this.metadata,
+        workspaceFile: targetUri.fsPath,
+        researchRoot: (await loadResearchFolder()).getRoot(),
+        readme: this.readme,
+      });
+      const workbenchDir = Utils.joinPath(Utils.dirname(targetUri), WORKBENCH_DIR);
+      const workspaceName = Utils.basename(targetUri).replace(/\.prg$/i, "");
+      if (!(await fileSystemProvider.exists(workbenchDir))) await fileSystemProvider.mkdir(workbenchDir);
+      const encoder = new TextEncoder();
+      await fileSystemProvider.write(
+        Utils.joinPath(workbenchDir, workspaceName + SIDECAR_JSON_SUFFIX),
+        encoder.encode(JSON.stringify(json, null, 2)),
+      );
+      await fileSystemProvider.write(
+        Utils.joinPath(workbenchDir, workspaceName + SIDECAR_MD_SUFFIX),
+        encoder.encode(markdown),
+      );
+    } catch (error) {
+      // 固定 id：自动保存反复失败时只留一条提示
+      toast.warning(researchText("workspace.save.sidecarFailed", { error: String(error) }), {
+        id: "research-ai-sidecar-failed",
+      });
+    }
+  }
+
   // 备份也要用到这个
   async getFileContent(options: { includeThumbnail?: boolean } = {}) {
     const includeThumbnail = options.includeThumbnail !== false;
-    const serializedStage = serialize(this.stage);
+    if (isResearchShell()) await this.updateWorkbenchMetadata(this.saveAsTargetUri ?? this.uri);
+    const serializedStage: unknown[] = serialize(this.stage);
     const encodedStage = this.encoder.encode(serializedStage);
     const uwriter = new Uint8ArrayWriter();
 
@@ -404,6 +515,7 @@ export class Project extends Tab {
     await writer.close();
 
     const fileContent = await uwriter.getData();
+    this.serializedStageByContent.set(fileContent, serializedStage);
     return fileContent;
   }
 

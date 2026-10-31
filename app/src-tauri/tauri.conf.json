@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Project Graph",
+  "productName": "Research Workbench",
   "version": "4.2.6-alpha1",
-  "identifier": "liren.project-graph",
+  "identifier": "com.ai4know.researchworkbench",
   "build": {
     "beforeDevCommand": "pnpm --filter @graphif/project-graph dev",
     "devUrl": "http://localhost:1420",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Project Graph",
+        "title": "科研工作台",
         "url": "/index.html",
         "width": 1200,
         "height": 800,
@@ -34,10 +34,10 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "rpm", "dmg", "app"],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "category": "Productivity",
-    "longDescription": "A simple tool to create topology diagrams.",
-    "shortDescription": "Diagram creator",
+    "longDescription": "A local-only research workbench based on Project Graph: papers, images and notes from one research folder on a whiteboard.",
+    "shortDescription": "Research workbench",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "windows": {
       "nsis": {
@@ -67,8 +67,8 @@
     },
     "fileAssociations": [
       {
-        "name": "Project Graph Document",
-        "description": "Project Graph Document",
+        "name": "Research Workbench Workspace",
+        "description": "Research Workbench Workspace",
         "ext": ["prg"],
         "mimeType": "application/vnd.project-graph",
         "role": "Editor"
@@ -78,7 +78,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["prg"]
+        "schemes": ["rwb"]
       }
     },
     "cli": {
@@ -102,13 +102,6 @@
           "multiple": false
         }
       ]
-    },
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIyQzM3OTE1QjgwRTRCNzEKUldSeFN3NjRGWG5Ec2hVb05sWGZhVmpJdEVCR2cwNmM4UXlISEN5eHJBeFlCQkF3VjV6Z0tEY08K",
-      "endpoints": ["https://release.project-graph.top/update/{{target}}/{{arch}}/{{current_version}}"],
-      "windows": {
-        "installMode": "passive"
-      }
     },
     "fs": {
       "requireLiteralLeadingDot": false

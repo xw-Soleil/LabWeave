@@ -42,6 +42,11 @@ export class StageObjectColorManager {
         entity.color = color;
       }
     }
+    for (const entity of this.project.stageManager.getFileCardNodes()) {
+      if (entity.isSelected) {
+        entity.color = color;
+      }
+    }
     for (const edge of this.project.stageManager.getAssociations()) {
       if (edge.isSelected) {
         edge.color = color;

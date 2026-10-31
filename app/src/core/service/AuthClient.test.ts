@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createClient = vi.hoisted(() => vi.fn(() => ({})));
 vi.mock("better-auth/client", () => ({ createAuthClient: createClient }));
@@ -11,6 +11,8 @@ afterEach(() => {
 });
 
 describe("account service configuration", () => {
+  beforeEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
+
   it.each([undefined, "", "   "])("uses the official account service when configuration is %s", async (value) => {
     vi.stubEnv("LR_API_BASE_URL", value);
     const { accountServiceBaseUrl, authClient } = await import("./AuthClient");
@@ -36,4 +38,21 @@ describe("account service configuration", () => {
     expect(FeatureFlags.USER).toBe(false);
     expect(createClient).not.toHaveBeenCalled();
   });
+});
+
+describe("research workbench mode", () => {
+  it.each([undefined, "https://accounts.example.com"])(
+    "has no account service and no cloud features when LR_API_BASE_URL is %s",
+    async (value) => {
+      vi.stubEnv("LR_API_BASE_URL", value);
+      const { accountServiceBaseUrl, authClient } = await import("./AuthClient");
+      const { FeatureFlags } = await import("./FeatureFlags");
+      expect(accountServiceBaseUrl).toBe("");
+      expect(authClient).toBeNull();
+      expect(createClient).not.toHaveBeenCalled();
+      expect(FeatureFlags.USER).toBe(false);
+      expect(FeatureFlags.AI).toBe(false);
+      expect(FeatureFlags.TELEMETRY).toBe(false);
+    },
+  );
 });

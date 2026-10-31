@@ -11,6 +11,8 @@ import {
   MenubarTrigger,
 } from "@/components/ui/menubar";
 import { Project } from "@/core/Project";
+import { isRecentFileVisible, RESEARCH_GLOBAL_MENU, researchMenuTitleKey } from "@/core/research/ResearchMenu";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
@@ -58,7 +60,7 @@ function RecentFilesSection() {
   const [recentFiles, setRecentFiles] = useState<RecentFileManager.RecentFile[]>([]);
   const refresh = async () => {
     await RecentFileManager.sortTimeRecentFiles();
-    setRecentFiles(await RecentFileManager.getRecentFiles());
+    setRecentFiles((await RecentFileManager.getRecentFiles()).filter((file) => isRecentFileVisible(file.uri)));
   };
   useEffect(() => {
     refresh();
@@ -94,12 +96,18 @@ export default function GlobalMenuContent() {
   const [tab] = useAtom(activeResourceTabAtom);
   const activeProject = tab instanceof Project ? tab : undefined;
   const [config] = Settings.use("globalMenuConfig");
+  const [showFullMenu] = Settings.use("researchShowFullMenu");
   const { t } = useTranslation("keyBinds");
+  const researchMenu = isResearchShell() && !showFullMenu;
+  const menuConfig = researchMenu ? RESEARCH_GLOBAL_MENU : config;
 
   const isVisible = (item: GlobalMenuConfigItem): boolean => {
     if (item.visible === false) return false;
     return true;
   };
+
+  const titleOf = (item: GlobalMenuConfigItem): string =>
+    t(researchMenu ? researchMenuTitleKey(item.id) : `${item.id}.title`, item.label ?? item.id);
 
   const renderItem = (item: GlobalMenuConfigItem): ReactNode => {
     if (!isVisible(item)) return null;
@@ -122,7 +130,7 @@ export default function GlobalMenuContent() {
         <Sub key={item.id}>
           <SubTrigger disabled={!enabled}>
             {resolveIcon(item.id, item.icon)}
-            {t(`${item.id}.title`, item.label ?? item.id)}
+            {titleOf(item)}
           </SubTrigger>
           <SubContent>{(item.children || []).map(renderItem)}</SubContent>
         </Sub>
@@ -141,7 +149,7 @@ export default function GlobalMenuContent() {
       return (
         <Item key={item.id} disabled={!enabled} onClick={() => onClick?.(activeProject)}>
           {resolveIcon(item.id, item.icon)}
-          {t(`${item.id}.title`, item.label ?? item.id)}
+          {titleOf(item)}
           {shortcut && <MenubarShortcut>{shortcut}</MenubarShortcut>}
         </Item>
       );
@@ -163,14 +171,14 @@ export default function GlobalMenuContent() {
       <Menu key={top.id}>
         <Trigger disabled={!enabled}>
           {resolveIcon(top.id, top.icon)}
-          <span className="hidden sm:inline">{t(`${top.id}.title`, top.label ?? top.id)}</span>
+          <span className="hidden sm:inline">{titleOf(top)}</span>
         </Trigger>
         <Content>{(top.children || []).map(renderItem)}</Content>
       </Menu>
     );
   };
 
-  const topMenus = config.map(renderTopMenu).filter(Boolean);
+  const topMenus = menuConfig.map(renderTopMenu).filter(Boolean);
   return (
     <>
       {isMac && <NativeMacosMenu onReady={setNativeMenuReady} />}

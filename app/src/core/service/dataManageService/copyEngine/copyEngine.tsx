@@ -6,7 +6,9 @@ import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
+import { resolveSourcePath, toStoredSourcePath } from "@/core/research/FileCardFactory";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
 import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
@@ -60,6 +62,12 @@ export class CopyEngine {
 
     // 深拷贝一下数据，只有在粘贴的时候才刷新uuid
     const serializedCopiedStageObjects = serialize(copiedStageObjects);
+    // 文件卡片存的是相对本工程的路径，可能粘贴到别的文件夹里的工程，先换成绝对路径，粘贴时再换回来
+    for (const serializedObject of serializedCopiedStageObjects) {
+      if (serializedObject?._ === "FileCardNode" && typeof serializedObject.sourcePath === "string") {
+        serializedObject.sourcePath = resolveSourcePath(this.project, serializedObject.sourcePath);
+      }
+    }
 
     // 将舞台对象和附件一起存储到虚拟粘贴板
     VirtualClipboard.copy({
@@ -190,6 +198,16 @@ export class CopyEngine {
             stageObject.attachmentId = newAttachmentId;
             stageObject.reload();
           }
+        } else if (stageObject instanceof FileCardNode) {
+          // 缩略图在渲染时按新的 attachmentId 重新解码
+          const oldAttachmentId = stageObject.attachmentId;
+          if (oldAttachmentId && attachmentIdMap.has(oldAttachmentId)) {
+            stageObject.attachmentId = attachmentIdMap.get(oldAttachmentId)!;
+          }
+          stageObject.sourcePath = toStoredSourcePath(
+            this.project,
+            resolveSourcePath(this.project, stageObject.sourcePath),
+          );
         }
 
         // 开始遍历所有关联，更新uuid

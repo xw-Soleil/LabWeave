@@ -1,5 +1,15 @@
+import { Button } from "@/components/ui/button";
 import Markdown from "@/components/ui/markdown";
 import { Project } from "@/core/Project";
+import { ResearchFolder } from "@/core/research/ResearchFolder";
+import {
+  chooseResearchFolder,
+  listResearchWorkspaces,
+  openResearchWorkspace,
+  researchFilesVersionAtom,
+  type ResearchWorkspaceItem,
+} from "@/core/research/ResearchSession";
+import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { closeEmptyDrafts, onNewDraft, onOpenFile } from "@/core/service/GlobalMenu";
@@ -28,6 +38,7 @@ import {
   Earth,
   FilePlus,
   FolderOpen,
+  FolderSearch,
   Info,
   LoaderCircle,
   Map as MapIcon,
@@ -36,6 +47,7 @@ import {
   TableProperties,
   X,
 } from "lucide-react";
+import { useAtomValue } from "jotai";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -66,7 +78,7 @@ const slogans = [
   "选中图片后右下角有一个绿色按钮，可以拖拽改变大小",
   "向左框选和向右框选逻辑不同，源自CAD，框选可以大幅度提升自由布局的移动效率",
   "windows系统中，可以将此软件的exe放入zip中，直接双击预览打开zip文件然后双击打开内部的exe，可以逃过某些禁止运行exe电脑的限制",
-  "软件是开源的，可以放心使用。可参考MIT和GPL-3.0双许可协议",
+  "软件是开源的，可以放心使用。采用 GPL-3.0 许可协议",
   "prg文件是软件的专有格式，用于存储思维框架图数据。本质是一个zip压缩包，解压后可以看到里面的图片文件",
   "windows系统中，跨文件复制需要在一个软件中打开两个标签页，而非直接双击prg文件打开两个软件",
   "当一个文本节点的内容恰好为一个文件的绝对路径或者网页URL时，可以 中键双击/快捷键/右键 直接打开这个文件或者网页",
@@ -112,6 +124,170 @@ export default function WelcomeWindow({ tabId }: { tabId: string }) {
       unwatch();
     };
   }, [tabId]);
+  // 点击外部 / Escape 等路径关闭时也要清掉标记，避免下次 open 误判
+  useEffect(() => () => void welcomeTabIds.delete(tabId), [tabId]);
+
+  return isResearchShell() ? <ResearchWelcome tabId={tabId} /> : <ClassicWelcome tabId={tabId} />;
+}
+
+async function closeWelcome(tabId: string) {
+  await TabWorkspace.close(tabId);
+  welcomeTabIds.delete(tabId);
+}
+
+function ResearchWelcome({ tabId }: { tabId: string }) {
+  const { t } = useTranslation("research");
+  const filesVersion = useAtomValue(researchFilesVersionAtom);
+  const [root, setRoot] = useState(ResearchFolder.getRoot());
+  const [workspaces, setWorkspaces] = useState<ResearchWorkspaceItem[] | null>(null);
+  const [listError, setListError] = useState("");
+
+  useEffect(() => Settings.watch("researchFolderPath", setRoot), []);
+
+  useEffect(() => {
+    if (!root) return;
+    let disposed = false;
+    setListError("");
+    listResearchWorkspaces().then(
+      (items) => !disposed && setWorkspaces(items),
+      (error: unknown) => !disposed && setListError(String(error)),
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [root, filesVersion]);
+
+  const showError = (error: unknown) => toast.error(t("workspace.failed", { message: String(error) }));
+
+  const chooseFolder = () => {
+    chooseResearchFolder().catch(showError);
+  };
+
+  const openWorkspace = async (absPath: string) => {
+    await closeWelcome(tabId);
+    await openResearchWorkspace(absPath).catch(showError);
+  };
+
+  const openOtherFile = async () => {
+    // 先关欢迎窗，避免系统文件对话框触发 closeWhenClickOutside 的竞态
+    await closeWelcome(tabId);
+    const opened = await onOpenFile(undefined, "科研工作台-欢迎页");
+    if (opened instanceof Project) await closeEmptyDrafts(opened);
+  };
+
+  return (
+    <div className="flex h-full w-full overflow-auto p-6">
+      <div className="m-auto flex w-full max-w-3xl flex-col gap-6">
+        <div className="flex flex-col gap-1">
+          <span className="text-2xl sm:text-3xl">{t("welcome.title")}</span>
+          <span className="text-muted-foreground text-sm">{t("welcome.subtitle")}</span>
+        </div>
+
+        <div className="flex flex-col gap-8 sm:flex-row">
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            {root ? (
+              <div className="flex items-center gap-3 rounded-lg border p-3">
+                <FolderOpen className="text-primary size-5 shrink-0" />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-muted-foreground text-xs">{t("welcome.folder")}</span>
+                  <span className="truncate text-sm" title={root}>
+                    {root}
+                  </span>
+                </div>
+                <Button variant="outline" size="sm" onClick={chooseFolder}>
+                  {t("welcome.changeFolder")}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <Button size="lg" className="h-16 text-base" onClick={chooseFolder}>
+                  <FolderSearch className="size-5" />
+                  {t("welcome.chooseFolder")}
+                </Button>
+                <span className="text-muted-foreground text-xs">{t("welcome.noFolderHint")}</span>
+              </div>
+            )}
+
+            {root && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{t("welcome.workspaces")}</span>
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      // 输入框是模态对话框，点它也算点了欢迎窗外面，所以先关掉欢迎窗
+                      await closeWelcome(tabId);
+                      emitResearchEvent("newWorkspace");
+                    }}
+                  >
+                    <FilePlus />
+                    {t("welcome.newWorkspace")}
+                  </Button>
+                </div>
+                <div className="flex max-h-64 flex-col overflow-y-auto">
+                  {listError ? (
+                    <span className="text-destructive text-xs">
+                      {t("workspace.listFailed", { message: listError })}
+                    </span>
+                  ) : workspaces === null ? (
+                    <LoaderCircle className="text-muted-foreground m-2 size-4 animate-spin" />
+                  ) : workspaces.length === 0 ? (
+                    <span className="text-muted-foreground text-sm">{t("welcome.noWorkspaces")}</span>
+                  ) : (
+                    workspaces.map((item) => (
+                      <button
+                        key={item.absPath}
+                        type="button"
+                        className="hover:bg-accent flex cursor-pointer flex-col items-start rounded-md px-2 py-1.5 text-left"
+                        onClick={() => void openWorkspace(item.absPath)}
+                      >
+                        <span className="text-sm">{item.name}</span>
+                        <span className="text-muted-foreground w-full truncate text-xs">{item.relPath}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-4 sm:w-64">
+            <div className="flex flex-col gap-2">
+              <span className="font-medium">{t("welcome.howTo.title")}</span>
+              <ol className="text-muted-foreground flex list-decimal flex-col gap-2 pl-5 text-sm">
+                <li>{t("welcome.howTo.step1")}</li>
+                <li>{t("welcome.howTo.step2")}</li>
+                <li>{t("welcome.howTo.step3")}</li>
+              </ol>
+            </div>
+            <div className="flex flex-col gap-2 text-sm *:flex *:w-max *:cursor-pointer *:items-center *:gap-2 *:hover:opacity-75">
+              <button type="button" onClick={() => void closeWelcome(tabId)}>
+                <FilePlus className="size-4" />
+                {t("welcome.draft")}
+              </button>
+              <button type="button" onClick={() => void openOtherFile().catch(showError)}>
+                <FolderOpen className="size-4" />
+                {t("welcome.openOther")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void closeWelcome(tabId);
+                  SettingsWindow.open("settings");
+                }}
+              >
+                <SettingsIcon className="size-4" />
+                {t("welcome.settings")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClassicWelcome({ tabId }: { tabId: string }) {
   const [recentFiles, setRecentFiles] = useState<RecentFileManager.RecentFile[]>([]);
   const { t } = useTranslation("welcome");
   const [appVersion, setAppVersion] = useState("unknown");
@@ -168,8 +344,6 @@ export default function WelcomeWindow({ tabId }: { tabId: string }) {
 
     return () => {
       abortController?.abort();
-      // 点击外部 / Escape 等路径关闭时也要清掉标记，避免下次 open 误判
-      welcomeTabIds.delete(tabId);
     };
   }, [tabId]);
 
@@ -192,8 +366,7 @@ export default function WelcomeWindow({ tabId }: { tabId: string }) {
   }
 
   async function closeSelf() {
-    await TabWorkspace.close(tabId);
-    welcomeTabIds.delete(tabId);
+    await closeWelcome(tabId);
   }
 
   async function openProject(uri: URI | undefined, source: string) {

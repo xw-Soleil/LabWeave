@@ -26,6 +26,51 @@ export interface PrgMetadata {
    * 扩展（插件）元数据，如果是插件类型的prg则包含此字段
    */
   extension?: ExtensionMetadata;
+
+  /**
+   * 科研工作台的工作区信息。原版软件会原样保留这个字段
+   */
+  workbench?: WorkbenchMetadata;
+}
+
+export interface WorkbenchMetadata {
+  /** 工作区 id，文件改名、移动后不变，AI 对话记录靠它找回 */
+  id: string;
+  /** 上次保存时的视野（摄像机世界坐标中心 + 缩放） */
+  camera?: { x: number; y: number; scale: number };
+  /** .prg 相对研究文件夹的 POSIX 路径，用来在文件夹整体搬走后推出新的研究文件夹 */
+  workspacePath?: string;
+  /** 毫秒时间戳 */
+  createdAt?: number;
+}
+
+/**
+ * 读出 metadata.workbench；字段类型不对的丢掉，id 不是字符串时整个当作没有
+ */
+export function readWorkbenchMetadata(metadata: unknown): WorkbenchMetadata | undefined {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const workbench = (metadata as { workbench?: unknown }).workbench;
+  if (!workbench || typeof workbench !== "object") return undefined;
+  const { id, camera, workspacePath, createdAt } = workbench as Record<string, unknown>;
+  if (typeof id !== "string" || id === "") return undefined;
+  const result: WorkbenchMetadata = { id };
+  if (camera && typeof camera === "object") {
+    const { x, y, scale } = camera as Record<string, unknown>;
+    if (
+      typeof x === "number" &&
+      Number.isFinite(x) &&
+      typeof y === "number" &&
+      Number.isFinite(y) &&
+      typeof scale === "number" &&
+      Number.isFinite(scale) &&
+      scale > 0
+    ) {
+      result.camera = { x, y, scale };
+    }
+  }
+  if (typeof workspacePath === "string") result.workspacePath = workspacePath;
+  if (typeof createdAt === "number" && Number.isFinite(createdAt)) result.createdAt = createdAt;
+  return result;
 }
 
 /**

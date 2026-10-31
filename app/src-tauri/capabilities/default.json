@@ -40,10 +40,6 @@
     "deep-link:default",
     "shell:default",
     "store:default",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all",
     {
       "identifier": "http:default",
       "allow": [

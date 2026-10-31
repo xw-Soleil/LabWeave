@@ -1,4 +1,5 @@
 import { Dialog } from "@/components/ui/dialog";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import {
   createProjectToolSettingSchemas,
   DEFAULT_FONT_FAMILY,
@@ -51,7 +52,12 @@ export const settingsSchema = z.object({
   viewerMode: z.boolean().default(false),
   showQuickSettingsToolbar: z.boolean().default(true),
   showRecentFilesThumbnails: z.boolean().default(true),
-  windowBackgroundAlpha: z.number().min(0).max(1).default(0.72),
+  // 科研模式下窗口不透明，避免白板背后透出桌面
+  windowBackgroundAlpha: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(isResearchShell() ? 1 : 0.72),
   windowBackgroundOpacityAfterOpenClickThrough: z.number().min(0).max(1).default(0),
   windowBackgroundOpacityAfterCloseClickThrough: z.number().min(0).max(1).default(0.72),
   isRenderCenterPointer: z.boolean().default(false),
@@ -114,7 +120,7 @@ export const settingsSchema = z.object({
   autoNamerDetailsTemplate: z.string().default(""),
   autoNamerTreeNodeTemplate: z.string().default("Node_{{i}}"),
   autoSaveWhenClose: z.boolean().default(false),
-  autoSave: z.boolean().default(false),
+  autoSave: z.boolean().default(isResearchShell()),
   autoSaveInterval: z.number().int().min(1).max(60).default(10),
   autoBackup: z.boolean().default(true),
   autoBackupInterval: z.number().int().min(60).max(6000).default(600),
@@ -133,6 +139,8 @@ export const settingsSchema = z.object({
   aiContextWindow: z.number().int().nonnegative().default(0),
   aiShowTokenCount: z.boolean().default(false),
   aiAutoApproveMcpTools: z.boolean().default(false),
+  aiApiFormat: projectToolSettingSchemas.aiApiFormat,
+  aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
   enableDragAutoAlign: z.boolean().default(false),
@@ -176,7 +184,7 @@ export const settingsSchema = z.object({
     .default("trackpadIntAndWheelFloat"),
   macTrackpadScaleSensitivity: z.number().min(0).max(1).multipleOf(0.001).default(0.5),
   macEnableControlToCut: z.boolean().default(false),
-  allowGlobalHotKeys: z.boolean().default(true),
+  allowGlobalHotKeys: z.boolean().default(!isResearchShell()),
   cameraFollowsSelectedNodeOnArrowKeys: z.boolean().default(false),
   arrowKeySelectOnlyInViewport: z.boolean().default(false),
   moveAmplitude: projectToolSettingSchemas.moveAmplitude,
@@ -280,7 +288,7 @@ export const settingsSchema = z.object({
   themeMode: z.union([z.literal("light"), z.literal("dark")]).default("dark"),
   lightTheme: z.string().default("catppuccin-latte"),
   darkTheme: z.string().default("catppuccin-mocha"),
-  telemetry: z.boolean().default(true),
+  telemetry: z.boolean().default(!isResearchShell()),
   historyManagerMode: projectToolSettingSchemas.historyManagerMode,
   isStealthModeEnabled: z.boolean().default(false),
   stealthModeScopeRadius: z.number().int().min(10).max(500).default(150),
@@ -288,7 +296,8 @@ export const settingsSchema = z.object({
   stealthModeMaskShape: z
     .union([z.literal("circle"), z.literal("square"), z.literal("topLeft"), z.literal("smartContext")])
     .default("circle"),
-  clearHistoryWhenManualSave: z.boolean().default(true),
+  // 科研模式下保存不清空撤销记录，保留思考过程
+  clearHistoryWhenManualSave: z.boolean().default(!isResearchShell()),
   soundPitchVariationRange: z.number().int().min(0).max(1200).default(150),
   autoImportTxtFileWhenOpenPrg: z.boolean().default(false),
   imageImportOrder: z.union([z.literal("mtime"), z.literal("path")]).default("mtime"),
@@ -929,6 +938,22 @@ export const settingsSchema = z.object({
       },
     ]),
   subWindowOpenModes: subWindowOpenModesSchema.default(DEFAULT_SUB_WINDOW_OPEN_MODES),
+  researchFolderPath: projectToolSettingSchemas.researchFolderPath,
+  writeAiSidecarOnSave: projectToolSettingSchemas.writeAiSidecarOnSave,
+  /** 工作区路径都相对研究文件夹 */
+  researchSession: z
+    .object({
+      openWorkspaces: z.array(z.string()).default([]),
+      active: z.string().default(""),
+      panels: z
+        .object({
+          files: z.boolean().default(true),
+          ai: z.boolean().default(false),
+        })
+        .default({ files: true, ai: false }),
+    })
+    .default({ openWorkspaces: [], active: "", panels: { files: true, ai: false } }),
+  researchShowFullMenu: z.boolean().default(false),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -985,6 +1010,26 @@ savedSettings.mouseLeftMode = "selectAndMove";
 if (rawSettings.mouseLeftMode !== "selectAndMove") {
   await store.set("mouseLeftMode", "selectAndMove");
   await store.save();
+}
+
+// 科研模式每次启动都强制关闭：遥测、系统级全局快捷键、打开 prg 时导入并清空同名 txt
+if (isResearchShell()) {
+  const researchForcedSettings = {
+    telemetry: false,
+    allowGlobalHotKeys: false,
+    autoImportTxtFileWhenOpenPrg: false,
+  } satisfies Partial<Settings>;
+  let researchForcedSettingsChanged = false;
+  for (const [key, value] of Object.entries(researchForcedSettings)) {
+    (savedSettings as Record<string, unknown>)[key] = value;
+    if (rawSettings[key] !== value) {
+      await store.set(key, value);
+      researchForcedSettingsChanged = true;
+    }
+  }
+  if (researchForcedSettingsChanged) {
+    await store.save();
+  }
 }
 
 // 检查菜单配置中是否存在指定 id 的节点（用于版本升级时的配置重置判断）

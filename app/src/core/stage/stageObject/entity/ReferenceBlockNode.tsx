@@ -222,7 +222,8 @@ export class ReferenceBlockNode extends ConnectableEntity implements ResizeAble 
       return;
     }
     const center = targetSection.collisionBox.getRectangle().center;
-    project.camera.location = center;
+    // 刚打开的工程几帧后会「适配全部内容」，applySavedView 会取消这次重置（critic 35）
+    project.camera.applySavedView(center, project.camera.currentScale);
     project.effects.addEffect(
       RectangleLittleNoteEffect.fromUtilsSlowNote(
         targetSection,

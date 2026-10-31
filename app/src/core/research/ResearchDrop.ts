@@ -1,0 +1,265 @@
+import { Dialog } from "@/components/ui/dialog";
+import { Project } from "@/core/Project";
+import { createFileCards } from "@/core/research/FileCardFactory";
+import { notifyResearchFilesChanged, ResearchFolder } from "@/core/research/ResearchFolder";
+import { fileKindOf } from "@/core/research/ResearchShell";
+import { onOpenFile } from "@/core/service/GlobalMenu";
+import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
+import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
+import { findTabGroup } from "@/core/TabGroup";
+import { TabWorkspace } from "@/core/TabWorkspace";
+import { activeResourceTabAtom, activeTabAtom, store, tabGroupRootAtom, tabsAtom } from "@/state";
+import { Vector } from "@graphif/data-structures";
+import { Rectangle } from "@graphif/shapes";
+import { copyFile, exists, mkdir } from "@tauri-apps/plugin-fs";
+import i18next from "i18next";
+import { toast } from "sonner";
+import { URI } from "vscode-uri";
+
+/** 研究文件夹外的文件复制到研究文件夹的这个子文件夹里 */
+export const IMPORT_DIR_NAME = "导入";
+
+const MAX_LISTED_NAMES = 5;
+
+// 文件名和路径里的 / 不能被 i18next 转义成 &#x2F;
+function t(key: string, options: Record<string, unknown> = {}): string {
+  return i18next.t(key, { ns: "research", ...options, interpolation: { escapeValue: false } });
+}
+
+export interface DroppedPaths {
+  /** .prg，作为工作区打开 */
+  workspaces: string[];
+  /** pdf / 图片 / markdown，做成文件卡片 */
+  cards: string[];
+  unsupported: string[];
+}
+
+export function splitDroppedPaths(absPaths: string[]): DroppedPaths {
+  const result: DroppedPaths = { workspaces: [], cards: [], unsupported: [] };
+  for (const path of absPaths) {
+    if (/\.prg$/i.test(path)) {
+      result.workspaces.push(path);
+    } else if (fileKindOf(path)) {
+      result.cards.push(path);
+    } else {
+      result.unsupported.push(path);
+    }
+  }
+  return result;
+}
+
+export interface ClientPoint {
+  x: number;
+  y: number;
+}
+
+/** 窗口客户区左上角的屏幕坐标（物理像素）和缩放比 */
+export interface ScreenOrigin {
+  x: number;
+  y: number;
+  scaleFactor: number;
+}
+
+/** Windows 的 pg-drag-drop 来自 IDropTarget，坐标是屏幕上的物理像素 */
+export function screenToClientPoint(screen: ClientPoint, origin: ScreenOrigin): ClientPoint {
+  const scale = origin.scaleFactor > 0 ? origin.scaleFactor : 1;
+  return { x: (screen.x - origin.x) / scale, y: (screen.y - origin.y) / scale };
+}
+
+/**
+ * Tauri 文档把 onDragDropEvent 的坐标标成相对 webview 的物理像素，但 wry 在 macOS（AppKit 的 draggingLocation）
+ * 和 Linux（GTK 控件坐标）上传过来的其实已经是 CSS 像素，只有 Windows 是物理像素。
+ * 在 macOS 上照文档除以 devicePixelRatio，Retina 屏上的落点会缩到一半。
+ */
+export function webviewDropPositionToClient(
+  position: ClientPoint,
+  positionIsPhysical: boolean,
+  devicePixelRatio: number,
+): ClientPoint {
+  if (!positionIsPhysical || devicePixelRatio <= 0) return { x: position.x, y: position.y };
+  return { x: position.x / devicePixelRatio, y: position.y / devicePixelRatio };
+}
+
+export function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** 第 n 个候选名：n<=1 是原名，之后是「名字 (n).扩展名」 */
+export function numberedFileName(fileName: string, n: number): string {
+  if (n <= 1) return fileName;
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex <= 0) return `${fileName} (${n})`;
+  return `${fileName.slice(0, dotIndex)} (${n})${fileName.slice(dotIndex)}`;
+}
+
+/** 从原名开始依次试「 (2)」「 (3)」……，返回第一个没被占用的名字 */
+export async function findFreeFileName(fileName: string, isTaken: (name: string) => Promise<boolean>): Promise<string> {
+  for (let n = 1; ; n++) {
+    const candidate = numberedFileName(fileName, n);
+    if (!(await isTaken(candidate))) return candidate;
+  }
+}
+
+function listNames(paths: string[]): string {
+  const names = paths.slice(0, MAX_LISTED_NAMES).map(fileNameOf);
+  const listed = names.join(t("drop.separator"));
+  if (paths.length <= MAX_LISTED_NAMES) return listed;
+  return listed + t("drop.andMore", { count: paths.length });
+}
+
+/**
+ * 找鼠标下面的白板：取包含这个点的最小标签组，看它当前显示的是不是工程。
+ * 和 docked-area 一样，组里没有记录 activeTabId 时取最后一个停靠的标签。
+ */
+export function findBoardAtClientPoint(clientX: number, clientY: number): Project | undefined {
+  const target = TabWorkspace.getDropTarget(clientX, clientY);
+  if (!target) return undefined;
+  const group = findTabGroup(store.get(tabGroupRootAtom), target.groupId);
+  if (!group) return undefined;
+  const groupTabs = store.get(tabsAtom).filter((tab) => tab.layout === "docked" && group.tabIds.includes(tab.id));
+  const shownTab = groupTabs.find((tab) => tab.id === group.activeTabId) ?? groupTabs.at(-1);
+  return shownTab instanceof Project ? shownTab : undefined;
+}
+
+/** 点不在这块白板的画布上时返回 null */
+export function clientPointToWorld(project: Project, clientX: number, clientY: number): Vector | null {
+  const rect = project.canvas.element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return null;
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  return project.renderer.transformView2World(project.canvas.clientToView(clientX, clientY));
+}
+
+export interface DropTarget {
+  project: Project;
+  worldPos: Vector;
+}
+
+/**
+ * 鼠标下面有白板就放在鼠标位置；否则（比如松手在文件面板上）放到当前白板的视野中心。
+ * 一块白板都没打开时返回 null。
+ */
+export function resolveDropTarget(clientX: number, clientY: number): DropTarget | null {
+  const board = findBoardAtClientPoint(clientX, clientY);
+  if (board) {
+    return { project: board, worldPos: clientPointToWorld(board, clientX, clientY) ?? board.camera.location.clone() };
+  }
+  const active = store.get(activeResourceTabAtom);
+  if (active instanceof Project) return { project: active, worldPos: active.camera.location.clone() };
+  return null;
+}
+
+function focusBoard(project: Project) {
+  if (store.get(activeTabAtom) !== project) TabWorkspace.focus(project.id);
+}
+
+/** 研究文件夹外的文件复制到 <研究文件夹>/导入/，重名时加「 (2)」；返回放上白板要用的路径，顺序不变 */
+async function copyOutsideFilesIntoFolder(paths: string[], root: string): Promise<string[]> {
+  const importDir = ResearchFolder.toAbsolute(IMPORT_DIR_NAME, root);
+  const result: string[] = [];
+  let copiedCount = 0;
+  for (const path of paths) {
+    if (ResearchFolder.isInside(path)) {
+      result.push(path);
+      continue;
+    }
+    if (copiedCount === 0) await mkdir(importDir, { recursive: true });
+    const name = await findFreeFileName(fileNameOf(path), (candidate) =>
+      exists(ResearchFolder.toAbsolute(candidate, importDir)),
+    );
+    const destination = ResearchFolder.toAbsolute(name, importDir);
+    await copyFile(path, destination);
+    result.push(destination);
+    copiedCount++;
+  }
+  if (copiedCount > 0) {
+    toast.success(t("drop.copied", { count: copiedCount, folder: importDir }));
+    notifyResearchFilesChanged();
+  }
+  return result;
+}
+
+/**
+ * 决定卡片用哪些路径。用户取消时返回 null。
+ * 没选研究文件夹时不直接拒绝：让用户当场选一个（选完接着放，不用再拖一次），
+ * 或者先直接引用原文件，免得一次拖放白做。
+ */
+async function pathsForCards(paths: string[]): Promise<string[] | null> {
+  const root = ResearchFolder.getRoot();
+  if (!root) {
+    const choice = await Dialog.buttons(t("drop.noFolder.title"), t("drop.noFolder.description"), [
+      { id: "cancel", label: t("drop.cancel"), variant: "ghost" },
+      { id: "original", label: t("drop.noFolder.useOriginal"), variant: "outline" },
+      { id: "choose", label: t("drop.noFolder.choose") },
+    ] as const);
+    if (choice === "cancel") return null;
+    if (choice === "original") return paths;
+    const chosenRoot = await ResearchFolder.chooseRoot();
+    if (!chosenRoot) return null;
+    // 对话框里已经说过会复制，这里不再问第二次
+    return copyOutsideFilesIntoFolder(paths, chosenRoot);
+  }
+
+  const outside = paths.filter((path) => !ResearchFolder.isInside(path));
+  if (outside.length === 0) return paths;
+  const importDir = ResearchFolder.toAbsolute(IMPORT_DIR_NAME, root);
+  const choice = await Dialog.buttons(
+    t("drop.copy.title"),
+    t("drop.copy.description", { folder: `${importDir}/`, names: outside.map(fileNameOf).join("\n") }),
+    [
+      { id: "cancel", label: t("drop.cancel"), variant: "ghost" },
+      { id: "copy", label: t("drop.copy.confirm") },
+    ] as const,
+  );
+  if (choice !== "copy") return null;
+  return copyOutsideFilesIntoFolder(paths, root);
+}
+
+async function dropCards(paths: string[], clientX: number, clientY: number) {
+  // 先定下目标白板：后面的对话框不会切换标签页，但打开 .prg 会
+  const target = resolveDropTarget(clientX, clientY);
+  if (!target) {
+    toast.warning(t("drop.noBoard"));
+    return;
+  }
+  const cardPaths = await pathsForCards(paths);
+  if (!cardPaths || cardPaths.length === 0) return;
+  focusBoard(target.project);
+  await createFileCards(target.project, cardPaths, target.worldPos);
+}
+
+/**
+ * 把文件放到鼠标下面的白板上。文件面板拖拽松手和 Finder 拖入都走这里。
+ * - pdf / 图片 / markdown 做成文件卡片；研究文件夹外的先问要不要复制到研究文件夹的「导入/」子文件夹
+ * - .prg 走 onOpenFile 打开（放在卡片之后，否则新标签页会盖住目标白板）
+ * - 其他类型提示暂不支持
+ */
+export async function dropFilesAtClientPoint(absPaths: string[], clientX: number, clientY: number): Promise<void> {
+  const { workspaces, cards, unsupported } = splitDroppedPaths(absPaths);
+  if (unsupported.length > 0) toast.warning(t("drop.unsupported", { names: listNames(unsupported) }));
+  if (cards.length > 0) await dropCards(cards, clientX, clientY);
+  for (const path of workspaces) {
+    await onOpenFile(URI.file(path), "拖拽prg文件到舞台");
+  }
+}
+
+/** 从别的程序拖进来的一段文字，在鼠标位置生成文本节点 */
+export function dropTextAtClientPoint(text: string, clientX: number, clientY: number): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const target = resolveDropTarget(clientX, clientY);
+  if (!target) {
+    toast.warning(t("drop.noBoard"));
+    return;
+  }
+  const { project, worldPos } = target;
+  focusBoard(project);
+  project.stageManager.add(
+    new TextNode(project, {
+      text: trimmed,
+      collisionBox: new CollisionBox([new Rectangle(worldPos, new Vector(300, 150))]),
+      sizeAdjust: "manual",
+    }),
+  );
+  // 只有 recordStep 会把工程标成未保存，自动保存才会存它
+  project.historyManager.recordStep();
+}

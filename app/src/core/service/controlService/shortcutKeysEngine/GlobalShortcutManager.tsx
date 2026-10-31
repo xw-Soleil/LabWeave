@@ -1,5 +1,6 @@
 import { register, unregisterAll, isRegistered, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "../../Settings";
 import { toast } from "sonner";
 
@@ -41,7 +42,8 @@ export class GlobalShortcutManager {
 
   // 初始化服务
   public async init() {
-    if (this.isInitialized) {
+    // 科研模式不占用系统级 Alt+1 / Alt+2，以免和别的软件冲突；Rust 端也可能没装全局快捷键插件
+    if (this.isInitialized || isResearchShell()) {
       return;
     }
 
@@ -116,6 +118,7 @@ export class GlobalShortcutManager {
 
   // 清理资源
   public async dispose() {
+    if (isResearchShell()) return;
     // 注销所有快捷键
     await unregisterAll();
 

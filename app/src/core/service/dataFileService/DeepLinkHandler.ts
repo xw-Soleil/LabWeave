@@ -2,8 +2,12 @@ import { RecentFileManager } from "./RecentFileManager";
 import { onOpenFile } from "../GlobalMenu";
 import { URI } from "vscode-uri";
 import { exists } from "@tauri-apps/plugin-fs";
+import i18next from "i18next";
 import { toast } from "sonner";
 import { Project } from "@/core/Project";
+import { isOutsideResearchFolder, ResearchFolder } from "@/core/research/ResearchFolder";
+import { isResearchShell } from "@/core/research/ResearchShell";
+import { Vector } from "@graphif/data-structures";
 
 interface DeepLinkParams {
   path: string;
@@ -14,8 +18,17 @@ interface DeepLinkParams {
 
 const handledUrls = new Set<string>();
 
+// 科研工作台注册的是 rwb:// 协议，prg:// 留给可能同时装着的原版
+function deepLinkScheme() {
+  return isResearchShell() ? "rwb" : "prg";
+}
+
+function deepLinkSchemePattern() {
+  return isResearchShell() ? "(?:rwb|prg)" : "prg";
+}
+
 export function isProjectGraphDeepLink(input: string) {
-  return /^prg:(\/\/)?/i.test(input);
+  return new RegExp(`^${deepLinkSchemePattern()}:(\\/\\/)?`, "i").test(input);
 }
 
 function buildProjectGraphUrl(params: DeepLinkParams) {
@@ -30,7 +43,7 @@ function buildProjectGraphUrl(params: DeepLinkParams) {
   if (params.zoom !== undefined) {
     queryEntries.push(`zoom=${encodeReadableQueryValue(String(params.zoom))}`);
   }
-  return `prg://open?${queryEntries.join("&")}`;
+  return `${deepLinkScheme()}://open?${queryEntries.join("&")}`;
 }
 
 function encodeReadableQueryValue(value: string) {
@@ -100,16 +113,31 @@ async function normalizeFilePath(rawPath: string): Promise<string | null> {
 
   // Absolute path: check existence
   if (path.startsWith("/") || /^[A-Za-z]:/.test(path)) {
+    // 研究文件夹外的路径不去碰磁盘，交给调用方拒绝
+    if (isOutsideResearchFolder(path)) return path;
     if (await exists(path)) {
       return path;
     }
     return null;
   }
 
+  const fileName = path.toLowerCase().endsWith(".prg") ? path : path + ".prg";
+
+  // 科研模式下相对路径先按研究文件夹解析
+  if (isResearchShell() && ResearchFolder.getRoot()) {
+    const insideRoot = ResearchFolder.toAbsolute(fileName);
+    if (ResearchFolder.isInside(insideRoot)) {
+      await ResearchFolder.ensureRootRegistered().catch((error) =>
+        toast.error(i18next.t("files.setRootFailed", { ns: "research", error: String(error) })),
+      );
+      if (await exists(insideRoot)) return insideRoot;
+    }
+  }
+
   // Relative/filename: search recent files
   const recentFiles = await RecentFileManager.getRecentFiles();
-  const fileName = path.toLowerCase().endsWith(".prg") ? path : path + ".prg";
   for (const file of recentFiles) {
+    if (isOutsideResearchFolder(file.uri.fsPath)) continue;
     const normalizedFsPath = file.uri.fsPath.toLowerCase().replaceAll("\\", "/");
     if (normalizedFsPath.endsWith("/" + fileName.toLowerCase())) {
       return file.uri.fsPath;
@@ -125,7 +153,7 @@ function parseProjectGraphUrl(url: string): DeepLinkParams | null {
   try {
     parsed = new URL(url);
   } catch {
-    const normalized = url.replace(/^prg:(?!\/\/)/i, "prg://");
+    const normalized = url.replace(/^(prg|rwb):(?!\/\/)/i, "$1://");
     parsed = new URL(normalized);
   }
 
@@ -180,19 +208,11 @@ function applyCameraParams(project: Project, params: DeepLinkParams) {
     return;
   }
 
+  // 用 applySavedView：直接改 location / scale 会在打开后的前几帧被「适配全部内容」覆盖（critic 35）
   if (params.location) {
-    project.camera.location.x = params.location.x;
-    project.camera.location.y = params.location.y;
-    project.camera.targetLocationByScale.x = params.location.x;
-    project.camera.targetLocationByScale.y = params.location.y;
-  }
-
-  if (params.zoom !== undefined) {
-    project.camera.currentScale = params.zoom;
-    project.camera.targetScale = params.zoom;
-  } else if (params.location && params.zoom === undefined) {
-    project.camera.currentScale = 1;
-    project.camera.targetScale = 1;
+    project.camera.applySavedView(new Vector(params.location.x, params.location.y), params.zoom ?? 1);
+  } else if (params.zoom !== undefined) {
+    project.camera.applySavedView(project.camera.location, params.zoom);
   }
 }
 
@@ -213,6 +233,10 @@ export async function handleDeepLink(urls: string[]) {
     const resolvedPath = await normalizeFilePath(params.path);
     if (!resolvedPath) {
       toast.error("文件不存在: " + params.path);
+      continue;
+    }
+    if (isOutsideResearchFolder(resolvedPath)) {
+      toast.error(i18next.t("files.outsideFolder", { ns: "research", path: resolvedPath }));
       continue;
     }
 

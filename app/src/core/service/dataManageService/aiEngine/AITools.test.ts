@@ -2,6 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+// 这里测的是原版的改图工具；科研模式下聊天只拿到只读工具
+vi.hoisted(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
+
 vi.mock("@/core/service/Settings", () => ({
   Settings: {
     aiApiBaseUrl: "",

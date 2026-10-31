@@ -8,7 +8,7 @@ import {
 describe("Project Graph app-data paths", () => {
   it("matches the Tauri bundle-identifier path on macOS", () => {
     expect(resolveProjectGraphAppDataDirectories("darwin", {}, "/Users/alice")).toEqual([
-      "/Users/alice/Library/Application Support/liren.project-graph",
+      "/Users/alice/Library/Application Support/com.ai4know.researchworkbench",
     ]);
   });
 
@@ -20,21 +20,21 @@ describe("Project Graph app-data paths", () => {
         "C:\\Users\\alice",
       ),
     ).toEqual([
-      "C:\\Users\\alice\\AppData\\Roaming\\liren.project-graph",
-      "C:\\Users\\alice\\Library\\Application Support\\liren.project-graph",
+      "C:\\Users\\alice\\AppData\\Roaming\\com.ai4know.researchworkbench",
+      "C:\\Users\\alice\\Library\\Application Support\\com.ai4know.researchworkbench",
     ]);
   });
 
   it("uses XDG data on Linux and retains the former macOS-style fallback", () => {
     expect(resolveProjectGraphAppDataDirectories("linux", { XDG_DATA_HOME: "/data/alice" }, "/home/alice")).toEqual([
-      "/data/alice/liren.project-graph",
-      "/home/alice/Library/Application Support/liren.project-graph",
+      "/data/alice/com.ai4know.researchworkbench",
+      "/home/alice/Library/Application Support/com.ai4know.researchworkbench",
     ]);
   });
 
   it("stores Project ownership under the native per-user app-data directory", () => {
     expect(resolveProjectGraphOwnershipDirectory("darwin", {}, "/Users/alice")).toBe(
-      "/Users/alice/Library/Application Support/liren.project-graph/project-ownership",
+      "/Users/alice/Library/Application Support/com.ai4know.researchworkbench/project-ownership",
     );
     expect(
       resolveProjectGraphOwnershipDirectory(
@@ -42,9 +42,9 @@ describe("Project Graph app-data paths", () => {
         { APPDATA: "C:\\Users\\alice\\AppData\\Roaming" },
         "C:\\Users\\alice",
       ),
-    ).toBe("C:\\Users\\alice\\AppData\\Roaming\\liren.project-graph\\project-ownership");
+    ).toBe("C:\\Users\\alice\\AppData\\Roaming\\com.ai4know.researchworkbench\\project-ownership");
     expect(resolveProjectGraphOwnershipDirectory("linux", { XDG_DATA_HOME: "/data/alice" }, "/home/alice")).toBe(
-      "/data/alice/liren.project-graph/project-ownership",
+      "/data/alice/com.ai4know.researchworkbench/project-ownership",
     );
   });
 
@@ -65,16 +65,16 @@ describe("Project Graph app-data paths", () => {
     expect(
       resolveProjectOwnershipArtifactPaths(
         "\\\\?\\C:\\Projects\\Graph.prg",
-        "C:\\AppData\\liren.project-graph\\project-ownership",
+        "C:\\AppData\\com.ai4know.researchworkbench\\project-ownership",
         "win32",
       ),
     ).toEqual({
       ownershipLock:
-        "C:\\AppData\\liren.project-graph\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.lock",
+        "C:\\AppData\\com.ai4know.researchworkbench\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.lock",
       connectableOwnerLock:
-        "C:\\AppData\\liren.project-graph\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.connectable.lock",
+        "C:\\AppData\\com.ai4know.researchworkbench\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.connectable.lock",
       connectableOwnerRecord:
-        "C:\\AppData\\liren.project-graph\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.connectable",
+        "C:\\AppData\\com.ai4know.researchworkbench\\project-ownership\\3ba5afbf87609293ab5fdd2921a3bbc7663d526d3ec657bd394ddc097efc7d68.connectable",
     });
   });
 });

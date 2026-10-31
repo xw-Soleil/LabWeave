@@ -1,12 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/plugin-http", () => ({ fetch: vi.fn() }));
 vi.mock("./AuthClient", () => ({ accountServiceBaseUrl: "https://hub.graphif.dev" }));
 import { fetch } from "@tauri-apps/plugin-http";
 import { fetchDonations } from "./Donations";
 
 beforeEach(() => vi.mocked(fetch).mockReset());
+afterEach(() => vi.unstubAllEnvs());
 
 describe("supporter list loading", () => {
+  beforeEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
+
   it("loads official records and preserves anonymous supporters and expenses", async () => {
     const records = [
       { user: "", amount: 5 },
@@ -31,5 +34,12 @@ describe("supporter list loading", () => {
   it("accepts an empty list", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response("[]"));
     expect(await fetchDonations()).toEqual([]);
+  });
+});
+
+describe("research workbench mode", () => {
+  it("returns an empty list without any network request", async () => {
+    expect(await fetchDonations()).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

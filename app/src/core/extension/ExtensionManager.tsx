@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { exists, mkdir, readDir } from "@tauri-apps/plugin-fs";
 import { URI } from "vscode-uri";
@@ -38,6 +39,9 @@ export namespace ExtensionManager {
     return extension;
   }
   export async function getRuntime(name: string) {
+    if (isResearchShell()) {
+      throw new Error("科研工作台不运行扩展：扩展可以执行系统命令、任意联网，和「数据只留在本机」冲突。");
+    }
     if (runtimes.has(name)) {
       return runtimes.get(name)!;
     }
@@ -63,6 +67,7 @@ export namespace ExtensionManager {
    * 创建并运行所有扩展
    */
   export async function init() {
+    if (isResearchShell()) return;
     const extensionNames = await getExtensions();
     for (const name of extensionNames) {
       if (Settings.disabledExtensions.includes(name)) {

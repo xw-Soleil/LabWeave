@@ -195,6 +195,10 @@ settings:
       cpu: CPU
       render: Render
       experimental: Fitur dalam Pengembangan
+    research:
+      title: Research Workbench
+      folder: Research folder
+      ai: AI reading
   language:
     title: Bahasa
     options:
@@ -1153,6 +1157,31 @@ settings:
     title: Setujui alat MCP secara otomatis
     description: |
       Jika diaktifkan, alat MCP dapat dijalankan tanpa persetujuan manual. Peluncuran pertama proses stdio lokal tetap memerlukan konfirmasi terpisah.
+  aiApiFormat:
+    title: AI API format
+    description: |
+      The API format your provider uses. Most providers are OpenAI-compatible; choose Claude for the official Claude API.
+    options:
+      openai: OpenAI-compatible
+      anthropic: Claude (Anthropic)
+  aiPdfTextPages:
+    title: PDF pages read by the AI
+    description: |
+      When a paper is placed on the board, the text of this many first pages is extracted for the AI. 0 means no text is extracted.
+  researchFolderPath:
+    title: Research folder
+    description: |
+      The folder that holds your papers, images, notes and workspaces.
+  writeAiSidecarOnSave:
+    title: Write an AI-readable copy when saving
+    description: |
+      When a workspace is saved, a JSON and a Markdown copy of the board are written to the .workbench folder next to it, so AI tools can read it.
+  researchSession:
+    title: Last open workspaces and panels
+  researchShowFullMenu:
+    title: Show the full menu
+    description: |
+      Shows every menu item of the original Project Graph.
   textIntegerLocationAndSizeRender:
     title: Render Posisi dan Ukuran Bilangan Bulat Teks
     description: |

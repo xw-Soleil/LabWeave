@@ -131,6 +131,7 @@ export const ProjectTabs = memo(function ProjectTabs({
                 window.addEventListener("mouseup", onMouseUp);
               } else if (e.button === 1) {
                 e.preventDefault();
+                if (!tab.closable) return;
                 saveScrollPosition();
                 onTabClose(tab);
                 Promise.resolve().then(restoreScrollPosition);
@@ -151,54 +152,56 @@ export const ProjectTabs = memo(function ProjectTabs({
                 <span className="max-w-32 truncate opacity-70">→ {activeResourceTab?.title ?? "无项目"}</span>
               )}
             </span>
-            <div
-              className="flex size-4 cursor-pointer items-center justify-center hover:opacity-100"
-              onClick={(e) => {
-                if (tab instanceof Project && tab.isSaving) {
-                  // 如果正在保存中，显示提示
-                  toast.warning("正在保存中，请勿擅自做多余的操作");
-                  SoundService.play.cuttingLineRelease();
-                } else if (tab instanceof Project && tab.projectState === ProjectState.Unsaved) {
-                  // 如果是未保存状态，根据项目类型执行不同操作
-                  if (tab.uri.scheme === "draft") {
-                    // 草稿文件，弹出对话框
+            {tab.closable && (
+              <div
+                className="flex size-4 cursor-pointer items-center justify-center hover:opacity-100"
+                onClick={(e) => {
+                  if (tab instanceof Project && tab.isSaving) {
+                    // 如果正在保存中，显示提示
+                    toast.warning("正在保存中，请勿擅自做多余的操作");
+                    SoundService.play.cuttingLineRelease();
+                  } else if (tab instanceof Project && tab.projectState === ProjectState.Unsaved) {
+                    // 如果是未保存状态，根据项目类型执行不同操作
+                    if (tab.uri.scheme === "draft") {
+                      // 草稿文件，弹出对话框
+                      handleTabClose(tab, e);
+                      SoundService.play.cuttingLineRelease();
+                    } else {
+                      // 已有的文件，直接保存
+                      tab.save();
+                      SoundService.play.cuttingLineRelease();
+                    }
+                  } else {
+                    // 其他状态，执行关闭操作
                     handleTabClose(tab, e);
                     SoundService.play.cuttingLineRelease();
-                  } else {
-                    // 已有的文件，直接保存
-                    tab.save();
-                    SoundService.play.cuttingLineRelease();
                   }
-                } else {
-                  // 其他状态，执行关闭操作
-                  handleTabClose(tab, e);
-                  SoundService.play.cuttingLineRelease();
-                }
-              }}
-            >
-              {tab instanceof Project && tab.isSaving ? (
-                <span className="grid size-3.5 animate-spin grid-cols-2">
-                  <span className="border-accent-foreground w-full animate-pulse rounded-full border-1 p-0.5"></span>
-                  <span className="border-accent-foreground w-full rounded-full border-1 p-0.5"></span>
-                  <span className="border-accent-foreground w-full rounded-full border-1 p-0.5"></span>
-                  <span className="border-accent-foreground w-full animate-pulse rounded-full border-1 p-0.5"></span>
-                </span>
-              ) : tab instanceof Project && tab.projectState === ProjectState.Saved ? (
-                <X className="scale-75 opacity-75" />
-              ) : tab instanceof Project && tab.projectState === ProjectState.Stashed ? (
-                <CloudUpload />
-              ) : tab instanceof Project ? (
-                <Tooltip>
-                  {/* 醒目提醒用户，崩溃了丢了文件别怪开发者提醒不到位 */}
-                  <TooltipTrigger>
-                    <CircleAlert className="*:text-destructive! text-destructive!" />
-                  </TooltipTrigger>
-                  <TooltipContent>未保存！</TooltipContent>
-                </Tooltip>
-              ) : (
-                <X className="scale-75 opacity-75" />
-              )}
-            </div>
+                }}
+              >
+                {tab instanceof Project && tab.isSaving ? (
+                  <span className="grid size-3.5 animate-spin grid-cols-2">
+                    <span className="border-accent-foreground w-full animate-pulse rounded-full border-1 p-0.5"></span>
+                    <span className="border-accent-foreground w-full rounded-full border-1 p-0.5"></span>
+                    <span className="border-accent-foreground w-full rounded-full border-1 p-0.5"></span>
+                    <span className="border-accent-foreground w-full animate-pulse rounded-full border-1 p-0.5"></span>
+                  </span>
+                ) : tab instanceof Project && tab.projectState === ProjectState.Saved ? (
+                  <X className="scale-75 opacity-75" />
+                ) : tab instanceof Project && tab.projectState === ProjectState.Stashed ? (
+                  <CloudUpload />
+                ) : tab instanceof Project ? (
+                  <Tooltip>
+                    {/* 醒目提醒用户，崩溃了丢了文件别怪开发者提醒不到位 */}
+                    <TooltipTrigger>
+                      <CircleAlert className="*:text-destructive! text-destructive!" />
+                    </TooltipTrigger>
+                    <TooltipContent>未保存！</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <X className="scale-75 opacity-75" />
+                )}
+              </div>
+            )}
           </Button>
         </TabContextMenu>
       ))}

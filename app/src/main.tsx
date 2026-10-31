@@ -31,6 +31,8 @@ import VConsole from "vconsole";
 import { URI } from "vscode-uri";
 import App from "./App";
 import { ExtensionManager } from "./core/extension/ExtensionManager";
+import { startResearchSession } from "./core/research/ResearchSession";
+import { isResearchShell } from "./core/research/ResearchShell";
 import { handleDeepLink, isProjectGraphDeepLink } from "./core/service/dataFileService/DeepLinkHandler";
 import { onNewDraft, onOpenFile } from "./core/service/GlobalMenu";
 import WelcomeWindow from "./sub/WelcomeWindow";
@@ -158,7 +160,8 @@ async function loadLanguageFiles() {
     // debug: import.meta.env.DEV,
     debug: false,
     defaultNS: "",
-    fallbackLng: false,
+    // 科研模式的 research: 文案只手写了 en / zh_CN（zh_TW 由 zh_CN 自动生成），其他语言缺的键按这里回退，不显示原始 key
+    fallbackLng: isResearchShell() ? { zh_TWC: ["zh_TW", "en"], id: ["en"], default: [] } : false,
     saveMissing: false,
     resources: {
       en: await import("./locales/en.yml").then((m) => m.default),
@@ -229,6 +232,17 @@ async function loadStartFile() {
     }
   }
 
+  // 先挂监听再取队列：Rust 端在 take 之后改为发事件，顺序反过来时两步之间打开的文件会丢
+  await listen<string>("open-file-from-os", async (event) => {
+    const path = event.payload;
+    const isExists = await exists(path);
+    if (isExists) {
+      await onOpenFile(URI.file(path), "macOS双击文件");
+    } else {
+      toast.error("文件不存在");
+    }
+  });
+
   const pending = await invoke<string[]>("take_pending_open_files");
   for (const path of pending) {
     if (!path.toLowerCase().endsWith(".prg")) continue;
@@ -239,16 +253,6 @@ async function loadStartFile() {
       toast.error("文件不存在");
     }
   }
-
-  listen<string>("open-file-from-os", async (event) => {
-    const path = event.payload;
-    const isExists = await exists(path);
-    if (isExists) {
-      await onOpenFile(URI.file(path), "macOS双击文件");
-    } else {
-      toast.error("文件不存在");
-    }
-  });
 
   // Deep link: 冷启动（应用通过 URL 唤起）
   try {
@@ -270,6 +274,11 @@ async function loadStartFile() {
 
 /** 无外部文件时创建空草稿并弹出欢迎窗（类 Blender splash） */
 async function ensureStartupDraftAndWelcome() {
+  if (isResearchShell()) {
+    // 恢复上次打开的工作区和面板；什么都没恢复时 startResearchSession 已留好一个草稿
+    if (!(await startResearchSession())) WelcomeWindow.open();
+    return;
+  }
   if (store.get(tabsAtom).length > 0) return;
   await onNewDraft();
   WelcomeWindow.open();

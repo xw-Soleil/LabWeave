@@ -1,4 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { ComponentTabContext } from "@/core/Tab";
 import { activeTabAtom, store } from "@/state";
@@ -19,8 +20,14 @@ import SettingsTab from "./settings";
 
 type TabName = "settings" | "linuxRuntime" | "keybinds" | "customization" | "about" | "extensions" | "account";
 
+// 科研模式不需要账户、扩展和鸣谢（捐助）页
+const researchHiddenTabs: ReadonlySet<string> = new Set(["account", "extensions", "credits"]);
+
 export default function SettingsWindow({ defaultTab = "settings" }: { defaultTab?: TabName }) {
-  const [currentTab, setCurrentTab] = useState<TabName>(defaultTab);
+  const researchShell = isResearchShell();
+  const [currentTab, setCurrentTab] = useState<TabName>(
+    researchShell && researchHiddenTabs.has(defaultTab) ? "settings" : defaultTab,
+  );
   const owner = useContext(ComponentTabContext);
   const activeTab = useAtomValue(activeTabAtom);
   const [navigationHost, setNavigationHost] = useState<HTMLElement | null>(null);
@@ -46,22 +53,28 @@ export default function SettingsWindow({ defaultTab = "settings" }: { defaultTab
           <Brush />
           个性化
         </TabsTrigger>
-        <TabsTrigger value="account">
-          <User />
-          账户
-        </TabsTrigger>
-        <TabsTrigger value="extensions">
-          <Blocks />
-          扩展
-        </TabsTrigger>
+        {!researchShell && (
+          <TabsTrigger value="account">
+            <User />
+            账户
+          </TabsTrigger>
+        )}
+        {!researchShell && (
+          <TabsTrigger value="extensions">
+            <Blocks />
+            扩展
+          </TabsTrigger>
+        )}
         <TabsTrigger value="about">
           <Info />
           关于
         </TabsTrigger>
-        <TabsTrigger value="credits">
-          <HandHeart />
-          鸣谢
-        </TabsTrigger>
+        {!researchShell && (
+          <TabsTrigger value="credits">
+            <HandHeart />
+            鸣谢
+          </TabsTrigger>
+        )}
       </TabsList>
     </div>
   );
@@ -83,21 +96,27 @@ export default function SettingsWindow({ defaultTab = "settings" }: { defaultTab
       <TabsContent value="customization" className="overflow-auto">
         <CustomizationTab />
       </TabsContent>
-      <TabsContent value="account" className="overflow-auto">
-        <AccountTab />
-      </TabsContent>
+      {!researchShell && (
+        <TabsContent value="account" className="overflow-auto">
+          <AccountTab />
+        </TabsContent>
+      )}
       <TabsContent value="quickSettings" className="overflow-auto">
         <QuickSettingsTab />
       </TabsContent>
-      <TabsContent value="extensions" className="overflow-auto">
-        <ExtensionsTab />
-      </TabsContent>
+      {!researchShell && (
+        <TabsContent value="extensions" className="overflow-auto">
+          <ExtensionsTab />
+        </TabsContent>
+      )}
       <TabsContent value="about" className="overflow-auto">
         <AboutTab />
       </TabsContent>
-      <TabsContent value="credits" className="overflow-auto">
-        <CreditsTab />
-      </TabsContent>
+      {!researchShell && (
+        <TabsContent value="credits" className="overflow-auto">
+          <CreditsTab />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }

@@ -4,6 +4,8 @@ import { Extension } from "@/core/extension/Extension";
 import { loadAllServicesAfterInit, loadAllServicesBeforeInit } from "@/core/loadAllServices";
 import { Project, ProjectState } from "@/core/Project";
 import { loadWithProjectOwnership, ProjectOwnershipError, type ProjectOwnershipLease } from "@/core/ProjectOwnership";
+import { isOutsideResearchFolder, ResearchFolder } from "@/core/research/ResearchFolder";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { isResourceTab } from "@/core/Tab";
 import { TabFactory } from "@/core/TabFactory";
 import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
@@ -190,6 +192,7 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
       directory: false,
       multiple: false,
       filters: [{ name: "工程文件", extensions: ["prg"] }],
+      defaultPath: isResearchShell() ? ResearchFolder.getRoot() || undefined : undefined,
     });
     if (!path) return;
     uri = URI.file(path);
@@ -204,6 +207,19 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
   if (textuallyMatchingTab) {
     focusExistingTab(textuallyMatchingTab);
     return textuallyMatchingTab as any;
+  }
+
+  if (uri.scheme === "file" && isOutsideResearchFolder(uri.fsPath)) {
+    toast.error(i18next.t("files.outsideFolder", { ns: "research", path: uri.fsPath }));
+    return undefined;
+  }
+  if (uri.scheme === "file" && isResearchShell()) {
+    try {
+      await ResearchFolder.ensureRootRegistered();
+    } catch (error) {
+      // 登记失败时照样尝试打开：真读不了的话下面会给出读取错误
+      toast.error(i18next.t("files.setRootFailed", { ns: "research", error: String(error) }));
+    }
   }
 
   let initializationStartedAt = performance.now();
@@ -430,8 +446,14 @@ export async function onUpgradeOldJson() {
     directory: false,
     multiple: false,
     filters: [{ name: "旧版工程文件", extensions: ["json"] }],
+    defaultPath: isResearchShell() ? ResearchFolder.getRoot() || undefined : undefined,
   });
   if (!path) return;
+  // 升级结果会写在原文件旁边，文件夹外的就不处理
+  if (isOutsideResearchFolder(path)) {
+    toast.error(i18next.t("files.outsideFolder", { ns: "research", path }));
+    return;
+  }
 
   const sourceUri = URI.file(path);
   const fileData = await readFile(sourceUri.fsPath);

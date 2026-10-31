@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { keyBindI18nKey, RESEARCH_KEYBIND_IDS } from "@/core/research/ResearchMenu";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds, getKeyBindTypeById } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import Fuse from "fuse.js";
@@ -122,7 +124,7 @@ export default function KeyBindsPage() {
               key: item.id,
               value: item.key,
               isEnabled: item.isEnabled,
-              i18n: t(item.id, { returnObjects: true }),
+              i18n: t(keyBindI18nKey(item.id), { returnObjects: true }),
             }) as any,
         ),
         {
@@ -233,8 +235,8 @@ export default function KeyBindsPage() {
         <Field
           key={id}
           icon={getKeyBindIcon()}
-          title={t(`${id}.title`, { defaultValue: id })}
-          description={t(`${id}.description`, { defaultValue: "" })}
+          title={t(`${keyBindI18nKey(id)}.title`, { defaultValue: id })}
+          description={t(`${keyBindI18nKey(id)}.description`, { defaultValue: "" })}
           className="border-accent rounded-none border-b"
           extra={
             conflicts.length > 0 ? (
@@ -549,7 +551,9 @@ export default function KeyBindsPage() {
               const conflictGroup = shortcutKeysGroups.find((group) => group.keys.includes(conflict.id));
               return (
                 <div key={conflict.id} className="border-border border-b p-2 last:border-0">
-                  <div className="font-medium">{t(`${conflict.id}.title`, { defaultValue: conflict.id })}</div>
+                  <div className="font-medium">
+                    {t(`${keyBindI18nKey(conflict.id)}.title`, { defaultValue: conflict.id })}
+                  </div>
                   <div className="text-muted-foreground text-sm">
                     键位: {conflict.key}
                     {conflictGroup && ` | 分组: ${t2(`${conflictGroup.title}.title`)}`}
@@ -575,6 +579,10 @@ type ShortcutKeysGroup = {
 };
 
 export const shortcutKeysGroups: ShortcutKeysGroup[] = [
+  // 分组名按 `${title}.title` 去 keyBindsGroup 命名空间里找；带命名空间前缀后会去 research 命名空间里找
+  ...(isResearchShell()
+    ? [{ title: "research:menu.keyBindsGroup", icon: <PanelsTopLeft />, keys: [...RESEARCH_KEYBIND_IDS] }]
+    : []),
   {
     title: "basic",
     icon: <Keyboard />,

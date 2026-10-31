@@ -1,6 +1,7 @@
 import { Project, service } from "@/core/Project";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
-import { AIChatSessionStore } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
+import { AIChatSessionStore, getAIChatProjectKey } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
 import { composeAgentSystemPrompt, mergeAgentToolSets } from "@/core/service/dataManageService/aiEngine/AIAgentRuntime";
 import {
   createSessionMemoryCompactionPlan,
@@ -11,8 +12,12 @@ import { createBuiltInToolAgentTools } from "@/core/service/dataManageService/ai
 import { AIMCPStore, materializeMCPServers, prepareMCPTools } from "@/core/service/dataManageService/aiEngine/AIMCP";
 import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { AIProjectReferenceStore } from "@/core/service/dataManageService/aiEngine/AIProjectReferenceStore";
-import { parseAIRequestHeaders } from "@/core/service/dataManageService/aiEngine/AIRequestHeaders";
+import { createChatModel, mergeAIRequestHeaders } from "@/core/service/dataManageService/aiEngine/AIProvider";
 import { resolveHttpRequestBody } from "@/core/service/dataManageService/aiEngine/AIHttpBody";
+import {
+  buildResearchContext,
+  estimateResearchContextTokens,
+} from "@/core/service/dataManageService/aiEngine/ResearchContext";
 import {
   AIRequestTraceBuffer,
   type AIRequestTraceCallKind,
@@ -26,7 +31,6 @@ import {
   createSkillTools,
   discoverSkills,
 } from "@/core/service/dataManageService/aiEngine/AISkills";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { fetch } from "@tauri-apps/plugin-http";
 import {
   convertToModelMessages,
@@ -41,6 +45,18 @@ import {
 
 const SYSTEM_PROMPT =
   "尽可能尝试使用工具解决问题，如果实在不行才能问用户。TextNode正常情况下高度为75，多个节点叠起来时需要适当留padding。节点正常情况下的颜色应该是透明[0,0,0,0]，注意透明色并非是“看不见文本”。工具使用n1、n2、e1等当前项目对象引用，这些引用在项目的不同会话间保持一致；不要猜测引用，提及对象时用反引号包裹引用，以便用户点击定位。MCP 工具被用户拒绝后，不要在当前任务中重新尝试该调用，也不要用等价参数绕过拒绝。";
+
+const RESEARCH_SYSTEM_PROMPT = [
+  "你是「科研工作台」里的研究助手。用户把论文、图片和笔记做成卡片放在白板上，用连线和分组表达自己的思路。",
+  "下面的 <whiteboard> 是当前白板的文字版（卡片、连线、分组、标签，以及文件卡片里抽出的文字摘要），<research-files> 是研究文件夹里的文件清单。用户消息开头的 [selected: n1 ...] 是用户当前选中的对象。",
+  "回答时：",
+  "1. 根据白板上的卡片、连线、分组和文件摘要，概括用户的思路；",
+  "2. 指出缺的证据、没连上的论文、逻辑跳跃，以及下一步可以做什么；",
+  "3. 提到具体内容时引用卡片标题和文件路径；",
+  "4. 不编造没出现在材料里的内容，材料不够就直接说还缺什么；",
+  "5. 用户问别的问题也照常回答。",
+  "需要更细的信息时可以调用只读工具查看白板对象；提到 n1、e1 这样的对象引用时用反引号包裹，方便用户点击定位。你不能修改白板。",
+].join("\n");
 
 export type AIMessageMetadata = {
   inputTokens?: number;
@@ -104,50 +120,46 @@ export class AIEngine {
       const pendingTraceCallIds: number[] = [];
       let traceCallKind: AIRequestTraceCallKind = "agent";
 
-      const provider = createOpenAICompatible({
-        name: "project-graph",
-        baseURL: Settings.aiApiBaseUrl,
-        apiKey: Settings.aiApiKey || undefined,
-        fetch: async (url: any, init: any) => {
-          const traceCallId = pendingTraceCallIds.shift();
-          const wireRequestId = this.requestTraceBuffer.recordWireRequest(
-            traceRunId,
-            traceCallId,
-            url.toString(),
-            init?.body,
-          );
-          try {
-            const requestBody = await resolveHttpRequestBody(init?.body);
-            const finalHeaders: Record<string, string> = {
-              ...(init?.headers instanceof Headers
-                ? Object.fromEntries((init.headers as Headers).entries())
-                : init?.headers),
-              ...parseAIRequestHeaders(Settings.aiCustomHeaders),
-            };
-            const response = await fetch(url.toString(), {
-              ...init,
-              body: requestBody,
-              headers: finalHeaders,
-              mode: "cors",
-            });
-            this.requestTraceBuffer.recordWireResponse(traceRunId, wireRequestId, response.status);
+      const wireFetch = async (url: any, init: any) => {
+        const traceCallId = pendingTraceCallIds.shift();
+        const wireRequestId = this.requestTraceBuffer.recordWireRequest(
+          traceRunId,
+          traceCallId,
+          url.toString(),
+          init?.body,
+        );
+        try {
+          const requestBody = await resolveHttpRequestBody(init?.body);
+          const response = await fetch(url.toString(), {
+            ...init,
+            body: requestBody,
+            headers: mergeAIRequestHeaders(init?.headers, Settings.aiCustomHeaders),
+            mode: "cors",
+          });
+          this.requestTraceBuffer.recordWireResponse(traceRunId, wireRequestId, response.status);
 
-            if (!response.ok) {
-              const errorText = await response.text().catch(() => "unknown error");
-              throw new Error(`API 请求失败 (${response.status}): ${errorText}`);
-            }
-
-            return response;
-          } catch (error) {
-            this.requestTraceBuffer.recordWireError(traceRunId, wireRequestId, error);
-            throw error;
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "unknown error");
+            throw new Error(`API 请求失败 (${response.status}): ${errorText}`);
           }
-        },
-        includeUsage: true,
-      });
+
+          return response;
+        } catch (error) {
+          this.requestTraceBuffer.recordWireError(traceRunId, wireRequestId, error);
+          throw error;
+        }
+      };
 
       const model = wrapLanguageModel({
-        model: provider.chatModel(modelId),
+        model: createChatModel(
+          {
+            aiApiFormat: Settings.aiApiFormat,
+            aiApiBaseUrl: Settings.aiApiBaseUrl,
+            aiApiKey: Settings.aiApiKey,
+            aiModel: modelId,
+          },
+          wireFetch,
+        ),
         middleware: {
           specificationVersion: "v3",
           wrapGenerate: async ({ doGenerate, params }) => {
@@ -173,15 +185,20 @@ export class AIEngine {
         },
       });
       const contextWindowTokenLimit = getContextWindowTokenLimit(body.contextWindowTokenLimit);
-      let sessionMemory = sessionId
-        ? await AIChatSessionStore.getSessionMemory(project.uri.toString(), sessionId)
-        : undefined;
+      const researchShell = isResearchShell();
+      const researchContext = researchShell ? await buildResearchContext(project, contextWindowTokenLimit) : "";
+      const chatKey = getAIChatProjectKey(project);
+      let sessionMemory = sessionId ? await AIChatSessionStore.getSessionMemory(chatKey, sessionId) : undefined;
       let workingMessages = getSessionMemoryWorkingMessages(messages, sessionMemory);
       const compactionPlan = sessionId
         ? createSessionMemoryCompactionPlan({
             messages,
             memory: sessionMemory,
-            contextWindowTokens: contextWindowTokenLimit,
+            // 白板和文件清单每次都放进系统提示，压缩记忆时要把这部分占用扣掉
+            contextWindowTokens:
+              contextWindowTokenLimit && researchContext
+                ? Math.max(1, contextWindowTokenLimit - estimateResearchContextTokens(researchContext))
+                : contextWindowTokenLimit,
           })
         : null;
 
@@ -206,29 +223,19 @@ export class AIEngine {
           summary,
           coveredMessageCount: compactionPlan.nextCoveredMessageCount,
         };
-        await AIChatSessionStore.setSessionMemory(project.uri.toString(), sessionId, sessionMemory);
+        await AIChatSessionStore.setSessionMemory(chatKey, sessionId, sessionMemory);
         workingMessages = compactionPlan.retainedMessages;
       }
 
-      const projectUri = project.uri.toString();
-      const projectSkillsTrusted =
-        project.uri.scheme === "file" && (await AISkillTrustStore.isProjectTrusted(projectUri));
-      const activatedSkills = filterActivatedSkillSnapshots(
-        sessionId ? await AIChatSessionStore.getActivatedSkills(projectUri, sessionId) : [],
-        projectSkillsTrusted,
-      );
-      const skillCatalog = await discoverSkills(projectUri);
-      const skillTools = createSkillTools({
-        catalog: skillCatalog,
-        activatedSkills,
-        onActivate: async (snapshot) => {
-          if (!sessionId) throw new Error("当前 AI 请求缺少会话，无法激活 Skill");
-          await AIChatSessionStore.activateSkill(projectUri, sessionId, snapshot);
-        },
-      });
-      const mcpRuntime = await prepareMCPTools(materializeMCPServers(await AIMCPStore.load()), {
-        requireApproval: !Settings.aiAutoApproveMcpTools,
-      });
+      // 科研模式不启动 MCP 服务、不扫描 Skills：两者每次请求都会起进程或读用户目录
+      const { skillTools, skillContext } = researchShell
+        ? { skillTools: {}, skillContext: "" }
+        : await this.prepareSkills(project, chatKey, sessionId);
+      const mcpRuntime = researchShell
+        ? { tools: {}, close: async () => {} }
+        : await prepareMCPTools(materializeMCPServers(await AIMCPStore.load()), {
+            requireApproval: !Settings.aiAutoApproveMcpTools,
+          });
 
       try {
         const tools = mergeAgentToolSets(
@@ -236,11 +243,12 @@ export class AIEngine {
           mcpRuntime.tools,
           skillTools,
         );
-        const skillContext = buildSkillSystemContext(skillCatalog, activatedSkills);
         const memoryContext = sessionMemory
           ? `以下是当前会话的压缩记忆，仅用于保持对话连续性。当前用户消息和工具读取到的项目状态优先。\n${sessionMemory.summary}`
           : undefined;
-        const system = composeAgentSystemPrompt(SYSTEM_PROMPT, skillContext, memoryContext);
+        const system = researchShell
+          ? composeAgentSystemPrompt(`${RESEARCH_SYSTEM_PROMPT}\n\n${researchContext}`, skillContext, memoryContext)
+          : composeAgentSystemPrompt(SYSTEM_PROMPT, skillContext, memoryContext);
         const modelMessages = pruneMessages({
           messages: await convertToModelMessages(workingMessages, {
             tools,
@@ -288,6 +296,26 @@ export class AIEngine {
         throw error;
       }
     };
+  }
+
+  private async prepareSkills(project: Project, chatKey: string, sessionId: string | undefined) {
+    const projectUri = project.uri.toString();
+    const projectSkillsTrusted =
+      project.uri.scheme === "file" && (await AISkillTrustStore.isProjectTrusted(projectUri));
+    const activatedSkills = filterActivatedSkillSnapshots(
+      sessionId ? await AIChatSessionStore.getActivatedSkills(chatKey, sessionId) : [],
+      projectSkillsTrusted,
+    );
+    const skillCatalog = await discoverSkills(projectUri);
+    const skillTools = createSkillTools({
+      catalog: skillCatalog,
+      activatedSkills,
+      onActivate: async (snapshot) => {
+        if (!sessionId) throw new Error("当前 AI 请求缺少会话，无法激活 Skill");
+        await AIChatSessionStore.activateSkill(chatKey, sessionId, snapshot);
+      },
+    });
+    return { skillTools, skillContext: buildSkillSystemContext(skillCatalog, activatedSkills) };
   }
 
   async getModels() {

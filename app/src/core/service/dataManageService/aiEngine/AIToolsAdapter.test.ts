@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import z from "zod/v4";
 
+// 这里测的是原版的 29 个工具；科研模式的过滤单独在最后一个用例里测
+vi.hoisted(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
+
 const mocks = vi.hoisted(() => {
   class ReferenceError extends Error {
     readonly name = "AIObjectReferenceError";
@@ -238,5 +241,25 @@ describe("Built-in Tool consumer adapters", () => {
       success: false,
       error: { code: "stale_ref", ref: "n1", message: "引用已失效" },
     });
+  });
+
+  it("gives the research-mode chat only tools that cannot change the board, call out, or call a model", () => {
+    vi.stubEnv("LR_RESEARCH_SHELL", "true");
+    try {
+      const toolSet = createBuiltInToolAgentTools({} as never, {} as never) as Record<string, unknown>;
+      expect(Object.keys(toolSet)).toEqual([
+        "get_all_nodes",
+        "search_text_nodes_by_regex",
+        "get_children",
+        "get_parents",
+        "get_object_details",
+        "check_connections",
+        "get_selected_nodes",
+        "get_nodes_in_viewport",
+        "get_selected_refs",
+      ]);
+    } finally {
+      vi.stubEnv("LR_RESEARCH_SHELL", "false");
+    }
   });
 });

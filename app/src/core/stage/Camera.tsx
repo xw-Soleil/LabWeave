@@ -122,6 +122,33 @@ export class Camera {
   private tickIndex = -1;
   private hasResetOnOpen = false;
 
+  /**
+   * 打开文件后的初始视野已经定下来了（自动适配全部内容，或用 applySavedView 恢复）。
+   * 在这之前 location / currentScale 还是默认值，不值得保存。
+   */
+  get isInitialViewSettled(): boolean {
+    return this.hasResetOnOpen;
+  }
+
+  /**
+   * 直接跳到指定视野，并取消打开文件时的「适配全部内容」重置，否则几帧后会被覆盖。
+   * 用于恢复上次保存的视野，以及深链接、引用块这类打开后立刻定位的场景。
+   * @param location 视野中心的世界坐标
+   * @returns 数值无效时不改动并返回 false
+   */
+  applySavedView(location: Vector, scale: number): boolean {
+    if (!Number.isFinite(location.x) || !Number.isFinite(location.y) || !Number.isFinite(scale) || scale <= 0) {
+      return false;
+    }
+    this.stopImmediately();
+    this.location = location.clone();
+    this.targetLocationByScale = location.clone();
+    this.currentScale = scale;
+    this.targetScale = scale;
+    this.hasResetOnOpen = true;
+    return true;
+  }
+
   tick() {
     // --- 初次打开文件的时候，重制视野
     this.tickIndex++; // 从0开始

@@ -204,6 +204,10 @@ settings:
       cpu: CPU
       render: 渲染
       experimental: 开发中的功能
+    research:
+      title: 科研工作台
+      folder: 研究文件夹
+      ai: AI 阅读
   language:
     title: 语言
     options:
@@ -1185,6 +1189,31 @@ settings:
     title: 自动批准 MCP 工具
     description: |
       启用后，MCP 工具无需手动批准即可执行。本地 stdio 进程的首次启动仍需单独确认。
+  aiApiFormat:
+    title: AI 接口格式
+    description: |
+      服务商使用的接口格式。大多数服务兼容 OpenAI 格式；用 Claude 官方接口时选 Claude
+    options:
+      openai: OpenAI 兼容
+      anthropic: Claude（Anthropic）
+  aiPdfTextPages:
+    title: 给 AI 读的 PDF 页数
+    description: |
+      把论文放到白板上时，抽取前几页的文字给 AI 参考。填 0 表示不抽取
+  researchFolderPath:
+    title: 研究文件夹
+    description: |
+      论文、图片、笔记和工作区都放在这个文件夹里
+  writeAiSidecarOnSave:
+    title: 保存时生成 AI 可读的文字版
+    description: |
+      保存工作区时，在旁边的 .workbench 文件夹里写一份 JSON 和 Markdown，方便 AI 工具读懂白板
+  researchSession:
+    title: 上次打开的工作区和面板
+  researchShowFullMenu:
+    title: 显示完整菜单
+    description: |
+      打开后显示原版 Project Graph 的全部菜单项
   textIntegerLocationAndSizeRender:
     title: 文本整数位置和大小渲染
     description: |
@@ -2751,3 +2780,199 @@ projectOwnership:
   releaseFailedMessage: "项目已关闭，但无法释放它的所有权锁。请选择“重试”再次尝试。\n\n错误信息：{{error}}"
   retry: 重试
   ok: 确定
+
+# 科研工作台。每个工作单元只往自己的小节里加键
+research:
+  shell:
+    title: 科研工作台
+    rail:
+      workspace: 工作区
+      ai: AI 对话
+      files: 文件
+      settings: 设置
+    setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
+    restoreFailed: "没能重新打开工作区 {{path}}：{{message}}"
+    panelFailed: "没能打开面板：{{message}}"
+    autoSaveFailed: "关闭前自动保存「{{name}}」失败：{{message}}"
+    extensionsDisabled: 科研工作台不运行扩展，数据只留在本机
+  menu:
+    title: 菜单
+    keyBindsGroup:
+      title: 科研工作台
+      description: 工作区、AI 对话和文件面板的快捷键。在侧边面板或输入框里也能用。
+    items:
+      file:
+        title: 文件
+      edit:
+        title: 编辑
+      view:
+        title: 视图
+      window:
+        title: 窗口
+      settings:
+        title: 设置
+      about:
+        title: 关于
+      cut:
+        title: 剪切
+      copy:
+        title: 拷贝
+      paste:
+        title: 粘贴
+      selectAll:
+        title: 全选
+      quit:
+        title: 退出科研工作台
+      newResearchWorkspace:
+        title: 新建工作区
+        description: 在研究文件夹里新建一个工作区并打开
+      researchChooseFolder:
+        title: 选择研究文件夹…
+        description: 选一个放论文、图片和笔记的文件夹
+      saveFile:
+        title: 保存
+      openCurrentProjectFileFolder:
+        title: 在 Finder 中显示
+      researchFocusWorkspace:
+        title: 工作区
+        description: 回到当前工作区的白板
+      researchToggleAIChat:
+        title: AI 对话
+        description: 打开或收起右侧的 AI 对话面板
+      researchToggleFileManager:
+        title: 文件
+        description: 打开或收起左侧的文件面板
+      clickAppMenuSettingsButton:
+        title: 设置…
+      openAboutWindow:
+        title: 关于科研工作台
+  files:
+    title: 文件
+    placeholder: 文件面板（建设中）
+    emptyHint: 选一个放论文、图片和笔记的文件夹，这里会列出里面的文件。程序只在这个文件夹里读写。
+    chooseResearchFolder: 选择研究文件夹
+    chooseFolder: 选择文件夹
+    chooseFolderDialogTitle: 选择研究文件夹
+    refresh: 刷新
+    newWorkspace: 新建工作区
+    searchPlaceholder: 搜索文件名
+    loading: 正在读取文件夹…
+    loadFailed: "读不了这个文件夹：{{error}}"
+    retry: 重试
+    noMatch: 没有找到匹配的文件
+    opened: 已打开
+    workspaceRowHint: 单击打开这个工作区
+    fileRowHint: 双击用默认程序打开，拖到白板上生成卡片
+    truncated: "文件太多，只列出了前 {{count}} 个"
+    unreadableDirs: "有 {{count}} 个子文件夹读不了，已跳过"
+    setRootFailed: "没能设置研究文件夹：{{error}}"
+    noRoot: 请先选择研究文件夹
+    outsideFolder: "这个文件不在研究文件夹里，没有打开：{{path}}"
+    sections:
+      workspace: 工作区
+      pdf: 论文
+      image: 图片
+      markdown: 笔记
+    sectionEmpty:
+      workspace: 还没有工作区，点上面的「新建工作区」建一个
+      pdf: 把 PDF 放进研究文件夹，就会出现在这里
+      image: 还没有图片
+      markdown: 还没有 Markdown 笔记
+    workspaceName:
+      empty: 工作区名字不能为空
+      invalidChars: '名字里不能有这些字符：\ / : * ? " < > |'
+      hidden: 名字不能以「.」或「~$」开头，也不能包含「_backup」，否则文件面板里看不到它
+      exists: "「{{name}}.prg」已经有了，换个名字吧"
+  card:
+    title: 文件卡片
+    kind:
+      pdf: PDF
+      image: 图片
+      markdown: 笔记
+    pages: "{{count}} 页"
+    creating: "正在读取 {{count}} 个文件，做成卡片……"
+    missing: 文件不见了
+    missingHint: 原文件不见了，可能被移走、改名或删除了
+    missingToast: "文件不见了：{{path}}"
+    openHint: 双击打开原文件
+    unsupported: "这些文件做不成卡片（只支持 PDF、图片和 Markdown）：{{names}}"
+    readProblem: "「{{name}}」{{problem}}"
+    readFailed: "有文件没读出来：\n{{details}}"
+    pdfLocked: 这个 PDF 有密码，读不出内容
+    pdfBroken: "PDF 读取出错：{{error}}"
+    pdfNoText: 这个 PDF 里没有能复制的文字，可能是扫描件
+    thumbnailFailed: "缩略图没做出来：{{error}}"
+  drop:
+    title: 放到白板上
+    hint: 松开鼠标，把文件放到白板上
+    hintDetail: 支持 PDF、图片和 Markdown；.prg 文件会作为工作区打开
+    unsupported: 暂不支持的文件类型：{{names}}
+    separator: 、
+    andMore: " 等 {{count}} 个"
+    noBoard: 先打开或新建一个工作区，再把文件拖进来
+    failed: 放置文件时出错：{{message}}
+    cancel: 取消
+    copied: 已复制 {{count}} 个文件到 {{folder}}
+    copy:
+      title: 这些文件不在研究文件夹里
+      description: "复制到 {{folder}} 再放上白板？\n{{names}}"
+      confirm: 复制并放上白板
+    noFolder:
+      title: 还没有选研究文件夹
+      description: "选一个研究文件夹后，这些文件会先复制到它的「导入」子文件夹，再放上白板。\n也可以先不复制，直接引用文件原来的位置。"
+      choose: 选择研究文件夹
+      useOriginal: 直接引用原文件
+  workspace:
+    title: 工作区
+    noFolder: 还没有选择研究文件夹
+    empty: 研究文件夹里还没有工作区
+    opened: 已打开
+    new: 新建工作区
+    chooseFolder: 选择研究文件夹
+    changeFolder: 换文件夹
+    listFailed: "读取工作区列表失败：{{message}}"
+    failed: "操作失败：{{message}}"
+    newTitle: 新建工作区
+    newDescription: 给工作区起个名字，它会保存成研究文件夹里的一个 .prg 文件
+    newPlaceholder: 例如：文献综述
+    save:
+      sidecarFailed: "工作区已保存，但给 AI 读的文字版（.workbench 文件夹）没能写出来：{{error}}"
+      outsideFolder: "没有保存：请把工作区存到研究文件夹（{{root}}）里面。你选的位置是 {{path}}"
+  ai:
+    title: AI 助手
+    noWorkspace: 先打开一个工作区
+    noWorkspaceHint: AI 会读当前白板上的卡片、连线和分组，打开工作区后就能问它了。
+    setupTitle: 先在设置里填 AI 接口
+    setupDescription: 还没有填：{{missing}}。填好后就可以问 AI 了。
+    setupMissingSeparator: 、
+    setupMissing:
+      baseUrl: 接口地址
+      model: 模型名称
+      apiKey: API Key
+    openSettings: 打开 AI 设置
+    emptyTitle: 问问 AI 你的思路
+    emptyDescription: AI 会读当前白板上的卡片、连线、分组和文件摘要，帮你理一理思路、找找缺口。它只读白板，不会改动。
+    quickPrompts:
+      lineOfThought: 我的思路是什么？
+      whatIsMissing: 还缺什么？
+    inputPlaceholder: 问问白板上的内容，例如：这几篇论文之间是什么关系？
+  welcome:
+    title: 欢迎使用科研工作台
+    subtitle: 把论文、图片和笔记摆到白板上，理清思路，再请 AI 帮你看看还缺什么
+    folder: 研究文件夹
+    chooseFolder: 选择研究文件夹
+    changeFolder: 换一个文件夹
+    noFolderHint: 先选一个放论文和笔记的文件夹，工作区也会保存在里面
+    workspaces: 工作区
+    newWorkspace: 新建工作区
+    noWorkspaces: 这个文件夹里还没有工作区，新建一个开始吧
+    draft: 先随便画画（临时草稿）
+    openOther: 打开其他工作区文件
+    settings: 设置
+    howTo:
+      title: 三步上手
+      step1: 选择研究文件夹，把论文（PDF）、图片和笔记放进去
+      step2: 新建工作区，从左边的文件面板把文件拖到白板上，连线、分组、写下想法
+      step3: 打开 AI 对话，让它根据白板上的内容帮你梳理思路、找出缺口
+  settings:
+    title: 科研工作台

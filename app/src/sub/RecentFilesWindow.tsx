@@ -1,6 +1,8 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Project } from "@/core/Project";
+import { isOutsideResearchFolder } from "@/core/research/ResearchFolder";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { DragFileIntoStageEngine } from "@/core/service/dataManageService/dragFileIntoStageEngine/dragFileIntoStageEngine";
 import { SoundService } from "@/core/service/feedbackService/SoundService";
@@ -220,7 +222,10 @@ export default function RecentFilesWindow({ tabId }: { tabId: string }) {
     setIsLoading(true);
     await RecentFileManager.validAndRefreshRecentFiles();
     await RecentFileManager.sortTimeRecentFiles();
-    const files = await RecentFileManager.getRecentFiles();
+    // 科研模式下只列研究文件夹里的文件，也就不会去读文件夹外 .prg 的缩略图
+    const files = (await RecentFileManager.getRecentFiles()).filter(
+      (file) => file.uri.scheme !== "file" || !isOutsideResearchFolder(file.uri.fsPath),
+    );
     setRecentFiles(files);
     setRecentFilesFiltered(files);
     setIsLoading(false);
@@ -566,14 +571,17 @@ export default function RecentFilesWindow({ tabId }: { tabId: string }) {
           className="max-w-96 min-w-32 flex-1"
         />
 
-        <button
-          onClick={importPrgFilesFromFolder}
-          className="bg-primary/10 hover:bg-primary/20 flex gap-2 rounded-md p-2 transition-colors"
-          title="递归导入文件夹中的所有.prg文件"
-        >
-          <Import />
-          <span>递归导入文件夹中的所有.prg文件</span>
-        </button>
+        {/* 科研模式下由文件面板列出研究文件夹里的工作区；这个导入会跟随符号链接扫到文件夹外面 */}
+        {!isResearchShell() && (
+          <button
+            onClick={importPrgFilesFromFolder}
+            className="bg-primary/10 hover:bg-primary/20 flex gap-2 rounded-md p-2 transition-colors"
+            title="递归导入文件夹中的所有.prg文件"
+          >
+            <Import />
+            <span>递归导入文件夹中的所有.prg文件</span>
+          </button>
+        )}
 
         <button
           onClick={clearAllRecentHistory}

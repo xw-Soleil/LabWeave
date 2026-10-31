@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const APP_IDENTIFIER: &str = "liren.project-graph";
+const APP_IDENTIFIER: &str = "com.ai4know.researchworkbench";
 const STORE_FILE_NAME: &str = "ai-project-references.json";
 static NEXT_TEMPORARY_FILE_ID: AtomicU64 = AtomicU64::new(1);
 

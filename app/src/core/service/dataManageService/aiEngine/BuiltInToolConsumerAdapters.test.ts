@@ -5,6 +5,7 @@ const fixture = vi.hoisted(() => ({
     name: "fixture_tool",
     description: "Fixture tool visible through every built-in consumer",
     inputSchema: { fixture: true },
+    capabilities: ["project"],
   },
 }));
 

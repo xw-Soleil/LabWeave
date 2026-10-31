@@ -12,7 +12,7 @@ use std::time::Duration;
 
 const OWNERSHIP_RETRY_DELAY: Duration = Duration::from_secs(5);
 #[cfg(not(test))]
-const APP_IDENTIFIER: &str = "liren.project-graph";
+const APP_IDENTIFIER: &str = "com.ai4know.researchworkbench";
 #[cfg(not(test))]
 const OWNERSHIP_DIRECTORY_NAME: &str = "project-ownership";
 pub(crate) const OWNERSHIP_DIRECTORY_ENVIRONMENT_VARIABLE: &str =

@@ -1,3 +1,4 @@
+import ActivityRail, { ACTIVITY_RAIL_WIDTH } from "@/components/activity-rail";
 import MyContextMenuContent from "@/components/context-menu-content";
 import FloatingTabs from "@/components/floating-tabs";
 import PieMenu from "@/components/pie-menu";
@@ -6,6 +7,12 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Project, ProjectState } from "@/core/Project";
+import {
+  persistResearchSession,
+  registerResearchSession,
+  setResearchSessionTracking,
+} from "@/core/research/ResearchSession";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { isResourceTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { GlobalMenu, onNewDraft } from "@/core/service/GlobalMenu";
@@ -54,6 +61,8 @@ export default function App() {
   const [telemetryEventSent, setTelemetryEventSent] = useState(false);
   const [isClassroomMode, setIsClassroomMode] = useAtom(isClassroomModeAtom);
   const [uiScalePercent, setUiScalePercent] = useState(Settings.uiScalePercent);
+  const { t: tResearch } = useTranslation("research");
+  const showActivityRail = isResearchShell();
 
   const contextMenuTriggerRef = useRef<HTMLDivElement>(null);
 
@@ -211,6 +220,15 @@ export default function App() {
     TabWorkspace.synchronizeGroups();
   }, [tabs]);
 
+  useEffect(() => {
+    if (!isResearchShell()) return;
+    return registerResearchSession();
+  }, []);
+
+  useEffect(() => {
+    if (isResearchShell()) persistResearchSession();
+  }, [tabs, activeResourceTab]);
+
   // 关掉最后一个 Project 后：再创建空草稿并弹出欢迎窗（启动时无 Project 由 main 处理，这里只响应 true→false）
   const previousHadProjectRef = useRef(tabs.some((tab) => tab instanceof Project && !tab.closing));
   useEffect(() => {
@@ -233,6 +251,19 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(async (e) => {
         e.preventDefault();
+
+        // 科研工作台：已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
+        if (isResearchShell() && (Settings.autoSaveWhenClose || Settings.autoSave)) {
+          for (const tab of tabs) {
+            if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
+            if (tab.projectState !== ProjectState.Unsaved) continue;
+            try {
+              await tab.save();
+            } catch (error) {
+              toast.error(tResearch("shell.autoSaveFailed", { name: tab.title, message: String(error) }));
+            }
+          }
+        }
 
         // 检查是否有未保存的项目
         const unsavedTabs = tabs.filter(
@@ -259,6 +290,8 @@ export default function App() {
           // 用户选择继续关闭，执行原有关闭流程
         }
 
+        // 逐个关标签页时不能记会话，否则下次启动什么都恢复不了
+        setResearchSessionTracking(false);
         try {
           for (const tab of tabs) {
             console.log("尝试关闭", tab);
@@ -266,6 +299,10 @@ export default function App() {
           }
         } catch {
           Telemetry.event("关闭应用提示是否保存文件选择了取消");
+          if (isResearchShell()) {
+            setResearchSessionTracking(true);
+            persistResearchSession();
+          }
           return;
         }
         Telemetry.event("关闭应用");
@@ -375,7 +412,14 @@ export default function App() {
         }}
       >
         {/* Canvas content - NOT zoomed */}
-        <DockedArea onTabClick={handleTabClick} onTabClose={handleTabClose} isClassroomMode={isClassroomMode} />
+        <DockedArea
+          onTabClick={handleTabClick}
+          onTabClose={handleTabClose}
+          isClassroomMode={isClassroomMode}
+          leftInset={showActivityRail ? ACTIVITY_RAIL_WIDTH : undefined}
+        />
+        {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放；从标题栏下方开始，避开 macOS 红绿灯和置顶按钮 */}
+        {showActivityRail && <ActivityRail isClassroomMode={isClassroomMode} />}
 
         {isMac && (
           <>
@@ -466,7 +510,8 @@ export default function App() {
             onClick={() => getCurrentWindow().close()}
           ></div>
         )}
-        {activeResourceTab instanceof Project ? <DropWindowCover project={activeResourceTab} /> : null}
+        {/* 科研模式下不依赖当前白板（没开白板也能拖 .prg 进来）；原版模式没有 project 时组件自己返回 null */}
+        <DropWindowCover project={activeResourceTab instanceof Project ? activeResourceTab : undefined} />
 
         <CommandPalette zoomStyle={zoomStyle} />
         <RenderOverlays />

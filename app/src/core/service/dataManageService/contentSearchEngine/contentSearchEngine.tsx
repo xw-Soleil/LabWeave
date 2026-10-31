@@ -3,6 +3,7 @@ import { RectangleNoteEffect } from "@/core/service/feedbackService/effectEngine
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { UrlNode } from "@/core/stage/stageObject/entity/UrlNode";
@@ -63,6 +64,13 @@ export class ContentSearch {
       return stageObject.text + "　" + stageObject.detailsManager.getBeSearchingText();
     } else if (stageObject instanceof UrlNode) {
       return stageObject.title + "　" + stageObject.detailsManager.getBeSearchingText() + "　" + stageObject.url;
+    } else if (stageObject instanceof FileCardNode) {
+      return [
+        stageObject.title,
+        stageObject.detailsManager.getBeSearchingText(),
+        stageObject.sourcePath,
+        stageObject.excerpt,
+      ].join("　");
     }
     // 任何实体上都可能会写details
     if (stageObject instanceof Entity) {

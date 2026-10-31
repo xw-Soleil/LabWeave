@@ -8,6 +8,7 @@ import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
@@ -124,6 +125,9 @@ export class TagManager {
         colorItem = tagObject.color.toArray();
       } else if (tagObject instanceof UrlNode) {
         title = tagObject.title;
+      } else if (tagObject instanceof FileCardNode) {
+        title = tagObject.title;
+        if (tagObject.color.a > 0) colorItem = tagObject.color.toArray();
       } else if (tagObject instanceof ImageNode) {
         title = "Image: " + tagObject.uuid.slice(0, 4);
       } else if (tagObject instanceof Edge) {

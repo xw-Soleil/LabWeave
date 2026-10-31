@@ -5,6 +5,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { QuickSettingsManager } from "@/core/service/QuickSettingsManager";
 import { Settings, settingsSchema } from "@/core/service/Settings";
 import { settingsIcons } from "@/core/service/SettingsIcons";
@@ -15,6 +16,11 @@ import { ChevronRight, Pin, PinOff, RotateCw } from "lucide-react";
 import React, { CSSProperties, Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+
+// 科研模式下备份不写进研究文件夹，AutoSaveBackupService 忽略这两种「备份放在原文件旁边」的策略，选项也不显示
+const researchHiddenOptions: Partial<Record<keyof Settings, string[]>> = {
+  autoBackupStrategy: ["sideBySide", "subfolder"],
+};
 
 function RangeNumberInput({
   value,
@@ -158,6 +164,15 @@ export function SettingField({ settingKey, extra = <></> }: { settingKey: keyof 
             rows={3}
             className="w-64 font-mono text-xs"
           />
+        ) : settingKey === "aiApiKey" ? (
+          <Input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-64"
+          />
         ) : (
           <Input value={value} onChange={(e) => setValue(e.target.value)} className="w-64" />
         )
@@ -192,6 +207,7 @@ export function SettingField({ settingKey, extra = <></> }: { settingKey: keyof 
           <SelectContent>
             {innerType._def.options.map((opt: any) => {
               const it = opt._def.values?.[0] ?? opt._def.value;
+              if (isResearchShell() && researchHiddenOptions[settingKey]?.includes(it)) return null;
               return (
                 <SelectItem key={it} value={it}>
                   {t(`${settingKey}.options.${it}`)}

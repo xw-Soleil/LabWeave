@@ -242,6 +242,10 @@ settings:
       cpu: CPU
       render: 渲染
       experimental: 開發中的功能
+    research:
+      title: 科研工作台
+      folder: 研究資料夾
+      ai: AI 閱讀
   language:
     title: 語言
     options:
@@ -1155,6 +1159,31 @@ settings:
     title: 自動批准 MCP 工具
     description: |
       開啟後，MCP 工具不用逐次確認就可以執行。本機 stdio 程序第一次啟動時仍然需要另外確認。
+  aiApiFormat:
+    title: AI 介面格式
+    description: |
+      服務商用的介面格式。大部分服務都相容 OpenAI 格式；用 Claude 官方介面的話選 Claude
+    options:
+      openai: OpenAI 相容
+      anthropic: Claude（Anthropic）
+  aiPdfTextPages:
+    title: 給 AI 讀的 PDF 頁數
+    description: |
+      把論文放到白板上時，抽出前幾頁的文字給 AI 參考。填 0 就是不抽
+  researchFolderPath:
+    title: 研究資料夾
+    description: |
+      論文、圖片、筆記和工作區都放在這個資料夾裡
+  writeAiSidecarOnSave:
+    title: 存檔時順便產生給 AI 讀的文字版
+    description: |
+      存工作區的時候，在旁邊的 .workbench 資料夾寫一份 JSON 和 Markdown，讓 AI 工具看得懂白板
+  researchSession:
+    title: 上次開著的工作區和面板
+  researchShowFullMenu:
+    title: 顯示完整選單
+    description: |
+      開啟後顯示原版 Project Graph 的全部選單項目
   textIntegerLocationAndSizeRender:
     title: 文字整數位置和大小渲染
     description: '開啟後，一切文字的大小和位置都是整數，以節省渲染效能。

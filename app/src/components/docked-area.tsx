@@ -140,10 +140,13 @@ export default function DockedArea({
   onTabClick,
   onTabClose,
   isClassroomMode,
+  leftInset,
 }: {
   onTabClick: (tab: Tab) => void;
   onTabClose: (tab: Tab) => void;
   isClassroomMode: boolean;
+  /** CSS length reserved on the left edge (e.g. for the research activity rail). */
+  leftInset?: string;
 }) {
   const root = useAtomValue(tabGroupRootAtom);
   const tabs = useAtomValue(tabsAtom);
@@ -211,5 +214,12 @@ export default function DockedArea({
     );
   };
 
-  return <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">{root && renderNode(root)}</div>;
+  return (
+    <div
+      className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
+      style={leftInset ? { left: leftInset } : undefined}
+    >
+      {root && renderNode(root)}
+    </div>
+  );
 }

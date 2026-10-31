@@ -17,13 +17,17 @@ import { SoundService } from "@/core/service/feedbackService/SoundService";
 import { Settings, settingsSchema } from "@/core/service/Settings";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import Fuse from "fuse.js";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import {
+  BookOpenText,
   Bot,
   Brain,
   Bug,
   ChevronRight,
   Cpu,
   Eye,
+  FlaskConical,
+  FolderOpen,
   FolderSync,
   Gamepad2,
   Gpu,
@@ -97,23 +101,77 @@ function SettingFieldVirtualList({ keys }: { keys: string[] }) {
   );
 }
 
+let pendingInitialCategory: { category: string; group: string } | null = null;
+
+/** 下一次打开设置页时直接定位到某个分组，例如 AI 面板里的「去设置」按钮 */
+export function setSettingsInitialCategory(category: string, group: string) {
+  pendingInitialCategory = { category, group };
+}
+
+// 科研模式下强制关闭或用不上的设置，不在设置页出现
+const researchHiddenSettingKeys = new Set([
+  "telemetry",
+  "allowGlobalHotKeys",
+  "autoImportTxtFileWhenOpenPrg",
+  "aiAutoApproveMcpTools",
+  "researchSession",
+]);
+
+// 只有科研模式会用到的设置，原版模式下不显示
+const researchOnlySettingKeys = new Set([
+  "researchFolderPath",
+  "writeAiSidecarOnSave",
+  "researchShowFullMenu",
+  "researchSession",
+  "aiPdfTextPages",
+]);
+
+function isSettingKeyVisible(key: string): boolean {
+  return isResearchShell() ? !researchHiddenSettingKeys.has(key) : !researchOnlySettingKeys.has(key);
+}
+
+const researchCategory = {
+  folder: ["researchFolderPath", "researchShowFullMenu"],
+  ai: ["aiPdfTextPages", "writeAiSidecarOnSave"],
+};
+
+function getVisibleCategories(): Record<string, Record<string, string[]>> {
+  if (!isResearchShell()) return categories;
+  const filtered = Object.fromEntries(
+    Object.entries(categories).map(([category, groups]) => [
+      category,
+      Object.fromEntries(
+        Object.entries(groups).map(([group, keys]) => [group, keys.filter((key) => isSettingKeyVisible(key))]),
+      ),
+    ]),
+  );
+  return { research: researchCategory, ...filtered };
+}
+
 export default function SettingsTab() {
   const { t } = useTranslation("settings");
-  const [currentCategory, setCurrentCategory] = useState("search");
-  const [currentGroup, setCurrentGroup] = useState("");
+  const [initialCategory] = useState(() => pendingInitialCategory);
+  const [currentCategory, setCurrentCategory] = useState(initialCategory?.category ?? "search");
+  const [currentGroup, setCurrentGroup] = useState(initialCategory?.group ?? "");
+  useEffect(() => {
+    pendingInitialCategory = null;
+  }, []);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResult, setSearchResult] = useState<string[]>([]);
   const fuse = useRef<Fuse<{ key: string; i18n: { title: string; description: string } }>>(null);
+  const visibleCategories = useMemo(getVisibleCategories, []);
 
   useEffect(() => {
     fuse.current = new Fuse(
-      Object.keys(settingsSchema.shape).map(
-        (key) =>
-          ({
-            key,
-            i18n: t(key, { returnObjects: true }),
-          }) as any,
-      ),
+      Object.keys(settingsSchema.shape)
+        .filter(isSettingKeyVisible)
+        .map(
+          (key) =>
+            ({
+              key,
+              i18n: t(key, { returnObjects: true }),
+            }) as any,
+        ),
       { keys: ["key", "i18n.title", "i18n.description"], useExtendedSearch: true },
     );
   }, []);
@@ -125,9 +183,8 @@ export default function SettingsTab() {
 
   const groupKeys = useMemo(() => {
     if (currentCategory === "search" || !currentCategory || !currentGroup) return [] as string[];
-    // @ts-expect-error fuck ts
-    return (categories[currentCategory][currentGroup] ?? []) as string[];
-  }, [currentCategory, currentGroup]);
+    return visibleCategories[currentCategory]?.[currentGroup] ?? [];
+  }, [currentCategory, currentGroup, visibleCategories]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -148,7 +205,7 @@ export default function SettingsTab() {
                     </div>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-                {Object.entries(categories).map(([category, value]) => {
+                {Object.entries(visibleCategories).map(([category, value]) => {
                   // @ts-expect-error fuck ts
                   const CategoryIcon = categoryIcons[category].icon;
                   return (
@@ -428,6 +485,7 @@ export const categories = {
   },
   ai: {
     api: [
+      "aiApiFormat",
       "aiApiBaseUrl",
       "aiApiKey",
       "aiModel",
@@ -440,6 +498,11 @@ export const categories = {
 };
 
 export const categoryIcons = {
+  research: {
+    icon: FlaskConical,
+    folder: FolderOpen,
+    ai: BookOpenText,
+  },
   ai: {
     icon: Brain,
     api: Unplug,

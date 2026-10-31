@@ -6,6 +6,7 @@ import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
@@ -45,6 +46,7 @@ export class DeleteManager {
     this.registerHandler(LatexNode, this.deleteLatexNode.bind(this));
     this.registerHandler(ReferenceBlockNode, this.deleteReferenceBlockNode.bind(this));
     this.registerHandler(ExtensionEntity, this.deleteExtensionEntity.bind(this));
+    this.registerHandler(FileCardNode, this.deleteFileCardNode.bind(this));
     this.registerHandler(MultiTargetUndirectedEdge, this.deleteMultiTargetUndirectedEdge.bind(this));
   }
 
@@ -92,6 +94,16 @@ export class DeleteManager {
       this.project.stageManager.delete(entity);
       // 删除所有相关的边
       this.deleteEntityAfterClearAssociation(entity);
+    }
+  }
+
+  private deleteFileCardNode(entity: FileCardNode) {
+    if (this.project.stageManager.getFileCardNodes().includes(entity)) {
+      this.project.stageManager.delete(entity);
+      // 删除所有相关的边
+      this.deleteEntityAfterClearAssociation(entity);
+      // 撤销会从历史记录重建新的实例，这里可以放心释放位图
+      entity.dispose();
     }
   }
 

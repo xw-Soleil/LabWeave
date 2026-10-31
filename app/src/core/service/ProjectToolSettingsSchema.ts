@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import z from "zod";
 
 export const MAC_DEFAULT_FONT_FAMILY = "PingFang SC, PingFang TC, -apple-system";
@@ -28,10 +29,17 @@ export function createProjectToolSettingSchemas(defaultFontFamily: string) {
     moveAmplitude: z.number().min(0).max(10).default(2),
     effectsPerferences: z.record(z.string(), z.boolean()).default({}),
     maxPastedImageSize: z.number().int().min(256).max(8192).default(1920),
-    aiApiBaseUrl: z.string().default("https://generativelanguage.googleapis.com/v1beta/openai/"),
+    // 科研模式下默认不填，用户配置之前不会向任何服务发请求
+    aiApiBaseUrl: z
+      .string()
+      .default(isResearchShell() ? "" : "https://generativelanguage.googleapis.com/v1beta/openai/"),
     aiApiKey: z.string().default(""),
-    aiModel: z.string().default("gemini-2.5-flash"),
+    aiModel: z.string().default(isResearchShell() ? "" : "gemini-2.5-flash"),
     aiCustomHeaders: z.string().default(""),
+    aiApiFormat: z.union([z.literal("openai"), z.literal("anthropic")]).default("openai"),
+    aiPdfTextPages: z.number().int().min(0).max(50).default(3),
+    researchFolderPath: z.string().default(""),
+    writeAiSidecarOnSave: z.boolean().default(true),
   };
 }
 

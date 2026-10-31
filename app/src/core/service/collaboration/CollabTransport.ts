@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import type { ClientToServerMessage, ServerToClientMessage } from "./CollabProtocol";
 
 export type CollabTransportHandlers = {
@@ -13,6 +14,8 @@ export type CollabTransportHandlers = {
  * 可通过 LR_COLLAB_BASE_URL 覆盖。
  */
 export function resolveCollabHttpBase(): string {
+  // 科研工作台只在本机工作：返回空地址，所有协作请求都会在发出前报错。
+  if (isResearchShell()) return "";
   if (import.meta.env.LR_COLLAB_BASE_URL) {
     return String(import.meta.env.LR_COLLAB_BASE_URL).replace(/\/+$/, "");
   }

@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "research-shell"))]
 use std::io::Read;
 
+#[cfg(not(feature = "research-shell"))]
 use base64::engine::general_purpose;
+#[cfg(not(feature = "research-shell"))]
 use base64::Engine;
+
+// The commands gated on `not(feature = "research-shell")` below use std::fs directly and so bypass
+// the fs plugin scope; nothing in the frontend calls them.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FolderEntry {
@@ -54,6 +60,7 @@ pub fn read_folder_structure(path: String) -> FolderEntry {
 }
 
 /// 判断文件是否存在
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
@@ -61,6 +68,7 @@ pub fn exists(path: String) -> bool {
 
 /// 读取文件夹中的文件列表
 /// 如果文件夹不存在，返回空列表
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn read_folder(path: String) -> Vec<String> {
     let mut files = Vec::new();
@@ -96,7 +104,7 @@ pub fn read_folder_recursive(path: String, file_exts: Vec<String>) -> Vec<String
                     }
                 } else if path.is_dir() {
                     let mut sub_files = read_folder_recursive(
-                        path.to_str().unwrap().to_string(),
+                        path.to_string_lossy().into_owned(),
                         file_exts.clone(),
                     );
                     files.append(&mut sub_files);
@@ -108,6 +116,7 @@ pub fn read_folder_recursive(path: String, file_exts: Vec<String>) -> Vec<String
 }
 
 /// 删除文件
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn delete_file(path: String) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| e.to_string())?;
@@ -115,6 +124,7 @@ pub fn delete_file(path: String) -> Result<(), String> {
 }
 
 /// 读取文件，返回字符串
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn read_text_file(path: String) -> String {
     let mut file = std::fs::File::open(path).unwrap();
@@ -124,6 +134,7 @@ pub fn read_text_file(path: String) -> String {
 }
 
 /// 读取文件，返回base64
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn read_file_base64(path: String) -> Result<String, String> {
     Ok(general_purpose::STANDARD
@@ -131,6 +142,7 @@ pub fn read_file_base64(path: String) -> Result<String, String> {
 }
 
 /// 写入文件
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(path, content).map_err(|e| e.to_string())?;
@@ -138,6 +150,7 @@ pub fn write_text_file(path: String, content: String) -> Result<(), String> {
 }
 
 /// 写入文件，base64字符串
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn write_file_base64(content: String, path: String) -> Result<(), String> {
     // 解码 Base64 内容
@@ -156,6 +169,7 @@ pub fn write_file_base64(content: String, path: String) -> Result<(), String> {
 
 /// 创建文件夹
 /// 如果创建成功，则返回true，如果创建失败则返回false
+#[cfg(not(feature = "research-shell"))]
 #[tauri::command]
 pub fn create_folder(path: String) -> bool {
     std::fs::create_dir_all(&path).is_ok()

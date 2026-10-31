@@ -37,6 +37,37 @@ describe("camera after direct gestures", () => {
     for (let i = 0; i < 30; i++) camera.tick();
     expect(getCenter).toHaveBeenCalledOnce();
   });
+  it("keeps a restored saved view instead of fitting all content on open", () => {
+    const renderer = { w: 1000, h: 500, transformWorld2View: () => Vector.getZero() };
+    const getCenter = vi.fn(() => new Vector(4000, -3000));
+    const camera = new Camera({
+      renderer,
+      stageManager: { getCenter, getSize: () => new Vector(2000, 1000) },
+    } as unknown as Project);
+    expect(camera.isInitialViewSettled).toBe(false);
+    expect(camera.applySavedView(new Vector(120, -80), 0.75)).toBe(true);
+    expect(camera.isInitialViewSettled).toBe(true);
+    for (let i = 0; i < 30; i++) camera.tick();
+    expect(getCenter).not.toHaveBeenCalled();
+    expect(camera.location).toEqual(new Vector(120, -80));
+    expect(camera.currentScale).toBe(0.75);
+    expect(camera.targetScale).toBe(0.75);
+  });
+  it("ignores an invalid saved view and still fits all content", () => {
+    const renderer = { w: 1000, h: 500, transformWorld2View: () => Vector.getZero() };
+    const center = new Vector(4000, -3000);
+    const getCenter = vi.fn(() => center.clone());
+    const camera = new Camera({
+      renderer,
+      stageManager: { getCenter, getSize: () => new Vector(2000, 1000) },
+    } as unknown as Project);
+    expect(camera.applySavedView(new Vector(Number.NaN, 0), 1)).toBe(false);
+    expect(camera.applySavedView(new Vector(0, 0), 0)).toBe(false);
+    for (let i = 0; i < 5; i++) camera.tick();
+    expect(getCenter).toHaveBeenCalledOnce();
+    expect(camera.location).toEqual(center);
+    expect(camera.isInitialViewSettled).toBe(true);
+  });
   it("keeps the exact scale and location over idle frames", () => {
     const renderer = { transformWorld2View: vi.fn(() => new Vector(50, 50)) };
     const camera = new Camera({ renderer } as unknown as Project);
