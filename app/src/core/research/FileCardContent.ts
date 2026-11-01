@@ -157,12 +157,28 @@ async function renderPdfFirstPage(document: PdfDocument): Promise<Blob> {
   const { canvas, context } = createCanvas(viewport.width, viewport.height);
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, viewport }).promise;
+  const task = page.render({ canvas, viewport });
+  // 渲染一直不结束时取消掉,卡片照样建,只是没有缩略图(调用方会记下原因)
+  const timer = setTimeout(() => task.cancel(), RENDER_TIMEOUT_MS);
+  try {
+    await task.promise;
+  } finally {
+    clearTimeout(timer);
+  }
   return await canvasToBlob(canvas);
 }
 
-/** 等下一块文字;超过 ms 毫秒没来就当这一页读完了 */
-const TEXT_CHUNK_TIMEOUT_MS = 3000;
+/** 第一页缩略图最多画这么久 */
+const RENDER_TIMEOUT_MS = 15000;
+
+/** 一页的第一块文字最多等这么久(大页面解析要时间) */
+const FIRST_TEXT_CHUNK_TIMEOUT_MS = 5000;
+/**
+ * 收到过文字之后,再等这么久没有新块就当这一页读完了。
+ * 结束信号在 WKWebView 里永远不来,这个值直接决定每页要白等多久:原来用 3 秒,三页就白等 9 秒。
+ * pdf.js 一页的文字块是连续发过来的,块之间的间隔是毫秒级,300 毫秒足够。
+ */
+const NEXT_TEXT_CHUNK_TIMEOUT_MS = 300;
 
 type TextChunk = { done: boolean; value?: { items: Array<{ str?: string; hasEOL?: boolean }> } };
 
@@ -193,8 +209,13 @@ async function extractPdfText(document: PdfDocument, pageLimit: number): Promise
     const page = await document.getPage(pageNumber);
     const reader = page.streamTextContent().getReader();
     try {
+      let gotChunk = false;
       while (text.length < MAX_EXCERPT_LENGTH) {
-        const chunk = await readWithTimeout(reader, TEXT_CHUNK_TIMEOUT_MS);
+        const chunk = await readWithTimeout(
+          reader,
+          gotChunk ? NEXT_TEXT_CHUNK_TIMEOUT_MS : FIRST_TEXT_CHUNK_TIMEOUT_MS,
+        );
+        gotChunk = true;
         if (!chunk || chunk.done || !chunk.value) break;
         for (const item of chunk.value.items) {
           if (typeof item.str !== "string") continue;
@@ -228,7 +249,14 @@ async function extractPdfContent(
     problem: "",
   };
   const pdfjs = await loadPdfJs();
-  const loadingTask = pdfjs.getDocument({ data: bytes, ...pdfJsAssetUrls() });
+  const loadingTask = pdfjs.getDocument({
+    data: bytes,
+    ...pdfJsAssetUrls(),
+    // WKWebView 的 worker 里 ImageDecoder / OffscreenCanvas 不可靠:实测带 JPEG 插图的论文(如 ScienceDirect 导出的)
+    // 第一页一直画不完,卡片永远停在「正在读取」。关掉后 pdf.js 用自己的 JS 解码,慢一点但稳定。
+    isImageDecoderSupported: false,
+    isOffscreenCanvasSupported: false,
+  });
   try {
     let document: PdfDocument;
     try {
@@ -264,8 +292,23 @@ async function extractPdfContent(
     result.problem = problems.join("；");
     return result;
   } finally {
-    await loadingTask.destroy();
+    await releasePdf(loadingTask);
   }
+}
+
+/** 释放 pdf.js 文档最多等这么久 */
+const DESTROY_TIMEOUT_MS = 1000;
+
+/**
+ * 实测在 WKWebView 里,内容都抽完以后 loadingTask.destroy() 有时永远不返回(worker 不回结束确认),
+ * 直接 await 会让卡片一直停在「正在读取」。这里最多等 1 秒,超时就不等了;
+ * 释放本身还在后台进行,出错只记到控制台(内容已经拿到,用户不需要处理)。
+ */
+async function releasePdf(loadingTask: { destroy(): Promise<void> }): Promise<void> {
+  const destroying = loadingTask.destroy().catch((error: unknown) => {
+    console.warn("释放 PDF 文档失败", error);
+  });
+  await Promise.race([destroying, new Promise((resolve) => setTimeout(resolve, DESTROY_TIMEOUT_MS))]);
 }
 
 /**
