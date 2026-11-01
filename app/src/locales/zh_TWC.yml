@@ -1185,6 +1185,14 @@ settings:
     title: 顯示完整選單
     description: |
       開啟後顯示原版 Project Graph 的全部選單項目
+  researchOutsideFileMode:
+    title: 研究資料夾外的檔案
+    description: |
+      把研究資料夾外的論文、圖片、筆記拖到白板上時怎麼處理。複製進來的檔案跟著研究資料夾走；直接引用不佔空間，但原檔案一動卡片就會打不開，卡片右上角會標「外部檔案」
+    options:
+      ask: 每次問我
+      copy: 總是複製到「導入」資料夾
+      reference: 總是直接引用原檔案
   researchWheelBehavior:
     title: 滑鼠滾輪
     description: |

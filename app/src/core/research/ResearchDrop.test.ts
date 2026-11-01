@@ -2,7 +2,7 @@ import { Vector } from "@graphif/data-structures";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  settings: { researchFolderPath: "/Users/me/Research" },
+  settings: { researchFolderPath: "/Users/me/Research", researchOutsideFileMode: "ask" },
   buttons: vi.fn(),
   createFileCards: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
   release: vi.fn(),
@@ -89,6 +89,7 @@ beforeEach(() => {
   // 复制进 导入/ 后会发 research:files-changed 让文件面板刷新；node 环境没有 window
   vi.stubGlobal("window", { dispatchEvent: mocks.dispatchEvent });
   mocks.settings.researchFolderPath = "/Users/me/Research";
+  mocks.settings.researchOutsideFileMode = "ask";
   // 研究文件夹本身在，导入/ 和里面的文件都还没有
   mocks.exists.mockImplementation(async (path: string) => path === mocks.settings.researchFolderPath);
   mocks.markFileCardsPending.mockImplementation(() => mocks.release);
@@ -212,6 +213,50 @@ describe("dropFilesAtClientPoint", () => {
       withRetarget,
     );
     expect(mocks.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: RESEARCH_FILES_CHANGED_EVENT }));
+  });
+
+  it("links the original outside files without copying when the user picks 直接引用", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.buttons.mockResolvedValueOnce("reference");
+    await dropFilesAtClientPoint(["/Users/me/Research/in.md", "/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Research/in.md", "/Users/me/Downloads/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
+  });
+
+  it("follows the 'always link' setting without asking", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.settings.researchOutsideFileMode = "reference";
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.buttons).not.toHaveBeenCalled();
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Downloads/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
+  });
+
+  it("follows the 'always copy' setting without asking", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.settings.researchOutsideFileMode = "copy";
+    await dropFilesAtClientPoint(["/Users/me/Downloads/a.pdf"], 300, 150);
+    expect(mocks.buttons).not.toHaveBeenCalled();
+    expect(mocks.copyFile).toHaveBeenCalledWith("/Users/me/Downloads/a.pdf", "/Users/me/Research/导入/a.pdf");
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Research/导入/a.pdf"],
+      new Vector(1200, 100),
+      withRetarget,
+    );
   });
 
   it("does nothing with the cards when the user cancels the copy", async () => {

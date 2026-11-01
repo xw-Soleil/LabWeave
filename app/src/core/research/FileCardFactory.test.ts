@@ -67,6 +67,12 @@ describe("file card paths", () => {
     expect(resolveSourcePath(project as never, "../notes/b.md")).toBe("/Users/me/Research/notes/b.md");
   });
 
+  it("stores absolute paths for linked files outside the research folder, so moving the folder doesn't break them", () => {
+    const project = savedProject();
+    expect(toStoredSourcePath(project as never, "/Users/me/Downloads/a.pdf")).toBe("/Users/me/Downloads/a.pdf");
+    expect(resolveSourcePath(project as never, "/Users/me/Downloads/a.pdf")).toBe("/Users/me/Downloads/a.pdf");
+  });
+
   it("stores absolute paths while the project is a draft", () => {
     const project = draftProject();
     expect(toStoredSourcePath(project as never, "/Users/me/Research/papers/a.pdf")).toBe(

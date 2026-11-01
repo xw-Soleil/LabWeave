@@ -1217,6 +1217,14 @@ settings:
     title: 显示完整菜单
     description: |
       打开后显示原版 Project Graph 的全部菜单项
+  researchOutsideFileMode:
+    title: 研究文件夹外的文件
+    description: |
+      把研究文件夹外的论文、图片、笔记拖到白板上时怎么处理。复制进来的文件跟着研究文件夹走；直接引用不占空间，但原文件一动卡片就会打不开，卡片右上角会标「外部文件」
+    options:
+      ask: 每次问我
+      copy: 总是复制到「导入」文件夹
+      reference: 总是直接引用原文件
   researchWheelBehavior:
     title: 鼠标滚轮
     description: |
@@ -2903,6 +2911,7 @@ research:
     pages: "{{count}} 页"
     creating: "正在读取 {{count}} 个文件，做成卡片……"
     missing: 文件不见了
+    external: 外部文件
     missingHint: 原文件不见了，可能被移走、改名或删除了
     missingToast: "文件不见了：{{path}}"
     openHint: 双击打开原文件
@@ -2932,8 +2941,9 @@ research:
       notFound: 文件夹不存在
     copy:
       title: 这些文件不在研究文件夹里
-      description: "复制到 {{folder}} 再放上白板？\n{{names}}"
+      description: "{{names}}\n\n复制到 {{folder}}：整个研究文件夹换电脑、发给别人都能打开，AI 也能在文件列表里看到它们。\n直接引用：不复制，卡片指向原文件；原文件移动、改名或删除后卡片会打不开。\n想以后不再问，可以在 设置 → 科研工作台 → 研究文件夹 里选「总是复制」或「总是直接引用」。"
       confirm: 复制并放上白板
+      reference: 直接引用，不复制
     noFolder:
       title: 还没有选研究文件夹
       description: "选一个研究文件夹后，这些文件会先复制到它的「导入」子文件夹，再放上白板。\n也可以先不复制，直接引用文件原来的位置。"

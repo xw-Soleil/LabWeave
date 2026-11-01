@@ -1217,6 +1217,14 @@ settings:
     title: 顯示完整菜單
     description: |
       打開後顯示原版 Project Graph 的全部菜單項
+  researchOutsideFileMode:
+    title: 研究文件夾外的文件
+    description: |
+      把研究文件夾外的論文、圖片、筆記拖到白板上時怎麼處理。複製進來的文件跟著研究文件夾走；直接引用不佔空間，但原文件一動卡片就會打不開，卡片右上角會標「外部文件」
+    options:
+      ask: 每次問我
+      copy: 總是複製到「導入」文件夾
+      reference: 總是直接引用原文件
   researchWheelBehavior:
     title: 鼠標滾輪
     description: |
@@ -2903,6 +2911,7 @@ research:
     pages: "{{count}} 頁"
     creating: "正在讀取 {{count}} 個文件，做成卡片……"
     missing: 文件不見了
+    external: 外部文件
     missingHint: 原文件不見了，可能被移走、改名或刪除了
     missingToast: "文件不見了：{{path}}"
     openHint: 雙擊打開原文件
@@ -2932,8 +2941,9 @@ research:
       notFound: 文件夾不存在
     copy:
       title: 這些文件不在研究文件夾裡
-      description: "複製到 {{folder}} 再放上白板？\n{{names}}"
+      description: "{{names}}\n\n複製到 {{folder}}：整個研究文件夾換電腦、發給別人都能打開，AI 也能在文件列表裡看到它們。\n直接引用：不復制，卡片指向原文件；原文件移動、改名或刪除後卡片會打不開。\n想以後不再問，可以在 設置 → 科研工作臺 → 研究文件夾 裡選「總是複製」或「總是直接引用」。"
       confirm: 複製並放上白板
+      reference: 直接引用，不復制
     noFolder:
       title: 還沒有選研究文件夾
       description: "選一個研究文件夾後，這些文件會先複製到它的「導入」子文件夾，再放上白板。\n也可以先不復制，直接引用文件原來的位置。"

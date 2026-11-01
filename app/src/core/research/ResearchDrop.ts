@@ -4,6 +4,7 @@ import { createFileCards, markFileCardsPending } from "@/core/research/FileCardF
 import { notifyResearchFilesChanged, ResearchFolder } from "@/core/research/ResearchFolder";
 import { fileKindOf } from "@/core/research/ResearchShell";
 import { onOpenFile } from "@/core/service/GlobalMenu";
+import { Settings } from "@/core/service/Settings";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { findTabGroup } from "@/core/TabGroup";
@@ -233,6 +234,8 @@ async function pathsForCards(paths: string[]): Promise<string[] | null> {
 
   const outside = paths.filter((path) => !ResearchFolder.isInside(path));
   if (outside.length === 0) return paths;
+  // 设置里选了「总是直接引用」：不问、不复制，卡片指向原文件
+  if (Settings.researchOutsideFileMode === "reference") return paths;
   const problem = await researchRootProblem();
   if (problem !== null) {
     return pathsWithoutFolder(
@@ -243,15 +246,18 @@ async function pathsForCards(paths: string[]): Promise<string[] | null> {
   }
   // 登记时可能换成了规范路径
   const root = ResearchFolder.getRoot();
+  if (Settings.researchOutsideFileMode === "copy") return copyOutsideFilesIntoFolder(paths, root);
   const importDir = ResearchFolder.toAbsolute(IMPORT_DIR_NAME, root);
   const choice = await Dialog.buttons(
     t("drop.copy.title"),
     t("drop.copy.description", { folder: `${importDir}/`, names: outside.map(fileNameOf).join("\n") }),
     [
       { id: "cancel", label: t("drop.cancel"), variant: "ghost" },
+      { id: "reference", label: t("drop.copy.reference"), variant: "outline" },
       { id: "copy", label: t("drop.copy.confirm") },
     ] as const,
   );
+  if (choice === "reference") return paths;
   if (choice !== "copy") return null;
   return copyOutsideFilesIntoFolder(paths, root);
 }

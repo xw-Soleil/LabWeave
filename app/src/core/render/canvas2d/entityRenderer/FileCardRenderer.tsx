@@ -1,6 +1,7 @@
 import type { Project } from "@/core/Project";
 import { cardText } from "@/core/research/FileCardContent";
-import { scheduleFileCardMissingCheck } from "@/core/research/FileCardFactory";
+import { resolveFileCardPath, scheduleFileCardMissingCheck } from "@/core/research/FileCardFactory";
+import { ResearchFolder } from "@/core/research/ResearchFolder";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { Settings } from "@/core/service/Settings";
@@ -33,6 +34,12 @@ const KIND_COLORS: Record<FileKind, Color> = {
   markdown: new Color(59, 113, 214),
 };
 const MISSING_COLOR = new Color(220, 38, 38);
+const EXTERNAL_COLOR = new Color(100, 116, 139);
+
+/** 卡片直接引用的是研究文件夹外的文件(没复制进来):原文件移动、改名后卡片会断,换台电脑也打不开 */
+function isExternalFileCard(project: Project, card: FileCardNode): boolean {
+  return ResearchFolder.getRoot() !== "" && !ResearchFolder.isInside(resolveFileCardPath(project, card));
+}
 
 function renderBadge(
   project: Project,
@@ -137,6 +144,14 @@ export function renderFileCard(project: Project, card: FileCardNode): void {
         cardText("missing"),
         origin.add(new Vector(rect.size.x - PADDING, BADGE_TOP)),
         MISSING_COLOR,
+        true,
+      );
+    } else if (isExternalFileCard(project, card)) {
+      renderBadge(
+        project,
+        cardText("external"),
+        origin.add(new Vector(rect.size.x - PADDING, BADGE_TOP)),
+        EXTERNAL_COLOR,
         true,
       );
     }

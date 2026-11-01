@@ -1129,6 +1129,14 @@ settings:
     title: Show the full menu
     description: |
       Shows every menu item of the original Project Graph.
+  researchOutsideFileMode:
+    title: Files outside the research folder
+    description: |
+      What to do when you drop papers, images or notes from outside the research folder onto the board. Copied files travel with the research folder; linked files take no space, but the card breaks if the original moves, and it is marked "Linked file".
+    options:
+      ask: Ask me every time
+      copy: Always copy into the 导入 folder
+      reference: Always link the original file
   researchWheelBehavior:
     title: Mouse wheel
     description: |
@@ -2710,6 +2718,7 @@ research:
     pages: "{{count}} pages"
     creating: "Reading {{count}} file(s) to make cards…"
     missing: File missing
+    external: Linked file
     missingHint: The original file is gone. It may have been moved, renamed or deleted
     missingToast: "File missing: {{path}}"
     openHint: Double-click to open the original file
@@ -2739,8 +2748,9 @@ research:
       notFound: The folder does not exist
     copy:
       title: These files are not in your research folder
-      description: "Copy them to {{folder}} and then place them on the board?\n{{names}}"
+      description: "{{names}}\n\nCopy to {{folder}}: the research folder keeps working when moved to another computer or shared, and the AI sees the files in its file list.\nLink the originals: nothing is copied and the cards point at the original files; a card breaks if its file is moved, renamed or deleted.\nTo stop being asked, pick \"Always copy\" or \"Always link\" in Settings → Research Workbench → Research folder."
       confirm: Copy and place
+      reference: Link without copying
     noFolder:
       title: No research folder yet
       description: "Choose a research folder and these files will be copied into its \"导入\" (import) subfolder, then placed on the board.\nOr skip copying and link to the files where they are now."

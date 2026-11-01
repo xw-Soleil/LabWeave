@@ -954,6 +954,8 @@ export const settingsSchema = z.object({
     })
     .default({ openWorkspaces: [], active: "", panels: { files: true, ai: false } }),
   researchShowFullMenu: z.boolean().default(false),
+  // 拖进研究文件夹外的文件时:ask 每次问,copy 总是复制到研究文件夹的「导入/」,reference 总是直接引用原文件
+  researchOutsideFileMode: z.union([z.literal("ask"), z.literal("copy"), z.literal("reference")]).default("ask"),
   // 科研模式的滚轮:pan 总是移动(Ctrl / Cmd + 滚轮、双指捏合缩放),zoom 总是缩放,auto 鼠标缩放、触控板移动
   researchWheelBehavior: z.union([z.literal("pan"), z.literal("zoom"), z.literal("auto")]).default("pan"),
 });

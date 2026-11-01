@@ -137,6 +137,7 @@ const researchOnlySettingKeys = new Set([
   "researchSession",
   "aiPdfTextPages",
   "researchWheelBehavior",
+  "researchOutsideFileMode",
 ]);
 
 function isSettingKeyVisible(key: string): boolean {
@@ -144,7 +145,7 @@ function isSettingKeyVisible(key: string): boolean {
 }
 
 const researchCategory = {
-  folder: ["researchFolderPath", "researchShowFullMenu"],
+  folder: ["researchFolderPath", "researchOutsideFileMode", "researchShowFullMenu"],
   mouse: ["researchWheelBehavior"],
   ai: ["aiPdfTextPages", "writeAiSidecarOnSave"],
 };

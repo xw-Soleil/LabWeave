@@ -1183,6 +1183,14 @@ settings:
     title: Show the full menu
     description: |
       Shows every menu item of the original Project Graph.
+  researchOutsideFileMode:
+    title: Files outside the research folder
+    description: |
+      What to do when you drop papers, images or notes from outside the research folder onto the board. Copied files travel with the research folder; linked files take no space, but the card breaks if the original moves, and it is marked "Linked file".
+    options:
+      ask: Ask me every time
+      copy: Always copy into the 导入 folder
+      reference: Always link the original file
   researchWheelBehavior:
     title: Mouse wheel
     description: |

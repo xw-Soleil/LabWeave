@@ -37,8 +37,12 @@ export function resolveSourcePath(project: Project, sourcePath: string): string 
   return baseDir ? ResearchFolder.toAbsolute(sourcePath, baseDir) : sourcePath;
 }
 
-/** 卡片里要存的路径：存过盘的工程存相对 .prg 所在文件夹的路径，草稿存绝对路径 */
+/**
+ * 卡片里要存的路径：存过盘的工程存相对 .prg 所在文件夹的路径，草稿存绝对路径。
+ * 研究文件夹外直接引用的文件一律存绝对路径：研究文件夹整体搬走时，它们的位置不会跟着变。
+ */
 export function toStoredSourcePath(project: Project, absPath: string): string {
+  if (ResearchFolder.getRoot() && !ResearchFolder.isInside(absPath)) return ResearchFolder.toAbsolute(absPath);
   const baseDir = projectFolder(project);
   return baseDir ? ResearchFolder.toRelative(absPath, baseDir) : ResearchFolder.toAbsolute(absPath);
 }
