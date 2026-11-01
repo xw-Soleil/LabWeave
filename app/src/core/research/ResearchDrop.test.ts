@@ -23,6 +23,9 @@ vi.mock("@/core/Project", () => ({ Project: class Project {} }));
 vi.mock("@/core/research/FileCardFactory", () => ({
   createFileCards: mocks.createFileCards,
   markFileCardsPending: mocks.markFileCardsPending,
+  // 截断规则在 FileCardFactory.test 里测
+  listFileNames: (paths: string[]) => paths.map((path) => path.split("/").pop()).join(", "),
+  listFailureLines: (lines: string[]) => lines.join("\n"),
 }));
 vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: mocks.onOpenFile }));
 vi.mock("@/core/stage/stageObject/collisionBox/collisionBox", () => ({ CollisionBox: class CollisionBox {} }));
@@ -42,8 +45,14 @@ vi.mock("@tauri-apps/plugin-fs", () => ({ copyFile: mocks.copyFile, exists: mock
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 vi.mock("i18next", () => ({
   default: {
-    t: (key: string, options?: { names?: string }) =>
-      key === "drop.separator" ? ", " : options?.names !== undefined ? `${key}:${options.names}` : key,
+    t: (key: string, options?: { names?: string; folder?: string }) =>
+      key === "drop.separator"
+        ? ", "
+        : key === "drop.copied"
+          ? `${key}:${options?.folder}`
+          : options?.names !== undefined
+            ? `${key}:${options.names}`
+            : key,
   },
 }));
 
@@ -367,7 +376,8 @@ describe("dropFilesAtClientPoint", () => {
       new Vector(1200, 100),
       withRetarget,
     );
-    expect(mocks.toast.success).toHaveBeenCalledOnce();
+    // 只写研究文件夹里的相对位置，不写完整路径
+    expect(mocks.toast.success).toHaveBeenCalledExactlyOnceWith("drop.copied:导入/");
     expect(mocks.toast.error).toHaveBeenCalledWith("drop.copyFailed");
     expect(mocks.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: RESEARCH_FILES_CHANGED_EVENT }));
   });

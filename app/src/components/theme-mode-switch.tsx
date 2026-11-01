@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { cn } from "@/utils/cn";
 import { runThemeTransition } from "@/utils/themeTransition";
@@ -24,6 +25,28 @@ export default function ThemeModeSwitch() {
       });
     });
   };
+
+  if (isResearchShell()) {
+    // 科研模式:和其他工具按钮一样的幽灵图标按钮,不用带阴影的胶囊开关
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            ref={switchRef as unknown as React.RefObject<HTMLButtonElement>}
+            aria-label={isDark ? "切换为浅色主题" : "切换为深色主题"}
+            onClick={handleToggle}
+            className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-7 items-center justify-center rounded-[6px] transition-colors"
+          >
+            {isDark ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {isDark ? t("themeMode.options.dark") : t("themeMode.options.light")}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <Tooltip>

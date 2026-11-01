@@ -1,4 +1,5 @@
 import { Project } from "@/core/Project";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { CircleFlameEffect } from "@/core/service/feedbackService/effectEngine/concrete/CircleFlameEffect";
@@ -113,8 +114,8 @@ export class ControllerCuttingClass extends ControllerClass {
       this.mouseDownEvent(event);
       return;
     }
-    // 中键按下的
-    if (event.button === 1 && Settings.mouseRightDragBackground === "moveCamera") {
+    // 中键按下的(科研模式下中键只用来移动视野,不斩断)
+    if (event.button === 1 && Settings.mouseRightDragBackground === "moveCamera" && !isResearchShell()) {
       this.mouseDownEvent(event);
       return;
     }

@@ -247,3 +247,176 @@ export function textToTextArray(
 
   return lines;
 }
+
+/** 量一段文字的宽度；排版函数不直接依赖 Canvas，测试里可以换成假的 */
+export type MeasureText = (text: string) => number;
+
+export const ELLIPSIS = "…";
+
+/** 不能出现在行首的标点：跟着前一个字走 */
+const NO_LINE_START = new Set(Array.from("，。、；：？！）》」』】〕〉…,.;:?!)]}%’”"));
+/** 不能出现在行尾的标点：跟着后一个字走 */
+const NO_LINE_END = new Set(Array.from("（《「『【〔〈([{‘“"));
+/** 中日韩文字和全角标点：任意两个字之间都能换行 */
+const CJK_CHARACTER =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u{3000}-\u{303f}\u{ff00}-\u{ffef}]/u;
+
+function isOpeningOnly(text: string): boolean {
+  return text.length > 0 && Array.from(text).every((character) => NO_LINE_END.has(character));
+}
+
+/**
+ * 把一段（不含换行）切成不可再分的小块，块与块之间可以换行：
+ * 拉丁文在空格、「_」「-」之后断开，中日韩文字每个字一块。
+ */
+function splitIntoBreakableTokens(paragraph: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  const flush = () => {
+    if (current) tokens.push(current);
+    current = "";
+  };
+  for (const character of paragraph) {
+    if (NO_LINE_START.has(character)) {
+      if (current) current += character;
+      else if (tokens.length > 0) tokens[tokens.length - 1] += character;
+      else current = character;
+      if (CJK_CHARACTER.test(character)) flush();
+    } else if (NO_LINE_END.has(character)) {
+      if (!isOpeningOnly(current)) flush();
+      current += character;
+    } else if (character === " " || character === "\t" || character === "-" || character === "_") {
+      current += character;
+      flush();
+    } else if (CJK_CHARACTER.test(character)) {
+      if (!isOpeningOnly(current)) flush();
+      current += character;
+      flush();
+    } else {
+      current += character;
+    }
+  }
+  flush();
+  return tokens;
+}
+
+/** 二分找最长的前缀（按码点），使 measure(前缀) 不超过 limitWidth；一个字都放不下时返回 0 */
+function longestFittingPrefix(characters: string[], limitWidth: number, measure: (length: number) => number): number {
+  let low = 0;
+  let high = characters.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (measure(middle) <= limitWidth) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+/**
+ * 按词折行：拉丁文优先在空格、「_」「-」处换行，中日韩文字可以在任意两个字之间换行；
+ * 单个词比一整行还长时才按字符硬断。行首空格去掉，行尾空格不计宽度。
+ * @param maxLines 最多排这么多行，排满还有剩余时 truncated 为 true（剩下的不再排，省去测量）
+ */
+export function wrapTextByWords(
+  text: string,
+  limitWidth: number,
+  measure: MeasureText,
+  maxLines: number = Infinity,
+): { lines: string[]; truncated: boolean } {
+  const lines: string[] = [];
+  /** 再放一行就超过 maxLines 时返回 false */
+  const push = (line: string): boolean => {
+    if (lines.length >= maxLines) return false;
+    lines.push(line.trimEnd());
+    return true;
+  };
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const token of splitIntoBreakableTokens(paragraph)) {
+      const candidate = line + token;
+      if (measure(candidate.trimEnd()) <= limitWidth) {
+        line = candidate;
+        continue;
+      }
+      if (line.trim() && !push(line)) return { lines, truncated: true };
+      let rest = token.trimStart();
+      while (rest && measure(rest.trimEnd()) > limitWidth) {
+        const characters = Array.from(rest);
+        const length = Math.max(
+          1,
+          longestFittingPrefix(characters, limitWidth, (n) => measure(characters.slice(0, n).join(""))),
+        );
+        if (!push(characters.slice(0, length).join(""))) return { lines, truncated: true };
+        rest = characters.slice(length).join("").trimStart();
+      }
+      line = rest;
+    }
+    if (!push(line)) return { lines, truncated: true };
+  }
+  return { lines, truncated: false };
+}
+
+/**
+ * 放不下时截短并在末尾加「…」，保证 `结果` 的宽度不超过 limitWidth。
+ * @param force 为 true 时即使放得下也加「…」（后面还有被截掉的行）
+ */
+export function ellipsizeEnd(text: string, limitWidth: number, measure: MeasureText, force: boolean = false): string {
+  if (!force && measure(text) <= limitWidth) return text;
+  const characters = Array.from(text);
+  const withEllipsis = (length: number) => characters.slice(0, length).join("").trimEnd() + ELLIPSIS;
+  const length = longestFittingPrefix(characters, limitWidth, (n) => measure(withEllipsis(n)));
+  if (length > 0) return withEllipsis(length);
+  return measure(ELLIPSIS) <= limitWidth ? ELLIPSIS : "";
+}
+
+/**
+ * 按词折行，最多 maxLines 行；后面还有内容时，最后一行截短到加上「…」也放得下。
+ */
+export function clampTextLines(text: string, limitWidth: number, maxLines: number, measure: MeasureText): string[] {
+  if (maxLines <= 0) return [];
+  const { lines, truncated } = wrapTextByWords(text, limitWidth, measure, maxLines);
+  if (truncated && lines.length > 0) {
+    lines[lines.length - 1] = ellipsizeEnd(lines[lines.length - 1], limitWidth, measure, true);
+  }
+  return lines;
+}
+
+export interface MiddleEllipsisParts {
+  /** 原样保留在最前面，比如提示语里文件名前面的话 */
+  head?: string;
+  /** 放不下时从中间删字 */
+  body: string;
+  /** 原样保留在最后面，比如扩展名 */
+  tail?: string;
+}
+
+/**
+ * 中间省略：head、tail 原样保留，只删 body 中间的字换成「…」（前面多留一点）。
+ * 连「head…tail」都放不下时，整段从末尾截短。
+ */
+export function ellipsizeMiddle(
+  { head = "", body, tail = "" }: MiddleEllipsisParts,
+  limitWidth: number,
+  measure: MeasureText,
+): string {
+  const full = head + body + tail;
+  if (measure(full) <= limitWidth) return full;
+  const characters = Array.from(body);
+  const build = (keep: number) => {
+    const front = Math.ceil(keep / 2);
+    const back = keep - front;
+    return (
+      head +
+      characters.slice(0, front).join("").trimEnd() +
+      ELLIPSIS +
+      characters
+        .slice(characters.length - back)
+        .join("")
+        .trimStart() +
+      tail
+    );
+  };
+  if (measure(build(0)) > limitWidth) return ellipsizeEnd(full, limitWidth, measure);
+  const searchable = characters.slice(0, -1);
+  return build(longestFittingPrefix(searchable, limitWidth, (n) => measure(build(n))));
+}

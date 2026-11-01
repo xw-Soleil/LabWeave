@@ -30,6 +30,8 @@ export const RESEARCH_GLOBAL_MENU: GlobalMenuNode[] = [
       { type: "item", id: "researchFocusWorkspace", icon: "LayoutDashboard" },
       { type: "item", id: "researchToggleAIChat", icon: "Bot" },
       { type: "item", id: "researchToggleFileManager", icon: "FolderTree" },
+      { type: "separator", id: "sep-research-view-1" },
+      { type: "item", id: "researchToggleAlwaysOnTop", icon: "Pin" },
     ],
   },
   {
@@ -53,6 +55,7 @@ export const RESEARCH_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "researchToggleFileManager",
   "newResearchWorkspace",
   "researchChooseFolder",
+  "researchToggleAlwaysOnTop",
 ]);
 
 /** 标记还只是 true 的那个版本停用的快捷键（见 pendingResearchKeyBindDefaults） */
@@ -86,6 +89,7 @@ export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "generateNodeTreeWithDeepMode",
   "generateNodeTreeWithDeepModeEditEdge",
   "generateNodeTreeWithBroadMode",
+  "checkoutClassroomMode",
 ]);
 
 /**

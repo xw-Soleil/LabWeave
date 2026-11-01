@@ -1,6 +1,11 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project } from "@/core/Project";
-import { createFileCards, markFileCardsPending } from "@/core/research/FileCardFactory";
+import {
+  createFileCards,
+  listFailureLines,
+  listFileNames,
+  markFileCardsPending,
+} from "@/core/research/FileCardFactory";
 import { notifyResearchFilesChanged, ResearchFolder } from "@/core/research/ResearchFolder";
 import { fileKindOf } from "@/core/research/ResearchShell";
 import { onOpenFile } from "@/core/service/GlobalMenu";
@@ -19,8 +24,6 @@ import { URI } from "vscode-uri";
 
 /** 研究文件夹外的文件复制到研究文件夹的这个子文件夹里 */
 export const IMPORT_DIR_NAME = "导入";
-
-const MAX_LISTED_NAMES = 5;
 
 // 文件名和路径里的 / 不能被 i18next 转义成 &#x2F;
 function t(key: string, options: Record<string, unknown> = {}): string {
@@ -101,13 +104,6 @@ export async function findFreeFileName(fileName: string, isTaken: (name: string)
   }
 }
 
-function listNames(paths: string[]): string {
-  const names = paths.slice(0, MAX_LISTED_NAMES).map(fileNameOf);
-  const listed = names.join(t("drop.separator"));
-  if (paths.length <= MAX_LISTED_NAMES) return listed;
-  return listed + t("drop.andMore", { count: paths.length });
-}
-
 /**
  * 找鼠标下面的白板：取包含这个点的最小标签组，看它当前显示的是不是工程。
  * 和 docked-area 一样，组里没有记录 activeTabId 时取最后一个停靠的标签。
@@ -184,11 +180,12 @@ async function copyOutsideFilesIntoFolder(paths: string[], root: string): Promis
     }
   }
   if (copiedCount > 0) {
-    toast.success(t("drop.copied", { count: copiedCount, folder: importDir }));
+    // 只写研究文件夹里的相对位置：完整路径太长，提示框里放不下
+    toast.success(t("drop.copied", { count: copiedCount, folder: `${IMPORT_DIR_NAME}/` }));
     notifyResearchFilesChanged();
   }
   if (failures.length > 0) {
-    toast.error(t("drop.copyFailed", { details: failures.join("\n") }));
+    toast.error(t("drop.copyFailed", { details: listFailureLines(failures) }));
   }
   return result;
 }
@@ -314,7 +311,7 @@ async function dropCards(paths: string[], clientX: number, clientY: number) {
  */
 export async function dropFilesAtClientPoint(absPaths: string[], clientX: number, clientY: number): Promise<void> {
   const { workspaces, cards, unsupported } = splitDroppedPaths(absPaths);
-  if (unsupported.length > 0) toast.warning(t("drop.unsupported", { names: listNames(unsupported) }));
+  if (unsupported.length > 0) toast.warning(t("drop.unsupported", { names: listFileNames(unsupported) }));
   let cardFailure: { error: unknown } | null = null;
   if (cards.length > 0) {
     try {

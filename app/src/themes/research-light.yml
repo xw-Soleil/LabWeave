@@ -1,0 +1,58 @@
+---
+id: research-light
+type: light
+name: 科研浅色
+description: 暖灰中性色，单一蓝色强调。科研工作台默认浅色主题
+---
+background: "#ffffff"
+foreground: "#37352f"
+card: "#ffffff"
+card-foreground: "#37352f"
+popover: "#ffffff"
+popover-foreground: "#37352f"
+primary: "#2383e2"
+primary-foreground: "#ffffff"
+secondary: "#f1f1ef"
+secondary-foreground: "#37352f"
+muted: "#f1f1ef"
+muted-foreground: "#787774"
+accent: "#ebebea"
+accent-foreground: "#37352f"
+destructive: "#eb5757"
+border: "#e9e9e7"
+input: "#dfdfde"
+ring: "rgba(35, 131, 226, 0.7)"
+chart-1: "#2383e2"
+chart-2: "#3fa34d"
+chart-3: "#d9730d"
+chart-4: "#9065b0"
+chart-5: "#eb5757"
+sidebar: "#f7f6f3"
+sidebar-foreground: "#37352f"
+sidebar-primary: "#2383e2"
+sidebar-primary-foreground: "#ffffff"
+sidebar-accent: "#ebebea"
+sidebar-accent-foreground: "#37352f"
+sidebar-border: "#e9e9e7"
+sidebar-ring: "rgba(35, 131, 226, 0.7)"
+brand: "#2383e2"
+
+stage:
+  Background: "#fafaf9"
+  GridNormal: "rgba(140, 144, 148, 0.45)"
+  GridHeavy: "rgba(120, 124, 128, 0.6)"
+  DetailsDebugText: "rgba(120, 119, 116, 0.8)"
+  SelectRectangleBorder: "rgba(35, 131, 226, 0.5)"
+  SelectRectangleFill: "rgba(35, 131, 226, 0.1)"
+  StageObjectBorder: "#37352f"
+  NodeDetailsText: "#37352f"
+  CollideBoxSelected: "rgba(35, 131, 226, 0.6)"
+  CollideBoxPreSelected: "rgba(35, 131, 226, 0.3)"
+  CollideBoxPreDelete: "rgba(235, 87, 87, 0.25)"
+
+effects:
+  flash: "#37352f"
+  dash: "#37352f"
+  windowFlash: "#37352f"
+  warningShadow: "#eb5757"
+  successShadow: "#3fa34d"

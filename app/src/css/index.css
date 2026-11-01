@@ -150,7 +150,8 @@ html[data-theme-transition="ripple"] *::after {
     width: 1.5em;
     height: 1.5em;
   } */
-  [data-radix-popper-content-wrapper]:has([data-slot="tooltip-content"]) {
+  /* 原版提示框跟随鼠标，要去掉 Radix 的定位；科研模式的提示框（data-pg-tooltip="anchored"）贴着按钮，保留定位 */
+  [data-radix-popper-content-wrapper]:has([data-slot="tooltip-content"]:not([data-pg-tooltip="anchored"])) {
     transform: none !important;
   }
   /* AI 消息的 markdown 正文：长路径、长 URL、长 hash 没有断词机会，会顶开气泡导致右侧被裁 */
@@ -278,6 +279,10 @@ html[data-theme-transition="ripple"] *::after {
 
 ::-webkit-scrollbar-track {
   background: rgba(87, 95, 107, 0.1);
+}
+/* 科研模式:滚动条轨道透明,只留滑块,和细线分隔的面板风格一致 */
+[data-research-shell] ::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {

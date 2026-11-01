@@ -9,18 +9,40 @@ import { PathString } from "@/utils/pathString";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { exists, readFile } from "@tauri-apps/plugin-fs";
+import i18next from "i18next";
 import { toast } from "sonner";
 
 const GRID_GAP = 40;
 /** 原文件是否存在的检查间隔：渲染时到期才重新检查，免得每帧都去问文件系统 */
 const MISSING_RECHECK_INTERVAL_MS = 30_000;
+/** 提示里最多列出这么多个文件，免得几十个文件把提示撑满屏幕 */
+const MAX_LISTED_NAMES = 5;
 
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || path.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
-function fileNameOf(path: string): string {
+export function fileNameOf(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
+}
+
+// 文件名里的 / 不能被 i18next 转义成 &#x2F;
+function dropText(key: string, options: Record<string, unknown> = {}): string {
+  return i18next.t(`drop.${key}`, { ns: "research", ...options, interpolation: { escapeValue: false } });
+}
+
+/** 提示里的文件名列表：最多列 5 个，再多写「等 N 个」 */
+export function listFileNames(paths: string[]): string {
+  const listed = paths.slice(0, MAX_LISTED_NAMES).map(fileNameOf).join(dropText("separator"));
+  if (paths.length <= MAX_LISTED_NAMES) return listed;
+  return listed + dropText("andMore", { count: paths.length });
+}
+
+/** 一行一个的出错明细：最多列 5 行，再多时最后一行写「等 N 个」 */
+export function listFailureLines(lines: string[]): string {
+  const listed = lines.slice(0, MAX_LISTED_NAMES).join("\n");
+  if (lines.length <= MAX_LISTED_NAMES) return listed;
+  return `${listed}\n${dropText("andMore", { count: lines.length }).trim()}`;
 }
 
 /** 工程 .prg 所在文件夹；草稿和协作工程没有，返回 null */
@@ -164,9 +186,9 @@ export async function createFileCards(
   options: CreateFileCardsOptions = {},
 ): Promise<FileCardNode[]> {
   const supportedPaths = absPaths.filter((path) => fileKindOf(path) !== null);
-  const unsupported = absPaths.filter((path) => fileKindOf(path) === null).map(fileNameOf);
+  const unsupported = absPaths.filter((path) => fileKindOf(path) === null);
   if (unsupported.length > 0) {
-    toast.warning(cardText("unsupported", { names: unsupported.join("、") }));
+    toast.warning(cardText("unsupported", { names: listFileNames(unsupported) }));
   }
 
   const release = markFileCardsPending(project);
@@ -188,7 +210,7 @@ export async function createFileCards(
       if (loadingToast !== undefined) toast.dismiss(loadingToast);
     }
     if (failures.length > 0) {
-      toast.error(cardText("readFailed", { details: failures.join("\n") }));
+      toast.error(cardText("readFailed", { details: listFailureLines(failures) }));
     }
     if (parsed.length === 0) return [];
 

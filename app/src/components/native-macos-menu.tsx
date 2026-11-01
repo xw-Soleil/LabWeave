@@ -4,8 +4,9 @@ import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
-import { activeResourceTabAtom, store } from "@/state";
-import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import { WINDOW_PIN_KEYBIND_ID } from "@/core/service/WindowPin";
+import { activeResourceTabAtom, isWindowAlwaysOnTopAtom, store } from "@/state";
+import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { nativeMenuIcon, type NativeMenuIconId } from "./native-menu-icon";
@@ -53,6 +54,8 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
   const [showFullMenu] = Settings.use("researchShowFullMenu");
   const researchMenu = isResearchShell() && !showFullMenu;
   const project = useAtomValue(activeResourceTabAtom);
+  // 只有科研菜单里有「窗口置顶」；原版模式不因置顶状态重建菜单
+  const alwaysOnTop = useAtomValue(isWindowAlwaysOnTopAtom) && researchMenu;
   const { t, i18n } = useTranslation("keyBinds");
   const queue = useRef(Promise.resolve());
 
@@ -103,19 +106,20 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
       }
       if (item.type !== "item") return null;
       const binding = command(item.id);
-      return own(
-        await MenuItem.new({
-          text,
-          enabled: !!binding?.onPress && (await binding.when?.(currentProject())) !== false,
-          action: () => {
-            void (async () => {
-              const latest = command(item.id);
-              const active = currentProject();
-              if ((await latest?.when?.(active)) !== false) await latest?.onPress?.(active);
-            })();
-          },
-        }),
-      );
+      const options = {
+        text,
+        enabled: !!binding?.onPress && (await binding.when?.(currentProject())) !== false,
+        action: () => {
+          void (async () => {
+            const latest = command(item.id);
+            const active = currentProject();
+            if ((await latest?.when?.(active)) !== false) await latest?.onPress?.(active);
+          })();
+        },
+      };
+      // 切换后 alwaysOnTop 变了，整个菜单会重建，勾选总是跟窗口实际状态一致
+      if (item.id === WINDOW_PIN_KEYBIND_ID) return own(await CheckMenuItem.new({ ...options, checked: alwaysOnTop }));
+      return own(await MenuItem.new(options));
     };
 
     // 系统自带的「退出」直接结束进程，不经过 onCloseRequested，关闭前的自动保存和未保存提示都会被跳过；
@@ -260,7 +264,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
     return () => {
       cancelled = true;
     };
-  }, [config, researchMenu, project, t, i18n.resolvedLanguage, onReady]);
+  }, [config, researchMenu, project, alwaysOnTop, t, i18n.resolvedLanguage, onReady]);
 
   return null;
 }

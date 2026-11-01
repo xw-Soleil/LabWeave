@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampSidePanelWidth,
   createTabGroup,
+  findFixedSideChild,
   findTabGroup,
   findTabGroupByTabId,
   FIXED_SIDE_GROUP_IDS,
   getTabGroups,
   insertTabIntoGroup,
+  parseSidePanelWidth,
   removeTabFromGroups,
+  SIDE_PANEL_WIDTH,
   splitTabGroup,
   updateTabSplitSizes,
 } from "./TabGroup";
@@ -86,5 +90,41 @@ describe("TabGroup", () => {
     const updated = updateTabSplitSizes(root, "split", [30, 70]);
 
     expect(updated).toMatchObject({ direction: "vertical", sizes: [30, 70] });
+  });
+});
+
+describe("fixed side panel width", () => {
+  it("clamps to 220–480px and never takes more than half of its split", () => {
+    expect(clampSidePanelWidth(100)).toBe(220);
+    expect(clampSidePanelWidth(300.4)).toBe(300);
+    expect(clampSidePanelWidth(900)).toBe(480);
+    expect(clampSidePanelWidth(400, 600)).toBe(300);
+    // 窗口窄到一半都不够 220 时仍保留最小宽度
+    expect(clampSidePanelWidth(400, 300)).toBe(220);
+  });
+
+  it("falls back to the default width when nothing usable is stored", () => {
+    expect(parseSidePanelWidth(null, "left")).toBe(SIDE_PANEL_WIDTH.default.left);
+    expect(parseSidePanelWidth("", "right")).toBe(SIDE_PANEL_WIDTH.default.right);
+    expect(parseSidePanelWidth("wide", "left")).toBe(SIDE_PANEL_WIDTH.default.left);
+    expect(parseSidePanelWidth("260", "left")).toBe(260);
+    expect(parseSidePanelWidth("2000", "right")).toBe(480);
+  });
+
+  it("finds the side group hanging directly off a left/right split", () => {
+    const main = createTabGroup(["project"], "main");
+    const left = createTabGroup(["files"], FIXED_SIDE_GROUP_IDS.left);
+    const right = createTabGroup(["ai"], FIXED_SIDE_GROUP_IDS.right);
+    const withLeft = splitTabGroup(main, "main", left, "left", "outer");
+    const both = splitTabGroup(withLeft, "main", right, "right", "inner");
+    if (both?.type !== "split") throw new Error("expected a split");
+
+    expect(findFixedSideChild(both)).toEqual({ index: 0, edge: "left" });
+    if (both.children[1].type !== "split") throw new Error("expected a nested split");
+    expect(findFixedSideChild(both.children[1])).toEqual({ index: 1, edge: "right" });
+
+    const vertical = splitTabGroup(left, left.id, createTabGroup(["x"], "x"), "bottom", "vertical");
+    if (vertical?.type !== "split") throw new Error("expected a split");
+    expect(findFixedSideChild(vertical)).toBeUndefined();
   });
 });

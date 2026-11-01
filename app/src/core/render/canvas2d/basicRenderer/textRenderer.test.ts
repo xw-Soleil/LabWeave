@@ -17,17 +17,27 @@ vi.mock("./msdfTextAtlas", () => ({
     drawLine = msdf.drawLine;
   },
 }));
-vi.mock("@/utils/font", () => ({
-  getFontIdentity: () => "font",
-  getTextSize: (text: string, size: number) => new Vector((text.length * size) / 2, size),
-  isBundledCanvasFont: () => msdf.enabled,
-  replaceTextWhenProtect: (text: string) => text,
-  resolveFont: (size: number, family = "sans-serif", weight = "normal") => `${weight} ${size}px ${family}`,
-  setCanvasFont: (ctx: CanvasRenderingContext2D, font: string) => {
-    ctx.font = font;
-  },
-  textToTextArray: (text: string) => text.split("\n"),
-}));
+vi.mock("@/utils/font", async () => {
+  // font.tsx 加载时会建一个 canvas；这里只借用它不碰 Canvas 的排版函数
+  vi.stubGlobal("document", { createElement: () => ({ getContext: () => null }) });
+  const { clampTextLines, ellipsizeEnd, ellipsizeMiddle } =
+    await vi.importActual<typeof import("@/utils/font")>("@/utils/font");
+  return {
+    clampTextLines,
+    ellipsizeEnd,
+    ellipsizeMiddle,
+    getFontIdentity: () => "font",
+    getTextSize: (text: string, size: number) => new Vector((text.length * size) / 2, size),
+    isBundledCanvasFont: () => msdf.enabled,
+    replaceTextWhenProtect: (text: string) => text,
+    resolveFont: (size: number, family = "sans-serif", weight = "normal") => `${weight} ${size}px ${family}`,
+    setCanvasFont: (ctx: CanvasRenderingContext2D, font: string) => {
+      ctx.font = font;
+    },
+    textToTextArray: (text: string) => text.split("\n"),
+  };
+});
+import { Settings } from "@/core/service/Settings";
 import { TextRenderer } from "./textRenderer";
 
 function setup() {
@@ -124,5 +134,54 @@ describe("scaled vector text", () => {
     ctx.fillText.mockClear();
     renderer.renderTextInRectangle("short", rect, Color.White, undefined, undefined, 6);
     expect(ctx.fillText).toHaveBeenCalledOnce();
+  });
+});
+
+// 测量函数的假设：每个字宽 size/2，所以 20px 时宽 100 刚好放 10 个字
+describe("clamped and fitted text for file cards", () => {
+  it("wraps by words and keeps the ellipsized last line within the width", () => {
+    const { ctx, renderer } = setup();
+    const count = renderer.renderClampedMultiLineText(
+      "alpha beta gamma delta",
+      new Vector(10, 10),
+      20,
+      100,
+      Color.White,
+      1.25,
+      2,
+    );
+    expect(count).toBe(2);
+    expect(ctx.fillText.mock.calls.map(([line]) => line)).toEqual(["alpha beta", "gamma…"]);
+    for (const [line] of ctx.fillText.mock.calls) expect((line.length * 20) / 2).toBeLessThanOrEqual(100);
+    expect(ctx.translate).toHaveBeenNthCalledWith(1, 10, 20);
+    expect(ctx.translate).toHaveBeenNthCalledWith(2, 10, 45);
+  });
+
+  it("lays out the same lines at every zoom level", () => {
+    const { renderer } = setup();
+    const title = "Attention is all you need for garbage classification";
+    expect(renderer.layoutClampedLines(title, 15 * 0.37, 256 * 0.37, 2)).toEqual(
+      renderer.layoutClampedLines(title, 15, 256, 2),
+    );
+  });
+
+  it("rounds the font size down for integer rendering so the text never gets wider", () => {
+    const settings = Settings as { textIntegerLocationAndSizeRender: boolean };
+    settings.textIntegerLocationAndSizeRender = true;
+    try {
+      const { ctx, renderer } = setup();
+      renderer.renderClampedMultiLineText("alpha", new Vector(10.4, 10.6), 20.7, 100, Color.White, 1.25, 2);
+      expect(ctx.scale).toHaveBeenCalledWith(0.2, 0.2);
+      expect(ctx.translate).toHaveBeenCalledWith(10, 21);
+    } finally {
+      settings.textIntegerLocationAndSizeRender = false;
+    }
+  });
+
+  it("shortens the middle of a file name and keeps its extension", () => {
+    const { ctx, renderer } = setup();
+    renderer.renderFittedText({ body: "abcdefghijkl", tail: ".pdf" }, Vector.getZero(), 20, 100);
+    renderer.renderFittedText("short", Vector.getZero(), 20, 100);
+    expect(ctx.fillText.mock.calls.map(([line]) => line)).toEqual(["abc…kl.pdf", "short"]);
   });
 });

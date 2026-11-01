@@ -141,7 +141,10 @@ export const settingsSchema = z.object({
   aiAutoApproveMcpTools: z.boolean().default(false),
   aiApiFormat: projectToolSettingSchemas.aiApiFormat,
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
-  mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
+  // 科研模式右键拖背景移动视野:原版的「斩断」会删掉划过的卡片和连线
+  mouseRightDragBackground: z
+    .union([z.literal("cut"), z.literal("moveCamera")])
+    .default(isResearchShell() ? "moveCamera" : "cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
   // 科研模式拖动卡片时显示对齐参考线
   enableDragAutoAlign: z.boolean().default(isResearchShell()),
@@ -286,10 +289,10 @@ export const settingsSchema = z.object({
   uiSwitchButtonOffSoundFile: z.string().default(""),
   githubToken: z.string().default(""),
   githubUser: z.string().default(""),
-  theme: z.string().default("catppuccin-mocha"),
-  themeMode: z.union([z.literal("light"), z.literal("dark")]).default("dark"),
-  lightTheme: z.string().default("catppuccin-latte"),
-  darkTheme: z.string().default("catppuccin-mocha"),
+  theme: z.string().default(isResearchShell() ? "research-light" : "catppuccin-mocha"),
+  themeMode: z.union([z.literal("light"), z.literal("dark")]).default(isResearchShell() ? "light" : "dark"),
+  lightTheme: z.string().default(isResearchShell() ? "research-light" : "catppuccin-latte"),
+  darkTheme: z.string().default(isResearchShell() ? "research-dark" : "catppuccin-mocha"),
   telemetry: z.boolean().default(!isResearchShell()),
   historyManagerMode: projectToolSettingSchemas.historyManagerMode,
   isStealthModeEnabled: z.boolean().default(false),
@@ -1019,12 +1022,14 @@ if (rawSettings.mouseLeftMode !== "selectAndMove") {
   await store.save();
 }
 
-// 科研模式每次启动都强制关闭：遥测、系统级全局快捷键、打开 prg 时导入并清空同名 txt
+// 科研模式每次启动都强制关闭：遥测、系统级全局快捷键、打开 prg 时导入并清空同名 txt、
+// 专注(课堂)模式——它会把标题栏、竖栏、标签栏、状态栏都设成透明,只有鼠标移上去才出现,看起来像界面丢了
 if (isResearchShell()) {
   const researchForcedSettings = {
     telemetry: false,
     allowGlobalHotKeys: false,
     autoImportTxtFileWhenOpenPrg: false,
+    isClassroomMode: false,
   } satisfies Partial<Settings>;
   let researchForcedSettingsChanged = false;
   for (const [key, value] of Object.entries(researchForcedSettings)) {
@@ -1037,6 +1042,26 @@ if (isResearchShell()) {
   if (researchForcedSettingsChanged) {
     await store.save();
   }
+}
+
+// 科研模式升级到 research 主题，只做一次。App.tsx 启动时监听 theme，会把当时的主题写进 lightTheme / darkTheme，
+// 所以老用户的 settings.json 里多半存着原版默认的 catppuccin，光改默认值换不掉。这里把这两个默认值换成新主题，
+// 用户另选的主题不动；做完记个标记（不在 settingsSchema 里，加载时会被跳过），以后用户再选回 catppuccin 也不会被改。
+const RESEARCH_THEME_MIGRATED_KEY = "researchThemeMigrated";
+if (isResearchShell() && rawSettings[RESEARCH_THEME_MIGRATED_KEY] !== true) {
+  const researchThemeReplacements: Record<string, string> = {
+    "catppuccin-latte": "research-light",
+    "catppuccin-mocha": "research-dark",
+  };
+  for (const key of ["theme", "lightTheme", "darkTheme"] as const) {
+    const replacement = researchThemeReplacements[savedSettings[key]];
+    if (replacement) {
+      savedSettings[key] = replacement;
+      await store.set(key, replacement);
+    }
+  }
+  await store.set(RESEARCH_THEME_MIGRATED_KEY, true);
+  await store.save();
 }
 
 // 检查菜单配置中是否存在指定 id 的节点（用于版本升级时的配置重置判断）

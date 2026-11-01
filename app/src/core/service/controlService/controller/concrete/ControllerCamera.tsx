@@ -78,7 +78,9 @@ export class ControllerCameraClass extends ControllerClass {
     const point = new Vector(event.clientX, event.clientY);
     const spaceDrag =
       event.button === 0 && this.project.controller.pressingKeySet.has(" ") && Settings.enableSpaceKeyMouseLeftDrag;
-    const middleDrag = event.button === 1 && !event.ctrlKey && Settings.mouseRightDragBackground !== "moveCamera";
+    // 科研模式:中键拖动始终移动视野。原版在右键设成「移动视野」时把中键让给斩断,鼠标用户容易误删东西
+    const middleDrag =
+      event.button === 1 && !event.ctrlKey && (isResearchShell() || Settings.mouseRightDragBackground !== "moveCamera");
     const rightDrag =
       event.button === 2 &&
       Settings.mouseRightDragBackground === "moveCamera" &&

@@ -112,6 +112,40 @@ export function removeTabFromGroups(root: TabGroupNode | null, tabId: string): R
 /** Default share for a newly split side panel (left/right). Vertical splits stay half. */
 export const DEFAULT_SIDE_SPLIT_RATIO = 20;
 
+/**
+ * 科研模式下固定侧栏按像素定宽（不随窗口按比例伸缩），这里是默认、最小、最大宽度。
+ * AI 对话要显示整段回答，默认比文件面板宽一些。
+ */
+export const SIDE_PANEL_WIDTH = {
+  min: 220,
+  max: 480,
+  default: { left: 240, right: 320 },
+} as const;
+
+/** 侧栏宽度限制在 [min, max] 之内，并且不超过所在分栏的一半，给编辑区留出地方 */
+export function clampSidePanelWidth(width: number, containerWidth = Infinity): number {
+  const max = Math.max(SIDE_PANEL_WIDTH.min, Math.min(SIDE_PANEL_WIDTH.max, containerWidth / 2));
+  return Math.round(Math.min(max, Math.max(SIDE_PANEL_WIDTH.min, width)));
+}
+
+/** 读取存下来的侧栏宽度；没存过或存的不是数字时用默认值 */
+export function parseSidePanelWidth(stored: string | null, edge: FixedSideEdge): number {
+  const width = stored === null || stored.trim() === "" ? NaN : Number(stored);
+  return Number.isFinite(width) ? clampSidePanelWidth(width) : SIDE_PANEL_WIDTH.default[edge];
+}
+
+/** 左右分栏里直接挂着的固定侧栏：返回它在 children 里的位置和是哪一侧；没有时返回 undefined */
+export function findFixedSideChild(split: TabSplit): { index: 0 | 1; edge: FixedSideEdge } | undefined {
+  if (split.direction !== "horizontal") return undefined;
+  for (const index of [0, 1] as const) {
+    const child = split.children[index];
+    if (child.type !== "group") continue;
+    if (child.id === FIXED_SIDE_GROUP_IDS.left) return { index, edge: "left" };
+    if (child.id === FIXED_SIDE_GROUP_IDS.right) return { index, edge: "right" };
+  }
+  return undefined;
+}
+
 export function splitTabGroup(
   root: TabGroupNode | null,
   targetGroupId: string,

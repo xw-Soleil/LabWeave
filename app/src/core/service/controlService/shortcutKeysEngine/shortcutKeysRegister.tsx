@@ -8,6 +8,7 @@ import { ViewFlashEffect } from "@/core/service/feedbackService/effectEngine/con
 import { ViewOutlineFlashEffect } from "@/core/service/feedbackService/effectEngine/concrete/ViewOutlineFlashEffect";
 import { Settings } from "@/core/service/Settings";
 import { Themes } from "@/core/service/Themes";
+import { toggleWindowAlwaysOnTop, WINDOW_PIN_KEYBIND_ID } from "@/core/service/WindowPin";
 import { PenStrokeMethods } from "@/core/stage/stageManager/basicMethods/PenStrokeMethods";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
@@ -196,6 +197,7 @@ import {
   Paperclip,
   PenTool,
   PictureInPicture2,
+  Pin,
   Play,
   Plus,
   Rabbit,
@@ -417,6 +419,14 @@ const researchKeyBinds: KeyBindItem[] = [
     icon: FolderOpen,
     when: whenAlways,
     onPress: () => emitResearchEvent("chooseFolder"),
+  },
+  // 不给默认键位：科研模式下原版白板的快捷键大多还开着，⌘ 组合很容易撞车，置顶又不常用；需要的话在设置里自己绑
+  {
+    id: WINDOW_PIN_KEYBIND_ID,
+    defaultKey: "",
+    icon: Pin,
+    when: whenAlways,
+    onPress: toggleWindowAlwaysOnTop,
   },
 ];
 
@@ -1347,7 +1357,8 @@ export const allKeyBinds: KeyBindItem[] = [
   /*------- 顶部菜单窗口, UI操作 -------*/
   {
     id: "clickAppMenuSettingsButton",
-    defaultKey: "S-!",
+    // 科研模式用 macOS 惯用的 ⌘,(Windows 上是 Ctrl+,)打开设置
+    defaultKey: isResearchShell() ? "C-," : "S-!",
     icon: SettingsIcon,
     when: whenAlways,
     onPress: () => SettingsWindow.open("settings"),

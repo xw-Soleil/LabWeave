@@ -23,6 +23,16 @@ vi.mock("sonner", () => ({
     dismiss: mocks.toastDismiss,
   },
 }));
+vi.mock("i18next", () => ({
+  default: {
+    t: (key: string, options: { count?: number; names?: string; details?: string } = {}) => {
+      if (key === "drop.separator") return "、";
+      if (key === "drop.andMore") return ` 等 ${options.count} 个`;
+      const value = options.names ?? options.details;
+      return value === undefined ? key : `${key}:${value}`;
+    },
+  },
+}));
 
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { Vector } from "@graphif/data-structures";
@@ -31,6 +41,8 @@ import { URI } from "vscode-uri";
 import {
   createFileCards,
   hasPendingFileCards,
+  listFailureLines,
+  listFileNames,
   markFileCardsPending,
   refreshFileCardMissing,
   resolveFileCardPath,
@@ -235,5 +247,31 @@ describe("createFileCards", () => {
     );
     expect(project.stageManager.updateReferences).not.toHaveBeenCalled();
     expect(project.historyManager.recordStep).not.toHaveBeenCalled();
+  });
+});
+
+describe("file lists in toasts", () => {
+  beforeEach(() => {
+    mocks.toastWarning.mockReset();
+  });
+
+  it("lists at most five names and counts the rest", () => {
+    const paths = Array.from({ length: 7 }, (_, i) => `/Users/me/Downloads/f${i + 1}.docx`);
+    expect(listFileNames(paths.slice(0, 2))).toBe("f1.docx、f2.docx");
+    expect(listFileNames(paths)).toBe("f1.docx、f2.docx、f3.docx、f4.docx、f5.docx 等 7 个");
+  });
+
+  it("puts one failure per line and counts the rest on the last line", () => {
+    const lines = Array.from({ length: 6 }, (_, i) => `f${i + 1}.pdf: 没有权限`);
+    expect(listFailureLines(lines.slice(0, 1))).toBe("f1.pdf: 没有权限");
+    expect(listFailureLines(lines).split("\n")).toEqual([...lines.slice(0, 5), "等 6 个"]);
+  });
+
+  it("caps the unsupported-file warning when many files are dropped at once", async () => {
+    const paths = Array.from({ length: 8 }, (_, i) => `/Users/me/Research/topic/f${i + 1}.docx`);
+    await createFileCards(savedProject() as never, paths, Vector.getZero());
+    expect(mocks.toastWarning).toHaveBeenCalledExactlyOnceWith(
+      "card.unsupported:f1.docx、f2.docx、f3.docx、f4.docx、f5.docx 等 8 个",
+    );
   });
 });

@@ -2,9 +2,14 @@ import { Project, service } from "@/core/Project";
 import { MsdfTextAtlasRenderer } from "@/core/render/canvas2d/basicRenderer/msdfTextAtlas";
 import { Settings } from "@/core/service/Settings";
 import {
+  clampTextLines,
+  ellipsizeEnd,
+  ellipsizeMiddle,
   getFontIdentity,
   getTextSize,
   isBundledCanvasFont,
+  type MeasureText,
+  type MiddleEllipsisParts,
   replaceTextWhenProtect,
   resolveFont,
   setCanvasFont,
@@ -476,6 +481,130 @@ export class TextRenderer {
   }
 
   textArrayCache: LruCache<string, string[]> = new LruCache(1000);
+  private clampedLinesCache: LruCache<string, string[]> = new LruCache(1000);
+  private fittedTextCache: LruCache<string, string> = new LruCache(1000);
+
+  private measureAtRenderSize(fontFamily?: string, fontWeight?: string): MeasureText {
+    return (text) => getTextSize(text, TEXT_RENDER_SIZE, fontFamily, fontWeight).x;
+  }
+
+  /** 宽度换算成 TEXT_RENDER_SIZE 字号下的宽度：排版只看宽度和字号的比例，和缩放无关 */
+  private limitWidthAtRenderSize(limitWidth: number, fontSize: number): number {
+    const widthInEm = limitWidth / fontSize;
+    return Number.isFinite(widthInEm) ? Number(widthInEm.toPrecision(12)) * TEXT_RENDER_SIZE : widthInEm;
+  }
+
+  /**
+   * 截短、折行是按未取整的字号算的；开了「整数位置和字号」时字号向下取整（而不是四舍五入），
+   * 画出来只会更窄，不会超出 limitWidth。
+   */
+  private snapFittedText(location: Vector, fontSize: number): { location: Vector; size: number } | null {
+    if (!Number.isFinite(fontSize) || fontSize <= 0) return null;
+    if (!Settings.textIntegerLocationAndSizeRender) return { location, size: fontSize };
+    const size = Math.floor(fontSize);
+    return size > 0 ? { location: location.toInteger(), size } : null;
+  }
+
+  /**
+   * 按词折行（拉丁文在空格、「_」「-」处换行，中文按字），最多 limitLines 行；
+   * 后面还有内容时最后一行截短到加上「…」也放得下。结果和缩放无关，可以拿来决定版面。
+   * 不改变 renderMultiLineText 的排版，只给需要的地方（文件卡片）单独用。
+   */
+  layoutClampedLines(
+    text: string,
+    fontSize: number,
+    limitWidth: number,
+    limitLines: number,
+    fontFamily?: string,
+    fontWeight?: string,
+  ): string[] {
+    if (!Number.isFinite(fontSize) || fontSize <= 0) return [];
+    const width = this.limitWidthAtRenderSize(limitWidth, fontSize);
+    const cacheKey = JSON.stringify([text, width, limitLines, getFontIdentity(fontFamily, fontWeight)]);
+    const cached = this.clampedLinesCache.get(cacheKey);
+    if (cached) return cached;
+    const lines = clampTextLines(text, width, limitLines, this.measureAtRenderSize(fontFamily, fontWeight));
+    this.clampedLinesCache.set(cacheKey, lines);
+    return lines;
+  }
+
+  /**
+   * 从左上角画按词折行、限制行数的多行文字（排版见 layoutClampedLines），返回排出的行数。
+   */
+  renderClampedMultiLineText(
+    text: string,
+    location: Vector,
+    fontSize: number,
+    limitWidth: number,
+    color: Color,
+    lineHeight: number,
+    limitLines: number,
+    fontFamily?: string,
+    fontWeight?: string,
+  ): number {
+    if (text.trim().length === 0) return 0;
+    const lines = this.layoutClampedLines(
+      this.prepareText(text),
+      fontSize,
+      limitWidth,
+      limitLines,
+      fontFamily,
+      fontWeight,
+    );
+    lines.forEach((line, index) => {
+      if (line.length === 0) return;
+      const snapped = this.snapFittedText(location.add(new Vector(0, index * fontSize * lineHeight)), fontSize);
+      if (snapped) this.drawText(line, snapped.location, snapped.size, color, fontFamily, fontWeight);
+    });
+    return lines.length;
+  }
+
+  /**
+   * 单行文字放不下 limitWidth 时截短加「…」。传 { head, body, tail } 时只省略 body 中间，
+   * head、tail 原样保留（文件名保留扩展名）。
+   */
+  fitTextToWidth(
+    text: string | MiddleEllipsisParts,
+    fontSize: number,
+    limitWidth: number,
+    fontFamily?: string,
+    fontWeight?: string,
+  ): string {
+    if (!Number.isFinite(fontSize) || fontSize <= 0) return "";
+    const width = this.limitWidthAtRenderSize(limitWidth, fontSize);
+    const cacheKey = JSON.stringify([text, width, getFontIdentity(fontFamily, fontWeight)]);
+    const cached = this.fittedTextCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const measure = this.measureAtRenderSize(fontFamily, fontWeight);
+    const fitted =
+      typeof text === "string" ? ellipsizeEnd(text, width, measure) : ellipsizeMiddle(text, width, measure);
+    this.fittedTextCache.set(cacheKey, fitted);
+    return fitted;
+  }
+
+  /** 从左上角画一行不超过 limitWidth 的文字（截短规则见 fitTextToWidth） */
+  renderFittedText(
+    text: string | MiddleEllipsisParts,
+    location: Vector,
+    fontSize: number,
+    limitWidth: number,
+    color: Color = Color.White,
+    fontFamily?: string,
+    fontWeight?: string,
+  ): void {
+    const prepared =
+      typeof text === "string"
+        ? this.prepareText(text)
+        : {
+            head: this.prepareText(text.head ?? ""),
+            body: this.prepareText(text.body),
+            tail: this.prepareText(text.tail ?? ""),
+          };
+    const fitted = this.fitTextToWidth(prepared, fontSize, limitWidth, fontFamily, fontWeight);
+    if (fitted.trim().length === 0) return;
+    const snapped = this.snapFittedText(location, fontSize);
+    if (snapped) this.drawText(fitted, snapped.location, snapped.size, color, fontFamily, fontWeight);
+  }
 
   /**
    * 加了缓存后的多行文本渲染函数

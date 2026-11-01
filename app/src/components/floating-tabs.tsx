@@ -1,5 +1,7 @@
 import TabContextMenu from "@/components/tab-context-menu";
 import { SimpleCard } from "@/components/ui/card";
+import { displayWorkspaceName } from "@/components/ui/file-name";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { ComponentTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, tabsAtom } from "@/state";
@@ -117,7 +119,12 @@ export default function FloatingTabs({
                   <span className="truncate">{tab.title}</span>
                   {tab instanceof ComponentTab && tab.contextTarget === "activeResourceTab" && (
                     <span className="bg-muted text-muted-foreground max-w-48 shrink truncate rounded px-1.5 py-0.5 text-xs">
-                      作用于：{tab.contextResourceTab?.title ?? "无项目"}
+                      作用于：
+                      {tab.contextResourceTab
+                        ? isResearchShell()
+                          ? displayWorkspaceName(tab.contextResourceTab.title)
+                          : tab.contextResourceTab.title
+                        : "无项目"}
                     </span>
                   )}
                 </div>

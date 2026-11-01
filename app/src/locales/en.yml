@@ -142,8 +142,65 @@ settings:
     plugins: Plugins
     themes: Themes
     scripts: Scripts
+  categories:
+    ai:
+      title: AI
+      api: API
+    automation:
+      title: Automation
+      autoNamer: Auto naming
+      autoSave: Auto save
+      autoBackup: Auto backup
+      autoImport: Auto import
+    control:
+      title: Control
+      mouse: Mouse
+      pen: Pen
+      touchpad: Touchpad
+      cameraMove: Moving the view
+      cameraZoom: Zooming the view
+      objectSelect: Selecting objects
+      textNode: Text nodes
+      section: Sections
+      edge: Edges
+      generateNode: Growing nodes with the keyboard
+      image: Images
+      gamepad: Gamepad
+    visual:
+      title: Visual
+      basic: Basics
+      background: Background
+      node: Node style
+      edge: Edge style
+      section: Section style
+      selectedState: Selection
+      entityDetails: Entity details
+      debug: Debug
+      miniWindow: Mini window
+      experimental: Experimental
+    performance:
+      title: Performance
+      memory: Memory
+      cpu: CPU
+      render: Rendering
+      experimental: In development
+    research:
+      title: Research Workbench
+      folder: Research folder
+      mouse: Mouse and trackpad
+      ai: AI reading
+      menu: Menu
+    common:
+      title: Common
+      folder: Research folder
+      board: Board
+      ai: AI
+      appearance: Appearance
+      save: Saving
   language:
     title: Language
+    description: |
+      The language of the interface. Takes effect after restarting the app.
     options:
       en: English
       zh_CN: Simplified Chinese
@@ -152,6 +209,9 @@ settings:
       id: Indonesian
   themeMode:
     title: Theme Mode
+    researchTitle: Light / dark
+    researchDescription: |
+      Whether the interface and the board are light or dark. The button on the right of the title bar switches it too.
     options:
       light: Day
       dark: Night
@@ -211,6 +271,8 @@ settings:
       When disabled, both endpoints of these connections remain at their entities' centers.
   lineStyle:
     title: Line Style
+    description: |
+      Whether edges on the board are drawn as straight lines or smooth curves.
     options:
       straight: Straight Line
       bezier: Bezier Curve
@@ -269,6 +331,8 @@ settings:
       Horizontal and vertical lines can be enabled simultaneously to create a grid effect.
   showBackgroundVerticalLines:
     title: Show Vertical Background Lines
+    description: |
+      Draws vertical lines on the board background. Turn it on together with the horizontal lines to get a grid.
   showBackgroundDots:
     title: Show Background Dots
     description: |
@@ -281,6 +345,9 @@ settings:
       and intuitively understand the current zoom level.
   windowBackgroundAlpha:
     title: Window Background Transparency
+    description: |
+      How opaque the board background is: 1 is fully opaque; lower values let the desktop show through the window.
+      Changing it from 1 to a lower value takes effect after the file is reopened.
   windowBackgroundOpacityAfterOpenClickThrough:
     title: Window Background Opacity After Enabling Click-Through
     description: |
@@ -311,6 +378,8 @@ settings:
       Comments are not displayed in the rendered diagram. This preference is saved automatically.
   nodeDetailsPanel:
     title: Node Details Panel
+    description: |
+      Which editor is used for node details. This version does not read this setting, so changing it has no effect.
     options:
       small: Small Panel
       vditor: Vditor Markdown Editor
@@ -352,6 +421,13 @@ settings:
     description: |
       This value determines the maximum number of times you can undo using Ctrl+Z.
       If your computer has very limited memory, you can reduce this value.
+  historyManagerMode:
+    title: History Manager Mode
+    description: |
+      How undo history is stored. "Memory efficient" records only what changed in each step: less memory, slightly slower undo and redo. "Time efficient" keeps a full copy for every step: fast undo, but uses more memory on large boards.
+    options:
+      memoryEfficient: Memory efficient
+      timeEfficient: Time efficient
   textIntegerLocationAndSizeRender:
     title: Text Integer Position and Size Rendering
     description: |
@@ -428,15 +504,24 @@ settings:
       When closing the software, if there are unsaved project files, a prompt will appear asking whether to save.
       Enabling this option will automatically save project files when closing the software.
       It is recommended to enable this option.
+    researchTitle: Save when closing the window
+    researchDescription: |
+      Before the window closes, workspaces that were saved before and have changes are saved again. Drafts that were never saved still ask. Auto save does this too.
   autoSave:
     title: Enable Auto-Save
     description: |
       Automatically save the current file.
       This feature currently only works for files with a specified path and does not apply to draft files!
+    researchTitle: Auto save
+    researchDescription: |
+      Workspaces that were saved before are saved about 5 seconds after you stop editing, and again at the interval below. Drafts have no location yet and are not auto-saved.
   autoSaveInterval:
     title: Auto-Save Interval (Seconds)
     description: |
       Note: The timer only counts when the software window is active and will not count when the software is minimized.
+    researchTitle: Timed save interval (seconds)
+    researchDescription: |
+      With auto save on, how often to save on a timer. The timer stops while the window is in the background or minimized; saving 5 seconds after you stop editing is not affected.
   clearHistoryWhenManualSave:
     title: Clear History When Manually Saving
     description: |
@@ -563,6 +648,11 @@ settings:
       A smaller dead zone means the input will tend more towards the middle value with greater variation.
   mouseRightDragBackground:
     title: Right-Click Drag Background Operation
+    description: |
+      What right-dragging on empty board space does. "Move Viewport" drags the whole board around, and middle-dragging then cuts instead. "Cut and Delete Objects" draws a cutting line: when you release, the edges it crosses are cut and the objects it touches are deleted.
+    researchTitle: Right-drag on empty space
+    researchDescription: |
+      What right-dragging on empty board space does. "Move Viewport" drags the whole board around (recommended). "Cut and Delete Objects" draws a cutting line: when you release, the edges it crosses are cut and the objects it touches are deleted. Middle-dragging always moves the viewport.
     options:
       cut: Cut and Delete Objects
       moveCamera: Move Viewport
@@ -571,6 +661,8 @@ settings:
     description: Press space bar and drag with left mouse button to move the viewport
   mouseLeftMode:
     title: Mouse Left Button Mode
+    description: |
+      What the left mouse button does on the board: select and move objects, draw with the pen, or connect and cut. It goes back to "select and move" every time the app starts.
     options:
       selectAndMove: select and move
       draw: draw
@@ -735,7 +827,7 @@ settings:
   rectangleSelectWhenRight:
     title: Strategy for Selecting to the Right
     description: |
-      Choose the strategy for selecting to the right.
+      What counts as selected when you drag a selection box from left to right: "Collision-based" selects anything the box touches; "Full Coverage" selects only objects that lie entirely inside the box.
     options:
       intersect: Collision-based Selection
       contain: Full Coverage Selection
@@ -746,7 +838,7 @@ settings:
   stealthModeScopeRadius:
     title: Stealth Mode Scope Radius
     description: |
-      The radius of the stealth mode scope.
+      In stealth mode, the size in pixels of the visible area around the mouse: the radius for a circle, the side length for a square. Everything outside it is hidden.
   stealthModeReverseMask:
     title: Reverse Mask
     description: |
@@ -833,7 +925,8 @@ settings:
     title: The Height of Mini Window
     description: "When switches to Mini Window, the height of the window in pixel\n"
   compatibilityMode:
-    description: "When enabled, another render method will be used.\n"
+    description: |
+      An alternative rendering method reserved for graphics compatibility problems. This version does not read this setting, so turning it on or off has no effect.
     title: Compatibility Mode
   autoRefreshStageByMouseAction:
     description: "When enabled, mouse actions (camera view drags) will automatically
@@ -891,6 +984,8 @@ settings:
       top: Small text at the top
       cover: Semi-transparent overlay frame (optimal effect)
     title: The rendering type of the abbreviated main title in the frame
+    description: |
+      When you zoom out and a section becomes small on screen, how its title is shown: not at all, as a line of small text at the top, or as large semi-transparent text covering the whole section.
   sectionBigTitleThresholdRatio:
     title: Section Big Title Display Threshold
     description: |
@@ -997,6 +1092,8 @@ settings:
   autoBackupStrategy:
     title: Auto Backup Strategy
     description: "Choose how to save backup files: default (backup folder), side-by-side (same folder as original), or subfolder ({filename}_backup folder)."
+    researchDescription: |
+      Where backup files go. In the research workbench they always go to the backup folder: the custom auto backup path if you set one, otherwise the app's own cache folder. No backup files are left in the research folder.
     options:
       default: Default (backup folder)
       sideBySide: Side-by-side (same folder)
@@ -1084,9 +1181,11 @@ settings:
   aiApiKey:
     title: AI API Key
     description: |
-      The key will be stored in plain text locally
+      The API key from your provider (usually starts with sk-). It is stored in plain text in the settings file on this computer and is not uploaded anywhere else. Local servers (localhost) do not need one.
   aiModel:
     title: AI Model
+    description: |
+      The name of the model to call, exactly as written in your provider's documentation (case-sensitive), e.g. deepseek-chat, gpt-4o-mini, claude-sonnet-4-5
   aiCustomHeaders:
     title: AI Request Headers
     description: |
@@ -1145,6 +1244,22 @@ settings:
       pan: Always move (recommended)
       zoom: Always zoom
       auto: "Auto: mouse wheel zooms, trackpad moves"
+  uiScalePercent:
+    title: UI Scale
+    description: |
+      Scales interface elements and text, from 25% to 200%.
+    researchTitle: Interface scale (%)
+    researchDescription: |
+      The size of buttons, panels and menu text. 100 is the original size, from 25 to 200.
+  antialiasing:
+    title: Antialiasing
+    description: |
+      How smooth images look when scaled on the board. Higher is smoother but costs more performance; turned off, enlarged images show their pixels. Takes effect after the file is reopened.
+    options:
+      disabled: "Off"
+      low: Low
+      medium: Medium
+      high: High
   soundPitchVariationRange:
     title: Sound Pitch Variation
     description: Controls how much the pitch of sound effects varies randomly. Range for 0-1200 cents (1200 cents = 1 octave, 100 cents = 1 semitone). Higher values create more noticeable variations.
@@ -2624,6 +2739,20 @@ research:
     panelFailed: "Couldn't open the panel: {{message}}"
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
+    resizeSidePanel: Drag to resize the panel
+  statusBar:
+    nodes: "{{count}} nodes"
+    edges: "{{count}} edges"
+    selected: "{{count}} selected"
+    saved: Saved
+    unsaved: Unsaved
+    stashed: Stashed locally
+    noVisibleNodes: No nodes in view
+    zoomOut: Zoom out
+    zoomIn: Zoom in
+    zoomReset: Zoom to 100%
+    fit: Fit
+    fitTitle: Fit view
   menu:
     title: Menu
     keyBindsGroup:
@@ -2671,6 +2800,9 @@ research:
       researchToggleFileManager:
         title: Files
         description: Show or hide the file panel on the left
+      researchToggleAlwaysOnTop:
+        title: Keep Window on Top
+        description: Keep this window above other windows; choose again to turn it off
       clickAppMenuSettingsButton:
         title: Settings…
       openAboutWindow:
@@ -2684,7 +2816,12 @@ research:
     chooseFolderDialogTitle: Choose research folder
     refresh: Refresh
     newWorkspace: New workspace
+    new: New
+    noFolder: No research folder
+    changeFolder: Change research folder…
+    revealInFinder: Show in Finder
     searchPlaceholder: Search file names
+    clearSearch: Clear search
     loading: Reading folder…
     loadFailed: "Can't read this folder: {{error}}"
     retry: Retry
@@ -2703,10 +2840,7 @@ research:
       image: Images
       markdown: Notes
     sectionEmpty:
-      workspace: No workspaces yet. Use "New workspace" above to create one
-      pdf: Put PDFs into the research folder and they show up here
-      image: No images yet
-      markdown: No Markdown notes yet
+      workspace: No workspaces yet. Click "New" to create one
     workspaceName:
       empty: The workspace name can't be empty
       invalidChars: 'Names can''t contain any of: \ / : * ? " < > |'
@@ -2722,9 +2856,9 @@ research:
     creating: "Reading {{count}} file(s) to make cards…"
     missing: File missing
     external: Linked file
-    missingHint: The original file is gone. It may have been moved, renamed or deleted
+    missingHint: "{{name}} · Original file not found"
     missingToast: "File missing: {{path}}"
-    openHint: Double-click to open the original file
+    openHint: "{{name}} · Double-click to open"
     unsupported: "These files can't become cards (only PDF, images and Markdown): {{names}}"
     readProblem: "\"{{name}}\": {{problem}}"
     readFailed: "Some files could not be read:\n{{details}}"
@@ -2743,7 +2877,7 @@ research:
     noBoard: Open or create a workspace first, then drag the files in again
     failed: "Could not place the files: {{message}}"
     cancel: Cancel
-    copied: "Copied {{count}} file(s) to {{folder}}"
+    copied: "Copied {{count}} file(s) to \"{{folder}}\" in the research folder"
     copyFailed: "Some files could not be copied and were not placed:\n{{details}}"
     missingFolder:
       title: Can't open the research folder
@@ -2794,6 +2928,13 @@ research:
       lineOfThought: What is my line of thought?
       whatIsMissing: What is missing?
     inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
+  tabs:
+    untitled: "Untitled {{n}}"
+    aiChat: AI Chat
+    unsaved: Unsaved
+    saving: Saving
+    savingWait: Still saving, close it when this finishes
+    close: Close
   welcome:
     title: Welcome to Research Workbench
     subtitle: Lay out papers, images and notes on a board, sort out your ideas, then ask the AI what is still missing
@@ -2814,3 +2955,28 @@ research:
       step3: Open the AI chat and let it help you organize the board and spot gaps
   settings:
     title: Research Workbench
+    dialogTitle: Settings
+    tabs:
+      settings: Settings
+      keybinds: Shortcuts
+      customization: Customize
+      about: About
+    close: Close (Esc)
+    searchPlaceholder: Search settings
+    clearSearch: Clear search
+    searchResults: Search results ({{count}})
+    noResults: No settings match "{{keyword}}"
+    advanced: Advanced (all original settings)
+    folderNotChosen: Not chosen yet
+    chooseFolder: Choose…
+    revealFolder: Show in Finder
+    revealFolderFailed: "Could not open this folder: {{message}}"
+    theme:
+      title: Theme
+      description: Which color scheme to use in light mode and in dark mode
+      button: Choose theme…
+    resetToDefault: Reset to default
+    showKey: Show key
+    hideKey: Hide key
+    expand: More
+    collapse: Less

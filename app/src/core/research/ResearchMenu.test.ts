@@ -40,6 +40,18 @@ describe("research menu", () => {
     expect(items).toContain("openAboutWindow");
   });
 
+  it("moves window pinning into View, after the panel toggles", () => {
+    const view = RESEARCH_GLOBAL_MENU.find((node) => node.id === "view");
+    expect(menuItemIds((view?.children ?? []) as typeof RESEARCH_GLOBAL_MENU)).toEqual([
+      "researchFocusWorkspace",
+      "researchToggleAIChat",
+      "researchToggleFileManager",
+      "researchToggleAlwaysOnTop",
+    ]);
+    expect(view?.children?.at(-2)?.type).toBe("separator");
+    expect(keyBindI18nKey("researchToggleAlwaysOnTop")).toBe("research:menu.items.researchToggleAlwaysOnTop");
+  });
+
   it("never disables a command it shows", () => {
     for (const id of [...menuItemIds(RESEARCH_GLOBAL_MENU), ...RESEARCH_COMMAND_IDS]) {
       expect(RESEARCH_DISABLED_KEYBIND_IDS.has(id)).toBe(false);
@@ -68,7 +80,7 @@ describe("research keybind defaults", () => {
   });
 
   it("only rewrites the keybinds added after an older marker", () => {
-    expect(pendingResearchKeyBindDefaults(true)).toEqual(new Set(treeGrowthIds));
+    expect(pendingResearchKeyBindDefaults(true)).toEqual(new Set([...treeGrowthIds, "checkoutClassroomMode"]));
   });
 
   it("leaves the keybinds alone once the marker lists them all", () => {

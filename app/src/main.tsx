@@ -22,11 +22,12 @@ import { exists } from "@tauri-apps/plugin-fs";
 import "driver.js/dist/driver.css";
 import i18next from "i18next";
 import { Provider } from "jotai";
+import type { CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "react-error-boundary";
 import { initReactI18next } from "react-i18next";
-import { toast } from "sonner";
+import { toast, type ToasterProps } from "sonner";
 import VConsole from "vconsole";
 import { URI } from "vscode-uri";
 import App from "./App";
@@ -173,8 +174,32 @@ async function loadLanguageFiles() {
   });
 }
 
+/**
+ * 科研模式的提示框：白底卡片、发丝边框、浮层阴影，不用 richColors 的整块彩色底（错误只把图标标红）。
+ * 文案里的 \n 要换行（多个出错文件一行一个），长路径、长文件名要能在任意位置断开。
+ * 传 style 会整个替换 Toaster 组件自带的那份，所以三个 --normal-* 变量要再写一遍。
+ */
+const RESEARCH_TOASTER_PROPS = {
+  style: {
+    "--normal-bg": "var(--popover)",
+    "--normal-text": "var(--popover-foreground)",
+    "--normal-border": "var(--border)",
+    "--width": "400px",
+  } as CSSProperties,
+  toastOptions: {
+    classNames: {
+      toast: "text-[13px]! shadow-md!",
+      title: "whitespace-pre-line [overflow-wrap:anywhere]",
+      description: "whitespace-pre-line [overflow-wrap:anywhere] text-muted-foreground!",
+      error: "[&_[data-icon]]:text-destructive",
+    },
+  },
+} satisfies ToasterProps;
+
 /** 渲染应用 */
 async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = false) {
+  // 给全局样式用的标记(比如科研模式的滚动条),弹窗挂在 body 下也能匹配到
+  if (isResearchShell()) document.documentElement.dataset.researchShell = "";
   const root = createRoot(el);
   if (cli) {
     await getCurrentWindow().hide();
@@ -192,7 +217,11 @@ async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = f
     // }
     root.render(
       <Provider store={store}>
-        <Toaster richColors visibleToasts={5} expand />
+        {isResearchShell() ? (
+          <Toaster visibleToasts={5} expand {...RESEARCH_TOASTER_PROPS} />
+        ) : (
+          <Toaster richColors visibleToasts={5} expand />
+        )}
         <ErrorBoundary FallbackComponent={Fallback}>
           <App />
         </ErrorBoundary>

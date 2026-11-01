@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   config: [] as any[],
   settings: {} as Record<string, unknown>,
   project: undefined as unknown,
+  alwaysOnTop: false,
   bindings: new Map<string, any>(),
   installed: undefined as any,
   fail: false,
@@ -31,8 +32,14 @@ vi.mock("@/core/service/controlService/shortcutKeysEngine/KeyBindsUI", () => ({
   KeyBindsUI: { getUIKeyBind: (id: string) => state.bindings.get(id) },
 }));
 vi.mock("@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister", () => ({ allKeyBinds: [] }));
-vi.mock("@/state", () => ({ activeResourceTabAtom: {}, store: { get: () => state.project } }));
-vi.mock("jotai", () => ({ useAtomValue: () => state.project }));
+vi.mock("@/state", () => ({
+  activeResourceTabAtom: { key: "project" },
+  isWindowAlwaysOnTopAtom: { key: "alwaysOnTop" },
+  store: { get: () => state.project },
+}));
+vi.mock("jotai", () => ({
+  useAtomValue: (atom: { key: string }) => (atom.key === "alwaysOnTop" ? state.alwaysOnTop : state.project),
+}));
 vi.mock("react", () => ({
   useRef: (current: unknown) => ({ current }),
   useEffect: (effect: () => () => void) => {
@@ -102,10 +109,12 @@ vi.mock("@tauri-apps/api/menu", () => {
       return null;
     }
   }
+  class CheckMenuItem extends MenuItem {}
   return {
     Menu,
     Submenu,
     MenuItem,
+    CheckMenuItem,
     PredefinedMenuItem: MenuItem,
   };
 });
@@ -134,6 +143,7 @@ beforeEach(() => {
   state.bindings.set("openAboutWindow", { onPress: vi.fn() });
   state.bindings.set("clickAppMenuSettingsButton", { onPress: vi.fn() });
   state.project = undefined;
+  state.alwaysOnTop = false;
   state.installed = undefined;
   state.fail = false;
   state.errors.mockClear();
@@ -248,13 +258,34 @@ describe("macOS system menus in the research shell", () => {
       "Paste",
       "SelectAll",
     ]);
-    expect(entries[3].options.items.map((item: any) => item.options.text)).toEqual([
+    expect(entries[3].options.items.map((item: any) => item.options.text ?? item.options.item)).toEqual([
       "researchFocusWorkspace",
       "researchToggleAIChat",
       "researchToggleFileManager",
+      "Separator",
+      "researchToggleAlwaysOnTop",
     ]);
     expect(entries[4].options.items[0].options.text).toBe("Minimize");
     expect(entries[4].options.systemWindowMenu).toBe(true);
+  });
+
+  it("shows View → Keep window on top as a check item that follows the window state", async () => {
+    state.bindings.set("researchToggleAlwaysOnTop", { onPress: vi.fn() });
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const pin = () => state.installed.options.items[3].options.items.at(-1);
+    expect(pin().constructor.name).toBe("CheckMenuItem");
+    expect(pin().options.checked).toBe(false);
+    expect(pin().options.enabled).toBe(true);
+
+    state.alwaysOnTop = true;
+    ready.mockClear();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    expect(pin().options.checked).toBe(true);
+    pin().options.action();
+    await vi.waitFor(() => expect(state.bindings.get("researchToggleAlwaysOnTop").onPress).toHaveBeenCalledOnce());
   });
 
   it("falls back to the full menu when researchShowFullMenu is on", async () => {
