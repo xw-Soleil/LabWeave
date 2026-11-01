@@ -115,6 +115,18 @@ const researchHiddenSettingKeys = new Set([
   "autoImportTxtFileWhenOpenPrg",
   "aiAutoApproveMcpTools",
   "researchSession",
+  // 科研模式的滚轮由 researchWheelBehavior 一项决定(见 core/research/WheelGesture.ts),原版这些滚轮设置不起作用
+  "mouseWheelMode",
+  "mouseWheelModeReverse",
+  "mouseWheelWithShiftMode",
+  "mouseWheelWithShiftModeReverse",
+  "mouseWheelWithCtrlMode",
+  "mouseWheelWithCtrlModeReverse",
+  "mouseWheelWithAltMode",
+  "mouseWheelWithAltModeReverse",
+  "mouseSideWheelMode",
+  "macTrackpadAndMouseWheelDifference",
+  "macMouseWheelIsSmoothed",
 ]);
 
 // 只有科研模式会用到的设置，原版模式下不显示
@@ -124,6 +136,7 @@ const researchOnlySettingKeys = new Set([
   "researchShowFullMenu",
   "researchSession",
   "aiPdfTextPages",
+  "researchWheelBehavior",
 ]);
 
 function isSettingKeyVisible(key: string): boolean {
@@ -132,6 +145,7 @@ function isSettingKeyVisible(key: string): boolean {
 
 const researchCategory = {
   folder: ["researchFolderPath", "researchShowFullMenu"],
+  mouse: ["researchWheelBehavior"],
   ai: ["aiPdfTextPages", "writeAiSidecarOnSave"],
 };
 
@@ -501,6 +515,7 @@ export const categoryIcons = {
   research: {
     icon: FlaskConical,
     folder: FolderOpen,
+    mouse: Mouse,
     ai: BookOpenText,
   },
   ai: {

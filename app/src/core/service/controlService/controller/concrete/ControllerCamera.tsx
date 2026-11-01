@@ -2,6 +2,8 @@
  * 存放具体的控制器实例
  */
 
+import { isResearchShell } from "@/core/research/ResearchShell";
+import { decideWheelAction, wheelDeltaInPixels, WheelSourceTracker } from "@/core/research/WheelGesture";
 import { Settings } from "@/core/service/Settings";
 import { Camera } from "@/core/stage/Camera";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
@@ -172,6 +174,10 @@ export class ControllerCameraClass extends ControllerClass {
     if (Settings.mouseLeftMode === "draw" && this.project.controller.pressingKeySet.has("shift")) {
       return;
     }
+    if (isResearchShell()) {
+      this.researchMousewheel(event);
+      return;
+    }
     if (
       event.ctrlKey &&
       !this.project.controller.pressingKeySet.has("control") &&
@@ -209,6 +215,31 @@ export class ControllerCameraClass extends ControllerClass {
 
     this.mousewheelFunction(event);
   };
+
+  private researchWheelTracker = new WheelSourceTracker();
+
+  /**
+   * 科研模式的滚轮(规则见 core/research/WheelGesture.ts):
+   * 移动按滚动的像素直接移动,鼠标和触控板同一个速度,不加缓动动画,顺滑感交给系统自带的滚动惯性;
+   * 缩放以鼠标位置为中心连续变化。双指捏合在 macOS 上是带 ctrlKey 的滚轮事件,和按着 Ctrl / Cmd 一样缩放。
+   */
+  private researchMousewheel(event: WheelEvent) {
+    const pixels = wheelDeltaInPixels(event, this.project.renderer.h);
+    const source = this.researchWheelTracker.resolve(event);
+    const action = decideWheelAction(
+      Settings.researchWheelBehavior,
+      source,
+      pixels,
+      event.ctrlKey || event.metaKey,
+      event.shiftKey,
+    );
+    if (action.kind === "pan") {
+      this.project.camera.panByViewDelta(new Vector(action.dx, action.dy));
+    } else if (action.kind === "zoom") {
+      const point = this.project.canvas.clientToView(event.clientX, event.clientY);
+      this.project.camera.applyGesture(point, point, action.factor);
+    }
+  }
 
   private handleTouchPadPinch(event: WheelEvent) {
     const point = new Vector(event.clientX, event.clientY);

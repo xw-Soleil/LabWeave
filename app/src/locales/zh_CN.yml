@@ -207,6 +207,7 @@ settings:
     research:
       title: 科研工作台
       folder: 研究文件夹
+      mouse: 鼠标与触控板
       ai: AI 阅读
   language:
     title: 语言
@@ -1216,6 +1217,14 @@ settings:
     title: 显示完整菜单
     description: |
       打开后显示原版 Project Graph 的全部菜单项
+  researchWheelBehavior:
+    title: 鼠标滚轮
+    description: |
+      滚轮和触控板双指滑动在白板上做什么。不管选哪种，双指捏合、按住 Ctrl 或 Cmd 再滚动都是以鼠标位置为中心缩放；按住 Shift 滚动是左右移动
+    options:
+      pan: 总是移动（推荐）
+      zoom: 总是缩放
+      auto: 自动：鼠标滚轮缩放，触控板移动
   textIntegerLocationAndSizeRender:
     title: 文本整数位置和大小渲染
     description: |

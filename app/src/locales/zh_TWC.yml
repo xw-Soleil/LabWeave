@@ -245,6 +245,7 @@ settings:
     research:
       title: 科研工作台
       folder: 研究資料夾
+      mouse: 滑鼠與觸控板
       ai: AI 閱讀
   language:
     title: 語言
@@ -1184,6 +1185,14 @@ settings:
     title: 顯示完整選單
     description: |
       開啟後顯示原版 Project Graph 的全部選單項目
+  researchWheelBehavior:
+    title: 滑鼠滾輪
+    description: |
+      滾輪和觸控板雙指滑動在白板上做什麼。不管選哪種，雙指捏合、按住 Ctrl 或 Cmd 再滾動都是以滑鼠位置為中心縮放；按住 Shift 滾動是左右移動
+    options:
+      pan: 總是移動（推薦）
+      zoom: 總是縮放
+      auto: 自動：滑鼠滾輪縮放，觸控板移動
   textIntegerLocationAndSizeRender:
     title: 文字整數位置和大小渲染
     description: '開啟後，一切文字的大小和位置都是整數，以節省渲染效能。

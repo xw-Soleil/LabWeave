@@ -198,6 +198,7 @@ settings:
     research:
       title: Research Workbench
       folder: Research folder
+      mouse: Mouse and trackpad
       ai: AI reading
   language:
     title: Bahasa
@@ -1182,6 +1183,14 @@ settings:
     title: Show the full menu
     description: |
       Shows every menu item of the original Project Graph.
+  researchWheelBehavior:
+    title: Mouse wheel
+    description: |
+      What the wheel and two-finger trackpad scrolling do on the board. Whatever you pick, pinch and Ctrl/Cmd + scroll zoom around the pointer, and Shift + scroll moves sideways.
+    options:
+      pan: Always move (recommended)
+      zoom: Always zoom
+      auto: "Auto: mouse wheel zooms, trackpad moves"
   textIntegerLocationAndSizeRender:
     title: Render Posisi dan Ukuran Bilangan Bulat Teks
     description: |

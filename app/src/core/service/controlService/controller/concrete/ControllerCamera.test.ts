@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Vector } from "@graphif/data-structures";
 
 vi.mock("@/core/service/Settings", () => ({
@@ -8,8 +8,11 @@ vi.mock("@/core/service/Settings", () => ({
     moveFriction: 0.1,
     scaleExponent: 0.2,
     scaleCameraByMouseLocation: true,
+    researchWheelBehavior: "pan",
   },
 }));
+// 下面「trackpad camera handoff」测的是原版的滚轮逻辑;科研模式的滚轮另有一组测试(文件末尾)
+vi.stubEnv("LR_RESEARCH_SHELL", "false");
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {} }));
 vi.mock("@/core/stage/stageObject/abstract/StageEntity", () => ({ Entity: class {} }));
@@ -181,5 +184,40 @@ describe("trackpad camera handoff", () => {
     control.mousewheel(wheel({ deltaX: 10, deltaY: 100 }));
     expect(camera.location).toEqual(new Vector(2.5, 25));
     expect(camera.targetScale).toBe(camera.currentScale);
+  });
+});
+
+describe("research mode wheel", () => {
+  beforeEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "true"));
+  afterEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
+
+  it("moves by the scrolled pixels right away, with no easing left for later frames", () => {
+    const { camera, control } = setup();
+    camera.currentScale = camera.targetScale = 2;
+    const start = camera.location.clone();
+    control.mousewheel(wheel({ deltaY: 40, wheelDeltaY: -120 } as Partial<WheelEvent>));
+    expect(camera.location).toEqual(start.add(new Vector(0, 20)));
+    for (let i = 0; i < 60; i++) camera.tick();
+    expect(camera.location).toEqual(start.add(new Vector(0, 20)));
+  });
+
+  it("moves a mouse wheel and a trackpad at the same speed, even when the guess would flip mid-scroll", () => {
+    const { camera, control } = setup();
+    camera.currentScale = camera.targetScale = 1;
+    const start = camera.location.clone();
+    control.mousewheel(wheel({ deltaY: 4, timeStamp: 1000 }));
+    control.mousewheel(wheel({ deltaY: 4.5, timeStamp: 1016 }));
+    control.mousewheel(wheel({ deltaY: 30, wheelDeltaY: -120, timeStamp: 1032 } as Partial<WheelEvent>));
+    expect(camera.location.y - start.y).toBeCloseTo(38.5);
+  });
+
+  it("zooms around the pointer on pinch (ctrlKey wheel) and keeps the point under it fixed", () => {
+    const { camera, control, project } = setup();
+    camera.currentScale = camera.targetScale = 1;
+    const anchor = project.renderer.transformView2World(new Vector(70, 30));
+    control.mousewheel(wheel({ deltaY: -20, ctrlKey: true, clientX: 70, clientY: 30 }));
+    expect(camera.currentScale).toBeGreaterThan(1);
+    expect(project.renderer.transformWorld2View(anchor).x).toBeCloseTo(70);
+    expect(project.renderer.transformWorld2View(anchor).y).toBeCloseTo(30);
   });
 });

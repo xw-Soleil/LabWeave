@@ -954,6 +954,8 @@ export const settingsSchema = z.object({
     })
     .default({ openWorkspaces: [], active: "", panels: { files: true, ai: false } }),
   researchShowFullMenu: z.boolean().default(false),
+  // 科研模式的滚轮:pan 总是移动(Ctrl / Cmd + 滚轮、双指捏合缩放),zoom 总是缩放,auto 鼠标缩放、触控板移动
+  researchWheelBehavior: z.union([z.literal("pan"), z.literal("zoom"), z.literal("auto")]).default("pan"),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

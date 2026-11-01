@@ -1129,6 +1129,14 @@ settings:
     title: Show the full menu
     description: |
       Shows every menu item of the original Project Graph.
+  researchWheelBehavior:
+    title: Mouse wheel
+    description: |
+      What the wheel and two-finger trackpad scrolling do on the board. Whatever you pick, pinch and Ctrl/Cmd + scroll zoom around the pointer, and Shift + scroll moves sideways.
+    options:
+      pan: Always move (recommended)
+      zoom: Always zoom
+      auto: "Auto: mouse wheel zooms, trackpad moves"
   soundPitchVariationRange:
     title: Sound Pitch Variation
     description: Controls how much the pitch of sound effects varies randomly. Range for 0-1200 cents (1200 cents = 1 octave, 100 cents = 1 semitone). Higher values create more noticeable variations.
