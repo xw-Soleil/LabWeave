@@ -6,6 +6,7 @@ vi.mock("@/core/service/Settings", () => ({ Settings: { researchFolderPath: "/Us
 import {
   isRecentFileVisible,
   keyBindI18nKey,
+  pendingResearchKeyBindDefaults,
   RESEARCH_COMMAND_IDS,
   RESEARCH_DISABLED_KEYBIND_IDS,
   RESEARCH_GLOBAL_MENU,
@@ -48,6 +49,30 @@ describe("research menu", () => {
   it("looks up research keybind labels in the research namespace", () => {
     expect(keyBindI18nKey("researchToggleAIChat")).toBe("research:menu.items.researchToggleAIChat");
     expect(keyBindI18nKey("saveFile")).toBe("saveFile");
+  });
+});
+
+describe("research keybind defaults", () => {
+  const treeGrowthIds = [
+    "generateNodeTreeWithDeepMode",
+    "generateNodeTreeWithDeepModeEditEdge",
+    "generateNodeTreeWithBroadMode",
+  ];
+
+  it("turns off Tab / \\ tree growth", () => {
+    for (const id of treeGrowthIds) expect(RESEARCH_DISABLED_KEYBIND_IDS.has(id)).toBe(true);
+  });
+
+  it("rewrites every disabled keybind on the first research start", () => {
+    expect(pendingResearchKeyBindDefaults(undefined)).toEqual(new Set(RESEARCH_DISABLED_KEYBIND_IDS));
+  });
+
+  it("only rewrites the keybinds added after an older marker", () => {
+    expect(pendingResearchKeyBindDefaults(true)).toEqual(new Set(treeGrowthIds));
+  });
+
+  it("leaves the keybinds alone once the marker lists them all", () => {
+    expect(pendingResearchKeyBindDefaults([...RESEARCH_DISABLED_KEYBIND_IDS]).size).toBe(0);
   });
 });
 

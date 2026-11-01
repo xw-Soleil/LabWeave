@@ -2,7 +2,7 @@ import { Project, service } from "@/core/Project";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "../../stageObject/association/MutiTargetUndirectedEdge";
-import { TextNode } from "../../stageObject/entity/TextNode";
+import { getNodeDisplayName } from "@/utils/treeValidation";
 
 /**
  * 树形结构检测结果
@@ -49,17 +49,6 @@ export class GraphMethods {
   }
 
   /**
-   * 获取节点的显示文本（最多5个字符，溢出用省略号）
-   */
-  private getNodeDisplayName(node: ConnectableEntity): string {
-    if (node instanceof TextNode) {
-      const text = node.text || "未命名";
-      return text.length > 5 ? text.slice(0, 5) + "..." : text;
-    }
-    return "节点";
-  }
-
-  /**
    * 详细检测树形结构问题
    * @param rootNode 根节点
    * @param skipDashed 是否跳过虚线边
@@ -88,7 +77,7 @@ export class GraphMethods {
       if (selfLoopEdges.length > 0) {
         issues.push({
           type: "selfLoop",
-          message: `节点 "${this.getNodeDisplayName(node)}" 存在自环`,
+          message: `节点 "${getNodeDisplayName(node)}" 存在自环`,
           nodes: [node],
           edges: selfLoopEdges,
         });
@@ -119,7 +108,7 @@ export class GraphMethods {
           if (targetNode) {
             issues.push({
               type: "overlappingEdges",
-              message: `节点 "${this.getNodeDisplayName(node)}" 和 "${this.getNodeDisplayName(targetNode)}" 之间存在 ${edges.length} 条重叠的边`,
+              message: `节点 "${getNodeDisplayName(node)}" 和 "${getNodeDisplayName(targetNode)}" 之间存在 ${edges.length} 条重叠的边`,
               nodes: [node, targetNode],
               edges: edges,
             });
@@ -143,7 +132,7 @@ export class GraphMethods {
         // 添加节点本身到环路
         cycleNodes.push(node);
 
-        const nodeNames = cycleNodes.map((n) => `"${this.getNodeDisplayName(n)}"`).join(" → ");
+        const nodeNames = cycleNodes.map((n) => `"${getNodeDisplayName(n)}"`).join(" → ");
         issues.push({
           type: "cycle",
           message: `存在环路: ${nodeNames}`,
@@ -160,10 +149,10 @@ export class GraphMethods {
           const existingDiamond = issues.find((i) => i.type === "diamond" && i.nodes?.some((n) => n.uuid === nodeId));
 
           if (!existingDiamond) {
-            const parentNames = parents.map((p) => `"${this.getNodeDisplayName(p)}"`).join(", ");
+            const parentNames = parents.map((p) => `"${getNodeDisplayName(p)}"`).join(", ");
             issues.push({
               type: "diamond",
-              message: `节点 "${this.getNodeDisplayName(node)}" 有多个父节点: ${parentNames}，形成菱形结构`,
+              message: `节点 "${getNodeDisplayName(node)}" 有多个父节点: ${parentNames}，形成菱形结构`,
               nodes: [node, ...parents],
             });
           }
@@ -195,10 +184,10 @@ export class GraphMethods {
         const alreadyReported = issues.some((i) => i.type === "diamond" && i.nodes?.some((n) => n.uuid === node.uuid));
 
         if (!alreadyReported) {
-          const parentNames = parents.map((p) => `"${this.getNodeDisplayName(p)}"`).join(", ");
+          const parentNames = parents.map((p) => `"${getNodeDisplayName(p)}"`).join(", ");
           issues.push({
             type: "diamond",
-            message: `节点 "${this.getNodeDisplayName(node)}" 有多个父节点: ${parentNames}，形成菱形结构`,
+            message: `节点 "${getNodeDisplayName(node)}" 有多个父节点: ${parentNames}，形成菱形结构`,
             nodes: [node, ...parents],
           });
         }

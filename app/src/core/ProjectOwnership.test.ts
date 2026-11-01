@@ -8,15 +8,19 @@ vi.mock("@/core/OpenProjectRuntimeHost", () => ({
   ensureOpenProjectRuntimeBridgeListener: vi.fn(async () => undefined),
 }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: vi.fn(async () => "retry") } }));
+// 和 main.tsx 一样 defaultNS 是空串、yml 顶层键是命名空间：不带 ns 的调用拿不到文案，只会显示原始 key
 vi.mock("i18next", () => ({
   default: {
-    t: vi.fn((key: string) => {
+    t: vi.fn((key: string, options?: { ns?: string }) => {
       const messages: Record<string, string> = {
-        "projectOwnership.notFound": "项目文件不存在。",
-        "projectOwnership.busy": "该项目正在被另一个 Project Graph 进程使用。",
-        "projectOwnership.loadFailed": "无法取得项目所有权。",
+        "projectOwnership:notFound": "项目文件不存在。",
+        "projectOwnership:busy": "该项目正在被另一个 Project Graph 进程使用。",
+        "projectOwnership:loadFailed": "无法取得项目所有权。",
+        "projectOwnership:releaseFailedTitle": "释放项目所有权失败",
+        "projectOwnership:releaseFailedMessage": "项目已关闭，但无法释放它的所有权锁。",
+        "projectOwnership:retry": "重试",
       };
-      return messages[key] ?? key;
+      return messages[`${options?.ns ?? ""}:${key}`] ?? key;
     }),
   },
 }));
@@ -84,6 +88,9 @@ describe("desktop Project ownership lifecycle", () => {
     ).rejects.toBe(initializationError);
 
     expect(Dialog.buttons).toHaveBeenCalledOnce();
+    expect(Dialog.buttons).toHaveBeenCalledWith("释放项目所有权失败", "项目已关闭，但无法释放它的所有权锁。", [
+      { id: "retry", label: "重试" },
+    ]);
     expect(invokeMock).toHaveBeenNthCalledWith(3, "release_desktop_project_ownership", {
       ownershipId: "desktop-123-1",
     });

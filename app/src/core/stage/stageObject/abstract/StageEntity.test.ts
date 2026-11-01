@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/service/Settings", () => ({ Settings: { isEnableEntityCollision: true } }));
 vi.mock("../tools/entityDetailsManager", () => ({ DetailsManager: class {} }));
@@ -31,6 +31,42 @@ describe("entity collision separation", () => {
     entities[0].collideWithOtherEntity(entities[1]);
     expect(first.isCollideWith(second)).toBe(false);
     expect(moves).toBe(1);
+  });
+});
+
+describe("pushing other entities after a move", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function overlappingPair() {
+    const pushed = vi.fn();
+    const other = Object.assign(Object.create(Entity.prototype), {
+      collisionBox: { getRectangle: () => new Rectangle(new Vector(50, 0), new Vector(100, 100)) },
+      move: pushed,
+    }) as Entity;
+    const mover = Object.assign(Object.create(Entity.prototype), {
+      collisionBox: { getRectangle: () => new Rectangle(new Vector(0, 0), new Vector(100, 100)) },
+    }) as Entity;
+    const project = { sectionMoveDepth: 0, stageManager: { getEntities: () => [mover, other] } };
+    Object.defineProperty(mover, "project", { value: project });
+    const updateOthers = () =>
+      (mover as unknown as { updateOtherEntityLocationByMove(): void }).updateOtherEntityLocationByMove();
+    return { pushed, updateOthers };
+  }
+
+  it("never pushes in research mode", () => {
+    vi.stubEnv("LR_RESEARCH_SHELL", "true");
+    const { pushed, updateOthers } = overlappingPair();
+    updateOthers();
+    expect(pushed).not.toHaveBeenCalled();
+  });
+
+  it("still pushes in the original mode", () => {
+    vi.stubEnv("LR_RESEARCH_SHELL", "false");
+    const { pushed, updateOthers } = overlappingPair();
+    updateOthers();
+    expect(pushed).toHaveBeenCalledWith(new Vector(50, 0));
   });
 });
 

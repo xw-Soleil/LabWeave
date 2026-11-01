@@ -597,6 +597,7 @@ export const shortcutKeysGroups: ShortcutKeysGroup[] = [
       "selectAll",
       "searchText",
       "copy",
+      "cut",
       "paste",
       "pasteWithOriginLocation",
       "deleteSelectedStageObjects",

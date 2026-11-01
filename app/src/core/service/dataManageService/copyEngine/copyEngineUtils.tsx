@@ -5,11 +5,15 @@ import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
+import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
+import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
+import { Vector } from "@graphif/data-structures";
+import { Line, Rectangle } from "@graphif/shapes";
 
 /**
  *
@@ -96,5 +100,48 @@ export namespace CopyEngineUtils {
       }
     }
     return attachmentMap;
+  }
+
+  /** 把粘贴内容外接矩形的中心对到目标点要平移多少；取整，免得坐标带上小数 */
+  export function computePasteOffset(bounds: Rectangle, target: Vector): Vector {
+    const center = bounds.center;
+    return new Vector(Math.round(target.x - center.x), Math.round(target.y - center.y));
+  }
+
+  /**
+   * 给还没放上舞台的粘贴内容改坐标。不能用 move()：它会推开碰到的实体、调整父框。
+   * 每个实体只平移它自己（分组框不带孩子），所以要对粘贴出来的每个实体各调一次；
+   * 有孩子的分组框放上舞台后 updateReferences 会按孩子重算大小。
+   */
+  export function rawShiftEntity(entity: Entity, delta: Vector) {
+    if (entity instanceof PenStroke) {
+      // 涂鸦的位置存在 segments 里，它的 move() 只重建自己的碰撞箱，不碰别人
+      entity.move(delta);
+      return;
+    }
+    if (entity instanceof Section) {
+      // 锁定时 collisionBox 是现算的临时对象，折叠时拿到的是折叠后那份；展开、折叠两份都要平移，空分组框就靠它们定位
+      const { locked, isCollapsed } = entity;
+      entity.locked = false;
+      entity.isCollapsed = false;
+      shiftShapes(entity.collisionBox, delta);
+      entity.isCollapsed = true;
+      shiftShapes(entity.collisionBox, delta);
+      entity.locked = locked;
+      entity.isCollapsed = isCollapsed;
+      return;
+    }
+    shiftShapes(entity.collisionBox, delta);
+  }
+
+  function shiftShapes(collisionBox: CollisionBox, delta: Vector) {
+    for (const shape of collisionBox.shapes) {
+      if (shape instanceof Line) {
+        shape.start = shape.start.add(delta);
+        shape.end = shape.end.add(delta);
+      } else if (shape instanceof Rectangle) {
+        shape.location = shape.location.add(delta);
+      }
+    }
   }
 }

@@ -1992,6 +1992,9 @@ keyBinds:
   copy:
     title: 複製
     description: 按下後，複製選中的內容
+  cut:
+    title: 剪切
+    description: 按下後，複製選中的內容並刪除，撤銷一次即可恢復
   paste:
     title: 粘貼
     description: 按下後，粘貼剪貼板內容

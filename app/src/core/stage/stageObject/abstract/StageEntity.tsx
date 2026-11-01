@@ -1,3 +1,4 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import type { Section } from "@/core/stage/stageObject/entity/Section";
@@ -101,7 +102,8 @@ export abstract class Entity extends StageObject {
    * 此函数在move函数中被调用，更新
    */
   protected updateOtherEntityLocationByMove() {
-    if (!Settings.isEnableEntityCollision || this.project.sectionMoveDepth > 0) {
+    // 科研模式下移动谁都不推别人（推挤会连锁），拖动松手后由 OverlapResolver 只把被拖的挪到空位
+    if (isResearchShell() || !Settings.isEnableEntityCollision || this.project.sectionMoveDepth > 0) {
       return;
     }
     for (const entity of this.project.stageManager.getEntities()) {

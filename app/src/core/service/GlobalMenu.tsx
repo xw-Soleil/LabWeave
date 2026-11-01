@@ -198,7 +198,10 @@ async function focusExistingTab(tab: Project | Extension) {
       .filter((candidate) => candidate instanceof Project && candidate !== tab)
       .forEach((candidate) => candidate.pause());
   }
-  toast.success(i18next.t("projectOwnership.alreadyOpen"));
+  // 科研模式下文件面板和工作区列表的行上已经标着「已打开」，切过去就够了，不再弹提示
+  if (!isResearchShell()) {
+    toast.success(i18next.t("alreadyOpen", { ns: "projectOwnership" }), { id: "project-already-open" });
+  }
 }
 
 export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise<Project | undefined> {
@@ -225,7 +228,9 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
   }
 
   if (uri.scheme === "file" && isOutsideResearchFolder(uri.fsPath)) {
-    toast.error(i18next.t("files.outsideFolder", { ns: "research", path: uri.fsPath }));
+    toast.error(i18next.t("files.outsideFolder", { ns: "research", path: uri.fsPath }), {
+      id: "research-outside-folder",
+    });
     return undefined;
   }
   if (uri.scheme === "file" && isResearchShell()) {
@@ -311,8 +316,8 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
     tab = result.value;
   } catch (e) {
     if (e instanceof ProjectOwnershipError) {
-      await Dialog.buttons(i18next.t("projectOwnership.openFailedTitle"), e.message, [
-        { id: "ok", label: i18next.t("projectOwnership.ok") },
+      await Dialog.buttons(i18next.t("openFailedTitle", { ns: "projectOwnership" }), e.message, [
+        { id: "ok", label: i18next.t("ok", { ns: "projectOwnership" }) },
       ]);
       return undefined;
     }

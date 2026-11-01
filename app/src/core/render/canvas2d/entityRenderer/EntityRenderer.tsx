@@ -21,6 +21,8 @@ import { Rectangle } from "@graphif/shapes";
 import { ExtensionEntityRenderer } from "./ExtensionEntityRenderer";
 import { renderFileCard } from "./FileCardRenderer";
 
+const OVERLAP_HINT_COLOR = new Color(220, 38, 38);
+
 /**
  * 处理节点相关的绘制
  */
@@ -162,6 +164,26 @@ export class EntityRenderer {
         continue;
       }
       this.renderEntity(penStroke);
+    }
+    this.renderOverlapHints(viewRectangle);
+  }
+
+  /** 科研模式拖动时，被拖动的实体压住的实体描红（松手后会把被拖的挪开） */
+  private renderOverlapHints(viewRectangle: Rectangle) {
+    const hinted = this.project.controller.entityClickSelectAndMove.overlapHintEntities;
+    if (hinted.size === 0) return;
+    const scale = this.project.camera.currentScale;
+    for (const entity of hinted) {
+      if (entity.isHiddenBySectionCollapse || this.project.renderer.isOverView(viewRectangle, entity)) {
+        continue;
+      }
+      this.project.shapeRenderer.renderRect(
+        this.project.renderer.transformWorld2View(entity.collisionBox.getRectangle().expandFromCenter(4)),
+        OVERLAP_HINT_COLOR.toNewAlpha(0.06),
+        OVERLAP_HINT_COLOR,
+        2.5 * scale,
+        (Renderer.NODE_ROUNDED_RADIUS + 4) * scale,
+      );
     }
   }
 

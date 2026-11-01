@@ -2277,6 +2277,9 @@ keyBinds:
   copy:
     title: Salin
     description: Setelah ditekan, salin konten yang dipilih
+  cut:
+    title: Potong
+    description: Setelah ditekan, salin konten yang dipilih lalu hapus; batalkan sekali untuk mengembalikannya
   paste:
     title: Tempel
     description: Setelah ditekan, tempel konten clipboard

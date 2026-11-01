@@ -55,12 +55,8 @@ export const RESEARCH_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "researchChooseFolder",
 ]);
 
-/**
- * 科研模式下默认清空键位并停用的快捷键：
- * 和新快捷键或系统快捷键撞车（Cmd+N、Cmd+2、Cmd+Tab、Cmd+W），Cmd+0 会把白板变透明，
- * 或者会往研究文件夹里写文件，或者会打开一个带绘图工具的 AI 窗口。
- */
-export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
+/** 标记还只是 true 的那个版本停用的快捷键（见 pendingResearchKeyBindDefaults） */
+const RESEARCH_DISABLED_KEYBIND_IDS_V1 = [
   "test",
   "newDraft",
   "checkoutProtectPrivacy",
@@ -77,10 +73,34 @@ export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "generateTreeBySelectedTextNodeTextWithAI",
   "generateNetBySelectedTextNodeTextWithAI",
   "generateSummaryBySelectedTextNodeTextWithAI",
+];
+
+/**
+ * 科研模式下默认清空键位并停用的快捷键：
+ * 和新快捷键或系统快捷键撞车（Cmd+N、Cmd+2、Cmd+Tab、Cmd+W），Cmd+0 会把白板变透明，
+ * 或者会往研究文件夹里写文件，或者会打开一个带绘图工具的 AI 窗口；
+ * Tab / E Tab / \ 树形生长会自动新建节点并连线，研究白板以自由摆放为主，用不上。
+ */
+export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
+  ...RESEARCH_DISABLED_KEYBIND_IDS_V1,
+  "generateNodeTreeWithDeepMode",
+  "generateNodeTreeWithDeepModeEditEdge",
+  "generateNodeTreeWithBroadMode",
 ]);
 
-/** keybinds2.json 里的标记：科研模式的默认键位改动已经写进去过，之后尊重用户自己的修改 */
+/**
+ * keybinds2.json 里的标记：记着哪些快捷键已经按科研模式的默认键位改写过，之后尊重用户自己的修改。
+ * 早先的版本只存一个 true，对应 RESEARCH_DISABLED_KEYBIND_IDS_V1；现在存改写过的 id 列表。
+ */
 export const RESEARCH_KEYBIND_DEFAULTS_MARKER = "__researchShellKeyBindDefaultsApplied";
+
+/** 这次启动还要按科研默认键位改写的快捷键：在停用清单里、但标记里还没记过的 */
+export function pendingResearchKeyBindDefaults(marker: unknown): Set<string> {
+  const applied = new Set<unknown>(
+    Array.isArray(marker) ? marker : marker === true ? RESEARCH_DISABLED_KEYBIND_IDS_V1 : [],
+  );
+  return new Set([...RESEARCH_DISABLED_KEYBIND_IDS].filter((id) => !applied.has(id)));
+}
 
 /**
  * 焦点在侧边面板（ComponentTab）甚至文本框里时也要能用的快捷键。

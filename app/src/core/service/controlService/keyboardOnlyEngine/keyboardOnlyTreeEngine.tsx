@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { toast } from "sonner";
@@ -287,6 +288,31 @@ export class KeyboardOnlyTreeEngine {
   }
 
   /**
+   * Tab / \ 自动生长、探针连线之后，对所在的树重新排版。
+   * 结构不是树（多个父节点、环路等）时不排版：原版弹警告；科研模式下静默跳过，
+   * 只有用户主动执行树形格式化时才提示（StageAutoAlignManager.autoLayoutSelectedFastTreeMode）。
+   * @returns 结构是树时返回树根，否则 null
+   */
+  layoutTreeAfterAutoGrowth(node: ConnectableEntity): ConnectableEntity | null {
+    const warn = Settings.autoLayoutWhenTreeGenerate && !isResearchShell();
+    const roots = this.project.graphMethods.getRoots(node, true);
+    if (roots.length !== 1) {
+      if (warn) toast.warning("当前结构不符合树形结构：无法确定唯一的根节点");
+      return null;
+    }
+    const root = roots[0];
+    const validationResult = this.project.graphMethods.validateTreeStructure(root, true);
+    if (!validationResult.isValid) {
+      if (warn) showTreeValidationErrors(validationResult, "warning");
+      return null;
+    }
+    if (Settings.autoLayoutWhenTreeGenerate) {
+      this.project.autoAlign.autoLayoutSelectedFastTreeMode(root);
+    }
+    return root;
+  }
+
+  /**
    * 树形深度生长节点
    * @returns
    */
@@ -332,24 +358,7 @@ export class KeyboardOnlyTreeEngine {
         this.project.effects.addEffects(this.project.edgeRenderer.getConnectedEffects(rootNode, targetEntity));
         SoundService.play.treeGenerateDeepSoundFile();
         // 连接成功后触发树形格式化布局（与新建节点逻辑一致）
-        const rootNodeParents = this.project.graphMethods.getRoots(rootNode, true);
-        if (rootNodeParents.length === 1) {
-          const rootNodeParent = rootNodeParents[0];
-          const validationResult = this.project.graphMethods.validateTreeStructure(rootNodeParent, true);
-          if (validationResult.isValid) {
-            if (Settings.autoLayoutWhenTreeGenerate) {
-              this.project.autoAlign.autoLayoutSelectedFastTreeMode(rootNodeParent);
-            }
-          } else {
-            if (Settings.autoLayoutWhenTreeGenerate) {
-              showTreeValidationErrors(validationResult, "warning");
-            }
-          }
-        } else {
-          if (Settings.autoLayoutWhenTreeGenerate) {
-            toast.warning("当前结构不符合树形结构：无法确定唯一的根节点");
-          }
-        }
+        this.layoutTreeAfterAutoGrowth(rootNode);
         if (editEdgeFirst && newEdges.length > 0) {
           this.project.controllerUtils.editEdgeText(newEdges[0]);
         }
@@ -478,28 +487,14 @@ export class KeyboardOnlyTreeEngine {
     }
 
     // 重新排列树形节点
-    const rootNodeParents = this.project.graphMethods.getRoots(rootNode, true);
-    if (rootNodeParents.length === 1) {
-      const rootNodeParent = rootNodeParents[0];
-      const validationResult = this.project.graphMethods.validateTreeStructure(rootNodeParent, true);
-      if (validationResult.isValid) {
-        if (Settings.autoLayoutWhenTreeGenerate) {
-          this.project.autoAlign.autoLayoutSelectedFastTreeMode(rootNodeParent);
-        }
-        // 更新选择状态
-        rootNodeParent.isSelected = false;
-        newNode.isSelected = true;
-        rootNode.isSelected = false;
-      } else {
-        if (Settings.autoLayoutWhenTreeGenerate) {
-          showTreeValidationErrors(validationResult, "warning");
-        }
-      }
-    } else {
-      if (Settings.autoLayoutWhenTreeGenerate) {
-        toast.warning("当前结构不符合树形结构：无法确定唯一的根节点");
-      }
+    const treeRoot = this.layoutTreeAfterAutoGrowth(rootNode);
+    // 科研模式下不是树时只跳过排版，选中状态照样交给新节点
+    if (treeRoot || isResearchShell()) {
+      if (treeRoot) treeRoot.isSelected = false;
+      newNode.isSelected = true;
+      rootNode.isSelected = false;
     }
+    const rootNodeParents = this.project.graphMethods.getRoots(rootNode, true);
 
     // 特效
     this.project.effects.addEffects(this.project.edgeRenderer.getConnectedEffects(rootNode, newNode));
@@ -624,28 +619,13 @@ export class KeyboardOnlyTreeEngine {
       newNode.color = parent.color.clone();
     }
     // 重新排列树形节点
-    const rootNodeParents = this.project.graphMethods.getRoots(parent, true);
-    if (rootNodeParents.length === 1) {
-      const rootNodeParent = rootNodeParents[0];
-      const validationResult = this.project.graphMethods.validateTreeStructure(rootNodeParent, true);
-      if (validationResult.isValid) {
-        if (Settings.autoLayoutWhenTreeGenerate) {
-          this.project.autoAlign.autoLayoutSelectedFastTreeMode(rootNodeParent);
-        }
-        // 更新选择状态
-        rootNodeParent.isSelected = false;
-        newNode.isSelected = true;
-        currentSelectNode.isSelected = false;
-      } else {
-        if (Settings.autoLayoutWhenTreeGenerate) {
-          showTreeValidationErrors(validationResult, "warning");
-        }
-      }
-    } else {
-      if (Settings.autoLayoutWhenTreeGenerate) {
-        toast.warning("当前结构不符合树形结构：无法确定唯一的根节点");
-      }
+    const treeRoot = this.layoutTreeAfterAutoGrowth(parent);
+    if (treeRoot || isResearchShell()) {
+      if (treeRoot) treeRoot.isSelected = false;
+      newNode.isSelected = true;
+      currentSelectNode.isSelected = false;
     }
+    const rootNodeParents = this.project.graphMethods.getRoots(parent, true);
     this.project.effects.addEffects(this.project.edgeRenderer.getConnectedEffects(parent, newNode));
     SoundService.play.treeGenerateBroadSoundFile();
     setTimeout(

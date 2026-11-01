@@ -1757,8 +1757,21 @@ export const allKeyBinds: KeyBindItem[] = [
     id: "pasteWithOriginLocation",
     defaultKey: "C-S-v",
     icon: Clipboard,
-    when: whenAlways,
-    onPress: () => toast("todo"),
+    when: whenKeyboardOnlyOpen,
+    onPress: (project) => {
+      if (!project!.keyboardOnlyEngine.isOpenning()) return;
+      project!.copyEngine.pasteWithOriginLocation();
+    },
+  },
+  {
+    id: "cut",
+    defaultKey: "C-x",
+    icon: Scissors,
+    when: whenKeyboardOnlyOpenWithSelectedStageObjects,
+    onPress: (project) => {
+      if (!project!.keyboardOnlyEngine.isOpenning()) return;
+      project!.copyEngine.cut();
+    },
   },
   {
     id: "changeTagBySelected",

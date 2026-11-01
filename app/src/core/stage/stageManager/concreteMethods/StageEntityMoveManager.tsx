@@ -1,4 +1,6 @@
 import { Project, service } from "@/core/Project";
+import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { EntityJumpMoveEffect } from "@/core/service/feedbackService/effectEngine/concrete/EntityJumpMoveEffect";
 import { RectanglePushInEffect } from "@/core/service/feedbackService/effectEngine/concrete/RectanglePushInEffect";
@@ -59,6 +61,9 @@ export class EntityMoveManager {
       this.moveSpeed = Vector.getZero();
       // 速度真正停止时记录一次历史
       if (this.moveAccelerateCommander.isZero()) {
+        if (isResearchShell()) {
+          nudgeEntitiesOutOfOverlap(this.project, this.getSelectedEntitiesWithChildren(true));
+        }
         this.project.historyManager.recordStep();
       }
       return;
@@ -229,6 +234,22 @@ export class EntityMoveManager {
       }
     }
   }
+  /** moveEntitiesWithChildren(delta, skipDashed) 会移动到的实体 */
+  getSelectedEntitiesWithChildren(skipDashed = true): Entity[] {
+    const result = new Set<Entity>();
+    for (const node of this.project.stageManager.getEntities()) {
+      if (!node.isSelected) continue;
+      if (node instanceof ConnectableEntity) {
+        for (const successor of this.project.graphMethods.getSuccessorSet(node, true, skipDashed)) {
+          result.add(successor);
+        }
+      } else {
+        result.add(node);
+      }
+    }
+    return [...result];
+  }
+
   /**
    * 树形移动传入的可连接实体
    * @param node

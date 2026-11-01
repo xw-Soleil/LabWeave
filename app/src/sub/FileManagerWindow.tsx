@@ -192,10 +192,11 @@ export default function FileManagerWindow() {
     }
   };
 
-  const onRowClick = (entry: ResearchFileEntry) => {
+  const onRowClick = (event: React.MouseEvent, entry: ResearchFileEntry) => {
     if (suppressClickRef.current) return;
     setSelectedPath(entry.absPath);
-    if (entry.kind === "workspace") void openWorkspace(entry);
+    // 双击的第二下（detail 为 2）不再打开一次：第一下若已经打开完，openingRef 拦不住
+    if (entry.kind === "workspace" && event.detail <= 1) void openWorkspace(entry);
   };
 
   const onRowDoubleClick = (entry: ResearchFileEntry) => {
@@ -366,7 +367,7 @@ export default function FileManagerWindow() {
                           selected={selectedPath === entry.absPath}
                           opened={entry.kind === "workspace" && openPaths.has(pathKey(entry.absPath))}
                           onPointerDown={(event) => onRowPointerDown(event, entry)}
-                          onClick={() => onRowClick(entry)}
+                          onClick={(event) => onRowClick(event, entry)}
                           onDoubleClick={() => onRowDoubleClick(entry)}
                         />
                       )))}
@@ -413,7 +414,7 @@ function FileRow({
   selected: boolean;
   opened: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onDoubleClick: () => void;
 }) {
   const { t } = useTranslation("research");

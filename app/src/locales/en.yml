@@ -1864,6 +1864,9 @@ keyBinds:
   copy:
     title: Copy
     description: Copy the selected content when pressed
+  cut:
+    title: Cut
+    description: Copy the selected content and delete it when pressed; undo brings it back
   paste:
     title: Paste
     description: Paste the clipboard content when pressed

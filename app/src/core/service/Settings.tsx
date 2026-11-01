@@ -143,7 +143,8 @@ export const settingsSchema = z.object({
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
-  enableDragAutoAlign: z.boolean().default(false),
+  // 科研模式拖动卡片时显示对齐参考线
+  enableDragAutoAlign: z.boolean().default(isResearchShell()),
   reverseTreeMoveMode: z.boolean().default(false),
   mouseWheelMode: z
     .union([z.literal("zoom"), z.literal("move"), z.literal("moveX"), z.literal("none"), z.literal("zoomUI")])
@@ -238,13 +239,14 @@ export const settingsSchema = z.object({
   enableDragNodeShakeDetachFromEdge: z.boolean().default(false),
   autoLayoutWhenTreeGenerate: z.boolean().default(true),
   autoLayoutWhenSectionCollapseToggle: z.boolean().default(false),
-  enableTreeGenerateConnectByProbe: z.boolean().default(true),
+  // 科研白板以自由摆放为主，探针连线和下面的 Tab 生长默认关掉，免得悄悄连出菱形结构
+  enableTreeGenerateConnectByProbe: z.boolean().default(!isResearchShell()),
   treeGenerateInheritParentColor: z.boolean().default(false),
   textNodeAutoFormatTreeWhenInput: z.boolean().default(false),
   treeGenerateCameraBehavior: z
     .union([z.literal("none"), z.literal("moveToNewNode"), z.literal("resetToTree")])
     .default("moveToNewNode"),
-  enableTabGenerateNodeInInput: z.boolean().default(true),
+  enableTabGenerateNodeInInput: z.boolean().default(!isResearchShell()),
   enableBackslashGenerateNodeInInput: z.boolean().default(false),
   gamepadDeadzone: z.number().min(0).max(1).default(0.1),
   showGrid: z.boolean().default(true),
@@ -345,6 +347,7 @@ export const settingsSchema = z.object({
         id: "clipboard-group",
         layout: "row",
         children: [
+          ...(isResearchShell() ? [{ type: "item" as const, id: "cut", icon: "Scissors" }] : []),
           { type: "item", id: "copy", icon: "Copy" },
           { type: "item", id: "paste", icon: "Clipboard" },
           { type: "item", id: "deleteSelectedStageObjects", icon: "Trash" },

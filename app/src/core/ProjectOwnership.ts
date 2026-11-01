@@ -26,10 +26,10 @@ export class ProjectOwnershipError extends Error {
   ) {
     super(
       code === "PROJECT_NOT_FOUND"
-        ? i18next.t("projectOwnership.notFound")
+        ? i18next.t("notFound", { ns: "projectOwnership" })
         : code === "PROJECT_BUSY"
-          ? i18next.t("projectOwnership.busy")
-          : i18next.t("projectOwnership.loadFailed"),
+          ? i18next.t("busy", { ns: "projectOwnership" })
+          : i18next.t("loadFailed", { ns: "projectOwnership" }),
     );
   }
 }
@@ -195,9 +195,13 @@ async function releaseProjectOwnershipWithRetry(ownership: ProjectOwnershipLease
       return;
     } catch (error) {
       await Dialog.buttons(
-        i18next.t("projectOwnership.releaseFailedTitle"),
-        i18next.t("projectOwnership.releaseFailedMessage", { error: String(error) }),
-        [{ id: "retry", label: i18next.t("projectOwnership.retry") }],
+        i18next.t("releaseFailedTitle", { ns: "projectOwnership" }),
+        i18next.t("releaseFailedMessage", {
+          ns: "projectOwnership",
+          error: String(error),
+          interpolation: { escapeValue: false },
+        }),
+        [{ id: "retry", label: i18next.t("retry", { ns: "projectOwnership" }) }],
       );
     }
   }

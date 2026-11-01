@@ -1,5 +1,36 @@
+import { isResearchShell } from "@/core/research/ResearchShell";
 import type { TreeValidationResult } from "@/core/stage/stageManager/basicMethods/GraphMethods";
+import type { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
+import { Section } from "@/core/stage/stageObject/entity/Section";
+import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
+import { UrlNode } from "@/core/stage/stageObject/entity/UrlNode";
 import { toast } from "sonner";
+
+function truncateName(text: string, maxLength: number): string {
+  return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+}
+
+/**
+ * 树形结构提示里节点的名字。原版只认文本节点（最多 5 个字），其他一律叫「节点」；
+ * 科研模式下文件卡片、网页节点用标题，分组框用框名，长度放宽到 16 个字，不然论文标题只剩开头一个词。
+ */
+export function getNodeDisplayName(node: ConnectableEntity): string {
+  if (!isResearchShell()) {
+    return node instanceof TextNode ? truncateName(node.text || "未命名", 5) : "节点";
+  }
+  let name: string;
+  if (node instanceof TextNode || node instanceof Section) {
+    name = node.text;
+  } else if (node instanceof FileCardNode) {
+    name = node.title || node.sourcePath.split(/[\\/]/).pop() || "";
+  } else if (node instanceof UrlNode) {
+    name = node.title || node.url;
+  } else {
+    return "节点";
+  }
+  return truncateName(name.replace(/\s+/g, " ").trim() || "未命名", 16);
+}
 
 /**
  * 显示树形结构验证错误信息

@@ -2216,6 +2216,9 @@ keyBinds:
   copy:
     title: 复制
     description: 按下後，複製選取的內容
+  cut:
+    title: 剪下
+    description: 按下後，複製選取的內容並刪除，復原一次就能找回來
   paste:
     title: 粘贴
     description: 按下后，粘贴剪贴板内容

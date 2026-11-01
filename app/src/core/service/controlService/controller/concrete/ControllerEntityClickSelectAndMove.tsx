@@ -1,3 +1,5 @@
+import { findOverlappedEntities, nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { ShakeDetector } from "@/core/service/controlService/controller/utils/ShakeDetector";
 import { ConnectNodeSmartTools } from "@/core/service/dataManageService/connectNodeSmartTools";
@@ -26,6 +28,20 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
   private shiftAxisLock: "x" | "y" | null = null;
   /** 按住 Shift 拖拽时，相对于按下时世界坐标的累计位移，用于确定锁定轴 */
   private shiftAccumulatedDelta = Vector.getZero();
+  /** 最近一次拖动是不是连同子树一起移动的（决定松手时挪哪些实体） */
+  private isLastMoveWithChildren = false;
+  /** 科研模式：拖动中被拖动的实体压住的实体，渲染时描红；不拖动时为空 */
+  public overlapHintEntities: ReadonlySet<Entity> = new Set();
+
+  private getDraggedEntities(): Entity[] {
+    return this.isLastMoveWithChildren
+      ? this.project.entityMoveManager.getSelectedEntitiesWithChildren()
+      : this.project.stageManager.getSelectedEntities();
+  }
+
+  private clearOverlapHint() {
+    if (this.overlapHintEntities.size > 0) this.overlapHintEntities = new Set();
+  }
 
   public mousedown: (event: MouseEvent) => void = (event: MouseEvent) => {
     if (Settings.viewerMode) {
@@ -201,26 +217,20 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
         ? this.project.controller.pressingKeySet.has("meta")
         : this.project.controller.pressingKeySet.has("control");
 
-      // 根据模式选择移动方式
-      if (Settings.reverseTreeMoveMode) {
-        // 反转模式：默认树形移动，按住Ctrl键单一移动
-        if (isControlPressed) {
-          this.project.entityMoveManager.moveSelectedEntities(diffLocation);
-        } else {
-          this.project.entityMoveManager.moveEntitiesWithChildren(diffLocation);
-        }
+      // 根据模式选择移动方式：反转模式下默认树形移动、按住Ctrl单一移动；正常模式相反
+      this.isLastMoveWithChildren = Settings.reverseTreeMoveMode ? !isControlPressed : isControlPressed;
+      if (this.isLastMoveWithChildren) {
+        this.project.entityMoveManager.moveEntitiesWithChildren(diffLocation);
       } else {
-        // 正常模式：默认单一移动，按住Ctrl键树形移动
-        if (isControlPressed) {
-          this.project.entityMoveManager.moveEntitiesWithChildren(diffLocation);
-        } else {
-          this.project.entityMoveManager.moveSelectedEntities(diffLocation);
-        }
+        this.project.entityMoveManager.moveSelectedEntities(diffLocation);
       }
 
       // 预瞄反馈
       if (Settings.enableDragAutoAlign) {
         this.project.autoAlign.preAlignAllSelected();
+      }
+      if (isResearchShell()) {
+        this.overlapHintEntities = findOverlappedEntities(this.project, this.getDraggedEntities());
       }
 
       // 检测摇晃动作 - 只在开启设置且选中单个节点时检测
@@ -242,6 +252,7 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
   };
 
   public mouseup: (event: MouseEvent) => void = (event: MouseEvent) => {
+    this.clearOverlapHint();
     if (Settings.viewerMode) {
       this.isMovingEntity = false;
       this.shakeDetector.reset();
@@ -268,6 +279,10 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
         if (Settings.enableDragAlignToGrid) {
           this.project.autoAlign.alignAllSelectedToGrid();
         }
+        // 拖动中允许叠放，松手时只把被拖的这一组挪到最近的空位
+        if (isResearchShell()) {
+          nudgeEntitiesOutOfOverlap(this.project, this.getDraggedEntities());
+        }
 
         this.project.historyManager.recordStep(); // 记录一次历史
       }
@@ -282,5 +297,6 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
   public mouseMoveOutWindowForcedShutdown(_outsideLocation: Vector): void {
     super.mouseMoveOutWindowForcedShutdown(_outsideLocation);
     this.isMovingEntity = false;
+    this.clearOverlapHint();
   }
 }
