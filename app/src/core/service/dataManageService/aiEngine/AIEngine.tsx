@@ -11,6 +11,7 @@ import {
 import { createBuiltInToolAgentTools } from "@/core/service/dataManageService/aiEngine/BuiltInToolAgentAdapter";
 import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { AIProjectReferenceStore } from "@/core/service/dataManageService/aiEngine/AIProjectReferenceStore";
+import { LocalAgentTransport } from "@/core/service/dataManageService/aiEngine/LocalAgentTransport";
 import { createChatModel, mergeAIRequestHeaders } from "@/core/service/dataManageService/aiEngine/AIProvider";
 import { resolveHttpRequestBody } from "@/core/service/dataManageService/aiEngine/AIHttpBody";
 import {
@@ -29,6 +30,7 @@ import {
   pruneMessages,
   stepCountIs,
   streamText,
+  type ChatTransport,
   type UIMessage,
   wrapLanguageModel,
 } from "ai";
@@ -51,6 +53,12 @@ export type AIMessageMetadata = {
   totalTokens?: number;
   lastStepInputTokens?: number;
   lastStepOutputTokens?: number;
+};
+
+export type AIConversation = {
+  references: AIObjectReferenceRegistry;
+  transport: ChatTransport<UIMessage<AIMessageMetadata>>;
+  localAgent?: LocalAgentTransport;
 };
 
 @service("aiEngine")
@@ -81,7 +89,17 @@ export class AIEngine {
     project: Project,
     references = this.getProjectReferences(project),
     getContextWindowTokenLimit: () => number | undefined = () => undefined,
-  ) {
+  ): AIConversation {
+    if (Settings.aiBackend === "localAgent") {
+      const localAgent = new LocalAgentTransport({
+        project,
+        references,
+        agentId: Settings.aiLocalAgent,
+        pathOverride: Settings.aiLocalAgentPaths[Settings.aiLocalAgent],
+      });
+      return { references, transport: localAgent, localAgent };
+    }
+
     const transport = new DefaultChatTransport({
       api: "/api/project-graph-ai-chat",
       fetch: this.createChatFetch(project, references),

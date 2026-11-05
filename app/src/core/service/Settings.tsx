@@ -127,6 +127,20 @@ export const settingsSchema = z.object({
     .default("default"),
   enableDragEdgeRotateStructure: z.boolean().default(true),
   enableCtrlWheelRotateStructure: z.boolean().default(false),
+  aiBackend: z.union([z.literal("api"), z.literal("localAgent")]).default("api"),
+  aiLocalAgent: z
+    .union([
+      z.literal("codex"),
+      z.literal("claude"),
+      z.literal("gemini"),
+      z.literal("kimi"),
+      z.literal("cursor"),
+      z.literal("opencode"),
+      z.literal("qodercn"),
+    ])
+    .default("codex"),
+  aiLocalAgentPaths: z.record(z.string(), z.string()).default({}),
+  aiLocalAgentPermission: z.union([z.literal("restricted"), z.literal("ask"), z.literal("auto")]).default("restricted"),
   aiApiBaseUrl: projectToolSettingSchemas.aiApiBaseUrl,
   aiApiKey: projectToolSettingSchemas.aiApiKey,
   aiModel: projectToolSettingSchemas.aiModel,

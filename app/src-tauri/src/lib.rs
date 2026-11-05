@@ -1,6 +1,7 @@
 #[cfg(debug_assertions)]
 mod cli_desktop_acceptance;
 mod cmd;
+mod local_agent;
 #[cfg(target_os = "macos")]
 mod macos_resize_cursor;
 mod project_ownership;
@@ -107,6 +108,7 @@ pub fn run() {
             project_ownership::DesktopProjectOwnershipManager::default(),
         ))
         .manage(cmd::research::ResearchRoot::default())
+        .manage(local_agent::LocalAgentManager::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
@@ -165,6 +167,11 @@ pub fn run() {
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
             cmd::research::external_ai_mcp_launch,
+            local_agent::local_agent_catalog,
+            local_agent::local_agent_start,
+            local_agent::local_agent_write,
+            local_agent::local_agent_stop,
+            local_agent::local_agent_open_terminal,
             // Called by "generate from folder" and the recent-files folder import.
             cmd::fs::read_folder_structure,
             cmd::fs::read_folder_recursive,

@@ -27,6 +27,7 @@ export type StoredAIChatSession = {
   messages: UIMessage<AIMessageMetadata>[];
   memory?: AIChatSessionMemory;
   activatedSkills?: ActivatedSkillSnapshot[];
+  localAgent?: { agentId: string; sessionId: string };
   createdAt: number;
   updatedAt: number;
 };
@@ -337,6 +338,16 @@ export namespace AIChatSessionStore {
   ): Promise<AIChatSessionMemory | undefined> {
     return (await loadSession(projectUri, sessionId)).memory;
   }
+
+  /* eslint-disable @typescript-eslint/no-unused-vars -- 第 0 步只预留经现有写入队列保存 ACP 会话号的接口。 */
+  export async function setLocalAgentSession(
+    _projectUri: string,
+    _sessionId: string,
+    _localAgent: StoredAIChatSession["localAgent"],
+  ): Promise<void> {
+    throw new Error("not implemented");
+  }
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   export async function getActivatedSkills(projectUri: string, sessionId: string): Promise<ActivatedSkillSnapshot[]> {
     const snapshots = (await loadSession(projectUri, sessionId)).activatedSkills ?? [];
