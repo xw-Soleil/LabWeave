@@ -248,8 +248,11 @@ async function waitForProjectLock(projectPath: string): Promise<void> {
   throw new Error(`Timed out waiting for Project lock: ${projectPath}`);
 }
 
+const OPEN_PROJECT_HOST_TOKEN = "test-bridge-token";
+
 async function createOpenProjectHost(projectPath: string, value: unknown, responseDelayMs = 0) {
   const requests: unknown[] = [];
+  const tokens: unknown[] = [];
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     socket.setEncoding("utf8");
     let request = "";
@@ -257,11 +260,13 @@ async function createOpenProjectHost(projectPath: string, value: unknown, respon
       request += chunk;
       const newline = request.indexOf("\n");
       if (newline === -1) return;
-      const { projectPath, toolName, input } = JSON.parse(request.slice(0, newline)) as {
+      const { token, projectPath, toolName, input } = JSON.parse(request.slice(0, newline)) as {
+        token?: string;
         projectPath: string;
         toolName: string;
         input: unknown;
       };
+      tokens.push(token);
       requests.push({ projectPath, toolName, input });
       const respond = () => socket.end(`${JSON.stringify({ ok: true, value })}\n`);
       if (responseDelayMs > 0) setTimeout(respond, responseDelayMs);
@@ -282,7 +287,7 @@ async function createOpenProjectHost(projectPath: string, value: unknown, respon
     ownershipHelperPath,
     projectPath,
     getOwnershipDirectory(),
-    `tcp://127.0.0.1:${address.port}`,
+    `tcp://127.0.0.1:${address.port}/?token=${OPEN_PROJECT_HOST_TOKEN}`,
   ).catch((error) => {
     server.close();
     throw error;
@@ -290,6 +295,7 @@ async function createOpenProjectHost(projectPath: string, value: unknown, respon
 
   return {
     requests,
+    tokens,
     disconnect() {
       return new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -396,8 +402,8 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     const tools = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
-    // 29 个上游工具 + 科研工作台的 dump_workspace / create_file_card
-    expect(tools).toHaveLength(31);
+    // 29 个上游工具 + 科研工作台的 dump_workspace / create_file_card / create_text_node_at / create_section
+    expect(tools).toHaveLength(33);
     expect(tools[0]).toMatchObject({
       name: "get_all_nodes",
       description: expect.any(String),
@@ -1291,6 +1297,36 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
   }, 20_000);
 
+  it("places text at coordinates and groups it in a closed Project, then reopens the Project with the group", async () => {
+    const projectPath = await createProjectFixture("2.7.0", createMutationStage());
+    const invoke = (tool: string, input: unknown) =>
+      runCli("tool", "invoke", tool, "--project", projectPath, "--input", JSON.stringify(input));
+    expect(invoke("get_all_nodes", {})).toMatchObject({ status: 0, stderr: "" });
+
+    const placed = invoke("create_text_node_at", { text: "Placed", x: 600, y: 300 });
+    expect(placed).toMatchObject({ status: 0, stderr: "" });
+    const placedRef = (JSON.parse(placed.stdout) as { success: boolean; ref: string }).ref;
+    expect(JSON.parse(placed.stdout)).toMatchObject({ success: true });
+
+    const grouped = invoke("create_section", { refs: ["n1", "n2"], title: "Group" });
+    expect(grouped).toMatchObject({ status: 0, stderr: "" });
+    const section = JSON.parse(grouped.stdout) as { ref: string };
+    expect(section).toMatchObject({ success: true, title: "Group", childCount: 2 });
+
+    // 分组里的和外面的不能一起打包
+    const mixed = invoke("create_section", { refs: ["n1", placedRef], title: "Mixed" });
+    expect(JSON.parse(mixed.stdout)).toMatchObject({ success: false, error: { code: "mixed_levels" } });
+
+    // 存着分组的工作区关着时也能再打开（以前读文件时分组找不到 StageManager 会失败）
+    const reloaded = invoke("get_all_nodes", {});
+    expect(reloaded).toMatchObject({ status: 0, stderr: "" });
+    const objects = (JSON.parse(reloaded.stdout) as { objects: Array<Record<string, unknown>> }).objects;
+    expect(objects).toContainEqual(
+      expect.objectContaining({ ref: placedRef, text: "Placed", position: { x: 600, y: 300 } }),
+    );
+    expect(objects).toContainEqual(expect.objectContaining({ ref: section.ref, type: "Section" }));
+  }, 30_000);
+
   it("expands a closed Project tree without desktop-only effects or services", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
     expect(runCli("tool", "invoke", "get_all_nodes", "--project", projectPath, "--input", "{}")).toMatchObject({
@@ -1614,6 +1650,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
           input: {},
         },
       ]);
+      expect(host.tokens).toEqual([OPEN_PROJECT_HOST_TOKEN]);
       expect(readFileSync(projectPath)).toEqual(before);
     } finally {
       await host.close();

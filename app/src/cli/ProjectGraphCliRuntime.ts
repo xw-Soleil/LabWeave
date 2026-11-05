@@ -44,14 +44,18 @@ export type ClosedProjectRuntimeOptions = {
 
 type ClosedProjectInvoker = (options: ClosedProjectRuntimeOptions) => Promise<ClosedProjectInvocationResult>;
 
+export type PathRoutedInvocationOptions = {
+  toolName: string;
+  input: unknown;
+  projectPath: string;
+  allowUpgrade: boolean;
+  abortSignal?: AbortSignal;
+  /** forward：子进程的输出原样写到本进程的 stdout / stderr（命令行）；capture：解析后作为结果返回（MCP 占着 stdout） */
+  output?: "forward" | "capture";
+};
+
 export type ProjectGraphCliRuntime = {
-  runPathRoutedInvocation(options: {
-    toolName: string;
-    input: unknown;
-    projectPath: string;
-    allowUpgrade: boolean;
-    abortSignal?: AbortSignal;
-  }): Promise<RuntimeResult>;
+  runPathRoutedInvocation(options: PathRoutedInvocationOptions): Promise<RuntimeResult>;
 };
 
 const cancelledResult = (): RuntimeResult => ({
@@ -226,10 +230,12 @@ function invokeOpenProjectTool(
       return;
     }
 
+    // 程序写在归属记录里的地址带着本机通道的口令（tcp://127.0.0.1:端口/?token=…），每个请求都要带上
+    const token = address.searchParams.get("token") ?? undefined;
     let output = "";
     let settled = false;
     const requestId = randomUUID();
-    const cancellationRequest = `${JSON.stringify({ cancelRequestId: requestId })}\n`;
+    const cancellationRequest = `${JSON.stringify({ token, cancelRequestId: requestId })}\n`;
     let connected = false;
     const sendCancellation = () => {
       if (connected) socket.write(cancellationRequest);
@@ -249,7 +255,7 @@ function invokeOpenProjectTool(
     socket.setEncoding("utf8");
     socket.once("connect", () => {
       connected = true;
-      socket.write(`${JSON.stringify({ requestId, ...request })}\n`);
+      socket.write(`${JSON.stringify({ token, requestId, ...request })}\n`);
       if (abortSignal?.aborted) sendCancellation();
     });
     abortSignal?.addEventListener("abort", sendCancellation, { once: true });
@@ -299,13 +305,7 @@ function invokeConnectableOwner(
 }
 
 async function runPathRoutedInvocation(
-  options: {
-    toolName: string;
-    input: unknown;
-    projectPath: string;
-    allowUpgrade: boolean;
-    abortSignal?: AbortSignal;
-  },
+  options: PathRoutedInvocationOptions,
   invokeClosedProjectTool: ClosedProjectInvoker,
 ): Promise<RuntimeResult> {
   if (options.abortSignal?.aborted) return cancelledResult();
@@ -371,9 +371,20 @@ async function runPathRoutedInvocation(
   if (worker.status !== 0 && !isStructuredCliError(worker.stderr)) {
     return { ok: false, error: { code: "PROJECT_LOAD_FAILED", message: "Project file could not be loaded." } };
   }
+  if (options.output === "capture") return capturedWorkerResult(worker);
   if (worker.stdout) process.stdout.write(worker.stdout);
   if (worker.stderr) process.stderr.write(worker.stderr);
   return { forwarded: true, exitCode: worker.status };
+}
+
+/** 子进程成功时 stdout 是一行 JSON 结果，失败时 stderr 是一行 JSON 错误（前面已经检查过） */
+function capturedWorkerResult(worker: OwnedWorkerResult): RuntimeResult {
+  try {
+    if (worker.status === 0) return { ok: true, value: JSON.parse(worker.stdout) };
+    return { ok: false, error: JSON.parse(worker.stderr) as ProjectGraphCliOperationalError };
+  } catch {
+    return { ok: false, error: { code: "PROJECT_LOAD_FAILED", message: "Project file could not be loaded." } };
+  }
 }
 
 export function createProjectGraphCliRuntime(invokeClosedProjectTool: ClosedProjectInvoker): ProjectGraphCliRuntime {

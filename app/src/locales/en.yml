@@ -1253,6 +1253,18 @@ settings:
     title: Mouse wheel zoom per notch (%)
     description: |
       How much one notch zooms in or out with Ctrl or Cmd held (or always, if the wheel is set to zoom). The zoom eases out over about 0.15 s. Trackpad pinch is not affected.
+  mcpAllowEdits:
+    title: Let external AI edit the board
+    description: |
+      When off, external AI apps (Claude Code, Codex, …) can only read: list workspaces and read cards and connections, but cannot add, change or delete anything
+  mcpAllowDelete:
+    title: Let external AI delete cards
+    description: |
+      The tools that delete cards or clear the board. In an open workspace a deletion can be undone; in a closed one the file is changed directly and cannot be undone
+  mcpAllowNetwork:
+    title: Let external AI search and recognize images online
+    description: |
+      Image search contacts Openverse; image recognition calls the AI service configured above and may cost money
   uiScalePercent:
     title: UI Scale
     description: |
@@ -3025,6 +3037,7 @@ research:
         title: AI
         api: Provider
         context: Reading and usage
+        external: External AI (MCP)
       appearance:
         title: Appearance
         theme: Theme and interface
@@ -3063,6 +3076,22 @@ research:
         title: Sounds
         description: Sounds played during actions
         button: Configure…
+      externalAi:
+        title: Connect external AI
+        description: Let Claude Code, Codex and others read and edit your boards over MCP
+        button: Show how…
+    externalAi:
+      intro: AI apps such as Claude Code and Codex can read and edit your boards over MCP. Run the command below once in a terminal; after that, just ask that app to "look at my workspace".
+      live: While a workspace is open here, the AI's changes appear on the board right away and can be undone with Cmd+Z; a closed workspace is changed in its file directly. What the AI may do is set by the three switches on the previous page and takes effect immediately.
+      claudeCode: Claude Code
+      codex: Codex
+      others: Other apps (Claude Desktop, Cursor, …)
+      othersHint: Add this to their MCP configuration file
+      copy: Copy
+      copied: Copied
+      unavailable: The installed build cannot connect external AI yet; this comes with packaging. For now, use the development build started from the repository.
+      noNode: Node.js was not found. External AI apps need it to run this interface. Install Node.js, then come back and copy the command.
+      appHomeNote: "--app-home ({{home}}) in the command is where this app keeps its settings; the external AI needs it to find open workspaces. Do not remove it."
     menus:
       contextMenu: Right-click menu
       pieMenu: Pie menu

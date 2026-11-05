@@ -562,16 +562,28 @@ fn open_ownership_file(
     let directory = ownership_directory()?;
     fs::create_dir_all(&directory).map_err(|_| ProjectOwnershipError::LoadFailed)?;
     let paths = ownership_artifact_paths(&directory, canonical_path);
-    OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).write(true);
+    // 归属记录里有本机通道的地址和口令，只让本账户读写
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
         .open(match artifact {
             OwnershipArtifact::OwnershipLock => paths.ownership_lock,
             OwnershipArtifact::ConnectableOwnerLock => paths.connectable_owner_lock,
             OwnershipArtifact::ConnectableOwnerRecord => paths.connectable_owner_record,
         })
-        .map_err(|_| ProjectOwnershipError::LoadFailed)
+        .map_err(|_| ProjectOwnershipError::LoadFailed)?;
+    // 旧版本建的记录文件是 0644，打开时顺手收紧
+    #[cfg(unix)]
+    if matches!(artifact, OwnershipArtifact::ConnectableOwnerRecord) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+    }
+    Ok(file)
 }
 
 #[cfg(not(test))]

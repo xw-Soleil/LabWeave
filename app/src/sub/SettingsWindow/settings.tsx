@@ -11,6 +11,7 @@ import {
   Image,
   type LucideIcon,
   Mouse,
+  Plug,
   Network,
   Palette,
   RectangleHorizontal,
@@ -25,12 +26,13 @@ import { type ComponentType, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import EffectsPage from "./customization/effects";
 import SoundEffectsPage from "./customization/sounds";
+import ExternalAiPage from "./ExternalAiPage";
 import ThemesTab from "./themes";
 
 export type SettingsDialogTab = "settings" | "keybinds" | "menus" | "about";
 
 /** 主题、画布动画、音效各有自己的整页界面，从「外观」里点进去 */
-export type SettingsSubPageId = "themes" | "effects" | "sounds";
+export type SettingsSubPageId = "themes" | "effects" | "sounds" | "externalAi";
 
 type SettingsItem = keyof Settings | { subPage: SettingsSubPageId };
 
@@ -67,6 +69,10 @@ export const settingsPages: SettingsPage[] = [
     sections: [
       { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
       { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
+      {
+        id: "external",
+        items: ["mcpAllowEdits", "mcpAllowDelete", "mcpAllowNetwork", { subPage: "externalAi" }],
+      },
     ],
   },
   {
@@ -207,6 +213,7 @@ const subPages: Record<SettingsSubPageId, { icon: LucideIcon; component: Compone
   themes: { icon: Palette, component: ThemesTab, padded: false },
   effects: { icon: Sparkles, component: EffectsPage, padded: true },
   sounds: { icon: Volume2, component: SoundEffectsPage, padded: true },
+  externalAi: { icon: Plug, component: ExternalAiPage, padded: true },
 };
 
 /** 每页里的设置项（不含点进去的子页面），搜索和测试用 */

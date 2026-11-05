@@ -101,9 +101,60 @@ fn normalize_drive_path(path: &str) -> String {
     format!(r"{}\{}", drive.to_ascii_uppercase(), parts.join(r"\"))
 }
 
+/// 外部 AI（Claude Code、Codex 等）接入 MCP 时要运行的命令：node、命令行入口、程序用的 HOME。
+/// 设置页据此拼出能直接复制的配置命令。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalAiMcpLaunch {
+    node: Option<String>,
+    /// 安装包还没带命令行，这时为空，界面上说明以后再接
+    script: Option<String>,
+    app_home: Option<String>,
+}
+
+#[tauri::command]
+pub fn external_ai_mcp_launch() -> ExternalAiMcpLaunch {
+    ExternalAiMcpLaunch {
+        node: find_on_path("node"),
+        script: development_cli_script(),
+        app_home: std::env::var("HOME").ok().filter(|home| !home.is_empty()),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn development_cli_script() -> Option<String> {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/project-graph-cli/src/cli.mjs")
+        .canonicalize()
+        .ok()
+        .map(|script| script.to_string_lossy().into_owned())
+}
+
+#[cfg(not(debug_assertions))]
+fn development_cli_script() -> Option<String> {
+    None
+}
+
+/// GUI 程序（Claude Desktop 等）不一定有终端里的 PATH，所以配置里写 node 的绝对路径
+fn find_on_path(name: &str) -> Option<String> {
+    let names: Vec<String> = if cfg!(windows) {
+        vec![format!("{name}.exe"), format!("{name}.cmd")]
+    } else {
+        vec![name.to_owned()]
+    };
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+        .find(|candidate| candidate.is_file())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{display_root, resolve_research_root, strip_windows_verbatim_prefix};
+    use super::{
+        development_cli_script, display_root, external_ai_mcp_launch, resolve_research_root,
+        strip_windows_verbatim_prefix,
+    };
     use std::path::Path;
 
     #[test]
@@ -158,5 +209,12 @@ mod tests {
             display_root(Path::new("/Users/alice/Research"), "/Users/alice/Research/"),
             "/Users/alice/Research"
         );
+    }
+
+    #[test]
+    fn development_build_points_external_ai_at_the_repository_cli() {
+        let script = development_cli_script().expect("the dev build knows the repository");
+        assert!(script.ends_with("cli.mjs") && Path::new(&script).is_file());
+        assert_eq!(external_ai_mcp_launch().script, Some(script));
     }
 }

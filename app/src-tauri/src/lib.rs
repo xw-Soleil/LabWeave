@@ -164,6 +164,7 @@ pub fn run() {
             project_reference_store::save_project_reference_snapshot,
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
+            cmd::research::external_ai_mcp_launch,
             // Called by "generate from folder" and the recent-files folder import.
             cmd::fs::read_folder_structure,
             cmd::fs::read_folder_recursive,

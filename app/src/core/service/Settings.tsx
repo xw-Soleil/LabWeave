@@ -101,7 +101,7 @@ export const settingsSchema = z.object({
   sectionBigTitleOpacity: z.number().min(0).max(1).default(0.5),
   hideSectionContentsWhenBigTitleActive: z.boolean().default(false),
   sectionBackgroundFillMode: z.union([z.literal("full"), z.literal("titleOnly")]).default("titleOnly"),
-  sectionInitBorderStyle: z.union([z.literal("solid"), z.literal("dashed"), z.literal("none")]).default("solid"),
+  sectionInitBorderStyle: projectToolSettingSchemas.sectionInitBorderStyle,
   autoEnterSectionEditMode: z.boolean().default(true),
   antialiasing: z
     .union([z.literal("disabled"), z.literal("low"), z.literal("medium"), z.literal("high")])
@@ -960,6 +960,11 @@ export const settingsSchema = z.object({
   // 鼠标滚轮(触控板不受影响):每格移动多少屏幕像素、每格缩放百分之几,都分几帧平滑走完
   researchMouseWheelPanStep: z.number().int().min(20).max(400).default(100),
   researchMouseWheelZoomStep: z.number().int().min(5).max(50).default(15),
+  // 外部 AI（Claude Code、Codex 等）通过 MCP 操作白板时能用哪些工具；读内容一直可以。
+  // MCP 每次调用都重新读 settings.json，改了马上生效
+  mcpAllowEdits: z.boolean().default(true),
+  mcpAllowDelete: z.boolean().default(true),
+  mcpAllowNetwork: z.boolean().default(true),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

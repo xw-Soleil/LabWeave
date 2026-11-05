@@ -6,6 +6,7 @@ const closedProjectCapabilities = new Set<BuiltInToolCapability>([
   "history",
   "effects",
   "delete",
+  "section",
   "text",
   "graph",
   "layout",

@@ -12,6 +12,10 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 
 pub(crate) const PROJECT_RUNTIME_INVOCATION_EVENT: &str = "project-runtime-invocation";
 
+/// 本机通道的口令长度（字节）。口令随地址一起写进工作区的归属记录，只有本账户能读；
+/// 每个请求都要带上它，否则拒绝。
+const BRIDGE_TOKEN_BYTES: usize = 32;
+
 #[derive(Deserialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 enum ProjectRuntimeRequest {
@@ -63,7 +67,8 @@ impl ProjectRuntimeBridgeManager {
         emit: impl Fn(ProjectRuntimeEvent) -> Result<(), ()> + Send + Sync + 'static,
     ) -> std::io::Result<Arc<Self>> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let endpoint = format!("tcp://{}", listener.local_addr()?);
+        let token = Arc::new(generate_bridge_token()?);
+        let endpoint = format!("tcp://{}/?token={}", listener.local_addr()?, token);
         let pending = Arc::new(Mutex::new(HashMap::new()));
         let manager = Arc::new(Self {
             endpoint,
@@ -77,7 +82,8 @@ impl ProjectRuntimeBridgeManager {
                 };
                 let pending = Arc::clone(&pending);
                 let emit = Arc::clone(&emit);
-                thread::spawn(move || handle_connection(stream, pending, emit));
+                let token = Arc::clone(&token);
+                thread::spawn(move || handle_connection(stream, pending, emit, token));
             }
         });
         Ok(manager)
@@ -101,17 +107,19 @@ fn handle_connection(
     mut stream: TcpStream,
     pending: Arc<Mutex<HashMap<String, Sender<Value>>>>,
     emit: Arc<InvocationEmitter>,
+    token: Arc<String>,
 ) {
     let response = stream
         .try_clone()
-        .map_err(|_| ())
+        .map_err(|_| BridgeError::Unavailable)
         .map(BufReader::new)
         .and_then(|mut reader| {
-            read_request(&mut reader).and_then(|request| match request {
+            read_request(&mut reader, &token).and_then(|request| match request {
                 ProjectRuntimeRequest::Cancellation { cancel_request_id } => {
                     emit(ProjectRuntimeEvent::Cancel {
                         request_id: cancel_request_id,
-                    })?;
+                    })
+                    .map_err(|_| BridgeError::Unavailable)?;
                     Ok(json!({ "ok": true, "value": null }))
                 }
                 ProjectRuntimeRequest::Invocation {
@@ -121,16 +129,16 @@ fn handle_connection(
                     input,
                 } => {
                     if request_id.is_empty() {
-                        return Err(());
+                        return Err(BridgeError::Unavailable);
                     }
                     let project_path = canonicalize_project_path(Path::new(&project_path))
-                        .map_err(|_| ())?
+                        .map_err(|_| BridgeError::Unavailable)?
                         .to_protocol_string();
                     let (response_sender, response_receiver) = mpsc::channel();
                     {
-                        let mut pending = pending.lock().map_err(|_| ())?;
+                        let mut pending = pending.lock().map_err(|_| BridgeError::Unavailable)?;
                         if pending.contains_key(&request_id) {
-                            return Err(());
+                            return Err(BridgeError::Unavailable);
                         }
                         pending.insert(request_id.clone(), response_sender);
                     }
@@ -144,13 +152,14 @@ fn handle_connection(
                         if let Ok(mut pending) = pending.lock() {
                             pending.remove(&request_id);
                         }
-                        return Err(());
+                        return Err(BridgeError::Unavailable);
                     }
                     let cancellation_emit = Arc::clone(&emit);
                     let cancellation_request_id = request_id.clone();
+                    let cancellation_token = Arc::clone(&token);
                     let _cancellation_listener = thread::spawn(move || {
                         if let Ok(ProjectRuntimeRequest::Cancellation { cancel_request_id }) =
-                            read_request(&mut reader)
+                            read_request(&mut reader, &cancellation_token)
                         {
                             if cancel_request_id == cancellation_request_id {
                                 let _ = cancellation_emit(ProjectRuntimeEvent::Cancel {
@@ -159,7 +168,9 @@ fn handle_connection(
                             }
                         }
                     });
-                    let response = response_receiver.recv().map_err(|_| ());
+                    let response = response_receiver
+                        .recv()
+                        .map_err(|_| BridgeError::Unavailable);
                     if let Ok(mut pending) = pending.lock() {
                         pending.remove(&request_id);
                     }
@@ -167,17 +178,56 @@ fn handle_connection(
                 }
             })
         });
-    let response = response.unwrap_or_else(|_| runtime_host_unavailable());
+    let response = response.unwrap_or_else(|error| match error {
+        BridgeError::Unavailable => runtime_host_unavailable(),
+        BridgeError::Unauthorized => runtime_host_unauthorized(),
+    });
     if let Ok(serialized) = serde_json::to_string(&response) {
         let _ = writeln!(stream, "{serialized}");
     }
     let _ = stream.shutdown(Shutdown::Both);
 }
 
-fn read_request(reader: &mut impl BufRead) -> Result<ProjectRuntimeRequest, ()> {
-    let mut request = String::new();
-    reader.read_line(&mut request).map_err(|_| ())?;
-    serde_json::from_str(&request).map_err(|_| ())
+enum BridgeError {
+    Unavailable,
+    Unauthorized,
+}
+
+/// 读一行请求，先核对口令再解析内容
+fn read_request(
+    reader: &mut impl BufRead,
+    token: &str,
+) -> Result<ProjectRuntimeRequest, BridgeError> {
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|_| BridgeError::Unavailable)?;
+    let mut request: Value = serde_json::from_str(&line).map_err(|_| BridgeError::Unavailable)?;
+    let presented = request
+        .as_object_mut()
+        .and_then(|fields| fields.remove("token"))
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    if !tokens_match(&presented, token) {
+        return Err(BridgeError::Unauthorized);
+    }
+    serde_json::from_value(request).map_err(|_| BridgeError::Unavailable)
+}
+
+/// 逐字节比较，耗时不随第一个不同字节的位置变化
+fn tokens_match(presented: &str, expected: &str) -> bool {
+    presented.len() == expected.len()
+        && presented
+            .bytes()
+            .zip(expected.bytes())
+            .fold(0u8, |difference, (a, b)| difference | (a ^ b))
+            == 0
+}
+
+fn generate_bridge_token() -> std::io::Result<String> {
+    let mut bytes = [0u8; BRIDGE_TOKEN_BYTES];
+    getrandom::fill(&mut bytes).map_err(|error| std::io::Error::other(error.to_string()))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn runtime_host_unavailable() -> Value {
@@ -186,6 +236,16 @@ fn runtime_host_unavailable() -> Value {
         "error": {
             "code": "RUNTIME_HOST_UNAVAILABLE",
             "message": "Open Project Runtime Host is unavailable."
+        }
+    })
+}
+
+fn runtime_host_unauthorized() -> Value {
+    json!({
+        "ok": false,
+        "error": {
+            "code": "RUNTIME_HOST_UNAUTHORIZED",
+            "message": "The request did not carry this runtime host's token."
         }
     })
 }
@@ -242,6 +302,15 @@ mod tests {
         }
     }
 
+    /// 地址形如 tcp://127.0.0.1:端口/?token=口令
+    fn address_and_token(endpoint: &str) -> (String, String) {
+        let (address, token) = endpoint
+            .strip_prefix("tcp://")
+            .and_then(|rest| rest.split_once("/?token="))
+            .unwrap();
+        (address.to_owned(), token.to_owned())
+    }
+
     #[test]
     fn loopback_bridge_forwards_one_runtime_invocation_and_response() {
         let directory = TestDirectory::new();
@@ -252,15 +321,15 @@ mod tests {
             event_sender.send(invocation).map_err(|_| ())
         })
         .unwrap();
-        let endpoint = bridge.endpoint().to_owned();
+        let (address, token) = address_and_token(bridge.endpoint());
         let invocation_path = project_path.clone();
         let client = thread::spawn(move || {
-            let address = endpoint.strip_prefix("tcp://").unwrap();
             let mut stream = TcpStream::connect(address).unwrap();
             writeln!(
                 stream,
                 "{}",
                 json!({
+                    "token": token,
                     "requestId": "request-1",
                     "projectPath": invocation_path,
                     "toolName": "get_all_nodes",
@@ -306,12 +375,13 @@ mod tests {
         let project_path = directory.path().join("graph.prg");
         fs::write(&project_path, b"project").unwrap();
         let bridge = ProjectRuntimeBridgeManager::start_with_emitter(|_| Err(())).unwrap();
-        let address = bridge.endpoint().strip_prefix("tcp://").unwrap();
+        let (address, token) = address_and_token(bridge.endpoint());
         let mut stream = TcpStream::connect(address).unwrap();
         writeln!(
             stream,
             "{}",
             json!({
+                "token": token,
                 "requestId": "request-rejected",
                 "projectPath": project_path,
                 "toolName": "get_all_nodes",
@@ -338,12 +408,13 @@ mod tests {
             event_sender.send(event).map_err(|_| ())
         })
         .unwrap();
-        let address = bridge.endpoint().strip_prefix("tcp://").unwrap();
+        let (address, token) = address_and_token(bridge.endpoint());
         let mut invocation = TcpStream::connect(address).unwrap();
         writeln!(
             invocation,
             "{}",
             json!({
+                "token": token,
                 "requestId": "request-cancel",
                 "projectPath": project_path,
                 "toolName": "get_all_nodes",
@@ -359,7 +430,7 @@ mod tests {
         writeln!(
             invocation,
             "{}",
-            json!({ "cancelRequestId": "request-cancel" })
+            json!({ "token": token, "cancelRequestId": "request-cancel" })
         )
         .unwrap();
         assert!(matches!(
@@ -387,6 +458,59 @@ mod tests {
                     "message": "Project Graph CLI invocation was cancelled."
                 }
             })
+        );
+    }
+
+    #[test]
+    fn loopback_bridge_rejects_requests_without_the_token_and_forwards_nothing() {
+        let directory = TestDirectory::new();
+        let project_path = directory.path().join("graph.prg");
+        fs::write(&project_path, b"project").unwrap();
+        let (event_sender, event_receiver) = mpsc::channel();
+        let bridge = ProjectRuntimeBridgeManager::start_with_emitter(move |event| {
+            event_sender.send(event).map_err(|_| ())
+        })
+        .unwrap();
+        let (address, token) = address_and_token(bridge.endpoint());
+        assert_eq!(token.len(), BRIDGE_TOKEN_BYTES * 2);
+        let wrong_token = "0".repeat(token.len());
+        for presented in [None, Some(""), Some(wrong_token.as_str())] {
+            let mut request = json!({
+                "requestId": "request-unauthorized",
+                "projectPath": project_path,
+                "toolName": "delete_all_nodes",
+                "input": {}
+            });
+            if let Some(presented) = presented {
+                request["token"] = json!(presented);
+            }
+            let mut stream = TcpStream::connect(&address).unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut response = String::new();
+            BufReader::new(stream).read_line(&mut response).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&response).unwrap(),
+                runtime_host_unauthorized()
+            );
+        }
+        let mut cancellation = TcpStream::connect(&address).unwrap();
+        writeln!(cancellation, "{}", json!({ "cancelRequestId": "request-unauthorized" })).unwrap();
+        let mut response = String::new();
+        BufReader::new(cancellation).read_line(&mut response).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&response).unwrap(),
+            runtime_host_unauthorized()
+        );
+        assert!(event_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn each_bridge_gets_its_own_token() {
+        let first = ProjectRuntimeBridgeManager::start_with_emitter(|_| Ok(())).unwrap();
+        let second = ProjectRuntimeBridgeManager::start_with_emitter(|_| Ok(())).unwrap();
+        assert_ne!(
+            address_and_token(first.endpoint()).1,
+            address_and_token(second.endpoint()).1
         );
     }
 

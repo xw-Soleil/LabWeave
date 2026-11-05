@@ -25,7 +25,8 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **保存**：保存时在 `.workbench/` 下写给 AI 读的 `<名字>.ai.json` / `.ai.md`；`.prg` 元数据记录工作区 id 和视野；科研模式下原子写入（临时文件 + 改名），编辑后约 5 秒自动保存，备份不再写进研究文件夹。
 - **AI 对话**：支持 OpenAI 兼容和 Anthropic 两种接口格式；系统提示改为中文研究助手，并附上当前白板和研究文件夹的文件清单；应用内对话只开放只读工具；新增 `dump_workspace`、`create_file_card` 两个工具（命令行也能用）。
 - **macOS**：在访达里双击 `.prg` 会转给前端打开（包括程序还没启动的情况）；补充了外置磁盘和网络磁盘的访问说明文字。
-- **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）和 `@ai-sdk/anthropic`（Apache-2.0）。
+- **外部 AI（MCP）**（2026-11-05）：命令行新增 `mcp` 子命令，在标准输入输出上提供 MCP 服务，Claude Code、Codex 等外部 AI 可以列出研究文件夹里的工作区、读和改白板。工具就是命令行那套内置工具，每个多一个 `workspace` 参数；新增 `list_workspaces`，以及 `create_text_node_at`（按坐标放文本卡片）、`create_section`（把卡片放进新分组）两个工具，工作区没打开时也能用。设置 → AI →「外部 AI」里有三个开关（允许修改、允许删除、允许联网），默认都开，MCP 每次调用都重新读；同一页给出能直接复制的配置命令。命令行和程序之间的本机通道（TCP）加了口令：程序启动时随机生成，随地址写进只有本账户能读的归属记录，不带口令的请求一律拒绝。
+- **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
 
@@ -35,6 +36,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 「保存」「在 Finder 中显示」快捷键改用触发时传入的工程，不再读当前标签页。
 - 打开含文件卡片的 `.prg` 时，卡片的渲染、删除、双击、搜索、复制粘贴、改颜色、标签照常工作（否则关掉开关打开这类文件，卡片会消失）。
 - Rust：`read_folder_recursive` 遇到非 UTF-8 路径不再崩溃；`take_pending_open_files` 锁中毒时不再崩溃。
+- 命令行处理没打开的工作区时，先加载 StageManager 再读舞台（和桌面端同一顺序）。原来顺序反了，工作区里只要有分组，命令行就读不了它（2026-11-05）。
 
 ## 修改和新增的文件
 
@@ -211,6 +213,28 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `pnpm-lock.yaml`
 - `pnpm-workspace.yaml`：`@ai-sdk/anthropic@3.0.137` 加进 `minimumReleaseAgeExclude`
 
-### 13. 本文件
+### 13. 外部 AI（MCP）和本机通道口令（2026-11-05）
+
+- `app/src/cli/ProjectGraphMcpServer.ts`（新增）：MCP 服务
+- `app/src/cli/ProjectGraphMcpServer.test.ts`（新增）
+- `app/src/cli/ExternalAiWorkspace.ts`（新增）：读程序设置、权限开关、列出和定位工作区
+- `app/src/cli/ProjectGraphCli.ts`：`mcp [--app-home <dir>]` 子命令
+- `app/src/cli/ProjectGraphCliRuntime.ts`：请求带上本机通道口令；结果可以收回来返回（MCP 占着标准输出）
+- `app/src/cli/ClosedProjectInvocation.ts`：加载顺序修正；`create_section` 需要的分组服务
+- `app/src/cli/ProjectGraphCli.test.ts`
+- `packages/project-graph-cli/src/cli.mjs`：开发时默认用仓库里编译出的归属助手
+- `app/src-tauri/src/project_runtime_bridge.rs`：口令生成和校验
+- `app/src-tauri/src/project_ownership.rs`：归属记录文件权限 0600
+- `app/src-tauri/src/cmd/research.rs`、`app/src-tauri/src/lib.rs`：`external_ai_mcp_launch` 命令（设置页拼配置命令用）
+- `app/src-tauri/Cargo.toml`、`app/src-tauri/Cargo.lock`：`getrandom`
+- `app/src/core/service/dataManageService/aiEngine/BuiltInToolRegistry.ts`、`BuiltInToolExecutors.tsx`、`BuiltInToolRuntimeProfiles.ts`：`create_text_node_at`、`create_section`，能力 `section`
+- `app/src/core/service/dataManageService/aiEngine/BuiltInToolRegistry.test.ts`、`AIToolsAdapter.test.ts`
+- `app/src/core/service/ProjectToolSettingsSchema.ts`、`app/src/core/service/Settings.tsx`：`mcpAllowEdits` / `mcpAllowDelete` / `mcpAllowNetwork`；`sectionInitBorderStyle` 移到命令行也能读的设置里
+- `app/src/core/research/ResearchShell.ts`、`ResearchFolder.ts`：`isHiddenResearchName` 移到不依赖界面的模块，命令行也用
+- `app/src/sub/SettingsWindow/ExternalAiPage.tsx`（新增）、`externalAiCommands.ts`（新增）、`externalAiCommands.test.ts`（新增）、`settings.tsx`
+- `app/src/locales/{zh_CN,en,zh_TW}.yml`
+- `app/package.json`、`pnpm-lock.yaml`：`@modelcontextprotocol/sdk`
+
+### 14. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

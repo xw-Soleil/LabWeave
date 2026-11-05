@@ -1285,6 +1285,18 @@ settings:
     title: 鼠標滾輪每格縮放多少（%）
     description: |
       按住 Ctrl 或 Cmd 用鼠標滾輪縮放（或者「鼠標滾輪」選了縮放）時，撥一格放大或縮小百分之幾。縮放會在約 0.15 秒裡平滑完成。觸控板雙指捏合不受影響
+  mcpAllowEdits:
+    title: 允許外部 AI 修改白板
+    description: |
+      關掉後，外部 AI（Claude Code、Codex 等）只能讀：看有哪些工作區、讀卡片和連線，不能添加、修改或刪除任何東西
+  mcpAllowDelete:
+    title: 允許外部 AI 刪除卡片
+    description: |
+      刪除卡片、清空白板這幾個工具。工作區開著時刪了可以撤銷；沒開時直接改文件，撤銷不了
+  mcpAllowNetwork:
+    title: 允許外部 AI 聯網搜圖和識圖
+    description: |
+      聯網搜圖會訪問 Openverse；識圖會調用你在上面填的 AI 接口，可能產生費用
   textIntegerLocationAndSizeRender:
     title: 文本整數位置和大小渲染
     description: |
@@ -3144,6 +3156,7 @@ research:
         title: AI
         api: 接口
         context: 讀取與用量
+        external: 外部 AI（MCP）
       appearance:
         title: 外觀
         theme: 主題與界面
@@ -3182,6 +3195,22 @@ research:
         title: 音效
         description: 操作時播放的聲音
         button: 設置…
+      externalAi:
+        title: 連接外部 AI
+        description: 讓 Claude Code、Codex 等通過 MCP 讀和改你的白板
+        button: 查看方法…
+    externalAi:
+      intro: Claude Code、Codex 這類 AI 軟件可以通過 MCP 讀和改你的白板。在終端裡運行一次下面的命令，以後在那個軟件裡直接讓它「看看我的工作區」就行。
+      live: 工作區開在這裡時，AI 的改動馬上出現在白板上，可以按 Cmd+Z 撤銷；沒開時直接改文件。AI 能做哪些事由上一頁的三個開關決定，改了馬上生效。
+      claudeCode: Claude Code
+      codex: Codex
+      others: 其他軟件（Claude Desktop、Cursor 等）
+      othersHint: 把這段加進它們的 MCP 配置文件
+      copy: 複製
+      copied: 已複製
+      unavailable: 安裝包版本還不能連接外部 AI，以後打包時補上。現在請用從倉庫啟動的開發版。
+      noNode: 沒找到 Node.js。外部 AI 要靠它運行這個接口，請先安裝 Node.js，再回到這裡複製命令。
+      appHomeNote: 命令裡的 --app-home（{{home}}）是這個程序存設置的位置，外部 AI 要靠它找到正開著的工作區，不要刪掉。
     menus:
       contextMenu: 右鍵菜單
       pieMenu: 餅狀菜單

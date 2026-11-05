@@ -1,5 +1,5 @@
 import { LATEST_PROJECT_VERSION } from "@/core/ProjectFile";
-import { fileKindOf, SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, type FileKind } from "@/core/research/ResearchShell";
+import { fileKindOf, isHiddenResearchName, type FileKind } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { createDefaultMetadata } from "@/types/metadata";
 import { encode } from "@msgpack/msgpack";
@@ -10,6 +10,9 @@ import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
+
+// 命令行（MCP）也要按同样的规则跳过文件，判断放在不依赖程序界面的 ResearchShell 里
+export { isHiddenResearchName };
 
 export interface ResearchFileEntry {
   absPath: string;
@@ -104,24 +107,6 @@ function joinPath(dir: string, relPath: string): string {
 
 function compareNames(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-}
-
-/**
- * 文件面板里不显示、也不往里走的名字：
- * - 点开头的：.workbench、.DS_Store、iCloud 占位文件（.论文.pdf.icloud）、命令行写的临时文件（.名字.uuid.tmp）
- * - 备份文件、临时文件、Office 锁文件、AI 读的文字版
- */
-export function isHiddenResearchName(name: string): boolean {
-  const lower = name.toLowerCase();
-  return (
-    name.startsWith(".") ||
-    name.startsWith("~$") ||
-    lower.includes("_backup") ||
-    lower.endsWith(".tmp") ||
-    lower.endsWith(".icloud") ||
-    lower.endsWith(SIDECAR_JSON_SUFFIX) ||
-    lower.endsWith(SIDECAR_MD_SUFFIX)
-  );
 }
 
 function researchKindOf(name: string): ResearchFileEntry["kind"] | null {

@@ -154,6 +154,7 @@ const closedProjectCapabilityServices: Partial<
     closedProjectServices.syncAssociation,
     closedProjectServices.delete,
   ],
+  section: [closedProjectServices.section, closedProjectServices.sectionInOut],
   text: [closedProjectServices.text, closedProjectServices.syncAssociation],
   graph: [closedProjectServices.graph],
   layout: [closedProjectServices.entityMove, closedProjectServices.layout],
@@ -197,8 +198,9 @@ function createClosedProject(
   project.references = parsed.references;
   project.metadata = parsed.metadata;
   project.readme = parsed.readme;
-  project.stage = deserialize(parsed.serializedStageObjects, project);
+  // 和桌面端一样先有 StageManager 再读舞台：分组在读出来时就要量自己的大小，会问 StageManager 要连线
   project.loadService(StageManager);
+  project.stage = deserialize(parsed.serializedStageObjects, project);
   project.stageManager.updateReferences();
   project.projectState = ProjectState.Saved;
   return {

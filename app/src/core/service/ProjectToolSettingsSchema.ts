@@ -37,6 +37,8 @@ export function createProjectToolSettingSchemas(defaultFontFamily: string) {
     aiPdfTextPages: z.number().int().min(0).max(50).default(3),
     researchFolderPath: z.string().default(""),
     writeAiSidecarOnSave: z.boolean().default(true),
+    // 外部 AI 建分组（create_section）时用
+    sectionInitBorderStyle: z.union([z.literal("solid"), z.literal("dashed"), z.literal("none")]).default("solid"),
   };
 }
 

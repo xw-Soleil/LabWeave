@@ -353,7 +353,15 @@ addExecutor("auto_layout_dag", () => (project, { refs }, references) => {
   const result = project.autoLayout.autoLayoutDAG(entities);
   return { success: true, ...result };
 });
-addExecutor("create_text_node", () => (project, { text, color, width, sizeAdjust }, references) => {
+type TextNodeInput = { text: string; color?: number[]; width?: number; sizeAdjust?: "auto" | "manual" };
+
+/** create_text_node 放在视野中心，create_text_node_at 放在给定坐标，其余完全一样 */
+function addTextNode(
+  project: Project,
+  references: AIObjectReferenceRegistry,
+  { text, color, width, sizeAdjust }: TextNodeInput,
+  locate: (size: Vector) => Vector,
+) {
   if (width !== undefined && sizeAdjust === "auto") {
     return {
       success: false,
@@ -374,7 +382,7 @@ addExecutor("create_text_node", () => (project, { text, color, width, sizeAdjust
     collisionBox: new CollisionBox([new Rectangle(Vector.getZero(), new Vector(width ?? 100, 50))]),
     sizeAdjust: resolvedSizeAdjust,
   });
-  node.moveTo(getViewportCenteredLocation(project, node.collisionBox.getRectangle().size));
+  node.moveTo(locate(node.collisionBox.getRectangle().size));
   project.stageManager.add(node);
   project.historyManager.recordStep();
   const rect = node.collisionBox.getRectangle();
@@ -384,7 +392,18 @@ addExecutor("create_text_node", () => (project, { text, color, width, sizeAdjust
     size: { width: rect.width, height: rect.height },
     sizeAdjust: node.sizeAdjust,
   };
-});
+}
+addExecutor(
+  "create_text_node",
+  () => (project, input, references) =>
+    addTextNode(project, references, input, (size) => getViewportCenteredLocation(project, size)),
+);
+addExecutor(
+  "create_text_node_at",
+  () =>
+    (project, { x, y, ...input }, references) =>
+      addTextNode(project, references, input, () => new Vector(x, y)),
+);
 addExecutor("generate_node_tree_by_text", () => (project, { text }) => {
   project.stageManager.generateNodeTreeByText(text, 2);
 });
@@ -913,6 +932,37 @@ addExecutor("create_file_card", () => async (project, { path, x, y }, references
     title: card.title,
     fileKind: card.fileKind,
     path: toModelFacingSourcePath(project, card.sourcePath),
+  };
+});
+
+addExecutor("create_section", () => (project, { refs, title }, references) => {
+  const picked: Entity[] = [];
+  for (const ref of refs as string[]) {
+    const object = references.resolve(ref, "node");
+    if (!(object instanceof Entity)) throw new Error(`节点引用 ${ref} 未指向卡片`);
+    if (!picked.includes(object)) picked.push(object);
+  }
+  // 分组和它里面的卡片同时传进来时只保留分组
+  const entities = project.sectionMethods.shallowerNotSectionEntities(picked);
+  const parent = entities[0].parentSection;
+  if (entities.some((entity) => entity.parentSection !== parent)) {
+    return {
+      success: false,
+      error: { code: "mixed_levels", message: "这些卡片不在同一层级：有的在分组里、有的不在，或者在不同的分组里" },
+    };
+  }
+  // 和右键「打包为分组」一样：先从原来的分组里拿出来，建好新分组再放回去
+  if (parent) project.sectionInOutManager.goOutSection(entities, parent);
+  const section = Section.fromEntities(project, entities);
+  section.rename(title);
+  project.stageManager.add(section);
+  if (parent) project.sectionInOutManager.goInSection([section], parent);
+  project.historyManager.recordStep();
+  return {
+    success: true,
+    ref: references.getOrCreateRef(section),
+    title: section.text,
+    childCount: section.children.length,
   };
 });
 

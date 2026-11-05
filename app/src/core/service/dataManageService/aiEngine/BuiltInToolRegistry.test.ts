@@ -8,6 +8,7 @@ vi.mock("./BuiltInToolExecutors", () => {
 });
 
 import { builtInToolCatalog, classifyBuiltInToolProjectContext } from "./BuiltInToolRegistry";
+import { canClosedProjectProvideCapabilities } from "./BuiltInToolRuntimeProfiles";
 
 const upstreamToolNames = [
   "get_all_nodes",
@@ -41,8 +42,8 @@ const upstreamToolNames = [
   "recognize_image",
 ] as const;
 
-// 目录末尾是两个科研工作台工具
-const researchToolNames = ["dump_workspace", "create_file_card"] as const;
+// 目录末尾是科研工作台加的工具
+const researchToolNames = ["dump_workspace", "create_file_card", "create_text_node_at", "create_section"] as const;
 const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
 
 function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
@@ -55,7 +56,7 @@ function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
 }
 
 describe("Built-in Tool Registry catalog", () => {
-  it("exposes the closed, ordered set of 29 upstream tools plus 2 research tools without loading executors", () => {
+  it("exposes the closed, ordered set of 29 upstream tools plus 4 research tools without loading executors", () => {
     expect(builtInToolCatalog.map(({ name }) => name)).toEqual(expectedToolNames);
     expect(new Set(expectedToolNames).size).toBe(expectedToolNames.length);
     expect(executorModule.loaded).toBe(false);
@@ -72,6 +73,20 @@ describe("Built-in Tool Registry catalog", () => {
     expect(classifyBuiltInToolProjectContext(createFileCard)).toBe("live-viewport");
     expect(createFileCard.inputSchema.parse({ path: "papers/a.pdf" })).toEqual({ path: "papers/a.pdf" });
     expect(() => createFileCard.inputSchema.parse({ path: "" })).toThrow();
+  });
+
+  it("lets create_text_node_at and create_section run on a closed workspace and keeps them out of the in-app chat", () => {
+    for (const name of ["create_text_node_at", "create_section"]) {
+      const definition = builtInToolCatalog.find((candidate) => candidate.name === name)!;
+      expect(classifyBuiltInToolProjectContext(definition), name).toBe("closed-capable");
+      expect(canClosedProjectProvideCapabilities(definition.capabilities), name).toBe(true);
+      expect(definition.capabilities, name).toContain("history");
+    }
+    const createTextNodeAt = builtInToolCatalog.find(({ name }) => name === "create_text_node_at")!;
+    expect(() => createTextNodeAt.inputSchema.parse({ text: "a", x: 1 })).toThrow();
+    const createSection = builtInToolCatalog.find(({ name }) => name === "create_section")!;
+    expect(() => createSection.inputSchema.parse({ refs: [], title: "a" })).toThrow();
+    expect(() => createSection.inputSchema.parse({ refs: ["n1"] })).toThrow();
   });
 
   it("keeps every definition and its metadata immutable and complete", () => {
@@ -122,7 +137,7 @@ describe("Built-in Tool Registry catalog", () => {
     ).toEqual(["search_and_add_image_node"]);
   });
 
-  it("classifies the complete catalog into 20 closed, 6 live-selection, and 5 live-viewport tools", () => {
+  it("classifies the complete catalog into 22 closed, 6 live-selection, and 5 live-viewport tools", () => {
     const namesFor = (projectContext: ReturnType<typeof classifyBuiltInToolProjectContext>) =>
       builtInToolCatalog
         .filter((definition) => classifyBuiltInToolProjectContext(definition) === projectContext)
@@ -149,6 +164,8 @@ describe("Built-in Tool Registry catalog", () => {
       "depth_expand_node",
       "recognize_image",
       "dump_workspace",
+      "create_text_node_at",
+      "create_section",
     ]);
     expect(namesFor("live-selection")).toEqual([
       "delete_selected_nodes",

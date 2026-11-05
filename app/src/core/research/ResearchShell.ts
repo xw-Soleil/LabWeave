@@ -23,6 +23,24 @@ export function fileKindOf(path: string): FileKind | null {
   return null;
 }
 
+/**
+ * 文件面板里不显示、也不往里走的名字：
+ * - 点开头的：.workbench、.DS_Store、iCloud 占位文件（.论文.pdf.icloud）、命令行写的临时文件（.名字.uuid.tmp）
+ * - 备份文件、临时文件、Office 锁文件、AI 读的文字版
+ */
+export function isHiddenResearchName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    name.startsWith(".") ||
+    name.startsWith("~$") ||
+    lower.includes("_backup") ||
+    lower.endsWith(".tmp") ||
+    lower.endsWith(".icloud") ||
+    lower.endsWith(SIDECAR_JSON_SUFFIX) ||
+    lower.endsWith(SIDECAR_MD_SUFFIX)
+  );
+}
+
 export const RESEARCH_EVENTS = {
   toggleFiles: "research:toggle-files",
   toggleAI: "research:toggle-ai",

@@ -92,7 +92,7 @@ describe("Built-in Tool consumer adapters", () => {
 
   it("projects the canonical catalog into the unchanged tool-window shape without loading executors", () => {
     const windowEntries = getBuiltInToolWindowEntries();
-    expect(windowEntries).toHaveLength(31);
+    expect(windowEntries).toHaveLength(33);
     expect(windowEntries.map(({ name, description, parameters }) => ({ name, description, parameters }))).toEqual(
       builtInToolCatalog.map(({ name, description, inputSchema }) => ({
         name,

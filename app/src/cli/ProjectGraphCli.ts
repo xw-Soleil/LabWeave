@@ -19,6 +19,8 @@ Commands:
   tool list
   tool describe <tool>
   tool invoke <tool> --project <path> --input <JSON> [--allow-upgrade]
+  mcp [--app-home <dir>]    Serve the tools to an external AI over MCP (stdio).
+                            --app-home: the HOME the desktop app runs with (the dev build uses its own)
 
 Options:
   --help     Show help
@@ -75,6 +77,22 @@ export async function runProjectGraphCli(
       return 2;
     }
     process.stdout.write(`${JSON.stringify(definition)}\n`);
+    return 0;
+  }
+  if (args[0] === "mcp") {
+    const appHome = args.length === 3 && args[1] === "--app-home" && args[2] ? args[2] : undefined;
+    if (args.length !== 1 && !appHome) {
+      writeError({ code: "INVALID_COMMAND", message: "Invalid Project Graph CLI command." });
+      return 2;
+    }
+    // 程序的设置、归属记录、引用表都在 HOME 下面；开发版改过 HOME，要和它用同一个
+    if (appHome) process.env.HOME = appHome;
+    const { runExternalAiMcpServer } = await import("./ProjectGraphMcpServer");
+    await runExternalAiMcpServer({
+      version: options.version,
+      loadRuntime: options.loadRuntime,
+      abortSignal: options.abortSignal,
+    });
     return 0;
   }
   if (args[0] === "tool" && args[1] === "invoke") {

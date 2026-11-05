@@ -19,6 +19,7 @@ export type BuiltInToolCapability =
   | "history"
   | "effects"
   | "delete"
+  | "section"
   | "text"
   | "graph"
   | "layout"
@@ -41,6 +42,7 @@ export type AcquiredBuiltInToolCapabilities = Readonly<
     history: true;
     effects: true;
     delete: true;
+    section: true;
     text: true;
     graph: true;
     layout: true;
@@ -562,6 +564,43 @@ const researchDefinitions: BuiltInToolDefinition[] = [
     }),
     capabilities: ["project", "references", "history", "attachments", "dom", "settings", "viewport"],
     projectReferences: { reads: false, allocates: true },
+    cancellation: "none",
+    transaction: "non-transactional",
+    persistence: "project-and-references",
+  }),
+  defineTool({
+    name: "create_text_node_at",
+    description:
+      "在指定的世界坐标创建 TextNode（x 向右、y 向下，x、y 是卡片左上角）。不依赖视野，工作区没在桌面端打开时也能用。返回新卡片的引用和尺寸，可以据此排下一张卡片的位置。",
+    inputSchema: z.object({
+      text: z.string(),
+      x: z.number().describe("卡片左上角的世界坐标 x"),
+      y: z.number().describe("卡片左上角的世界坐标 y"),
+      color: z.array(z.number()).optional().describe("[R,G,B,A]，不填写时使用透明色"),
+      width: z.number().min(16).max(4096).optional().describe("手动宽度模式下的文本框宽度"),
+      sizeAdjust: z
+        .union([
+          z.literal("auto").describe("自动调整宽度"),
+          z.literal("manual").describe("宽度由width字段定义，文本自动换行"),
+        ])
+        .optional(),
+    }),
+    capabilities: ["project", "references", "history", "dom", "settings"],
+    projectReferences: { reads: false, allocates: true },
+    cancellation: "none",
+    transaction: "non-transactional",
+    persistence: "project-and-references",
+  }),
+  defineTool({
+    name: "create_section",
+    description:
+      "新建一个分组（Section），把指定的卡片放进去，分组框自动包住它们。这些卡片要在同一层级（都不在分组里，或都在同一个分组里）；放进去的卡片位置不变。",
+    inputSchema: z.object({
+      refs: z.array(nodeRefSchema).min(1).describe("要放进分组的卡片引用"),
+      title: z.string().describe("分组标题，显示在分组框顶部"),
+    }),
+    capabilities: ["project", "references", "history", "section", "dom", "settings"],
+    projectReferences: { reads: true, allocates: true },
     cancellation: "none",
     transaction: "non-transactional",
     persistence: "project-and-references",
