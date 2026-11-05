@@ -219,8 +219,20 @@ function isStoredSession(value: unknown): value is StoredAIChatSession {
     (session.memory === undefined || isSessionMemory(session.memory)) &&
     (session.activatedSkills === undefined ||
       (Array.isArray(session.activatedSkills) && session.activatedSkills.every(isActivatedSkillSnapshot))) &&
+    (session.localAgent === undefined || isLocalAgentSession(session.localAgent)) &&
     typeof session.createdAt === "number" &&
     typeof session.updatedAt === "number"
+  );
+}
+
+function isLocalAgentSession(value: unknown): value is NonNullable<StoredAIChatSession["localAgent"]> {
+  if (!value || typeof value !== "object") return false;
+  const session = value as Partial<NonNullable<StoredAIChatSession["localAgent"]>>;
+  return (
+    typeof session.agentId === "string" &&
+    session.agentId.length > 0 &&
+    typeof session.sessionId === "string" &&
+    session.sessionId.length > 0
   );
 }
 
@@ -339,15 +351,24 @@ export namespace AIChatSessionStore {
     return (await loadSession(projectUri, sessionId)).memory;
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars -- 第 0 步只预留经现有写入队列保存 ACP 会话号的接口。 */
   export async function setLocalAgentSession(
-    _projectUri: string,
-    _sessionId: string,
-    _localAgent: StoredAIChatSession["localAgent"],
+    projectUri: string,
+    sessionId: string,
+    localAgent: StoredAIChatSession["localAgent"],
   ): Promise<void> {
-    throw new Error("not implemented");
+    if (localAgent !== undefined && !isLocalAgentSession(localAgent)) throw new Error("local-agent:protocol");
+    await enqueueWrite(async (initializedStore) => {
+      const index = await readIndex(initializedStore, projectUri);
+      if (!index || !index.sessions.some((session) => session.id === sessionId))
+        throw new Error("local-agent:protocol");
+      const current = await readRequiredSession(initializedStore, projectUri, sessionId);
+      await initializedStore.set(getSessionKey(projectUri, sessionId), {
+        ...current,
+        localAgent: localAgent === undefined ? undefined : { ...localAgent },
+      });
+      await initializedStore.save();
+    });
   }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   export async function getActivatedSkills(projectUri: string, sessionId: string): Promise<ActivatedSkillSnapshot[]> {
     const snapshots = (await loadSession(projectUri, sessionId)).activatedSkills ?? [];
