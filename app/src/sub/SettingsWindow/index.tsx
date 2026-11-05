@@ -6,26 +6,43 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { store } from "@/state";
 import { cn } from "@/utils/cn";
 import { atom, useAtomValue } from "jotai";
-import { Brush, Info, Keyboard, type LucideIcon, Settings, X } from "lucide-react";
+import { Info, Keyboard, type LucideIcon, Menu, Settings, X } from "lucide-react";
 import { Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AboutTab from "./about";
-import CustomizationTab from "./customization";
+import MenusTab from "./customization";
 import KeyBindsPage from "./keybinds";
-import SettingsTab, { type SettingsDialogTab, SettingsNavigationContext } from "./settings";
+import SettingsTab, { type SettingsDialogTab, setSettingsInitialPage } from "./settings";
 
-type TabName = "settings" | "linuxRuntime" | "keybinds" | "customization" | "about" | "extensions" | "account";
+type TabName =
+  | "settings"
+  | "linuxRuntime"
+  | "keybinds"
+  | "customization"
+  | "menus"
+  | "about"
+  | "extensions"
+  | "account";
 
 const researchDialogTabs: { value: SettingsDialogTab; icon: LucideIcon }[] = [
   { value: "settings", icon: Settings },
   { value: "keybinds", icon: Keyboard },
-  { value: "customization", icon: Brush },
+  { value: "menus", icon: Menu },
   { value: "about", icon: Info },
 ];
 
 function researchDialogTab(tab: TabName): SettingsDialogTab {
   return researchDialogTabs.some((it) => it.value === tab) ? (tab as SettingsDialogTab) : "settings";
+}
+
+/** 原版的「个性化」页拆开了：主题、动画、音效在「设置 → 外观」，右键菜单和饼状菜单在「菜单」 */
+function resolveRequestedTab(tab: TabName): SettingsDialogTab {
+  if (tab === "customization") {
+    setSettingsInitialPage("appearance");
+    return "settings";
+  }
+  return researchDialogTab(tab);
 }
 
 // 每次 open 都换一个 seq，已经开着的弹窗据此切到要求的页面并拿回焦点
@@ -79,54 +96,52 @@ function ResearchSettingsDialog({ overlayId }: { overlayId?: string }) {
         }}
         className="flex h-[640px] max-h-[85vh] w-[880px] max-w-[90vw] flex-col gap-0 overflow-hidden rounded-[12px] p-0 shadow-xl outline-none sm:max-w-[90vw]"
       >
-        <SettingsNavigationContext.Provider value={{ openTab: setTab }}>
-          <Tabs
-            value={tab}
-            onValueChange={(value) => setTab(value as SettingsDialogTab)}
-            className="min-h-0 flex-1 gap-0"
-          >
-            <div className="border-border flex h-10 shrink-0 items-center gap-2 border-b px-2">
-              <DialogTitle className="sr-only">{t("settings.dialogTitle")}</DialogTitle>
-              <TabsPrimitive.List className="flex items-center gap-1">
-                {researchDialogTabs.map(({ value, icon: Icon }) => (
-                  <TabsPrimitive.Trigger
-                    key={value}
-                    value={value}
-                    className={cn(
-                      "focus-visible:ring-ring/50 text-muted-foreground flex h-7 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium outline-none focus-visible:ring-2",
-                      "hover:bg-accent hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary",
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {t(`settings.tabs.${value}`)}
-                  </TabsPrimitive.Trigger>
-                ))}
-              </TabsPrimitive.List>
-              <Tooltip>
-                <TooltipTrigger>
-                  <DialogClose asChild>
-                    <Button variant="ghost" size="icon" aria-label={t("settings.close")} className="ml-auto size-7">
-                      <X />
-                    </Button>
-                  </DialogClose>
-                </TooltipTrigger>
-                <TooltipContent>{t("settings.close")}</TooltipContent>
-              </Tooltip>
-            </div>
-            <TabsContent value="settings" className="min-h-0 overflow-hidden">
-              <SettingsTab />
-            </TabsContent>
-            <TabsContent value="keybinds" className="min-h-0 overflow-hidden">
-              <KeyBindsPage />
-            </TabsContent>
-            <TabsContent value="customization" className="min-h-0 overflow-hidden">
-              <CustomizationTab />
-            </TabsContent>
-            <TabsContent value="about" className="min-h-0 overflow-auto">
-              <AboutTab />
-            </TabsContent>
-          </Tabs>
-        </SettingsNavigationContext.Provider>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as SettingsDialogTab)}
+          className="min-h-0 flex-1 gap-0"
+        >
+          <div className="border-border flex h-10 shrink-0 items-center gap-2 border-b px-2">
+            <DialogTitle className="sr-only">{t("settings.dialogTitle")}</DialogTitle>
+            <TabsPrimitive.List className="flex items-center gap-1">
+              {researchDialogTabs.map(({ value, icon: Icon }) => (
+                <TabsPrimitive.Trigger
+                  key={value}
+                  value={value}
+                  className={cn(
+                    "focus-visible:ring-ring/50 text-muted-foreground flex h-7 items-center gap-2 rounded-[6px] px-2 text-[13px] font-medium outline-none focus-visible:ring-2",
+                    "hover:bg-accent hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {t(`settings.tabs.${value}`)}
+                </TabsPrimitive.Trigger>
+              ))}
+            </TabsPrimitive.List>
+            <Tooltip>
+              <TooltipTrigger>
+                <DialogClose asChild>
+                  <Button variant="ghost" size="icon" aria-label={t("settings.close")} className="ml-auto size-7">
+                    <X />
+                  </Button>
+                </DialogClose>
+              </TooltipTrigger>
+              <TooltipContent>{t("settings.close")}</TooltipContent>
+            </Tooltip>
+          </div>
+          <TabsContent value="settings" className="min-h-0 overflow-hidden">
+            <SettingsTab />
+          </TabsContent>
+          <TabsContent value="keybinds" className="min-h-0 overflow-hidden">
+            <KeyBindsPage />
+          </TabsContent>
+          <TabsContent value="menus" className="min-h-0 overflow-hidden">
+            <MenusTab />
+          </TabsContent>
+          <TabsContent value="about" className="min-h-0 overflow-auto">
+            <AboutTab />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
@@ -137,7 +152,7 @@ const SettingsWindow = {
   /** 设置是居中的弹窗，只开一个，不暂停白板 */
   open(tab: TabName = "settings") {
     const previous = store.get(researchDialogRequestAtom);
-    store.set(researchDialogRequestAtom, { tab: researchDialogTab(tab), seq: previous.seq + 1 });
+    store.set(researchDialogRequestAtom, { tab: resolveRequestedTab(tab), seq: previous.seq + 1 });
     if (researchDialogOpen) return;
     researchDialogOpen = true;
     OverlayHost.open(<ResearchSettingsDialog />);

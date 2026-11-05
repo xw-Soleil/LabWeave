@@ -212,13 +212,6 @@ settings:
       mouse: 鼠标与触控板
       ai: AI 阅读
       menu: 菜单
-    common:
-      title: 常用
-      folder: 研究文件夹
-      board: 白板操作
-      ai: AI
-      appearance: 外观
-      save: 保存
   language:
     title: 语言
     description: |
@@ -2885,6 +2878,7 @@ research:
     rail:
       workspace: 工作区
       ai: AI 对话
+      aiNeedsWorkspace: AI 对话（打开工作区后可用）
       files: 文件
       settings: 设置
     setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
@@ -3100,7 +3094,8 @@ research:
     noWorkspaces: 这个文件夹里还没有工作区，新建一个开始吧
     draft: 先随便画画（临时草稿）
     openOther: 打开其他工作区文件
-    settings: 设置
+    recent: 最近改过的工作区
+    dropHint: 打开工作区后，从文件面板把论文、图片、笔记拖到白板上
     howTo:
       title: 三步上手
       step1: 选择研究文件夹，把论文（PDF）、图片和笔记放进去
@@ -3112,22 +3107,70 @@ research:
     tabs:
       settings: 设置
       keybinds: 快捷键
-      customization: 个性化
+      menus: 菜单
       about: 关于
     close: 关闭 (Esc)
     searchPlaceholder: 搜索设置
     clearSearch: 清空搜索
     searchResults: 搜索结果（{{count}} 项）
     noResults: 没有找到和「{{keyword}}」有关的设置
-    advanced: 高级（原版全部设置）
     folderNotChosen: 还没有选择
     chooseFolder: 选择…
     revealFolder: 在访达中显示
     revealFolderFailed: 打不开这个文件夹：{{message}}
-    theme:
-      title: 主题
-      description: 浅色模式和深色模式各用哪套配色
-      button: 选择主题…
+    pages:
+      folder:
+        title: 研究文件夹
+      save:
+        title: 保存与备份
+        save: 保存
+        backup: 备份
+        undo: 撤销
+      ai:
+        title: AI
+        api: 接口
+        context: 读取与用量
+      appearance:
+        title: 外观
+        theme: 主题与界面
+        background: 白板背景
+        other: 其他
+      card:
+        title: 卡片
+        style: 样式
+        edit: 编辑文字
+        details: 详细信息（备注）
+      edge:
+        title: 连线与分组框
+        edge: 连线
+        section: 分组框
+      mouse:
+        title: 鼠标与触控板
+        wheel: 滚轮与缩放
+        drag: 拖动与点击
+        select: 框选
+      generate:
+        title: Tab 生成节点
+      image:
+        title: 图片
+      privacy:
+        title: 隐私
+    subPages:
+      themes:
+        title: 主题
+        description: 浅色模式和深色模式各用哪套配色
+        button: 选择主题…
+      effects:
+        title: 画布动画
+        description: 新建、连线、斩断、对齐时画布上的小动画，可以逐个关掉
+        button: 设置…
+      sounds:
+        title: 音效
+        description: 操作时播放的声音
+        button: 设置…
+    menus:
+      contextMenu: 右键菜单
+      pieMenu: 饼状菜单
     resetToDefault: 恢复默认
     showKey: 显示密钥
     hideKey: 隐藏密钥

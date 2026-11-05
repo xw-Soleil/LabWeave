@@ -1,13 +1,14 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
-import { emitResearchEvent } from "@/core/research/ResearchShell";
-import WelcomeWindow from "@/sub/WelcomeWindow";
+import { findResearchPanelTab } from "@/core/research/ResearchSession";
 import { Tab } from "@/core/Tab";
 import {
   clampSidePanelWidth,
   findFixedSideChild,
   isFixedSideGroupId,
   parseSidePanelWidth,
+  welcomeLayout,
+  WELCOME_GROUP_ID,
   type FixedSideEdge,
   type TabGroup,
   type TabGroupNode,
@@ -20,6 +21,7 @@ import { Minus, Plus } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShortcutText, withShortcut } from "./activity-rail";
+import ResearchWelcome from "./research-welcome";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
@@ -269,7 +271,8 @@ function ResearchSplitView({
         <div
           className={cn(
             "group absolute touch-none",
-            horizontal ? "-inset-x-1 inset-y-0 cursor-col-resize" : "inset-x-0 -inset-y-1 cursor-row-resize",
+            // 拖动区比 1px 的分隔线宽，不用对得很准
+            horizontal ? "-inset-x-1.5 inset-y-0 cursor-col-resize" : "inset-x-0 -inset-y-1.5 cursor-row-resize",
           )}
           onPointerDown={startResize}
         >
@@ -347,8 +350,8 @@ export default function DockedArea({
 }) {
   const root = useAtomValue(tabGroupRootAtom);
   const tabs = useAtomValue(tabsAtom);
-  const { t } = useTranslation("research");
   const empty = !tabs.some((tab) => tab instanceof Project && !tab.closing);
+  const aiTab = empty ? findResearchPanelTab("ai", tabs) : undefined;
   const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
   const changeSideWidth = (edge: FixedSideEdge, width: number) =>
     setSideWidths((current) => (current[edge] === width ? current : { ...current, [edge]: width }));
@@ -407,6 +410,7 @@ export default function DockedArea({
         />
       );
     }
+    if (node.id === WELCOME_GROUP_ID) return <ResearchWelcome key={node.id} />;
     const groupTabs = node.tabIds.flatMap((id) => {
       const tab = tabs.find((candidate) => candidate.id === id && candidate.layout === "docked");
       return tab ? [tab] : [];
@@ -420,23 +424,8 @@ export default function DockedArea({
       className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
       style={{ ...(leftInset ? { left: leftInset } : {}), ...(topInset ? { top: topInset } : {}) }}
     >
-      {empty ? (
-        <div className="flex h-full min-w-0">
-          {root && <div className="relative h-full w-72 max-w-[40%] shrink-0">{renderNode(root)}</div>}
-          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-            <h1 className="text-lg font-semibold">{t("workspace.title")}</h1>
-            <p className="text-muted-foreground max-w-md text-sm">{t("drop.noBoard")}</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button onClick={() => emitResearchEvent("newWorkspace")}>{t("workspace.new")}</Button>
-              <Button variant="outline" onClick={() => WelcomeWindow.open()}>
-                {t("welcome.openOther")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        root && renderNode(root)
-      )}
+      {/* 没有工作区时 AI 对话用不上，先收起；侧栏照常停靠、能拖，编辑区的位置放欢迎页 */}
+      {empty ? renderNode(welcomeLayout(root, aiTab ? [aiTab.id] : [])) : root && renderNode(root)}
     </div>
   );
 }

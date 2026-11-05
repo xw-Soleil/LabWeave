@@ -57,7 +57,7 @@ import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
-import { setSettingsInitialCategory } from "@/sub/SettingsWindow/settings";
+import { setSettingsInitialPage } from "@/sub/SettingsWindow/settings";
 import { useChat } from "@ai-sdk/react";
 import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
@@ -145,7 +145,7 @@ function AIConfigNotice({ problems }: { problems: AIConfigProblem[] }) {
       <Button
         size="sm"
         onClick={() => {
-          setSettingsInitialCategory("ai", "api");
+          setSettingsInitialPage("ai");
           SettingsWindow.open("settings");
         }}
       >

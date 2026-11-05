@@ -63,6 +63,7 @@ function RailButton({
   onClick,
   children,
   buttonRef,
+  unavailableHint,
 }: {
   label: string;
   keyBindId: string;
@@ -70,8 +71,11 @@ function RailButton({
   onClick: () => void;
   children: React.ReactNode;
   buttonRef?: React.Ref<HTMLButtonElement>;
+  /** 有值时按钮变灰、点了没反应，提示框改显示这句说明；不用 disabled，否则悬停时不出提示框 */
+  unavailableHint?: string;
 }) {
   const shortcut = useShortcutText(keyBindId);
+  const unavailable = unavailableHint !== undefined;
   return (
     <Tooltip>
       <TooltipTrigger>
@@ -79,19 +83,22 @@ function RailButton({
           ref={buttonRef}
           variant="ghost"
           aria-label={label}
-          aria-pressed={active}
+          aria-pressed={unavailable ? undefined : active}
+          aria-disabled={unavailable || undefined}
           className={cn(
             "size-[calc(2.5rem*var(--pg-ui-scale,1))] rounded-[6px] p-0 [&_svg:not([class*='size-'])]:size-[calc(1rem*var(--pg-ui-scale,1))]",
-            active
-              ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/10"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent",
+            unavailable
+              ? "text-muted-foreground hover:text-muted-foreground cursor-default opacity-40 hover:bg-transparent dark:hover:bg-transparent"
+              : active
+                ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/10"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent",
           )}
-          onClick={onClick}
+          onClick={unavailable ? undefined : onClick}
         >
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="right">{withShortcut(label, shortcut)}</TooltipContent>
+      <TooltipContent side="right">{unavailable ? unavailableHint : withShortcut(label, shortcut)}</TooltipContent>
     </Tooltip>
   );
 }
@@ -221,6 +228,8 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
 
   const filesOpen = findResearchPanelTab("files", tabs) !== undefined;
   const aiOpen = findResearchPanelTab("ai", tabs) !== undefined;
+  // 没打开工作区时 AI 对话收起（见 DockedArea），按钮也变灰
+  const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
 
   return (
     <nav
@@ -267,6 +276,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
           label={t("shell.rail.ai")}
           keyBindId="researchToggleAIChat"
           active={aiOpen}
+          unavailableHint={hasWorkspace ? undefined : t("shell.rail.aiNeedsWorkspace")}
           onClick={() => emitResearchEvent("toggleAI")}
         >
           <MessageSquareText />

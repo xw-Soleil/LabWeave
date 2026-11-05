@@ -190,13 +190,6 @@ settings:
       mouse: Mouse and trackpad
       ai: AI reading
       menu: Menu
-    common:
-      title: Common
-      folder: Research folder
-      board: Board
-      ai: AI
-      appearance: Appearance
-      save: Saving
   language:
     title: Language
     description: |
@@ -2764,6 +2757,7 @@ research:
     rail:
       workspace: Workspace
       ai: AI chat
+      aiNeedsWorkspace: AI chat (open a workspace first)
       files: Files
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
@@ -2979,7 +2973,8 @@ research:
     noWorkspaces: No workspaces in this folder yet. Create one to get started.
     draft: Just sketch for now (temporary draft)
     openOther: Open another workspace file
-    settings: Settings
+    recent: Recently changed workspaces
+    dropHint: Once a workspace is open, drag papers, images and notes from the file panel onto the board
     howTo:
       title: Get started in three steps
       step1: Choose a research folder and put your papers (PDF), images and notes in it
@@ -2991,22 +2986,70 @@ research:
     tabs:
       settings: Settings
       keybinds: Shortcuts
-      customization: Customize
+      menus: Menus
       about: About
     close: Close (Esc)
     searchPlaceholder: Search settings
     clearSearch: Clear search
     searchResults: Search results ({{count}})
     noResults: No settings match "{{keyword}}"
-    advanced: Advanced (all original settings)
     folderNotChosen: Not chosen yet
     chooseFolder: Choose…
     revealFolder: Show in Finder
     revealFolderFailed: "Could not open this folder: {{message}}"
-    theme:
-      title: Theme
-      description: Which color scheme to use in light mode and in dark mode
-      button: Choose theme…
+    pages:
+      folder:
+        title: Research folder
+      save:
+        title: Saving and backups
+        save: Saving
+        backup: Backups
+        undo: Undo
+      ai:
+        title: AI
+        api: Provider
+        context: Reading and usage
+      appearance:
+        title: Appearance
+        theme: Theme and interface
+        background: Board background
+        other: Other
+      card:
+        title: Cards
+        style: Style
+        edit: Editing text
+        details: Details (notes)
+      edge:
+        title: Connections and groups
+        edge: Connections
+        section: Groups
+      mouse:
+        title: Mouse and trackpad
+        wheel: Scrolling and zooming
+        drag: Dragging and clicking
+        select: Box selection
+      generate:
+        title: Growing nodes with Tab
+      image:
+        title: Images
+      privacy:
+        title: Privacy
+    subPages:
+      themes:
+        title: Theme
+        description: Which color scheme to use in light mode and in dark mode
+        button: Choose theme…
+      effects:
+        title: Board animations
+        description: Small animations when creating, connecting, cutting and aligning; each can be turned off
+        button: Configure…
+      sounds:
+        title: Sounds
+        description: Sounds played during actions
+        button: Configure…
+    menus:
+      contextMenu: Right-click menu
+      pieMenu: Pie menu
     resetToDefault: Reset to default
     showKey: Show key
     hideKey: Hide key

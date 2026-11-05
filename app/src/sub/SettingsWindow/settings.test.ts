@@ -1,55 +1,72 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { categories, categoryIcons, getVisibleCategories, researchCommonSections } from "./settings";
+import YAML from "yaml";
+import { settingKeysOf, settingsPages } from "./settings";
 
 vi.mock("@/components/ui/field", () => ({
   SettingField: () => null,
   SettingRow: () => null,
   researchSettingText: () => ({ title: "", description: "" }),
 }));
-vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: { play: {} } }));
 vi.mock("@/core/service/Settings", () => ({ Settings: {}, settingsSchema: { shape: {} } }));
+vi.mock("./themes", () => ({ default: () => null }));
+vi.mock("./customization/effects", () => ({ default: () => null }));
+vi.mock("./customization/sounds", () => ({ default: () => null }));
 
-const icons = categoryIcons as Record<string, Record<string, unknown>>;
+const shownKeys = settingsPages.flatMap(settingKeysOf);
 
-function expectIcons(tree: Record<string, Record<string, unknown>>) {
-  for (const [category, groups] of Object.entries(tree)) {
-    expect(icons[category]?.icon, category).toBeDefined();
-    for (const group of Object.keys(groups)) {
-      expect(icons[category][group], `${category}.${group}`).toBeDefined();
+describe("settings pages", () => {
+  it("lists every setting on exactly one page", () => {
+    const duplicated = shownKeys.filter((key, index) => shownKeys.indexOf(key) !== index);
+    expect(duplicated).toEqual([]);
+    expect(new Set(settingsPages.map((page) => page.id)).size).toBe(settingsPages.length);
+    for (const page of settingsPages) {
+      expect(page.sections.length, page.id).toBeGreaterThan(0);
+      for (const section of page.sections) expect(section.items.length, `${page.id}.${section.id}`).toBeGreaterThan(0);
     }
-  }
-}
-
-// 设置页按 categoryIcons 取大类和分组的图标，缺一个整页就会报错
-describe("settings categories", () => {
-  it("has an icon for every category and group of the visible navigation", () => {
-    expectIcons(getVisibleCategories());
-    expectIcons({ common: Object.fromEntries(researchCommonSections.map((section) => [section.id, section.items])) });
   });
 
-  it("has an icon for every category and group in the full category list", () => {
-    expectIcons(categories);
-  });
-
-  it("hides settings that do nothing", () => {
-    const visible = Object.values(getVisibleCategories()).flatMap((groups) => Object.values(groups).flat());
+  it("does not show settings that are forced off or do nothing", () => {
     for (const key of [
+      "telemetry",
+      "allowGlobalHotKeys",
+      "isClassroomMode",
+      "autoImportTxtFileWhenOpenPrg",
+      "aiAutoApproveMcpTools",
+      "researchSession",
+      "mouseWheelMode",
+      "mouseSideWheelMode",
+      "macTrackpadAndMouseWheelDifference",
       "windowBackgroundAlpha",
-      "windowBackgroundOpacityAfterOpenClickThrough",
-      "windowBackgroundOpacityAfterCloseClickThrough",
       "showQuickSettingsToolbar",
       "isEnableEntityCollision",
       "mouseLeftMode",
+      "compatibilityMode",
+      "nodeDetailsPanel",
     ]) {
-      expect(visible).not.toContain(key);
+      expect(shownKeys).not.toContain(key);
     }
-    expect(visible).toContain("researchShowFullMenu");
   });
 
-  it("drops groups and categories left empty after hiding", () => {
-    for (const groups of Object.values(getVisibleCategories())) {
-      expect(Object.keys(groups).length).toBeGreaterThan(0);
-      for (const keys of Object.values(groups)) expect(keys.length).toBeGreaterThan(0);
+  // 页名、小标题和子页面的文字缺了，界面上会直接露出 key
+  it.each(["zh_CN.yml", "en.yml"])("has page, section and sub-page titles in %s", (name) => {
+    const locale = YAML.parse(readFileSync(new URL(`../../locales/${name}`, import.meta.url), "utf8"));
+    const texts = locale.research.settings;
+    for (const page of settingsPages) {
+      expect(texts.pages[page.id]?.title, `${name}: pages.${page.id}.title`).toBeTypeOf("string");
+      if (page.sections.length < 2) continue;
+      for (const section of page.sections) {
+        expect(texts.pages[page.id][section.id], `${name}: pages.${page.id}.${section.id}`).toBeTypeOf("string");
+      }
+    }
+    const subPages = settingsPages.flatMap((page) =>
+      page.sections.flatMap((section) => section.items.filter((item) => typeof item !== "string")),
+    );
+    expect(subPages.length).toBeGreaterThan(0);
+    for (const { subPage } of subPages) {
+      for (const field of ["title", "description", "button"]) {
+        expect(texts.subPages[subPage]?.[field], `${name}: subPages.${subPage}.${field}`).toBeTypeOf("string");
+      }
     }
   });
 });

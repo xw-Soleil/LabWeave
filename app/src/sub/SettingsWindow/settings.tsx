@@ -4,227 +4,265 @@ import { Settings } from "@/core/service/Settings";
 import { cn } from "@/utils/cn";
 import _ from "lodash";
 import {
-  BookOpenText,
-  Bot,
   Brain,
-  Bug,
-  ChevronRight,
-  Cpu,
-  Eye,
-  FlaskConical,
+  ChevronLeft,
+  EyeOff,
   FolderOpen,
-  FolderSync,
-  Gamepad2,
-  Gpu,
   Image,
-  Import,
-  Layers,
   type LucideIcon,
-  MemoryStick,
   Mouse,
-  MoveUpRight,
   Network,
   Palette,
-  PanelTop,
-  Pen,
-  PictureInPicture,
-  Proportions,
   RectangleHorizontal,
   Save,
-  Scan,
-  ScanSearch,
   Search,
-  SlidersHorizontal,
-  Sparkle,
+  Sparkles,
   SplinePointer,
-  SquareDashedMousePointer,
-  SquareDashedTopSolid,
-  SquareFunction,
-  Star,
-  TextCursorInput,
-  TextQuote,
-  Touchpad,
-  Unplug,
-  Wrench,
+  Volume2,
   X,
-  Zap,
 } from "lucide-react";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import EffectsPage from "./customization/effects";
+import SoundEffectsPage from "./customization/sounds";
+import ThemesTab from "./themes";
 
-type SettingsTarget = { category: string; group: string };
+export type SettingsDialogTab = "settings" | "keybinds" | "menus" | "about";
 
-let pendingInitialCategory: SettingsTarget | null = null;
-// 设置弹窗只有一个，已经开着时由它自己跳过去
-const initialCategoryListeners = new Set<(target: SettingsTarget) => void>();
+/** 主题、画布动画、音效各有自己的整页界面，从「外观」里点进去 */
+export type SettingsSubPageId = "themes" | "effects" | "sounds";
 
-/** 下一次打开设置页时直接定位到某个分组，例如 AI 面板里的「去设置」按钮 */
-export function setSettingsInitialCategory(category: string, group: string) {
-  pendingInitialCategory = { category, group };
-  for (const listener of initialCategoryListeners) listener(pendingInitialCategory);
+type SettingsItem = keyof Settings | { subPage: SettingsSubPageId };
+
+export interface SettingsPage {
+  id: string;
+  icon: LucideIcon;
+  /** 只有一节的页面不显示小标题 */
+  sections: { id: string; items: SettingsItem[] }[];
 }
 
-export type SettingsDialogTab = "settings" | "keybinds" | "customization" | "about";
+/**
+ * 设置页按「在做什么事」分页，每页把这件事的设置放全、常用的在前。
+ * 没列在这里的设置不在界面上出现（照旧保存、照旧生效），比如十字准星、游戏手柄、帧率这类，
+ * 以及启动时强制关掉、或者已经不起作用的项（遥测、全局热键、窗口透明度、原版滚轮设置……）。
+ */
+export const settingsPages: SettingsPage[] = [
+  {
+    id: "folder",
+    icon: FolderOpen,
+    sections: [{ id: "main", items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"] }],
+  },
+  {
+    id: "save",
+    icon: Save,
+    sections: [
+      { id: "save", items: ["autoSave", "autoSaveInterval", "autoSaveWhenClose"] },
+      { id: "backup", items: ["autoBackup", "autoBackupInterval", "autoBackupLimitCount", "autoBackupCustomPath"] },
+      { id: "undo", items: ["historySize"] },
+    ],
+  },
+  {
+    id: "ai",
+    icon: Brain,
+    sections: [
+      { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
+      { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
+    ],
+  },
+  {
+    id: "appearance",
+    icon: Palette,
+    sections: [
+      { id: "theme", items: ["themeMode", { subPage: "themes" }, "language", "uiScalePercent"] },
+      {
+        id: "background",
+        items: ["showBackgroundDots", "showBackgroundHorizontalLines", "showBackgroundVerticalLines"],
+      },
+      {
+        id: "other",
+        items: [
+          "defaultFontFamily",
+          "showRecentFilesThumbnails",
+          "showKeyBindHint",
+          "researchShowFullMenu",
+          { subPage: "effects" },
+          { subPage: "sounds" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "card",
+    icon: RectangleHorizontal,
+    sections: [
+      { id: "style", items: ["textNodeInitBorderStyle", "forceHideTextNodeBorder", "textNodeManualDefaultCharWidth"] },
+      {
+        id: "edit",
+        items: [
+          "textNodeStartEditMode",
+          "textNodeExitEditMode",
+          "textNodeContentLineBreak",
+          "textNodeSelectAllWhenStartEditByMouseClick",
+          "textNodeSelectAllWhenStartEditByKeyboard",
+          "textNodeBackspaceDeleteWhenEmpty",
+          "textNodeExitEditModeOnWheel",
+        ],
+      },
+      {
+        id: "details",
+        items: ["alwaysShowDetails", "entityDetailsFontSize", "entityDetailsLinesLimit", "entityDetailsWidthLimit"],
+      },
+    ],
+  },
+  {
+    id: "edge",
+    icon: SplinePointer,
+    sections: [
+      {
+        id: "edge",
+        items: [
+          "lineStyle",
+          "defaultEdgeLineType",
+          "defaultEdgeArrowType",
+          "allowAddCycleEdge",
+          "enableDragNodeShakeDetachFromEdge",
+          "enableRightClickConnect",
+          "rightClickConnectEdgeType",
+        ],
+      },
+      {
+        id: "section",
+        items: [
+          "sectionInitBorderStyle",
+          "sectionBackgroundFillMode",
+          "sectionBitTitleRenderType",
+          "autoEnterSectionEditMode",
+          "isEnableSectionCollision",
+        ],
+      },
+    ],
+  },
+  {
+    id: "mouse",
+    icon: Mouse,
+    sections: [
+      { id: "wheel", items: ["researchWheelBehavior", "scaleExponent", "scaleCameraByMouseLocation"] },
+      {
+        id: "drag",
+        items: [
+          "mouseRightDragBackground",
+          "enableSpaceKeyMouseLeftDrag",
+          "enableDragAutoAlign",
+          "doubleClickEmptySpaceAction",
+        ],
+      },
+      { id: "select", items: ["rectangleSelectWhenRight", "rectangleSelectWhenLeft"] },
+    ],
+  },
+  {
+    id: "generate",
+    icon: Network,
+    sections: [
+      {
+        id: "main",
+        items: [
+          "autoLayoutWhenTreeGenerate",
+          "treeGenerateInheritParentColor",
+          "treeGenerateCameraBehavior",
+          "enableTabGenerateNodeInInput",
+          "enableBackslashGenerateNodeInInput",
+          "enableTreeGenerateConnectByProbe",
+        ],
+      },
+    ],
+  },
+  {
+    id: "image",
+    icon: Image,
+    sections: [
+      {
+        id: "main",
+        items: ["maxPastedImageSize", "resizePastedImages", "compressImageToWebp", "webpQuality", "wrapImageInGroup"],
+      },
+    ],
+  },
+  {
+    id: "privacy",
+    icon: EyeOff,
+    sections: [{ id: "main", items: ["protectingPrivacy", "protectingPrivacyMode", "viewerMode"] }],
+  },
+];
 
-/** 设置弹窗提供：在弹窗顶部的几页之间切换 */
-export const SettingsNavigationContext = createContext<{ openTab: (tab: SettingsDialogTab) => void } | null>(null);
-
-// 启动时强制关闭、用不上或者不起作用的设置，不在设置页出现
-const hiddenSettingKeys = new Set([
-  "telemetry",
-  "allowGlobalHotKeys",
-  // 专注(课堂)模式会把整圈界面设成透明,启动时强制关闭,设置页也不提供
-  "isClassroomMode",
-  "autoImportTxtFileWhenOpenPrg",
-  "aiAutoApproveMcpTools",
-  "researchSession",
-  // 滚轮由 researchWheelBehavior 一项决定(见 core/research/WheelGesture.ts),这些滚轮设置不起作用
-  "mouseWheelMode",
-  "mouseWheelModeReverse",
-  "mouseWheelWithShiftMode",
-  "mouseWheelWithShiftModeReverse",
-  "mouseWheelWithCtrlMode",
-  "mouseWheelWithCtrlModeReverse",
-  "mouseWheelWithAltMode",
-  "mouseWheelWithAltModeReverse",
-  "mouseSideWheelMode",
-  "macTrackpadAndMouseWheelDifference",
-  "macMouseWheelIsSmoothed",
-  // 窗口始终不透明，也没有穿透模式
-  "windowBackgroundAlpha",
-  "windowBackgroundOpacityAfterOpenClickThrough",
-  "windowBackgroundOpacityAfterCloseClickThrough",
-  // 快捷设置栏不显示
-  "showQuickSettingsToolbar",
-  // 拖动卡片不推开别的卡片（见 StageEntity），这一项不起作用
-  "isEnableEntityCollision",
-  // 每次启动都恢复成「选择并移动」
-  "mouseLeftMode",
-  // 代码里没有任何地方读这两项
-  "compatibilityMode",
-  "nodeDetailsPanel",
-]);
-
-function isSettingKeyVisible(key: string): boolean {
-  return !hiddenSettingKeys.has(key);
-}
-
-const researchCategory = {
-  folder: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"],
-  mouse: ["researchWheelBehavior"],
-  ai: ["aiPdfTextPages"],
-  menu: ["researchShowFullMenu"],
+const subPages: Record<SettingsSubPageId, { icon: LucideIcon; component: ComponentType; padded: boolean }> = {
+  // 主题页自带左右两栏，不加内边距
+  themes: { icon: Palette, component: ThemesTab, padded: false },
+  effects: { icon: Sparkles, component: EffectsPage, padded: true },
+  sounds: { icon: Volume2, component: SoundEffectsPage, padded: true },
 };
 
-/** 只留下有内容的分组和大类 */
-export function getVisibleCategories(): Record<string, Record<string, string[]>> {
-  const all: Record<string, Record<string, string[]>> = { research: researchCategory, ...categories };
-  return Object.fromEntries(
-    Object.entries(all)
-      .map(
-        ([category, groups]) =>
-          [
-            category,
-            Object.fromEntries(
-              Object.entries(groups)
-                .map(([group, keys]) => [group, keys.filter(isSettingKeyVisible)] as const)
-                .filter(([, keys]) => keys.length > 0),
-            ),
-          ] as const,
-      )
-      .filter(([, groups]) => Object.keys(groups).length > 0),
+/** 每页里的设置项（不含点进去的子页面），搜索和测试用 */
+export function settingKeysOf(page: SettingsPage): (keyof Settings)[] {
+  return page.sections.flatMap((section) =>
+    section.items.filter((item): item is keyof Settings => typeof item === "string"),
   );
 }
 
-/** 「常用」页：一页放完，「themePicker」是跳到「个性化 → 主题」的按钮 */
-export const researchCommonSections: { id: string; items: (keyof Settings | "themePicker")[] }[] = [
-  { id: "folder", items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"] },
-  { id: "board", items: ["researchWheelBehavior", "mouseRightDragBackground"] },
-  { id: "ai", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiPdfTextPages"] },
-  { id: "appearance", items: ["themeMode", "themePicker", "language", "uiScalePercent"] },
-  { id: "save", items: ["autoSave", "autoSaveInterval", "autoSaveWhenClose"] },
-];
+let pendingInitialPage: string | null = null;
+// 设置弹窗只有一个，已经开着时由它自己跳过去
+const initialPageListeners = new Set<(pageId: string) => void>();
 
-type ResearchPage = { kind: "common" } | { kind: "group"; category: string; group: string };
+/** 下一次打开设置页时直接停在某一页，例如 AI 面板里的「去设置」按钮停在 AI 页 */
+export function setSettingsInitialPage(pageId: string) {
+  pendingInitialPage = pageId;
+  for (const listener of initialPageListeners) listener(pageId);
+}
 
-/** 外部要求打开的分组对应哪一页：AI 接口在「常用」里 */
-function researchPageOf(
-  target: SettingsTarget | null,
-  visibleCategories: Record<string, Record<string, string[]>>,
-): { page: ResearchPage; section: string | null } {
-  if (!target) return { page: { kind: "common" }, section: null };
-  if (target.category === "ai") return { page: { kind: "common" }, section: "ai" };
-  if (visibleCategories[target.category]?.[target.group]) {
-    return { page: { kind: "group", ...target }, section: null };
-  }
-  return { page: { kind: "common" }, section: null };
+function knownPageId(pageId: string | null): string {
+  return settingsPages.some((page) => page.id === pageId) ? pageId! : settingsPages[0].id;
 }
 
 export default function SettingsTab() {
   const { t } = useTranslation("settings");
   const { t: tr } = useTranslation("research");
-  const visibleCategories = useMemo(getVisibleCategories, []);
-  const [initial] = useState(() => researchPageOf(pendingInitialCategory, visibleCategories));
-  const [page, setPage] = useState<ResearchPage>(initial.page);
-  const [advancedOpen, setAdvancedOpen] = useState(initial.page.kind === "group");
-  const [openCategories, setOpenCategories] = useState<ReadonlySet<string>>(
-    () => new Set(initial.page.kind === "group" ? [initial.page.category] : []),
-  );
-  const [scrollSection, setScrollSection] = useState<string | null>(initial.section);
+  const [pageId, setPageId] = useState(() => knownPageId(pendingInitialPage));
+  const [subPage, setSubPage] = useState<SettingsSubPageId | null>(null);
   const [keyword, setKeyword] = useState("");
-  const sectionElements = useRef(new Map<string, HTMLElement>());
 
-  const goTo = ({ page, section }: { page: ResearchPage; section: string | null }) => {
+  const goTo = (next: string) => {
     setKeyword("");
-    setPage(page);
-    setScrollSection(section);
-    if (page.kind === "group") {
-      setAdvancedOpen(true);
-      setOpenCategories((prev) => new Set([...prev, page.category]));
-    }
+    setSubPage(null);
+    setPageId(knownPageId(next));
   };
 
   useEffect(() => {
-    pendingInitialCategory = null;
-    const listener = (target: SettingsTarget) => {
-      pendingInitialCategory = null;
-      goTo(researchPageOf(target, visibleCategories));
+    pendingInitialPage = null;
+    const listener = (next: string) => {
+      pendingInitialPage = null;
+      goTo(next);
     };
-    initialCategoryListeners.add(listener);
+    initialPageListeners.add(listener);
     return () => {
-      initialCategoryListeners.delete(listener);
+      initialPageListeners.delete(listener);
     };
   }, []);
 
-  const searching = keyword.trim() !== "";
-  useLayoutEffect(() => {
-    if (!scrollSection || searching || page.kind !== "common") return;
-    sectionElements.current.get(scrollSection)?.scrollIntoView({ block: "start" });
-    setScrollSection(null);
-  }, [scrollSection, searching, page]);
-
   // 搜索设置名、说明和选项文字；空格分开的几个词都要出现，标题里就有的排前面
-  const searchIndex = useMemo(() => {
-    const keys = _.uniq([
-      ...researchCommonSections.flatMap((section) => section.items).filter((item) => item !== "themePicker"),
-      ...Object.values(visibleCategories).flatMap((groups) => Object.values(groups).flat()),
-    ]);
-    return keys.map((key) => {
-      const options: unknown = t(`${key}.options`, { returnObjects: true, defaultValue: {} });
-      const optionText =
-        options && typeof options === "object"
-          ? Object.values(options)
-              .filter((it) => typeof it === "string")
-              .join("\n")
-          : "";
-      const { title, description } = researchSettingText(t, key);
-      return {
-        key: key as keyof Settings,
-        title: title.toLowerCase(),
-        rest: `${description}\n${optionText}`.toLowerCase(),
-      };
-    });
-  }, [t, visibleCategories]);
+  const searchIndex = useMemo(
+    () =>
+      settingsPages.flatMap(settingKeysOf).map((key) => {
+        const options: unknown = t(`${key}.options`, { returnObjects: true, defaultValue: {} });
+        const optionText =
+          options && typeof options === "object"
+            ? Object.values(options)
+                .filter((it) => typeof it === "string")
+                .join("\n")
+            : "";
+        const { title, description } = researchSettingText(t, key);
+        return { key, title: title.toLowerCase(), rest: `${description}\n${optionText}`.toLowerCase() };
+      }),
+    [t],
+  );
+  const searching = keyword.trim() !== "";
   const searchResults = useMemo(() => {
     const terms = keyword.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return [];
@@ -236,12 +274,12 @@ export default function SettingsTab() {
     );
   }, [keyword, searchIndex]);
 
-  const groupKeys =
-    page.kind === "group" ? ((visibleCategories[page.category]?.[page.group] ?? []) as (keyof Settings)[]) : [];
+  const page = settingsPages.find((candidate) => candidate.id === pageId) ?? settingsPages[0];
+  const pageTitle = (id: string) => tr(`settings.pages.${id}.title`);
 
   return (
     <div className="flex h-full min-h-0">
-      <nav className="border-border flex w-56 shrink-0 flex-col border-r">
+      <nav className="border-border flex w-48 shrink-0 flex-col border-r">
         <div className="p-2">
           <div className="bg-muted focus-within:ring-ring/50 flex h-7 items-center gap-2 rounded-[6px] px-2 focus-within:ring-2">
             <Search className="text-muted-foreground size-3.5 shrink-0" />
@@ -271,440 +309,152 @@ export default function SettingsTab() {
           </div>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-px overflow-auto px-2 pb-2">
-          <ResearchNavItem
-            icon={Star}
-            label={t("categories.common.title")}
-            active={!searching && page.kind === "common"}
-            onClick={() => goTo({ page: { kind: "common" }, section: null })}
-          />
-          <ResearchNavItem
-            icon={SlidersHorizontal}
-            label={tr("settings.advanced")}
-            open={advancedOpen}
-            onClick={() => setAdvancedOpen((open) => !open)}
-          />
-          {advancedOpen &&
-            Object.entries(visibleCategories).map(([category, groups]) => {
-              const icons = (categoryIcons as Record<string, Record<string, LucideIcon>>)[category];
-              const open = openCategories.has(category);
-              return (
-                <div key={category} className="flex flex-col gap-px">
-                  <ResearchNavItem
-                    depth={1}
-                    icon={icons.icon}
-                    label={t(`categories.${category}.title`)}
-                    open={open}
-                    onClick={() =>
-                      setOpenCategories((prev) => {
-                        const next = new Set(prev);
-                        if (!next.delete(category)) next.add(category);
-                        return next;
-                      })
-                    }
-                  />
-                  {open &&
-                    Object.keys(groups).map((group) => (
-                      <ResearchNavItem
-                        key={group}
-                        depth={2}
-                        icon={icons[group]}
-                        label={t(`categories.${category}.${group}`)}
-                        active={
-                          !searching && page.kind === "group" && page.category === category && page.group === group
-                        }
-                        onClick={() => goTo({ page: { kind: "group", category, group }, section: null })}
-                      />
-                    ))}
-                </div>
-              );
-            })}
+          {settingsPages.map((candidate) => (
+            <SettingsNavItem
+              key={candidate.id}
+              icon={candidate.icon}
+              label={pageTitle(candidate.id)}
+              active={!searching && candidate.id === page.id}
+              onClick={() => goTo(candidate.id)}
+            />
+          ))}
         </div>
       </nav>
-      <div
-        key={searching ? "search" : page.kind === "group" ? `${page.category}/${page.group}` : "common"}
-        className="min-w-0 flex-1 overflow-auto"
-      >
-        <div className="flex flex-col gap-6 px-6 py-5">
-          {searching ? (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-foreground text-[14px] font-semibold">
-                {tr("settings.searchResults", { count: searchResults.length })}
-              </h2>
-              {searchResults.length === 0 ? (
-                <p className="text-muted-foreground text-[13px]">
-                  {tr("settings.noResults", { keyword: keyword.trim() })}
-                </p>
-              ) : (
-                <ResearchSettingList keys={searchResults} />
-              )}
-            </section>
-          ) : page.kind === "common" ? (
-            <>
-              <h2 className="text-foreground text-[14px] font-semibold">{t("categories.common.title")}</h2>
-              {researchCommonSections.map((section) => (
-                <section
-                  key={section.id}
-                  ref={(element) => {
-                    if (element) sectionElements.current.set(section.id, element);
-                    else sectionElements.current.delete(section.id);
-                  }}
-                  className="flex scroll-mt-5 flex-col gap-2"
-                >
-                  <h3 className="text-muted-foreground px-1 text-[11px] font-semibold tracking-wide">
-                    {t(`categories.common.${section.id}`)}
-                  </h3>
-                  <div className="border-border divide-border flex flex-col divide-y rounded-[8px] border">
-                    {section.items.map((item) =>
-                      item === "themePicker" ? (
-                        <ThemePickerRow key={item} />
-                      ) : (
-                        <SettingField key={item} settingKey={item} />
-                      ),
+      {!searching && subPage ? (
+        <SubPageView
+          id={subPage}
+          parentTitle={pageTitle(page.id)}
+          title={tr(`settings.subPages.${subPage}.title`)}
+          onBack={() => setSubPage(null)}
+        />
+      ) : (
+        <div key={searching ? "search" : page.id} className="min-w-0 flex-1 overflow-auto">
+          <div className="flex flex-col gap-6 px-6 py-5">
+            {searching ? (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-foreground text-[14px] font-semibold">
+                  {tr("settings.searchResults", { count: searchResults.length })}
+                </h2>
+                {searchResults.length === 0 ? (
+                  <p className="text-muted-foreground text-[13px]">
+                    {tr("settings.noResults", { keyword: keyword.trim() })}
+                  </p>
+                ) : (
+                  <SettingList items={searchResults} onOpenSubPage={setSubPage} />
+                )}
+              </section>
+            ) : (
+              <>
+                <h2 className="text-foreground text-[14px] font-semibold">{pageTitle(page.id)}</h2>
+                {page.sections.map((section) => (
+                  <section key={section.id} className="flex flex-col gap-2">
+                    {page.sections.length > 1 && (
+                      <h3 className="text-muted-foreground px-1 text-[11px] font-semibold tracking-wide">
+                        {tr(`settings.pages.${page.id}.${section.id}`)}
+                      </h3>
                     )}
-                  </div>
-                </section>
-              ))}
-            </>
-          ) : (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-foreground text-[14px] font-semibold">
-                <span className="text-muted-foreground font-medium">{t(`categories.${page.category}.title`)} / </span>
-                {t(`categories.${page.category}.${page.group}`)}
-              </h2>
-              <ResearchSettingList keys={groupKeys} />
-            </section>
-          )}
+                    <SettingList items={section.items} onOpenSubPage={setSubPage} />
+                  </section>
+                ))}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function ResearchSettingList({ keys }: { keys: (keyof Settings)[] }) {
-  return (
-    <div className="border-border divide-border flex flex-col divide-y rounded-[8px] border">
-      {keys.map((key) => (
-        <SettingField key={key} settingKey={key} />
-      ))}
-    </div>
-  );
-}
-
-function ResearchNavItem({
-  icon: Icon,
-  label,
-  depth = 0,
-  active = false,
-  open,
-  onClick,
+function SettingList({
+  items,
+  onOpenSubPage,
 }: {
-  icon?: LucideIcon;
-  label: string;
-  depth?: number;
-  active?: boolean;
-  /** 传了就是可以展开的节点 */
-  open?: boolean;
-  onClick: () => void;
+  items: SettingsItem[];
+  onOpenSubPage: (id: SettingsSubPageId) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-expanded={open}
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-      className={cn(
-        "focus-visible:ring-ring/50 flex h-7 w-full shrink-0 items-center gap-2 rounded-[6px] pr-2 text-left text-[13px] outline-none focus-visible:ring-2",
-        active ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-accent",
+    <div className="border-border divide-border flex flex-col divide-y rounded-[8px] border">
+      {items.map((item) =>
+        typeof item === "string" ? (
+          <SettingField key={item} settingKey={item} />
+        ) : (
+          <SubPageRow key={item.subPage} id={item.subPage} onOpen={() => onOpenSubPage(item.subPage)} />
+        ),
       )}
-      style={{ paddingLeft: 8 + depth * 16 }}
-    >
-      {Icon && <Icon className={cn("size-4 shrink-0", !active && "text-muted-foreground")} />}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {open !== undefined && (
-        <ChevronRight
-          className={cn("text-muted-foreground size-3.5 shrink-0 transition-transform", open && "rotate-90")}
-        />
-      )}
-    </button>
+    </div>
   );
 }
 
-function ThemePickerRow() {
+function SubPageRow({ id, onOpen }: { id: SettingsSubPageId; onOpen: () => void }) {
   const { t } = useTranslation("research");
-  const navigation = useContext(SettingsNavigationContext);
+  const Icon = subPages[id].icon;
   return (
-    <SettingRow title={t("settings.theme.title")} description={t("settings.theme.description")}>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 text-[13px]"
-        disabled={!navigation}
-        onClick={() => navigation?.openTab("customization")}
-      >
-        <Palette className="size-3.5" />
-        {t("settings.theme.button")}
+    <SettingRow title={t(`settings.subPages.${id}.title`)} description={t(`settings.subPages.${id}.description`)}>
+      <Button variant="outline" size="sm" className="h-7 text-[13px]" onClick={onOpen}>
+        <Icon className="size-3.5" />
+        {t(`settings.subPages.${id}.button`)}
       </Button>
     </SettingRow>
   );
 }
 
-export const categories = {
-  visual: {
-    basic: [
-      "language",
-      "allowGlobalHotKeys",
-      "isClassroomMode",
-      "viewerMode",
-      "showQuickSettingsToolbar",
-      "showRecentFilesThumbnails",
-      "showKeyBindHint",
-      "windowBackgroundAlpha",
-      "windowBackgroundOpacityAfterOpenClickThrough",
-      "windowBackgroundOpacityAfterCloseClickThrough",
-      "uiScalePercent",
-    ],
-    background: [
-      "isRenderCenterPointer",
-      "centerCrosshairColor",
-      "centerCrosshairShape",
-      "centerCrosshairAlpha",
-      "showBackgroundHorizontalLines",
-      "showBackgroundVerticalLines",
-      "showBackgroundDots",
-      "showBackgroundCartesian",
-      "isStealthModeEnabled",
-      "stealthModeScopeRadius",
-      "stealthModeReverseMask",
-      "stealthModeMaskShape",
-    ],
-    node: [
-      "enableTagTextNodesBigDisplay",
-      "forceHideTextNodeBorder",
-      "textNodeInitBorderStyle",
-      "showTreeDirectionHint",
-      "showEditModeHint",
-      "textNodeEditModeOutlineOpacity",
-      "colorPanelMouseEnterPreview",
-      "defaultFontFamily",
-    ],
-    section: [
-      "sectionBitTitleRenderType",
-      "sectionBigTitleThresholdRatio",
-      "sectionBigTitleCameraScaleThreshold",
-      "sectionBigTitleOpacity",
-      "hideSectionContentsWhenBigTitleActive",
-      "sectionBackgroundFillMode",
-      "sectionInitBorderStyle",
-    ],
-    edge: ["lineStyle", "hideArrowWhenPointingToConnectPoint", "enableAutoEdgeWidth"],
-    selectedState: ["enableCollisionBoxAutoWidth"],
-    entityDetails: [
-      "nodeDetailsPanel",
-      "alwaysShowDetails",
-      "exportMermaidIncludeNodeDetails",
-      "entityDetailsFontSize",
-      "entityDetailsLinesLimit",
-      "entityDetailsWidthLimit",
-    ],
-    debug: ["showDebug", "protectingPrivacy", "protectingPrivacyMode"],
-    experimental: ["windowCollapsingWidth", "windowCollapsingHeight"],
-  },
-  automation: {
-    autoNamer: [
-      "autoNamerTemplate",
-      "autoNamerSectionTemplate",
-      "autoNamerDetailsTemplate",
-      "autoNamerTreeNodeTemplate",
-    ],
-    autoSave: ["autoSaveWhenClose", "autoSave", "autoSaveInterval"],
-    autoBackup: [
-      "autoBackup",
-      "autoBackupInterval",
-      "autoBackupLimitCount",
-      "autoBackupStrategy",
-      "autoBackupCustomPath",
-      "autoBackupCustomPath2",
-    ],
-    autoImport: ["autoImportTxtFileWhenOpenPrg", "imageImportOrder"],
-  },
-  control: {
-    mouse: [
-      "mouseRightDragBackground",
-      "mouseLeftMode",
-      "doubleClickEmptySpaceAction",
-      "enableSpaceKeyMouseLeftDrag",
-      "enableDragAutoAlign",
-      "reverseTreeMoveMode",
-      "mouseWheelMode",
-      "mouseWheelModeReverse",
-      "mouseWheelWithShiftMode",
-      "mouseWheelWithShiftModeReverse",
-      "mouseWheelWithCtrlMode",
-      "mouseWheelWithCtrlModeReverse",
-      "mouseWheelWithAltMode",
-      "mouseWheelWithAltModeReverse",
-      "doubleClickMiddleMouseButton",
-      "doubleClickMiddleMouseButtonOnEntity",
-      "mouseSideWheelMode",
-      "macMouseWheelIsSmoothed",
-      "macEnableControlToCut",
-      "enableCtrlWheelRotateStructure",
-    ],
-    touchpad: ["enableWindowsTouchPad", "macTrackpadAndMouseWheelDifference", "macTrackpadScaleSensitivity"],
-    pen: ["hideCursorInPenMode", "penPressureCurve"],
-    cameraMove: ["moveAmplitude", "moveFriction"],
-    cameraZoom: [
-      "scaleExponent",
-      "cameraZoomInLimitBehavior",
-      "cameraZoomOutLimitBehavior",
-      "cameraResetViewPaddingRate",
-      "cameraResetMaxScale",
-      "scaleCameraByMouseLocation",
-      "cameraKeyboardScaleRate",
-    ],
-    objectSelect: [
-      "rectangleSelectWhenRight",
-      "rectangleSelectWhenLeft",
-      "cameraFollowsSelectedNodeOnArrowKeys",
-      "arrowKeySelectOnlyInViewport",
-    ],
-    textNode: [
-      "textNodeStartEditMode",
-      "textNodeContentLineBreak",
-      "textNodeExitEditMode",
-      "textNodeExitEditModeOnWheel",
-      "textNodeSelectAllWhenStartEditByMouseClick",
-      "textNodeSelectAllWhenStartEditByKeyboard",
-      "textNodeBackspaceDeleteWhenEmpty",
-      "textNodeBigContentThresholdWhenPaste",
-      "textNodePasteSizeAdjustMode",
-      "textNodeManualDefaultCharWidth",
-      "newNodeScaleByCamera",
-      "newNodeScaleByCameraOffset",
-    ],
-    section: ["isEnableSectionCollision", "autoEnterSectionEditMode"],
-    edge: [
-      "allowAddCycleEdge",
-      "enableDragNodeShakeDetachFromEdge",
-      "autoAdjustLineEndpointsByMouseTrack",
-      "autoAdjustLineEndpointsWhenRightDragToBlank",
-      "enableRightClickConnect",
-      "rightClickConnectEdgeType",
-      "defaultEdgeLineType",
-      "defaultEdgeArrowType",
-      "enableDragEdgeRotateStructure",
-    ],
-    generateNode: [
-      "autoLayoutWhenTreeGenerate",
-      "autoLayoutWhenSectionCollapseToggle",
-      "enableTreeGenerateConnectByProbe",
-      "treeGenerateInheritParentColor",
-      "enableTabGenerateNodeInInput",
-      "enableBackslashGenerateNodeInInput",
-      "textNodeAutoFormatTreeWhenInput",
-      "treeGenerateCameraBehavior",
-    ],
-    gamepad: ["gamepadDeadzone"],
-    image: [
-      "resizePastedImages",
-      "maxPastedImageSize",
-      "compressImageToWebp",
-      "webpQuality",
-      "compressImageToBlackAndWhite",
-      "blackAndWhiteThreshold",
-      "wrapImageInGroup",
-      "clipboardPasteMode",
-    ],
-  },
-  performance: {
-    memory: ["historySize", "clearHistoryWhenManualSave", "historyManagerMode"],
-    cpu: ["autoRefreshStageByMouseAction", "maxFps", "maxFpsUnfocused"],
-    render: [
-      "isPauseRenderWhenManipulateOvertime",
-      "pauseRenderWhenTabUnfocused",
-      "renderOverTimeWhenNoManipulateTime",
-      "scaleExponent",
-      "ignoreTextNodeTextRenderLessThanFontSize",
-      "textIntegerLocationAndSizeRender",
-      "antialiasing",
-    ],
-    experimental: ["compatibilityMode", "isEnableEntityCollision"],
-  },
-  ai: {
-    api: [
-      "aiApiFormat",
-      "aiApiBaseUrl",
-      "aiApiKey",
-      "aiModel",
-      "aiCustomHeaders",
-      "aiContextWindow",
-      "aiShowTokenCount",
-      "aiAutoApproveMcpTools",
-    ],
-  },
-};
+function SubPageView({
+  id,
+  parentTitle,
+  title,
+  onBack,
+}: {
+  id: SettingsSubPageId;
+  parentTitle: string;
+  title: string;
+  onBack: () => void;
+}) {
+  const { component: Component, padded } = subPages[id];
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div className="border-border flex h-10 shrink-0 items-center gap-1 border-b px-3 text-[13px]">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground h-7 gap-1 px-1.5 text-[13px]"
+          onClick={onBack}
+        >
+          <ChevronLeft className="size-4" />
+          {parentTitle}
+        </Button>
+        <span className="text-muted-foreground">/</span>
+        <span className="font-semibold">{title}</span>
+      </div>
+      <div className={cn("min-h-0 flex-1", padded ? "overflow-auto p-4" : "overflow-hidden")}>
+        <Component />
+      </div>
+    </div>
+  );
+}
 
-// 每个大类和分组都要有图标，设置页按这里取，缺了会报错
-export const categoryIcons = {
-  common: {
-    icon: Star,
-    folder: FolderOpen,
-    board: Mouse,
-    ai: Brain,
-    appearance: Palette,
-    save: Save,
-  },
-  research: {
-    icon: FlaskConical,
-    folder: FolderOpen,
-    mouse: Mouse,
-    ai: BookOpenText,
-    menu: PanelTop,
-  },
-  ai: {
-    icon: Brain,
-    api: Unplug,
-  },
-  automation: {
-    icon: Bot,
-    autoNamer: SquareFunction,
-    autoSave: Save,
-    autoBackup: FolderSync,
-    autoImport: Import,
-  },
-  control: {
-    icon: Wrench,
-    pen: Pen,
-    mouse: Mouse,
-    touchpad: Touchpad,
-    cameraMove: Scan,
-    cameraZoom: ScanSearch,
-    objectSelect: SquareDashedMousePointer,
-    textNode: TextCursorInput,
-    section: SquareDashedTopSolid,
-    edge: SplinePointer,
-    generateNode: Network,
-    image: Image,
-    gamepad: Gamepad2,
-  },
-  performance: {
-    icon: Zap,
-    memory: MemoryStick,
-    cpu: Cpu,
-    render: Gpu,
-    experimental: Sparkle,
-  },
-  visual: {
-    icon: Eye,
-    basic: Proportions,
-    background: Layers,
-    node: RectangleHorizontal,
-    edge: MoveUpRight,
-    section: SquareDashedTopSolid,
-    selectedState: SquareDashedMousePointer,
-    entityDetails: TextQuote,
-    debug: Bug,
-    miniWindow: PictureInPicture,
-    experimental: Sparkle,
-  },
-};
+function SettingsNavItem({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={cn(
+        "focus-visible:ring-ring/50 flex h-7 w-full shrink-0 items-center gap-2 rounded-[6px] px-2 text-left text-[13px] outline-none focus-visible:ring-2",
+        active ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-accent",
+      )}
+    >
+      <Icon className={cn("size-4 shrink-0", !active && "text-muted-foreground")} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+}

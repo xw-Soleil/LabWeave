@@ -18,7 +18,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **产品身份**：identifier 改为 `com.ai4know.researchworkbench`，产品名 Research Workbench，主窗口标题「科研工作台」，深链接协议从 `prg` 改为 `rwb`，文件扩展名仍是 `.prg`。设置、快捷键等数据目录因此和已安装的 Project Graph 分开，不会互相读取。
 - **数据只留在本机**：关闭遥测、账号、支持者名单、素材下载、多人协作、扩展加载；不再注册自动更新和系统全局快捷键插件，不再打包更新文件；`run_command`、`mcp_stdio_*` 和不受 fs 权限范围约束的原始文件命令不再暴露给前端；AI 对话不加载 MCP 和 Skills，回答里的远程图片不自动加载。
 - **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区。
-- **外壳界面**：左侧竖栏（工作区 / AI 对话 / 文件 / 设置）、精简的菜单和 macOS 原生菜单（含编辑菜单）、新快捷键 Cmd+1/2/3/N、科研版欢迎页、启动时恢复上次的工作区和面板、命令面板白名单、设置页新增「科研工作台」分类。
+- **外壳界面**：左侧竖栏（工作区 / AI 对话 / 文件 / 设置）、精简的菜单和 macOS 原生菜单（含编辑菜单）、新快捷键 Cmd+1/2/3/N、没打开工作区时编辑区显示欢迎页（侧栏照常停靠、能拖，AI 对话收起）、启动时恢复上次的工作区和面板、命令面板白名单；设置弹窗改为「设置 / 快捷键 / 菜单 / 关于」四页，设置按用途分 10 页，原版的「个性化」拆进「外观」和「菜单」。
 - **文件卡片**：新实体 `FileCardNode`，用 pdf.js 抽 PDF 的标题、页数、首页缩略图和前几页文字，也支持图片和 Markdown；双击用系统默认程序打开原文件，原文件不见了会标红。
 - **拖放**：从文件面板或 Finder 把文件拖到白板生成卡片；研究文件夹外的文件经用户同意后复制到 `导入/` 子文件夹。
 - **保存**：保存时在 `.workbench/` 下写给 AI 读的 `<名字>.ai.json` / `.ai.md`；`.prg` 元数据记录工作区 id 和视野；科研模式下原子写入（临时文件 + 改名），编辑后约 5 秒自动保存，备份不再写进研究文件夹。
@@ -84,8 +84,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/components/docked-area.tsx`
 - `app/src/ProjectTabs.tsx`
 - `app/src/core/TabWorkspace.tsx`
+- `app/src/core/TabGroup.ts`
+- `app/src/core/TabGroup.test.ts`
 - `app/src/core/TabWorkspace.test.tsx`
-- `app/src/sub/WelcomeWindow.tsx`
+- `app/src/components/research-welcome.tsx`（新增，2026-11-05 取代上游的 `sub/WelcomeWindow.tsx`，后者已删除）
 - `app/src/components/global-menu-content.tsx`
 - `app/src/components/native-macos-menu.tsx`
 - `app/src/components/native-macos-menu.test.ts`
@@ -97,7 +99,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/sub/SettingsWindow/index.tsx`
 - `app/src/sub/SettingsWindow/keybinds.tsx`
 - `app/src/sub/SettingsWindow/settings.tsx`
-- `app/src/sub/SettingsWindow/customization/window-open-modes.tsx`
+- `app/src/sub/SettingsWindow/settings.test.ts`
+- `app/src/sub/SettingsWindow/customization/index.tsx`
+- 2026-11-05 删除：`app/src/sub/WelcomeWindow.tsx`、`app/src/components/welcome-page.tsx`、`app/src/sub/SettingsWindow/customization/global-menu.tsx`、`quick-settings.tsx`、`window-open-modes.tsx`
 
 ### 5. 研究文件夹和文件面板（2026-11-01）
 

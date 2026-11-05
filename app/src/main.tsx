@@ -35,7 +35,6 @@ import { ExtensionManager } from "./core/extension/ExtensionManager";
 import { startResearchSession } from "./core/research/ResearchSession";
 import { handleDeepLink, isProjectGraphDeepLink } from "./core/service/dataFileService/DeepLinkHandler";
 import { onOpenFile } from "./core/service/GlobalMenu";
-import WelcomeWindow from "./sub/WelcomeWindow";
 import "./css/index.css";
 import Fallback from "./Fallback";
 
@@ -94,7 +93,8 @@ let appRendered = false;
     }
     await loadStartFile();
     if (!isCliMode) {
-      await ensureStartupDraftAndWelcome();
+      // 没有可恢复的工作区时，编辑区本身就显示欢迎页（见 components/research-welcome.tsx）
+      await startResearchSession();
     }
     if (isCliMode) {
       try {
@@ -292,10 +292,4 @@ async function loadStartFile() {
       void handleDeepLink(urls);
     }
   });
-}
-
-/** 恢复上次的会话；没有可恢复的内容时弹出欢迎窗（类 Blender splash） */
-async function ensureStartupDraftAndWelcome() {
-  // 欢迎页不创建工程；只有用户主动新建时才分配草稿。
-  if (!(await startResearchSession())) WelcomeWindow.open();
 }

@@ -183,6 +183,28 @@ export function splitTabGroup(
   return replace(root);
 }
 
+/** 没打开工作区时，编辑区的位置放欢迎页：这是它的占位分组 id */
+export const WELCOME_GROUP_ID = "pg-welcome";
+
+/**
+ * 没打开工作区时显示的布局：先去掉 hiddenTabIds（比如没有工作区时用不上的 AI 对话），
+ * 再在侧栏旁边插入欢迎页占位分组。侧栏照常按像素定宽、能拖。只用来显示，不写回 tabGroupRootAtom。
+ */
+export function welcomeLayout(root: TabGroupNode | null, hiddenTabIds: string[] = []): TabGroupNode {
+  let visible = root;
+  for (const tabId of hiddenTabIds) visible = removeTabFromGroups(visible, tabId).root;
+  const welcome = createTabGroup([], WELCOME_GROUP_ID);
+  const groups = getTabGroups(visible);
+  const target =
+    groups.find((group) => group.id === FIXED_SIDE_GROUP_IDS.left) ??
+    groups.find((group) => group.id === FIXED_SIDE_GROUP_IDS.right) ??
+    groups[0];
+  if (!target) return welcome;
+  const edge: TabDropEdge = target.id === FIXED_SIDE_GROUP_IDS.right ? "left" : "right";
+  const sizes: [number, number] = edge === "right" ? [30, 70] : [70, 30];
+  return splitTabGroup(visible, target.id, welcome, edge, `${WELCOME_GROUP_ID}-split`, sizes) ?? welcome;
+}
+
 export function updateTabSplitSizes(
   root: TabGroupNode | null,
   splitId: string,

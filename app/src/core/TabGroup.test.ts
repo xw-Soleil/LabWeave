@@ -13,6 +13,8 @@ import {
   SIDE_PANEL_WIDTH,
   splitTabGroup,
   updateTabSplitSizes,
+  WELCOME_GROUP_ID,
+  welcomeLayout,
 } from "./TabGroup";
 
 describe("TabGroup", () => {
@@ -126,5 +128,51 @@ describe("fixed side panel width", () => {
     const vertical = splitTabGroup(left, left.id, createTabGroup(["x"], "x"), "bottom", "vertical");
     if (vertical?.type !== "split") throw new Error("expected a split");
     expect(findFixedSideChild(vertical)).toBeUndefined();
+  });
+});
+
+describe("welcome layout (no workspace open)", () => {
+  const files = () => createTabGroup(["files"], FIXED_SIDE_GROUP_IDS.left);
+  const ai = () => createTabGroup(["ai"], FIXED_SIDE_GROUP_IDS.right);
+
+  it("is only the welcome page when no panel is open", () => {
+    expect(welcomeLayout(null)).toMatchObject({ type: "group", id: WELCOME_GROUP_ID, tabIds: [] });
+  });
+
+  it("puts the welcome page right of the files panel, which keeps its fixed width", () => {
+    const layout = welcomeLayout(files());
+    if (layout.type !== "split") throw new Error("expected a split");
+    expect(layout.children.map((child) => child.id)).toEqual([FIXED_SIDE_GROUP_IDS.left, WELCOME_GROUP_ID]);
+    expect(findFixedSideChild(layout)).toEqual({ index: 0, edge: "left" });
+  });
+
+  it("hides the AI chat and keeps the rest of the layout", () => {
+    const root = splitTabGroup(files(), FIXED_SIDE_GROUP_IDS.left, ai(), "right", "outer");
+    const layout = welcomeLayout(root, ["ai"]);
+    expect(getTabGroups(layout).map((group) => group.id)).toEqual([FIXED_SIDE_GROUP_IDS.left, WELCOME_GROUP_ID]);
+    // 显示用的布局不改原来的树
+    expect(getTabGroups(root).map((group) => group.id)).toEqual([
+      FIXED_SIDE_GROUP_IDS.left,
+      FIXED_SIDE_GROUP_IDS.right,
+    ]);
+  });
+
+  it("keeps other panels docked on the right, with the welcome page in between", () => {
+    const right = createTabGroup(["ai", "outline"], FIXED_SIDE_GROUP_IDS.right);
+    const root = splitTabGroup(files(), FIXED_SIDE_GROUP_IDS.left, right, "right", "outer");
+    const layout = welcomeLayout(root, ["ai"]);
+    expect(getTabGroups(layout).map((group) => group.id)).toEqual([
+      FIXED_SIDE_GROUP_IDS.left,
+      WELCOME_GROUP_ID,
+      FIXED_SIDE_GROUP_IDS.right,
+    ]);
+    expect(findTabGroup(layout, FIXED_SIDE_GROUP_IDS.right)?.tabIds).toEqual(["outline"]);
+  });
+
+  it("puts the welcome page left of a right-docked files panel", () => {
+    const layout = welcomeLayout(createTabGroup(["files"], FIXED_SIDE_GROUP_IDS.right));
+    if (layout.type !== "split") throw new Error("expected a split");
+    expect(layout.children.map((child) => child.id)).toEqual([WELCOME_GROUP_ID, FIXED_SIDE_GROUP_IDS.right]);
+    expect(findFixedSideChild(layout)).toEqual({ index: 1, edge: "right" });
   });
 });

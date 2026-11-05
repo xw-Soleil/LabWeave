@@ -24,6 +24,8 @@ export interface ResearchWorkspaceItem {
   relPath: string;
   name: string;
   open: boolean;
+  /** 文件修改时间（毫秒）；取不到时为空 */
+  mtime?: number;
 }
 
 /** 竖栏「工作区」按钮旁的弹出列表是否打开（快捷键也走 focusWorkspace 事件，所以状态放这里） */
@@ -130,6 +132,7 @@ export async function listResearchWorkspaces(): Promise<ResearchWorkspaceItem[]>
         relPath: entry.relPath,
         name: entry.name.replace(/\.prg$/i, ""),
         open: openPaths.some((path) => samePath(path, entry.absPath)),
+        mtime: entry.mtime,
       });
     }
   }
