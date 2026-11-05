@@ -88,6 +88,9 @@ importers:
 
   app:
     dependencies:
+      "@agentclientprotocol/sdk":
+        specifier: 2.4.0
+        version: 2.4.0(zod@4.4.3)
       "@ai-sdk/anthropic":
         specifier: ^3.0.137
         version: 3.0.137(zod@4.4.3)
@@ -841,6 +844,16 @@ importers:
         version: 5.9.2
 
 packages:
+  "@agentclientprotocol/sdk@2.4.0":
+    resolution:
+      { integrity: sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg== }
+    peerDependencies:
+      "@modelcontextprotocol/server": ^2.4.0
+      zod: ^3.25.76 || ^4.0.0
+    peerDependenciesMeta:
+      "@modelcontextprotocol/server":
+        optional: true
+
   "@ai-sdk/anthropic@3.0.137":
     resolution:
       { integrity: sha512-ROzkSDAl43OisGK7cWFySZ1jYQ8kjjE5Q0shDU5zPk5/8GatpQ5QEZ3TmSzJ2sCWzMxb1V1XdAvOslsSEhp2nQ== }
@@ -9708,6 +9721,10 @@ packages:
       { integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A== }
 
 snapshots:
+  "@agentclientprotocol/sdk@2.4.0(zod@4.4.3)":
+    dependencies:
+      zod: 4.4.3
+
   "@ai-sdk/anthropic@3.0.137(zod@4.4.3)":
     dependencies:
       "@ai-sdk/provider": 3.0.19

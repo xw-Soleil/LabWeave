@@ -20,6 +20,7 @@
     "sync-locales": "tsx ./scripts/sync-locales.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "2.4.0",
     "@ai-sdk/anthropic": "^3.0.137",
     "@ai-sdk/mcp": "^1.0.61",
     "@ai-sdk/openai-compatible": "^2.0.45",
