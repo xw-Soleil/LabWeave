@@ -7,6 +7,16 @@ use tauri_plugin_fs::FsExt;
 #[derive(Default)]
 pub struct ResearchRoot(Mutex<Option<PathBuf>>);
 
+impl ResearchRoot {
+    pub(crate) fn canonical_path(&self) -> Result<PathBuf, String> {
+        self.0
+            .lock()
+            .map_err(|e| format!("无法读取研究文件夹: {e}"))?
+            .clone()
+            .ok_or_else(|| "请先设置研究文件夹".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn set_research_root<R: Runtime>(
     app: AppHandle<R>,
@@ -156,6 +166,14 @@ mod tests {
         strip_windows_verbatim_prefix,
     };
     use std::path::Path;
+
+    #[test]
+    fn canonical_path_returns_registered_root_without_changing_it() {
+        let path = std::env::temp_dir().canonicalize().unwrap();
+        let root = super::ResearchRoot(std::sync::Mutex::new(Some(path.clone())));
+        assert_eq!(root.canonical_path().unwrap(), path);
+        assert_eq!(root.canonical_path().unwrap(), path);
+    }
 
     #[test]
     fn resolves_only_existing_directories() {

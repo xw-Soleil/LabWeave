@@ -85,7 +85,15 @@ fn write_stderr(content: String) {
 }
 
 #[tauri::command]
-fn exit(code: i32) {
+async fn exit(state: State<'_, local_agent::LocalAgentManager>, code: i32) -> Result<(), String> {
+    let manager = state.inner().clone();
+    if let Err(error) = tauri::async_runtime::spawn_blocking(move || manager.stop_all())
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|result| result)
+    {
+        eprintln!("[local-agent] 退出时清理失败: {error}");
+    }
     std::process::exit(code);
 }
 
@@ -180,10 +188,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, _event| {
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            if let Err(error) = app_handle
+                .state::<local_agent::LocalAgentManager>()
+                .stop_all()
+            {
+                eprintln!("[local-agent] 退出时清理失败: {error}");
+            }
+        }
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Opened { urls } = _event {
-            handle_os_open_urls(_app_handle, urls);
+        if let tauri::RunEvent::Opened { urls } = event {
+            handle_os_open_urls(app_handle, urls);
         }
     });
 }
