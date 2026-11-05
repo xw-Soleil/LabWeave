@@ -1408,6 +1408,8 @@ globalMenu:
     test: Test Function
 
 contextMenu:
+  alignObjects: Align and distribute
+  alignSelectionHint: Select at least two cards to use these actions
   createTextNode: Create Text Node
   createConnectPoint: Create Connection Point
   packToSection: Pack into Section
@@ -1598,6 +1600,9 @@ keys:
   wheeldown: Scroll Wheel Down
 
 keyBinds:
+  straightenSelectedEdges:
+    title: Straighten selected connections
+    description: Use straight paths for selected connections while keeping multiple relations separated. Supports undo.
   title: Key Bindings
   none: No Key Binding. Click to Bind
   test:
@@ -2727,6 +2732,33 @@ projectOwnership:
 
 # Research Workbench. Each work unit adds keys only to its own subsection.
 research:
+  fileMenu:
+    open: Open
+    reveal: Open containing folder
+    copyPath: Copy file path
+    copyRelativePath: Copy relative path
+    delete: Delete file…
+    deleteDescription: "Move {{name}} to the workbench trash? Open workspaces will be saved and closed first. Linked cards will show the file as missing until it is restored."
+    deleted: Moved to workbench trash
+    restore: Undo deletion
+    restoreLast: Restore last deleted file
+    restored: File restored
+    restoreConflict: A file already exists at the original location. Nothing was overwritten.
+    trashEmpty: No files to restore.
+    busy: The file is being saved or edited. Please retry.
+    outside: Only files in the current research folder are supported.
+    invalidTrash: The recovery record is invalid. The file has been preserved.
+  rename:
+    title: Rename
+    description: Enter a new file name. File references in your workspaces will be updated.
+    invalid: Enter a valid file name without path separators or special characters.
+    busy: A file is being saved or renamed. Close workspaces held by other windows and retry.
+    outside: Only files inside the current research folder can be renamed.
+    exists: A file with that name already exists.
+    incompleteScan: Cannot read the entire research folder. Rename was cancelled to preserve references.
+    changed: A workspace was edited or closed during rename. Please retry.
+    rollbackFailed: Rename and part of its rollback failed. Keep the current files and check the error details.
+    followupFailed: File renamed, but updating recent files or AI exports failed
   shell:
     title: Research Workbench
     rail:

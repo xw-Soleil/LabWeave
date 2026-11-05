@@ -1,6 +1,7 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
+import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
+import WelcomeWindow from "@/sub/WelcomeWindow";
 import { Tab } from "@/core/Tab";
 import {
   clampSidePanelWidth,
@@ -424,6 +425,8 @@ export default function DockedArea({
   const tabs = useAtomValue(tabsAtom);
   const activeGroupId = useAtomValue(activeGroupIdAtom);
   const research = isResearchShell();
+  const { t } = useTranslation("research");
+  const empty = research && !tabs.some((tab) => tab instanceof Project && !tab.closing);
   const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() =>
     research ? readSidePanelWidths() : { left: 0, right: 0 },
   );
@@ -549,7 +552,23 @@ export default function DockedArea({
       className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
       style={{ ...(leftInset ? { left: leftInset } : {}), ...(topInset ? { top: topInset } : {}) }}
     >
-      {root && renderNode(root)}
+      {empty ? (
+        <div className="flex h-full min-w-0">
+          {root && <div className="relative h-full w-72 max-w-[40%] shrink-0">{renderNode(root)}</div>}
+          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            <h1 className="text-lg font-semibold">{t("workspace.title")}</h1>
+            <p className="text-muted-foreground max-w-md text-sm">{t("drop.noBoard")}</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => emitResearchEvent("newWorkspace")}>{t("workspace.new")}</Button>
+              <Button variant="outline" onClick={() => WelcomeWindow.open()}>
+                {t("welcome.openOther")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        root && renderNode(root)
+      )}
     </div>
   );
 }

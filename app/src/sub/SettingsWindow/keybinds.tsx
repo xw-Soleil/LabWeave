@@ -783,6 +783,7 @@ export const shortcutKeysGroups: ShortcutKeysGroup[] = [
     icon: <Spline />,
     keys: [
       "reverseEdges",
+      "straightenSelectedEdges",
       "createUndirectedEdgeFromEntities",
       "createMTUEdgeConvex",
       "selectAllEdges",

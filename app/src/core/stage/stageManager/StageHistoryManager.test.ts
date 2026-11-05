@@ -29,6 +29,47 @@ vi.mock("@graphif/serializer", () => ({
 import { HistoryManager } from "./StageHistoryManager";
 
 describe("HistoryManager cleanup", () => {
+  it("undoes nested gesture edits in a single step", () => {
+    const project = {
+      stage: [{ text: "before" }],
+      emit: vi.fn(),
+      projectState: "saved",
+      stageManager: { updateReferences: vi.fn() },
+    };
+    const manager = new HistoryManager(project as never);
+    manager.batch(() => {
+      project.stage[0].text = "middle";
+      manager.recordStep();
+      manager.batch(() => {
+        project.stage[0].text = "after";
+        manager.recordStep();
+      });
+    });
+    expect(project.emit).toHaveBeenCalledTimes(1);
+    manager.undo();
+    expect(project.stage).toEqual([{ text: "before" }]);
+    manager.redo();
+    expect(project.stage).toEqual([{ text: "after" }]);
+  });
+
+  it("keeps renamed file references valid after undo and redo", () => {
+    const project = {
+      stage: [{ sourcePath: "old.pdf", text: "before" }],
+      emit: vi.fn(),
+      projectState: "saved",
+      stageManager: { updateReferences: vi.fn() },
+    };
+    const manager = new HistoryManager(project as never);
+    project.stage[0].text = "after";
+    manager.recordStep();
+    manager.rewriteSnapshots((stage) => {
+      for (const card of stage as { sourcePath: string }[]) card.sourcePath = "new.pdf";
+    });
+    manager.undo();
+    expect(project.stage).toEqual([{ sourcePath: "new.pdf", text: "before" }]);
+    manager.redo();
+    expect(project.stage).toEqual([{ sourcePath: "new.pdf", text: "after" }]);
+  });
   beforeEach(() => {
     settings.unwatch.mockReset();
     settings.watch.mockReset().mockImplementation((_key, callback) => {

@@ -304,7 +304,7 @@ async function loadStartFile() {
 /** 无外部文件时创建空草稿并弹出欢迎窗（类 Blender splash） */
 async function ensureStartupDraftAndWelcome() {
   if (isResearchShell()) {
-    // 恢复上次打开的工作区和面板；什么都没恢复时 startResearchSession 已留好一个草稿
+    // 欢迎页不创建工程；只有用户主动新建时才分配草稿。
     if (!(await startResearchSession())) WelcomeWindow.open();
     return;
   }

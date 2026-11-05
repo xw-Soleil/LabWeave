@@ -141,10 +141,7 @@ export const settingsSchema = z.object({
   aiAutoApproveMcpTools: z.boolean().default(false),
   aiApiFormat: projectToolSettingSchemas.aiApiFormat,
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
-  // 科研模式右键拖背景移动视野:原版的「斩断」会删掉划过的卡片和连线
-  mouseRightDragBackground: z
-    .union([z.literal("cut"), z.literal("moveCamera")])
-    .default(isResearchShell() ? "moveCamera" : "cut"),
+  mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
   // 科研模式拖动卡片时显示对齐参考线
   enableDragAutoAlign: z.boolean().default(isResearchShell()),
@@ -202,7 +199,7 @@ export const settingsSchema = z.object({
   cameraKeyboardScaleRate: z.number().min(0).max(3).default(0.2),
   rectangleSelectWhenRight: z.union([z.literal("intersect"), z.literal("contain")]).default("intersect"),
   rectangleSelectWhenLeft: z.union([z.literal("intersect"), z.literal("contain")]).default("contain"),
-  enableRightClickConnect: z.boolean().default(true),
+  enableRightClickConnect: z.boolean().default(!isResearchShell()),
   rightClickConnectEdgeType: z.union([z.literal("normal"), z.literal("arc")]).default("arc"),
   defaultEdgeLineType: projectToolSettingSchemas.defaultEdgeLineType,
   defaultEdgeArrowType: projectToolSettingSchemas.defaultEdgeArrowType,
@@ -240,9 +237,9 @@ export const settingsSchema = z.object({
   textNodeManualDefaultCharWidth: z.number().int().min(3).max(60).default(10),
   allowAddCycleEdge: z.boolean().default(false),
   enableDragNodeShakeDetachFromEdge: z.boolean().default(false),
-  autoLayoutWhenTreeGenerate: z.boolean().default(true),
+  autoLayoutWhenTreeGenerate: z.boolean().default(!isResearchShell()),
   autoLayoutWhenSectionCollapseToggle: z.boolean().default(false),
-  // 科研白板以自由摆放为主，探针连线和下面的 Tab 生长默认关掉，免得悄悄连出菱形结构
+  // Tab 创建新节点，不隐式连接附近已有节点。
   enableTreeGenerateConnectByProbe: z.boolean().default(!isResearchShell()),
   treeGenerateInheritParentColor: z.boolean().default(false),
   textNodeAutoFormatTreeWhenInput: z.boolean().default(false),
@@ -354,6 +351,7 @@ export const settingsSchema = z.object({
           { type: "item", id: "copy", icon: "Copy" },
           { type: "item", id: "paste", icon: "Clipboard" },
           { type: "item", id: "deleteSelectedStageObjects", icon: "Trash" },
+          { type: "item", id: "straightenSelectedEdges", icon: "MoveRight" },
           { type: "item", id: "undo", icon: "Undo" },
           { type: "item", id: "changeTagBySelected", icon: "Tag" },
         ],
@@ -1007,6 +1005,22 @@ for (const [rawKey, rawValue] of Object.entries(rawSettings)) {
   console.error(`设置项 ${rawKey} 格式错误，将使用默认值`, result.error);
   pendingSettingsLoadErrorKeys.add(rawKey);
   pendingSettingsLoadErrorValues.set(rawKey, rawValue);
+}
+
+if (isResearchShell() && rawSettings.researchContextMenusV1 !== true) {
+  savedSettings.enableRightClickConnect = false;
+  await store.set("enableRightClickConnect", false);
+  await store.set("researchContextMenusV1", true);
+  await store.save();
+}
+
+if (isResearchShell() && rawSettings.researchInteractionDefaultsV3 !== true) {
+  savedSettings.mouseRightDragBackground = "cut";
+  savedSettings.autoLayoutWhenTreeGenerate = false;
+  await store.set("mouseRightDragBackground", "cut");
+  await store.set("autoLayoutWhenTreeGenerate", false);
+  await store.set("researchInteractionDefaultsV3", true);
+  await store.save();
 }
 
 if (rawSettings.windowBackgroundAlpha === 0.28) {

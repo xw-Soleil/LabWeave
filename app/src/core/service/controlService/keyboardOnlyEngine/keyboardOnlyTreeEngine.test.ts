@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/service/Settings", () => ({ Settings: { autoLayoutWhenTreeGenerate: true } }));
-vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {} }));
+vi.mock("@/core/service/feedbackService/SoundService", () => ({
+  SoundService: { play: { treeGenerateDeepSoundFile: vi.fn() } },
+}));
 vi.mock("@/core/service/feedbackService/effectEngine/concrete/LineEffect", () => ({ LineEffect: class {} }));
 vi.mock("@/core/service/feedbackService/effectEngine/concrete/RectangleRenderEffect", () => ({
   RectangleRenderEffect: class {},
@@ -13,7 +15,15 @@ vi.mock("@/core/service/feedbackService/effectEngine/concrete/EntityAlignEffect"
 vi.mock("@/core/stage/stageObject/abstract/ConnectableEntity", () => ({ ConnectableEntity: class {} }));
 vi.mock("@/core/stage/stageObject/abstract/StageEntity", () => ({ Entity: class {} }));
 vi.mock("@/core/stage/stageObject/association/Edge", () => ({ Edge: class {} }));
-vi.mock("@/core/stage/stageObject/entity/TextNode", () => ({ TextNode: class {} }));
+vi.mock("@/core/stage/stageObject/entity/TextNode", () => ({
+  TextNode: class {
+    uuid = crypto.randomUUID();
+    constructor(_project: unknown, options: object) {
+      Object.assign(this, options);
+    }
+    setFontScaleLevel() {}
+  },
+}));
 vi.mock("@/core/stage/stageObject/entity/Section", () => ({ Section: class {} }));
 vi.mock("@/core/stage/stageObject/entity/FileCardNode", () => ({ FileCardNode: class {} }));
 vi.mock("@/core/stage/stageObject/entity/UrlNode", () => ({ UrlNode: class {} }));
@@ -23,7 +33,9 @@ import type { Project } from "@/core/Project";
 import { Settings } from "@/core/service/Settings";
 import type { TreeValidationResult } from "@/core/stage/stageManager/basicMethods/GraphMethods";
 import { AutoAlign } from "@/core/stage/stageManager/concreteMethods/StageAutoAlignManager";
-import type { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
+import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
+import { Vector } from "@graphif/data-structures";
+import { Rectangle } from "@graphif/shapes";
 import { toast } from "sonner";
 import { KeyboardOnlyTreeEngine } from "./keyboardOnlyTreeEngine";
 
@@ -125,5 +137,53 @@ describe("explicit tree formatting", () => {
     expect(toast.error).toHaveBeenCalledOnce();
     expect(vi.mocked(toast.error).mock.calls[0][0]).toContain("请修复上述问题后再进行树形格式化");
     expect(project.autoLayoutFastTree.autoLayoutFastTreeMode).not.toHaveBeenCalled();
+  });
+});
+
+describe("Tab child creation", () => {
+  it("creates and connects one editable child without rearranging the existing graph", () => {
+    vi.useFakeTimers();
+    try {
+      Settings.autoLayoutWhenTreeGenerate = false;
+      const parent = Object.assign(Object.create(ConnectableEntity.prototype), {
+        uuid: "parent",
+        isSelected: true,
+        collisionBox: { getRectangle: () => new Rectangle(Vector.getZero(), new Vector(100, 80)) },
+      });
+      const { project, engine } = setup({ roots: [parent], validation: tree });
+      Object.assign(project, {
+        historyManager: { batch: (action: () => void) => action() },
+        keyboardOnlyEngine: { isOpenning: () => true },
+        camera: { clearMoveCommander: vi.fn() },
+        stageManager: {
+          getConnectableEntity: () => [parent],
+          getTextNodes: () => [],
+          add: vi.fn(),
+          connectEntity: vi.fn(),
+          changeEdgesConnectLocation: vi.fn(),
+        },
+        effects: { addEffects: vi.fn() },
+        edgeRenderer: { getConnectedEffects: () => [] },
+        controllerUtils: { editTextNode: vi.fn() },
+      });
+      Object.assign(project.graphMethods, {
+        getIncomingEdges: () => [],
+        getOutgoingEdges: () => [],
+        getOneStepSuccessorSet: () => [],
+        getEdgesBetween: () => [],
+      });
+      engine.onDeepGenerateNode("子节点");
+      const runtime = project as unknown as Project;
+      expect(runtime.stageManager.add).toHaveBeenCalledOnce();
+      const child = vi.mocked(runtime.stageManager.add).mock.calls[0][0];
+      expect(runtime.stageManager.connectEntity).toHaveBeenCalledWith(parent, child);
+      expect(child.isSelected).toBe(true);
+      expect(parent.isSelected).toBe(false);
+      expect(project.autoAlign.autoLayoutSelectedFastTreeMode).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(runtime.controllerUtils.editTextNode).toHaveBeenCalledWith(child, true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

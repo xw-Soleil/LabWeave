@@ -9,13 +9,17 @@ import type { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { Section } from "@/core/stage/stageObject/entity/Section";
-import { Vector } from "@graphif/data-structures";
+import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
+import { EntityAlignEffect } from "@/core/service/feedbackService/effectEngine/concrete/EntityAlignEffect";
 import {
+  applyDragPlacement,
   boxesOverlap,
+  findAlignedPlacement,
   findNudgeOffset,
   findOverlappedEntities,
   nudgeEntitiesOutOfOverlap,
+  planDragPlacement,
   type Box,
 } from "./OverlapResolver";
 
@@ -28,6 +32,19 @@ function shifted(b: Box, offset: { x: number; y: number }): Box {
 }
 
 describe("findNudgeOffset", () => {
+  it("snaps only within the screen-scaled tolerance", () => {
+    const moving = box(5, 200, 100, 100),
+      target = box(0, 0, 100, 100);
+    expect(findAlignedPlacement([moving], [[target]], 8, true, false)).toEqual({ x: -5, y: 0 });
+    expect(findAlignedPlacement([moving], [[target]], 4, true, false)).toEqual({ x: 0, y: 0 });
+  });
+  it("chooses a collision-free drop while preserving a multi-selection's relative positions", () => {
+    const moving = [box(5, 0, 100, 100), box(5, 150, 100, 100)];
+    const obstacles = [box(0, 0, 100, 100), box(0, 400, 100, 100)];
+    const offset = findAlignedPlacement(moving, [obstacles, obstacles], 8, true, true)!;
+    for (const item of moving)
+      for (const obstacle of obstacles) expect(boxesOverlap(shifted(item, offset), obstacle)).toBe(false);
+  });
   it("does not move a group that overlaps nothing, touching edges included", () => {
     expect(findNudgeOffset([box(0, 0, 100, 100)], [[box(100, 0, 100, 100), box(0, 300, 50, 50)]])).toEqual({
       x: 0,
@@ -83,7 +100,11 @@ type FakeSection = FakeEntity & { children: FakeEntity[]; adjustLocationAndSize:
 
 function fakeStage() {
   const entities: Entity[] = [];
-  const project = { sectionMoveDepth: 0, stageManager: { getEntities: () => entities } } as unknown as Project;
+  const project = {
+    sectionMoveDepth: 0,
+    camera: { currentScale: 1 },
+    stageManager: { getEntities: () => entities },
+  } as unknown as Project;
 
   function entity(rectangle: Rectangle, extra: object = {}, prototype: object = {}): FakeEntity {
     const created = Object.assign(Object.create(prototype), {
@@ -128,6 +149,49 @@ function rect(left: number, top: number, width: number, height: number) {
 function collide(a: Entity, b: Entity): boolean {
   return a.collisionBox.getRectangle().isCollideWith(b.collisionBox.getRectangle());
 }
+
+describe("drag alignment guides", () => {
+  it("renders guides at the same position used when the dragged card is released", () => {
+    const stage = fakeStage();
+    const moving = stage.entity(rect(5, 200, 100, 100));
+    const target = stage.entity(rect(0, 0, 100, 100));
+    const plan = planDragPlacement(stage.project, [moving], true, false);
+    expect(plan.offset).toEqual({ x: -5, y: 0 });
+    expect(plan.alignment?.targets).toEqual([target.collisionBox.getRectangle()]);
+    const renderDashedLine = vi.fn();
+    const renderer = { transformWorld2View: (point: Vector) => point };
+    const previewProject = {
+      camera: { currentScale: 1 },
+      renderer,
+      curveRenderer: { renderDashedLine },
+      stageStyleManager: { currentStyle: { CollideBoxSelected: new Color(255, 0, 0) } },
+    } as unknown as Project;
+    EntityAlignEffect.fromEntity(plan.alignment!.bounds, plan.alignment!.targets[0]).render(previewProject);
+    expect(renderDashedLine).toHaveBeenCalledTimes(3);
+    expect(renderDashedLine.mock.calls[0].slice(0, 2)).toEqual([new Vector(0, 0), new Vector(0, 300)]);
+    applyDragPlacement(stage.project, plan);
+    expect(moving.collisionBox.getRectangle()).toEqual(plan.alignment!.bounds);
+    expect(target.moves).toEqual([]);
+  });
+
+  it("does not show a snap guide or snap when automatic alignment is disabled", () => {
+    const stage = fakeStage();
+    const moving = stage.entity(rect(5, 200, 100, 100));
+    stage.entity(rect(0, 0, 100, 100));
+    const plan = planDragPlacement(stage.project, [moving], false, false);
+    expect(plan.offset).toEqual({ x: 0, y: 0 });
+    expect(plan.alignment).toBeNull();
+  });
+
+  it("keeps guides with fractional positions and observes screen-space snapping tolerance", () => {
+    const stage = fakeStage();
+    const moving = stage.entity(rect(5.1, 200, 100, 100));
+    stage.entity(rect(0.1, 0, 100, 100));
+    expect(planDragPlacement(stage.project, [moving], true, false).alignment?.targets).toHaveLength(1);
+    stage.project.camera.currentScale = 2;
+    expect(planDragPlacement(stage.project, [moving], true, false).alignment).toBeNull();
+  });
+});
 
 describe("nudgeEntitiesOutOfOverlap", () => {
   it("moves only the given entity, without the push chain, and leaves the others alone", () => {

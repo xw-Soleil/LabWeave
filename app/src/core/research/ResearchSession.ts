@@ -2,7 +2,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Project } from "@/core/Project";
 import { RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
-import { closeEmptyDrafts, onNewDraft, onOpenFile } from "@/core/service/GlobalMenu";
+import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { ComponentTab, Tab } from "@/core/Tab";
 import { findTabGroupByTabId, getTabGroups, isFixedSideGroupId } from "@/core/TabGroup";
@@ -189,6 +189,20 @@ export function setResearchSessionTracking(enabled: boolean) {
   sessionTracking = enabled;
 }
 
+export function renameSessionWorkspace(oldPath: string, newPath: string) {
+  const before = toStoredPath(oldPath);
+  const after = toStoredPath(newPath);
+  unreachableWorkspaces = unreachableWorkspaces.map((path) => (samePath(path, before) ? after : path));
+  if (samePath(unreachableActive, before)) unreachableActive = after;
+  const session = Settings.researchSession;
+  Settings.researchSession = {
+    ...session,
+    openWorkspaces: session.openWorkspaces.map((path) => (samePath(path, before) ? after : path)),
+    active: samePath(session.active, before) ? after : session.active,
+  };
+  persistResearchSession();
+}
+
 /** 把当前打开的工作区和面板记进 Settings.researchSession（由 App 在标签页变化时调用） */
 export function persistResearchSession() {
   if (!sessionTracking) return;
@@ -210,8 +224,7 @@ export function persistResearchSession() {
 }
 
 /**
- * 启动时恢复上次的工作区和面板。顺序必须是先工作区（或草稿）再面板：
- * 没有主编辑区时打开侧栏面板，侧栏会变成整个布局的根。
+ * 启动时恢复上次的工作区和面板；没有工作区时由空状态提供主编辑区。
  * 返回 false 表示没有可恢复的内容，调用方应显示欢迎页。
  */
 export async function startResearchSession(): Promise<boolean> {
@@ -249,10 +262,6 @@ export async function startResearchSession(): Promise<boolean> {
   // 只缺几个而别的都在，说明是真删掉或挪走了，照常丢掉
   unreachableWorkspaces = rootUnavailable || reachable === 0 ? missing : [];
   unreachableActive = unreachableWorkspaces.some((path) => samePath(path, session.active)) ? session.active : "";
-
-  if (!store.get(tabsAtom).some((tab) => tab instanceof Project && !tab.closing)) {
-    await onNewDraft();
-  }
 
   for (const panel of ["files", "ai"] as const) {
     if (!session.panels[panel]) continue;

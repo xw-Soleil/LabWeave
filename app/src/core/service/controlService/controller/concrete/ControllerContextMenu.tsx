@@ -1,10 +1,13 @@
 import { Settings } from "@/core/service/Settings";
+import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { Vector } from "@graphif/data-structures";
 import { ControllerClass } from "../ControllerClass";
 
 export class ControllerContextMenuClass extends ControllerClass {
   /** view */
   private mouseDownLocation: Vector = new Vector(0, 0);
+  private dragging = false;
+  private pressed = false;
 
   public mousedown = (event: MouseEvent) => {
     if (event.button !== 2) {
@@ -12,14 +15,23 @@ export class ControllerContextMenuClass extends ControllerClass {
     }
 
     this.mouseDownLocation = new Vector(event.clientX, event.clientY);
+    this.dragging = false;
+    this.pressed = true;
+  };
+  public mousemove = (event: MouseEvent) => {
+    if (this.pressed && this.mouseDownLocation.distance(new Vector(event.clientX, event.clientY)) >= 5) {
+      this.dragging = true;
+    }
   };
   public mouseup = (event: MouseEvent) => {
-    if (event.button !== 2) {
+    if (event.button !== 2 || !this.pressed) {
       return; // Only handle right-clicks
     }
+    this.pressed = false;
 
     const mouseUpLocation = new Vector(event.clientX, event.clientY);
     const distance = this.mouseDownLocation.distance(mouseUpLocation);
+    if (this.dragging || distance >= 5) return;
 
     // 检查是否启用了右键点击连线功能并且有实体被选中
     const hasSelectedConnectableEntities = this.project.stageManager
@@ -40,7 +52,19 @@ export class ControllerContextMenuClass extends ControllerClass {
     }
 
     if (distance < 5) {
+      let clicked = this.project.controllerUtils.getClickedStageObject(worldLocation);
+      if (clicked instanceof Entity) {
+        clicked = this.project.sectionMethods.getOutermostLockedAncestorSection(clicked) ?? clicked;
+      }
+      if (clicked && !clicked.isSelected) {
+        for (const object of this.project.stageManager.getStageObjects()) object.isSelected = object === clicked;
+      }
       this.project.emit("contextmenu", this.project.canvas.viewToClient(mouseUpLocation));
     }
   };
+
+  public mouseMoveOutWindowForcedShutdown() {
+    this.pressed = false;
+    this.dragging = false;
+  }
 }

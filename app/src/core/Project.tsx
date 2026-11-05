@@ -212,6 +212,11 @@ export class Project extends Tab {
     this.projectOwnership.attach(ownership);
   }
 
+  /** Rename keeps the existing workspace/chat identity, unlike Save As. */
+  rebindRenamedFile(target: URI, write: () => Promise<void>) {
+    return this.projectOwnership.saveAs(target, write);
+  }
+
   get projectOwnerIdentity() {
     return this.projectOwnership.ownershipId;
   }
@@ -394,6 +399,7 @@ export class Project extends Tab {
     // TODO: stash
   }
   async save(options: { includeThumbnail?: boolean } = {}) {
+    if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (this.isDraft || this.isCollab) {
       // 科研模式：草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
       const researchRoot = isResearchShell() ? (await loadResearchFolder()).getRoot() : "";
@@ -420,6 +426,7 @@ export class Project extends Tab {
   }
 
   async saveAs(targetUri: URI, options: { includeThumbnail?: boolean } = {}) {
+    if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (targetUri.scheme !== "file") throw new Error("Project Save As requires a file URI");
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!fileSystemProvider) throw new Error("File Project provider is not registered");
@@ -495,6 +502,7 @@ export class Project extends Tab {
 
   // 反向引用数据
   public references: { sections: Record<string, string[]>; files: string[] } = { sections: {}, files: [] };
+  public fileMutationInProgress = false;
   public metadata: PrgMetadata = createDefaultMetadata(ProjectUpgrader.NLatestVersion);
   public readme?: string;
   public wasUpgraded = false;

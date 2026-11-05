@@ -19,8 +19,9 @@ export const activeDockedTabAtom = atom(
   (get) => {
     const activeTab = get(activeTabAtom);
     const root = get(tabGroupRootAtom);
-    if (activeTab?.layout === "docked" && findTabGroupByTabId(root, activeTab.id)) return activeTab;
-    const dockedTabs = get(tabsAtom).filter((tab) => tab.layout === "docked");
+    if (activeTab?.layout === "docked" && !activeTab.closing && findTabGroupByTabId(root, activeTab.id))
+      return activeTab;
+    const dockedTabs = get(tabsAtom).filter((tab) => tab.layout === "docked" && !tab.closing);
     const activeGroup = findTabGroup(root, get(activeGroupIdAtom) ?? "");
     const groupTab = dockedTabs.find((tab) => tab.id === activeGroup?.activeTabId);
     if (groupTab) return groupTab;
@@ -29,12 +30,16 @@ export const activeDockedTabAtom = atom(
   },
   (_get, set, tab: Tab | undefined) => set(lastActiveDockedTabAtom, tab),
 );
-export const resourceTabsAtom = atom((get) => get(tabsAtom).filter(isResourceTab));
+export const resourceTabsAtom = atom((get) =>
+  get(tabsAtom)
+    .filter((tab) => !tab.closing && isResourceTab(tab))
+    .filter(isResourceTab),
+);
 const lastActiveResourceTabAtom = atom<ResourceTab | undefined>(undefined);
 export const activeResourceTabAtom = atom(
   (get) => {
     const activeTab = get(activeTabAtom);
-    if (activeTab && isResourceTab(activeTab)) return activeTab;
+    if (activeTab && !activeTab.closing && isResourceTab(activeTab)) return activeTab;
     const resources = get(resourceTabsAtom);
     const lastActive = get(lastActiveResourceTabAtom);
     return lastActive && resources.includes(lastActive) ? lastActive : resources.at(-1);

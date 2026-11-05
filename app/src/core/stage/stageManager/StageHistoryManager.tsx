@@ -8,6 +8,7 @@ import _ from "lodash";
 import { toast } from "sonner";
 
 abstract class HistoryManagerAbs {
+  public abstract rewriteSnapshots(rewrite: (stage: unknown) => void): void;
   public abstract recordStep(): void;
   public abstract undo(): void;
   public abstract redo(): void;
@@ -16,6 +17,10 @@ abstract class HistoryManagerAbs {
 }
 
 class HistoryManagerTimeEfficient extends HistoryManagerAbs {
+  rewriteSnapshots(rewrite: (stage: unknown) => void) {
+    rewrite(this.initialStage);
+    this.history.forEach(rewrite);
+  }
   /**
    * 初始化的舞台数据
    */
@@ -192,6 +197,18 @@ class HistoryManagerTimeEfficient extends HistoryManagerAbs {
 }
 
 class HistorymanagerMemoryEfficient extends HistoryManagerAbs {
+  rewriteSnapshots(rewrite: (stage: unknown) => void) {
+    let data = _.cloneDeep(this.initialStage);
+    const snapshots = this.deltas.map((delta) => {
+      data = patch(data, _.cloneDeep(delta)) as typeof data;
+      return _.cloneDeep(data);
+    });
+    rewrite(this.initialStage);
+    snapshots.forEach(rewrite);
+    this.deltas = snapshots.map((snapshot, index) =>
+      diff(index === 0 ? this.initialStage : snapshots[index - 1], snapshot),
+    );
+  }
   /**
    * 历史记录列表数组
    * 每一项都是变化的delta，不是完整的舞台数据！
@@ -388,6 +405,26 @@ class HistorymanagerMemoryEfficient extends HistoryManagerAbs {
  */
 @service("historyManager")
 export class HistoryManager extends HistoryManagerAbs {
+  public rewriteSnapshots(rewrite: (stage: unknown) => void): void {
+    this.memoryEfficient.rewriteSnapshots(rewrite);
+    this.timeEfficient.rewriteSnapshots(rewrite);
+  }
+  private batchDepth = 0;
+  private batchChanged = false;
+
+  /** A pointer gesture can invoke several stage commands but is one undo step. */
+  public batch<T>(action: () => T): T {
+    this.batchDepth++;
+    try {
+      return action();
+    } finally {
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.batchChanged) {
+        this.batchChanged = false;
+        this.recordStep();
+      }
+    }
+  }
   private memoryEfficient: HistoryManagerAbs;
   private timeEfficient: HistoryManagerAbs;
   private readonly unwatchHistoryManagerMode: () => void;
@@ -418,6 +455,10 @@ export class HistoryManager extends HistoryManagerAbs {
    * 记录一步骤
    */
   public recordStep(): void {
+    if (this.batchDepth > 0) {
+      this.batchChanged = true;
+      return;
+    }
     this.currentManager.recordStep();
     this.project.emit("stage-commit");
   }

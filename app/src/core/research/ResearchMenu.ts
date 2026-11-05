@@ -82,11 +82,10 @@ const RESEARCH_DISABLED_KEYBIND_IDS_V1 = [
  * 科研模式下默认清空键位并停用的快捷键：
  * 和新快捷键或系统快捷键撞车（Cmd+N、Cmd+2、Cmd+Tab、Cmd+W），Cmd+0 会把白板变透明，
  * 或者会往研究文件夹里写文件，或者会打开一个带绘图工具的 AI 窗口；
- * Tab / E Tab / \ 树形生长会自动新建节点并连线，研究白板以自由摆放为主，用不上。
+ * 保留 Tab 创建子节点；E Tab 和横向树生长仍默认停用。
  */
 export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
   ...RESEARCH_DISABLED_KEYBIND_IDS_V1,
-  "generateNodeTreeWithDeepMode",
   "generateNodeTreeWithDeepModeEditEdge",
   "generateNodeTreeWithBroadMode",
   "checkoutClassroomMode",
@@ -97,6 +96,19 @@ export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
  * 早先的版本只存一个 true，对应 RESEARCH_DISABLED_KEYBIND_IDS_V1；现在存改写过的 id 列表。
  */
 export const RESEARCH_KEYBIND_DEFAULTS_MARKER = "__researchShellKeyBindDefaultsApplied";
+
+export function shouldRestoreChildKeybind(id: string, saved: unknown, migrated: unknown): boolean {
+  if (migrated === true || id !== "generateNodeTreeWithDeepMode") return false;
+  return (
+    saved === "" ||
+    (!!saved &&
+      typeof saved === "object" &&
+      "key" in saved &&
+      saved.key === "" &&
+      "isEnabled" in saved &&
+      saved.isEnabled === false)
+  );
+}
 
 /** 这次启动还要按科研默认键位改写的快捷键：在停用清单里、但标记里还没记过的 */
 export function pendingResearchKeyBindDefaults(marker: unknown): Set<string> {
@@ -128,6 +140,7 @@ export const RESEARCH_COMMAND_IDS: ReadonlySet<string> = new Set([
   "searchText",
   "resetView",
   "resetViewAll",
+  "straightenSelectedEdges",
   "toggleFullscreen",
 ]);
 

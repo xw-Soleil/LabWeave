@@ -116,7 +116,7 @@ function constrainRect(rect: Rectangle) {
 }
 
 function firstAvailableDockedTab() {
-  const tabs = store.get(tabsAtom);
+  const tabs = store.get(tabsAtom).filter((tab) => !tab.closing);
   for (const group of getTabGroups(store.get(tabGroupRootAtom))) {
     const tab =
       tabs.find((candidate) => candidate.id === group.activeTabId) ??
@@ -343,15 +343,16 @@ export namespace TabWorkspace {
           const remaining = store.get(tabsAtom).filter((candidate) => candidate !== tab);
           store.set(tabsAtom, remaining);
           if (store.get(activeTabAtom) === tab) {
-            const next = remaining.reduce<Tab | undefined>(
-              (highest, candidate) => (!highest || candidate.zIndex > highest.zIndex ? candidate : highest),
-              undefined,
-            );
+            const next = remaining
+              .filter((candidate) => !candidate.closing)
+              .reduce<
+                Tab | undefined
+              >((highest, candidate) => (!highest || candidate.zIndex > highest.zIndex ? candidate : highest), undefined);
             store.set(activeTabAtom, next);
             if (next && isResourceTab(next)) store.set(activeResourceTabAtom, next);
           }
           const docked = firstAvailableDockedTab();
-          if (docked) store.set(activeDockedTabAtom, docked);
+          store.set(activeDockedTabAtom, docked);
         });
         closeTimers.delete(id);
         resolve();

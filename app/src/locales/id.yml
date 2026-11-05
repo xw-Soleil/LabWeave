@@ -133,6 +133,8 @@ globalMenu:
     test: Fitur Tes
 
 contextMenu:
+  alignObjects: Ratakan dan distribusikan
+  alignSelectionHint: Pilih setidaknya dua kartu untuk menggunakan tindakan ini
   createTextNode: Buat Node Teks
   createConnectPoint: Buat Titik Massa
   packToSection: Kemas sebagai Kotak
@@ -1833,6 +1835,9 @@ visualSettingsGroup:
     title: Pengaturan Latar Belakang
 
 keyBinds:
+  straightenSelectedEdges:
+    title: Luruskan koneksi terpilih
+    description: Luruskan koneksi terpilih dengan tetap memisahkan beberapa relasi. Dapat dibatalkan.
   title: Pengikatan Pintasan
   none: Tidak Ada Pintasan
   test:
@@ -2573,3 +2578,32 @@ projectOwnership:
   releaseFailedMessage: "Proyek telah ditutup, tetapi kunci kepemilikannya tidak dapat dilepaskan. Pilih Coba lagi untuk mencoba lagi.\n\nKesalahan: {{error}}"
   retry: Coba lagi
   ok: OK
+
+research:
+  fileMenu:
+    open: Buka
+    reveal: Buka folder lokasi
+    copyPath: Salin jalur file
+    copyRelativePath: Salin jalur relatif
+    delete: Hapus file…
+    deleteDescription: "Pindahkan {{name}} ke tempat sampah ruang kerja? Ruang kerja terbuka akan disimpan dan ditutup. Kartu terkait menampilkan file hilang hingga dipulihkan."
+    deleted: Dipindahkan ke tempat sampah ruang kerja
+    restore: Batalkan penghapusan
+    restoreLast: Pulihkan file terakhir yang dihapus
+    restored: File dipulihkan
+    restoreConflict: File dengan nama yang sama sudah ada. Tidak ada yang ditimpa.
+    trashEmpty: Tidak ada file untuk dipulihkan.
+    busy: File sedang disimpan atau diedit. Coba lagi.
+    outside: Hanya file di folder riset saat ini yang didukung.
+    invalidTrash: Catatan pemulihan rusak. File tetap disimpan.
+  rename:
+    title: Ganti nama
+    description: Masukkan nama baru. Referensi file di ruang kerja juga diperbarui.
+    invalid: Masukkan nama file yang valid.
+    busy: File sedang disimpan atau diganti namanya. Coba lagi nanti.
+    outside: Hanya file dalam folder riset yang dapat diganti namanya.
+    exists: File dengan nama tersebut sudah ada.
+    incompleteScan: Folder riset tidak dapat dibaca seluruhnya. Penggantian nama dibatalkan.
+    changed: Ruang kerja berubah atau ditutup. Coba lagi.
+    rollbackFailed: Penggantian nama dan sebagian pemulihan gagal. Simpan file saat ini dan periksa kesalahan.
+    followupFailed: Nama file berubah, tetapi pembaruan riwayat atau ekspor AI gagal

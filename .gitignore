@@ -37,3 +37,6 @@ backup_*
 graphify-out
 test.prg
 
+
+# TypeScript 增量编译缓存
+*.tsbuildinfo

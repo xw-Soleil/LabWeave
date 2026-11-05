@@ -12,6 +12,7 @@ import { toggleWindowAlwaysOnTop, WINDOW_PIN_KEYBIND_ID } from "@/core/service/W
 import { PenStrokeMethods } from "@/core/stage/stageManager/basicMethods/PenStrokeMethods";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
+import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
@@ -918,6 +919,13 @@ export const allKeyBinds: KeyBindItem[] = [
   },
 
   /*------- 边反向 -------*/
+  {
+    id: "straightenSelectedEdges",
+    defaultKey: "",
+    icon: MoveRight,
+    when: (project) => !!project?.stageManager.getSelectedAssociations().some((edge) => edge instanceof Edge),
+    onPress: (project) => project!.stageManager.straightenSelectedEdges(),
+  },
   {
     id: "reverseEdges",
     defaultKey: "C-t",

@@ -229,10 +229,11 @@ export class StageManager {
     }
     this.rebuildSectionRuntimeTree();
 
-    // 以下是LineEdge几何组偏移索引的更新
-    // 几何组 key：无向，(minNodeId, maxNodeId, epAtMin, epAtMax)
-    // A→B 和 B→A 端点位置相同时归入同一几何组，统一分配 shiftingIndex
-    const rateKey = (v: Vector): string => `${v.x.toFixed(2)},${v.y.toFixed(2)}`;
+    // 折叠后共用可见端点、以及方向相反的边也需要分开；锚点不同仍可能画在同一路径上。
+    const visibleEndpoint = (entity: ConnectableEntity): ConnectableEntity => {
+      while (entity.isHiddenBySectionCollapse && entity.parentSection) entity = entity.parentSection;
+      return entity;
+    };
     const geoGroups = new Map<string, LineEdge[]>();
 
     for (const edge of this.getLineEdges()) {
@@ -241,14 +242,14 @@ export class StageManager {
         edge.shiftingIndex = 0;
         continue;
       }
-      const idA = edge.source.uuid;
-      const idB = edge.target.uuid;
+      const idA = visibleEndpoint(edge.source).uuid;
+      const idB = visibleEndpoint(edge.target).uuid;
       let key: string;
       if (idA <= idB) {
-        key = `${idA}|${idB}|${rateKey(edge.sourceRectangleRate)}|${rateKey(edge.targetRectangleRate)}`;
+        key = `${idA}|${idB}`;
       } else {
         // B→A 方向：交换端点对应关系，使 A→B 与 B→A 落入同一几何组
-        key = `${idB}|${idA}|${rateKey(edge.targetRectangleRate)}|${rateKey(edge.sourceRectangleRate)}`;
+        key = `${idB}|${idA}`;
       }
       if (!geoGroups.has(key)) geoGroups.set(key, []);
       geoGroups.get(key)!.push(edge);
@@ -867,6 +868,34 @@ export class StageManager {
       return;
     }
     this.project.nodeConnector.reverseEdges(selectedEdges);
+  }
+
+  straightenSelectedEdges() {
+    const edges = this.getSelectedAssociations().filter((edge): edge is Edge => edge instanceof Edge);
+    if (edges.length === 0) return;
+    for (const edge of edges) {
+      if (edge.source === edge.target) continue;
+      if (edge instanceof LineEdge) {
+        edge.pathStyle = "straight";
+      } else {
+        const replacement = new LineEdge(this.project, {
+          uuid: edge.uuid,
+          associationList: [edge.source, edge.target],
+          text: edge.text,
+          color: edge.color,
+          sourceRectangleRate: edge.sourceRectangleRate,
+          targetRectangleRate: edge.targetRectangleRate,
+          pathStyle: "straight",
+          lineType: "lineType" in edge ? String(edge.lineType) : "solid",
+          arrowType: "arrowType" in edge ? String(edge.arrowType) : "default",
+        });
+        replacement.isSelected = true;
+        this.delete(edge);
+        this.add(replacement);
+      }
+    }
+    this.updateReferences();
+    this.project.historyManager.recordStep();
   }
 
   // addSerializedData(serializedData: Serialized.File, diffLocation = new Vector(0, 0)) {

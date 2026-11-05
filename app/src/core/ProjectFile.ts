@@ -1,10 +1,49 @@
 import type { PrgMetadata } from "@/types/metadata";
 import { createDefaultMetadata, isValidMetadata } from "@/types/metadata";
-import type { Decoder } from "@msgpack/msgpack";
-import { BlobWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
+import { decode, encode, type Decoder } from "@msgpack/msgpack";
+import { BlobWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
 import mime from "mime";
 
 export const LATEST_PROJECT_VERSION = "2.7.0";
+
+/** Preserve attachments and unknown ZIP entries when updating a closed workspace's references. */
+export async function rewriteProjectFile(
+  content: Uint8Array,
+  rewrite: (stage: unknown) => void,
+  workspacePath?: string,
+): Promise<{ content: Uint8Array; changed: boolean }> {
+  const reader = new ZipReader(new Uint8ArrayReader(content));
+  const output = new Uint8ArrayWriter();
+  const writer = new ZipWriter(output);
+  let changed = false;
+  try {
+    for (const entry of await reader.getEntries()) {
+      if (entry.directory) {
+        await writer.add(entry.filename, undefined, { directory: true });
+        continue;
+      }
+      let bytes = await entry.getData!(new Uint8ArrayWriter());
+      if (
+        entry.filename === "stage.msgpack" ||
+        (workspacePath !== undefined && entry.filename === "metadata.msgpack")
+      ) {
+        const value = decode(bytes);
+        const before = JSON.stringify(value);
+        if (entry.filename === "stage.msgpack") rewrite(value);
+        else if (isValidMetadata(value) && value.workbench) value.workbench.workspacePath = workspacePath;
+        if (JSON.stringify(value) !== before) {
+          bytes = encode(value);
+          changed = true;
+        }
+      }
+      await writer.add(entry.filename, new Uint8ArrayReader(bytes), { level: 0 });
+    }
+  } finally {
+    await reader.close();
+    await writer.close();
+  }
+  return { content: changed ? await output.getData() : content, changed };
+}
 
 export type ParsedProjectFile = {
   serializedStageObjects: any[];

@@ -39,13 +39,14 @@ export namespace EdgeCollisionBoxGetter {
    * @param edge
    */
   export function getCollisionBox(edge: LineEdge): CollisionBox {
+    const style = edge.pathStyle === "inherit" ? currentStyle : edge.pathStyle;
     const bodyLine = edge.bodyLine;
     const cached = cache.get(edge);
     const edgeWidth = edge.edgeWidth;
     if (
       cached &&
       cached.bodyLine === bodyLine &&
-      cached.style === currentStyle &&
+      cached.style === style &&
       cached.shiftingIndex === edge.shiftingIndex &&
       cached.autoWidth === Settings.enableAutoEdgeWidth &&
       cached.edgeWidth === edgeWidth &&
@@ -54,10 +55,10 @@ export namespace EdgeCollisionBoxGetter {
     ) {
       return cached.box;
     }
-    const box = computeCollisionBox(edge);
+    const box = computeCollisionBox(edge, style);
     cache.set(edge, {
       bodyLine,
-      style: currentStyle,
+      style,
       shiftingIndex: edge.shiftingIndex,
       autoWidth: Settings.enableAutoEdgeWidth,
       edgeWidth,
@@ -68,17 +69,17 @@ export namespace EdgeCollisionBoxGetter {
     return box;
   }
 
-  function computeCollisionBox(edge: LineEdge): CollisionBox {
+  function computeCollisionBox(edge: LineEdge, style: Settings["lineStyle"]): CollisionBox {
     if (edge.source.uuid === edge.target.uuid) {
       // 是一个自环，碰撞箱是圆形
       const sourceEntityRect = edge.source.collisionBox.getRectangle();
       return new CollisionBox([new Circle(sourceEntityRect.location, sourceEntityRect.size.y / 2)]);
     } else {
-      if (currentStyle === "bezier") {
+      if (style === "bezier") {
         return getBezierCollisionBox(edge);
-      } else if (currentStyle === "straight") {
+      } else if (style === "straight") {
         return getStraightCollisionBox(edge);
-      } else if (currentStyle === "vertical") {
+      } else if (style === "vertical") {
         return new CollisionBox([edge.bodyLine]);
       } else {
         return new CollisionBox([edge.bodyLine]);

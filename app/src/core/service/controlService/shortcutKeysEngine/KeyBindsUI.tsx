@@ -1,6 +1,7 @@
 import { Project } from "@/core/Project";
 import {
   pendingResearchKeyBindDefaults,
+  shouldRestoreChildKeybind,
   RESEARCH_DISABLED_KEYBIND_IDS,
   RESEARCH_KEYBIND_DEFAULTS_MARKER,
   RESEARCH_SHELL_SCOPE_KEYBIND_IDS,
@@ -220,6 +221,7 @@ export namespace KeyBindsUI {
    */
   export async function registerAllUIKeyBinds() {
     const store = await createStore("keybinds2.json");
+    const childKeyMigrated = await store.get("__researchChildKeyRestoredV3");
     // 默认键位第一次启动就写进了 keybinds2.json，改代码里的默认值管不到已有的文件；
     // 所以以科研模式启动时，把停用清单里还没改写过的那几个改成科研模式的默认值，之后尊重用户自己的修改
     const pendingResearchDefaults = isResearchShell()
@@ -238,7 +240,10 @@ export namespace KeyBindsUI {
         }
         isEnabled = keybind.defaultEnabled !== false;
         await store.set(keybind.id, { key, isEnabled });
-      } else if (pendingResearchDefaults.has(keybind.id)) {
+      } else if (
+        pendingResearchDefaults.has(keybind.id) ||
+        (isResearchShell() && shouldRestoreChildKeybind(keybind.id, savedData, childKeyMigrated))
+      ) {
         key = isMac ? transEmacsKeyWinToMac(keybind.defaultKey) : keybind.defaultKey;
         isEnabled = keybind.defaultEnabled !== false;
         await store.set(keybind.id, { key, isEnabled });
@@ -267,6 +272,7 @@ export namespace KeyBindsUI {
     if (pendingResearchDefaults.size > 0) {
       await store.set(RESEARCH_KEYBIND_DEFAULTS_MARKER, [...RESEARCH_DISABLED_KEYBIND_IDS]);
     }
+    if (isResearchShell()) await store.set("__researchChildKeyRestoredV3", true);
     await store.save();
   }
   /**
@@ -604,6 +610,29 @@ export namespace KeyBindsUI {
     const activeProject = getFocusedProject();
 
     enqueue(event);
+    // Tab's native focus change must be cancelled before any awaited interceptor.
+    if (
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !event.isComposing
+    ) {
+      const binding = getUIKeyBind("generateNodeTreeWithDeepMode");
+      if (
+        binding?.isEnabled &&
+        binding.key === "tab" &&
+        activeProject?.keyboardOnlyEngine.isOpenning() &&
+        activeProject.stageManager.getConnectableEntity().filter((node) => node.isSelected).length === 1
+      ) {
+        event.preventDefault();
+        if (event.repeat) {
+          userEventQueue.clear();
+          return;
+        }
+      }
+    }
     if (await interceptInput(event)) {
       event.preventDefault();
       return;

@@ -24,9 +24,11 @@ export class LineEdge extends Edge {
   public lineType: string = "solid";
   @serializable
   public arrowType: string = "default";
+  @serializable
+  public pathStyle: "inherit" | "straight" | "bezier" | "vertical" = "inherit";
 
   get collisionBox(): CollisionBox {
-    return EdgeCollisionBoxGetter.getCollisionBox(this);
+    return EdgeCollisionBoxGetter.getCollisionBox(this.project.edgeRenderer?.getEdgeView(this) ?? this);
   }
 
   /**
@@ -54,6 +56,7 @@ export class LineEdge extends Edge {
       targetRectangleRate = Vector.same(0.5),
       lineType = "solid",
       arrowType = "default",
+      pathStyle = "inherit" as LineEdge["pathStyle"],
     },
     /** true表示解析状态，false表示解析完毕 */
     public unknown = false,
@@ -67,6 +70,7 @@ export class LineEdge extends Edge {
     this.targetRectangleRate = targetRectangleRate;
     this.lineType = lineType;
     this.arrowType = arrowType;
+    this.pathStyle = pathStyle;
 
     this.adjustSizeByText();
   }
@@ -128,10 +132,9 @@ export class LineEdge extends Edge {
       this.source.uuid <= this.target.uuid
         ? this.target.collisionBox.getRectangle().getCenter()
         : this.source.collisionBox.getRectangle().getCenter();
+    const direction = canonicalTo.subtract(canonicalFrom);
     return midPoint.add(
-      canonicalTo
-        .subtract(canonicalFrom)
-        .normalize()
+      (direction.magnitude() === 0 ? new Vector(1, 0) : direction.normalize())
         .rotateDegrees(90)
         .multiply(this._shiftingIndex * BASE_OFFSET),
     );

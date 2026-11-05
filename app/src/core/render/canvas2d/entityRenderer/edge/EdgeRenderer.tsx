@@ -59,17 +59,18 @@ export class EdgeRenderer {
     }
 
     edge = this.getEdgeView(edge);
+    const renderer = this.rendererFor(edge);
 
     const source = edge.source;
     const target = edge.target;
 
     if (source.uuid === target.uuid) {
-      this.currentRenderer.renderCycleState(edge);
+      renderer.renderCycleState(edge);
     } else {
       if (edge.shiftingIndex !== 0) {
-        this.currentRenderer.renderShiftingState(edge);
+        renderer.renderShiftingState(edge);
       } else {
-        this.currentRenderer.renderNormalState(edge);
+        renderer.renderNormalState(edge);
       }
     }
 
@@ -91,7 +92,7 @@ export class EdgeRenderer {
         2 * this.project.camera.currentScale,
       );
       // 画一个虚线
-      if (this.currentRenderer instanceof StraightEdgeRenderer) {
+      if (renderer instanceof StraightEdgeRenderer) {
         this.project.curveRenderer.renderDashedLine(
           this.project.renderer.transformWorld2View(edge.sourceLocation),
           this.project.renderer.transformWorld2View(edge.targetLocation),
@@ -152,18 +153,34 @@ export class EdgeRenderer {
     }
 
     if (edge.source.isHiddenBySectionCollapse) {
-      return new LineEdge(this.project, {
+      const view = new LineEdge(this.project, {
         associationList: [this.getMinNonCollapseParentSection(edge.source), edge.target],
+        targetRectangleRate: edge.targetRectangleRate,
         text: edge.text,
         uuid: edge.uuid,
+        color: edge.color,
+        lineType: edge.lineType,
+        arrowType: edge.arrowType,
+        pathStyle: edge.pathStyle,
       });
+      view.shiftingIndex = edge.shiftingIndex;
+      view.isSelected = edge.isSelected;
+      return view;
     }
     if (edge.target.isHiddenBySectionCollapse) {
-      return new LineEdge(this.project, {
+      const view = new LineEdge(this.project, {
         associationList: [edge.source, this.getMinNonCollapseParentSection(edge.target)],
+        sourceRectangleRate: edge.sourceRectangleRate,
         text: edge.text,
         uuid: edge.uuid,
+        color: edge.color,
+        lineType: edge.lineType,
+        arrowType: edge.arrowType,
+        pathStyle: edge.pathStyle,
       });
+      view.shiftingIndex = edge.shiftingIndex;
+      view.isSelected = edge.isSelected;
+      return view;
     }
     return edge;
   }
@@ -173,15 +190,24 @@ export class EdgeRenderer {
       return <></>;
     }
 
+    edge = this.getEdgeView(edge);
+    const renderer = this.rendererFor(edge);
     if (edge.source.uuid === edge.target.uuid) {
-      return this.currentRenderer.getCycleStageSvg(edge);
+      return renderer.getCycleStageSvg(edge);
     } else {
       if (edge.shiftingIndex !== 0) {
-        return this.currentRenderer.getShiftingStageSvg(edge);
+        return renderer.getShiftingStageSvg(edge);
       } else {
-        return this.currentRenderer.getNormalStageSvg(edge);
+        return renderer.getNormalStageSvg(edge);
       }
     }
+  }
+
+  private rendererFor(edge: LineEdge): EdgeRendererClass {
+    if (edge.pathStyle === "straight") return this.project.straightEdgeRenderer;
+    if (edge.pathStyle === "bezier") return this.project.symmetryCurveEdgeRenderer;
+    if (edge.pathStyle === "vertical") return this.project.verticalPolyEdgeRenderer;
+    return this.currentRenderer;
   }
 
   renderVirtualEdge(startNode: ConnectableEntity, mouseLocation: Vector, sourceRectangleRate?: Vector) {

@@ -182,6 +182,8 @@ globalMenu:
     reportBug: '回報 Bug: 在 Issue #487 中留言'
     test: 測試功能
 contextMenu:
+  alignObjects: 對齊與分布
+  alignSelectionHint: 選取至少兩張卡片後可用
   createTextNode: 建立文字節點
   createConnectPoint: 建立質點
   packToSection: 打包為框
@@ -1778,6 +1780,9 @@ visualSettingsGroup:
   background:
     title: 背景設定
 keyBinds:
+  straightenSelectedEdges:
+    title: 拉直選取連線
+    description: 將選取的曲線改為直線，多條關係保留間距。支援復原。
   title: 快速鍵綁定
   none: 未綁定快捷鍵
   test:
@@ -2508,3 +2513,32 @@ projectOwnership:
   releaseFailedMessage: "專案已關閉，但無法釋放它的所有權鎖。請按「重試」再試一次。\n\n錯誤資訊：{{error}}"
   retry: 重試
   ok: 確定
+
+research:
+  fileMenu:
+    open: 開啟
+    reveal: 開啟所在資料夾
+    copyPath: 複製檔案路徑
+    copyRelativePath: 複製相對路徑
+    delete: 刪除檔案…
+    deleteDescription: "將「{{name}}」移入工作台回收站？開啟的工作區會先儲存並關閉。引用此檔案的卡片會顯示檔案缺失，還原後可繼續使用。"
+    deleted: 已移入工作台回收站
+    restore: 復原刪除
+    restoreLast: 還原最近刪除的檔案
+    restored: 檔案已還原
+    restoreConflict: 原位置已有同名檔案，未覆寫。
+    trashEmpty: 沒有可還原的檔案。
+    busy: 檔案正在儲存或編輯，請稍後重試。
+    outside: 只能操作目前研究資料夾內的檔案。
+    invalidTrash: 回收紀錄損壞，檔案已保留。
+  rename:
+    title: 重新命名
+    description: 輸入新檔名。白板中的檔案引用也會更新。
+    invalid: 請輸入有效檔名。
+    busy: 正在儲存或重新命名，請稍後重試。
+    outside: 只能重新命名研究資料夾內的檔案。
+    exists: 同名檔案已存在。
+    incompleteScan: 無法完整讀取研究資料夾，已取消重新命名。
+    changed: 工作區已被編輯或關閉，請重試。
+    rollbackFailed: 重新命名及部分還原失敗，請保留目前檔案並檢查錯誤。
+    followupFailed: 檔案已重新命名，但更新最近紀錄或 AI 匯出失敗

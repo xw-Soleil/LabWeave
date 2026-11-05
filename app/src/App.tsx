@@ -16,7 +16,7 @@ import {
 import { isResearchShell } from "@/core/research/ResearchShell";
 import { isResourceTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { GlobalMenu, onNewDraft } from "@/core/service/GlobalMenu";
+import { GlobalMenu } from "@/core/service/GlobalMenu";
 import { flushSettingsLoadErrors, Settings } from "@/core/service/Settings";
 import { Telemetry } from "@/core/service/Telemetry";
 import { Themes } from "@/core/service/Themes";
@@ -31,7 +31,6 @@ import {
   isWindowMaxsizedAtom,
   tabsAtom,
 } from "@/state";
-import WelcomeWindow from "@/sub/WelcomeWindow";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -304,20 +303,6 @@ export default function App() {
   useEffect(() => {
     if (isResearchShell()) persistResearchSession();
   }, [tabs, activeResourceTab]);
-
-  // 关掉最后一个 Project 后：再创建空草稿并弹出欢迎窗（启动时无 Project 由 main 处理，这里只响应 true→false）
-  const previousHadProjectRef = useRef(tabs.some((tab) => tab instanceof Project && !tab.closing));
-  useEffect(() => {
-    const hasOpenProject = tabs.some((tab) => tab instanceof Project && !tab.closing);
-    const previousHadProject = previousHadProjectRef.current;
-    previousHadProjectRef.current = hasOpenProject;
-    if (previousHadProject && !hasOpenProject) {
-      void (async () => {
-        await onNewDraft();
-        WelcomeWindow.open();
-      })();
-    }
-  }, [tabs]);
 
   useEffect(() => {
     let unlisten1: () => void;

@@ -90,6 +90,20 @@ describe("TabWorkspace close lifecycle", () => {
     expect(closed).toBe(true);
   });
 
+  it("closes every resource without leaving an active or newly created draft", async () => {
+    for (let index = 0; index < 20; index++) {
+      const tab = TabWorkspace.open(new TestResourceTab({}));
+      const close = TabWorkspace.close(tab.id);
+      const duplicate = TabWorkspace.close(tab.id);
+      expect(store.get(activeResourceTabAtom)).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(500);
+      await Promise.all([close, duplicate]);
+      expect(store.get(tabsAtom)).toEqual([]);
+      expect(store.get(activeDockedTabAtom)).toBeUndefined();
+      expect(store.get(activeTabAtom)).toBeUndefined();
+    }
+  });
+
   it("waits for tab removal when disposal finishes first", async () => {
     const tab = openTestTab();
     const dispose = vi.spyOn(tab, "dispose").mockResolvedValue();

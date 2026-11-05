@@ -48,6 +48,15 @@ beforeEach(() => {
 });
 
 describe("edge geometry cache", () => {
+  it("invalidates hit geometry for a per-edge style without changing other edges", () => {
+    const { edge } = setup();
+    const other = setup().edge;
+    const before = edge.collisionBox,
+      otherBefore = other.collisionBox;
+    edge.pathStyle = "straight";
+    expect(edge.collisionBox).not.toBe(before);
+    expect(other.collisionBox).toBe(otherBefore);
+  });
   it("clips non-center text anchors to node boundaries", () => {
     const { edge } = setup();
     edge.sourceRectangleRate = new Vector(0.25, 0.25);

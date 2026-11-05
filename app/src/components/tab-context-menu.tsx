@@ -6,6 +6,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Tab } from "@/core/Tab";
+import { Project } from "@/core/Project";
+import { promptResearchRename } from "@/core/research/ResearchRename";
+import { isResearchShell } from "@/core/research/ResearchShell";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { AppWindowMac, Columns2, Dock, Rows2, X } from "lucide-react";
 import React from "react";
@@ -19,10 +24,21 @@ export default function TabContextMenu({
   children: React.ReactElement;
   onClose?: (tab: Tab) => void | Promise<void>;
 }) {
+  const { t } = useTranslation("research");
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
+        {isResearchShell() && tab instanceof Project && (
+          <ContextMenuItem
+            onSelect={() => {
+              if (tab.isDraft) void tab.save().catch((error) => toast.error(String(error)));
+              else void promptResearchRename(tab.uri.fsPath);
+            }}
+          >
+            {t("rename.title")}
+          </ContextMenuItem>
+        )}
         {tab.layout === "docked" ? (
           <>
             <ContextMenuItem onSelect={() => TabWorkspace.split(tab.id, "right")}>

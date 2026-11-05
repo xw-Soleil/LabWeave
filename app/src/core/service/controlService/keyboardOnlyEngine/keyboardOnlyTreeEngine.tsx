@@ -317,10 +317,16 @@ export class KeyboardOnlyTreeEngine {
    * @returns
    */
   onDeepGenerateNode(defaultText = "", selectAll = true, editEdgeFirst = false) {
+    this.project.historyManager.batch(() => this.generateChild(defaultText, selectAll, editEdgeFirst));
+  }
+
+  private generateChild(defaultText: string, selectAll: boolean, editEdgeFirst: boolean) {
     if (!this.project.keyboardOnlyEngine.isOpenning()) {
       return;
     }
-    const rootNode = this.project.stageManager.getConnectableEntity().find((node) => node.isSelected);
+    const selected = this.project.stageManager.getConnectableEntity().filter((node) => node.isSelected);
+    if (selected.length !== 1) return;
+    const rootNode = selected[0];
     if (!rootNode) return;
     this.project.camera.clearMoveCommander();
     this.project.camera.speed = Vector.getZero();

@@ -26,6 +26,8 @@ import { ConnectableEntity } from "@/core/stage/stageObject/abstract/Connectable
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
+import { ArcEdge } from "@/core/stage/stageObject/association/ArcEdge";
+import { serialize, deserialize } from "@graphif/serializer";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
@@ -68,11 +70,32 @@ function section(uuid: string, children: Entity[]): Section {
   }) as Section;
 }
 
-function lineEdge(associationList: ConnectableEntity[], uuid = crypto.randomUUID()): LineEdge {
+function lineEdge(associationList: ConnectableEntity[], uuid: string = crypto.randomUUID()): LineEdge {
   return new LineEdge({} as never, { associationList, uuid });
 }
 
 describe("StageManager.updateReferences", () => {
+  it("straightens only selected edges and preserves their identity and saved style", () => {
+    const a = textNode("a"),
+      b = textNode("b", 300);
+    const selected = lineEdge([a, b], "line");
+    const unselected = lineEdge([b, a], "other");
+    const arc = new ArcEdge({} as never, { associationList: [a, b], uuid: "arc", text: "关系" });
+    arc.isSelected = selected.isSelected = true;
+    const project = { stage: [a, b, selected, unselected, arc], historyManager: { recordStep: vi.fn() } };
+    const manager = new StageManager(project as never);
+    manager.straightenSelectedEdges();
+    expect(selected.pathStyle).toBe("straight");
+    expect(unselected.pathStyle).toBe("inherit");
+    const replacement = manager.get("arc") as LineEdge;
+    expect(replacement).toBeInstanceOf(LineEdge);
+    expect(replacement.text).toBe("关系");
+    expect(replacement.source).toBe(a);
+    expect(replacement.target).toBe(b);
+    expect(project.historyManager.recordStep).toHaveBeenCalledOnce();
+    const restored = deserialize(serialize([replacement]), project) as LineEdge[];
+    expect(restored[0].pathStyle).toBe("straight");
+  });
   it("replaces unknown edge endpoints with the real entities on stage", () => {
     const source = textNode("source-uuid", 0, 0);
     const target = textNode("target-uuid", 300, 0);
@@ -148,6 +171,20 @@ describe("StageManager.updateReferences", () => {
 
     expect([first.shiftingIndex, second.shiftingIndex].sort()).toEqual([-1, 1]);
     expect(selfLoop.shiftingIndex).toBe(0);
+  });
+
+  it("separates relations even when different anchors lead to the same visible path", () => {
+    const source = textNode("a", 0, 0),
+      target = textNode("b", 300, 0);
+    const first = lineEdge([source, target], "a-edge"),
+      second = lineEdge([target, source], "b-edge");
+    first.sourceRectangleRate = new Vector(1, 0.5);
+    first.targetRectangleRate = new Vector(0, 0.5);
+    const manager = createStageManager([source, target, first, second]);
+    manager.updateReferences();
+    expect([first.shiftingIndex, second.shiftingIndex]).toEqual([-1, 1]);
+    manager.updateReferences();
+    expect([first.shiftingIndex, second.shiftingIndex]).toEqual([-1, 1]);
   });
 
   it("scans the association list once regardless of entity count", () => {

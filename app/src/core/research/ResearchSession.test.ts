@@ -147,7 +147,7 @@ describe("ResearchSession", () => {
     const restored = await startResearchSession();
 
     expect(restored).toBe(false);
-    expect(mocks.calls).toEqual(["draft", "panel:files"]);
+    expect(mocks.calls).toEqual(["panel:files"]);
     expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg", "notes/b.prg"]);
     expect(mocks.settings.researchSession.active).toBe("notes/b.prg");
   });
@@ -187,11 +187,12 @@ describe("ResearchSession", () => {
     expect(mocks.settings.researchSession.active).toBe("");
   });
 
-  it("keeps a draft and reports nothing restored for an empty session", async () => {
+  it("does not manufacture a draft for an empty session", async () => {
     const restored = await startResearchSession();
 
     expect(restored).toBe(false);
-    expect(mocks.calls).toEqual(["draft", "panel:files"]);
+    expect(mocks.calls).toEqual(["panel:files"]);
+    expect(mocks.onNewDraft).not.toHaveBeenCalled();
   });
 
   it("tells the user when the research folder can't be granted", async () => {

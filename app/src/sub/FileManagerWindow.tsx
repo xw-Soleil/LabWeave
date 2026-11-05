@@ -1,4 +1,7 @@
 import { Button } from "@/components/ui/button";
+import ResearchFileMenu from "@/components/research-file-menu";
+import { promptResearchRename } from "@/core/research/ResearchRename";
+import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -360,6 +363,16 @@ export default function FileManagerWindow() {
               <RefreshCw />
               {t("files.refresh")}
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="h-8 text-[13px]"
+              onSelect={() => {
+                restoreLastResearchFile()
+                  .then(() => toast.success(t("fileMenu.restored")))
+                  .catch(showError);
+              }}
+            >
+              {t("fileMenu.restoreLast")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Tooltip>
@@ -457,6 +470,9 @@ export default function FileManagerWindow() {
                         onPointerDown={(event) => onRowPointerDown(event, entry)}
                         onClick={(event) => onRowClick(event, entry)}
                         onDoubleClick={() => onRowDoubleClick(entry)}
+                        onOpen={() =>
+                          entry.kind === "workspace" ? void openWorkspace(entry) : onRowDoubleClick(entry)
+                        }
                       />
                     ))
                   ))}
@@ -502,6 +518,7 @@ function FileRow({
   onPointerDown,
   onClick,
   onDoubleClick,
+  onOpen,
 }: {
   entry: ResearchFileEntry;
   /** 当前工作区，或刚点选的文件 */
@@ -510,30 +527,40 @@ function FileRow({
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onDoubleClick: () => void;
+  onOpen: () => void;
 }) {
   const { t } = useTranslation("research");
   const Icon = SECTION_ICONS[entry.kind];
   const dir = entry.relPath.includes("/") ? entry.relPath.slice(0, entry.relPath.lastIndexOf("/")) : "";
   const tooltip = `${entry.relPath}\n${t(entry.kind === "workspace" ? "files.workspaceRowHint" : "files.fileRowHint")}`;
   return (
-    <div
-      role="button"
-      tabIndex={-1}
-      title={tooltip}
-      className={cn(
-        "flex h-7 min-w-0 cursor-default items-center gap-2 rounded-[6px] px-2 text-[13px] select-none",
-        highlighted ? "bg-primary/10 text-primary" : "hover:bg-accent",
-      )}
-      onPointerDown={onPointerDown}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-    >
-      <Icon className={cn("size-3.5 shrink-0", !highlighted && "text-muted-foreground")} />
-      <FileName name={rowNameOf(entry)} title={tooltip} tailChars={NAME_TAIL_CHARS} />
-      {/* 空间不够时子目录先缩没，名字优先；完整路径在悬停提示里 */}
-      {dir && <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{dir}</span>}
-      {opened && <span className="bg-primary ml-auto size-1.5 shrink-0 rounded-full" title={t("files.opened")} />}
-    </div>
+    <ResearchFileMenu entry={entry} onOpen={onOpen}>
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "F2") {
+            event.preventDefault();
+            event.stopPropagation();
+            void promptResearchRename(entry.absPath);
+          }
+        }}
+        title={tooltip}
+        className={cn(
+          "flex h-7 min-w-0 cursor-default items-center gap-2 rounded-[6px] px-2 text-[13px] select-none",
+          highlighted ? "bg-primary/10 text-primary" : "hover:bg-accent",
+        )}
+        onPointerDown={onPointerDown}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+      >
+        <Icon className={cn("size-3.5 shrink-0", !highlighted && "text-muted-foreground")} />
+        <FileName name={rowNameOf(entry)} title={tooltip} tailChars={NAME_TAIL_CHARS} />
+        {/* 空间不够时子目录先缩没，名字优先；完整路径在悬停提示里 */}
+        {dir && <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{dir}</span>}
+        {opened && <span className="bg-primary ml-auto size-1.5 shrink-0 rounded-full" title={t("files.opened")} />}
+      </div>
+    </ResearchFileMenu>
   );
 }
 

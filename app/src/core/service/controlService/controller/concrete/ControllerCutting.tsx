@@ -89,6 +89,14 @@ export class ControllerCuttingClass extends ControllerClass {
   // 是否正在使用
   public isUsing = false;
 
+  public keydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && this.isUsing) {
+      event.preventDefault();
+      this.mouseMoveOutWindowForcedShutdown(this.lastMoveLocation);
+      this.project.controller.setCursorName(CursorNameEnum.Default);
+    }
+  };
+
   /**
    * 切割时与实体相交的两点
    */
@@ -160,13 +168,11 @@ export class ControllerCuttingClass extends ControllerClass {
       this.isUsing = false;
       return;
     }
-    // 正在切断线
-    this.cuttingLine = new Line(this.cuttingStartLocation, this.lastMoveLocation);
-
-    this.updateWarningObjectByCuttingLine();
     this.lastMoveLocation = this.project.renderer.transformView2World(
       new Vector(event.clientX, event.clientY), // 鼠标位置
     );
+    this.cuttingLine = new Line(this.cuttingStartLocation, this.lastMoveLocation);
+    this.updateWarningObjectByCuttingLine();
     // 渲染器需要
     this.project.controller.lastMoveLocation = this.lastMoveLocation.clone();
   };
@@ -199,12 +205,22 @@ export class ControllerCuttingClass extends ControllerClass {
   }
 
   public mouseUpFunction(mouseUpWindowLocation: Vector) {
+    this.project.historyManager.batch(() => this.finishCut(mouseUpWindowLocation));
+  }
+
+  private finishCut(mouseUpWindowLocation: Vector) {
     if (!this.isUsing) return;
     this.isUsing = false;
     // 最后再更新一下鼠标位置
     this.lastMoveLocation = this.project.renderer.transformView2World(
       mouseUpWindowLocation, // 鼠标位置
     );
+    if (this.lastMoveLocation.distance(this.cuttingStartLocation) * this.project.camera.currentScale < 5) {
+      this.mouseMoveOutWindowForcedShutdown(this.lastMoveLocation);
+      this.project.controller.setCursorName(CursorNameEnum.Default);
+      return;
+    }
+    this.cuttingLine = new Line(this.cuttingStartLocation, this.lastMoveLocation);
     this.updateWarningObjectByCuttingLine();
     // 鼠标提示解除
     this.project.controller.setCursorName(CursorNameEnum.Default);

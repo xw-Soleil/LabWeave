@@ -141,6 +141,8 @@ globalMenu:
     test: 测试功能
 
 contextMenu:
+  alignObjects: 对齐与分布
+  alignSelectionHint: 选择至少两个卡片后可用
   createTextNode: 创建文本节点
   createConnectPoint: 创建质点
   packToSection: 打包为框
@@ -1577,6 +1579,9 @@ visualSettingsGroup:
     title: 背景设置
 
 keyBinds:
+  straightenSelectedEdges:
+    title: 拉直选中连线
+    description: 将选中的曲线改为直线，多条关系保留间距。支持撤销。
   title: 快捷键绑定
   none: 未绑定快捷键
   test:
@@ -2848,6 +2853,33 @@ projectOwnership:
 
 # 科研工作台。每个工作单元只往自己的小节里加键
 research:
+  fileMenu:
+    open: 打开
+    reveal: 打开所在文件夹
+    copyPath: 复制文件路径
+    copyRelativePath: 复制相对路径
+    delete: 删除文件…
+    deleteDescription: "将「{{name}}」移入工作台回收站？已打开的工作区会先保存并关闭。引用此文件的卡片会显示文件缺失，恢复后可继续使用。"
+    deleted: 已移入工作台回收站
+    restore: 撤销删除
+    restoreLast: 恢复最近删除的文件
+    restored: 文件已恢复
+    restoreConflict: 原位置已有同名文件，未覆盖，请先处理同名文件。
+    trashEmpty: 没有可恢复的文件。
+    busy: 文件正在保存或编辑，请稍后重试。
+    outside: 只能操作当前研究文件夹内的文件。
+    invalidTrash: 回收记录损坏，文件已保留，请检查回收记录。
+  rename:
+    title: 重命名
+    description: 输入新文件名。白板中的文件引用会一起更新。
+    invalid: 文件名不能为空，也不能包含路径或特殊字符。
+    busy: 正在保存或重命名，请稍后重试；其他窗口打开的工作区需要先关闭。
+    outside: 只能重命名当前研究文件夹内的文件。
+    exists: 同名文件已存在，请换一个名字。
+    incompleteScan: 无法完整读取研究文件夹，暂未改名，以免遗漏卡片引用。
+    changed: 重命名期间工作区发生了编辑或关闭，已取消，请重试。
+    rollbackFailed: 重命名失败，部分文件恢复也失败，请保留当前文件并检查错误信息。
+    followupFailed: 文件已重命名，但更新最近记录或 AI 文字版失败
   shell:
     title: 科研工作台
     rail:

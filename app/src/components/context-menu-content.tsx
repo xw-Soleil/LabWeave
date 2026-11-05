@@ -1,12 +1,15 @@
 import {
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuShortcut,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
+import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
+import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { ColorManager } from "@/core/service/feedbackService/ColorManager";
@@ -95,6 +98,8 @@ export default function MyContextMenuContent() {
   const { t } = useTranslation("contextMenu");
   const { t: tKeyBind } = useTranslation("keyBinds");
   const [config] = Settings.use("contextMenuConfig");
+  const research = isResearchShell();
+  const menuConfig = research ? researchContextMenu(config) : config;
 
   // 加载用户自定义颜色
   const [userColorList, setUserColorList] = useState<Color[]>([]);
@@ -126,7 +131,9 @@ export default function MyContextMenuContent() {
   };
 
   const getItemTitle = (itemId: string, label?: string) =>
-    label || tKeyBind(`${itemId}.title`, { defaultValue: t(itemId, { defaultValue: itemId }) });
+    itemId === "research-common-align"
+      ? t("alignObjects")
+      : label || tKeyBind(`${itemId}.title`, { defaultValue: t(itemId, { defaultValue: itemId }) });
 
   const checkVisible = (itemId: string) => {
     const kb = allKeyBinds.find((k) => k.id === itemId);
@@ -135,6 +142,7 @@ export default function MyContextMenuContent() {
   };
 
   const isConfigVisible = (it: ContextMenuConfigItem): boolean => {
+    if (research && RESEARCH_CONTEXT_ACTIONS.has(it.id)) return true;
     if (it.visible === false) return false;
     if (it.type === "separator") return true;
     if (it.type === "setColorForSelected") {
@@ -312,13 +320,19 @@ export default function MyContextMenuContent() {
             {getIcon(itemConfig.id, itemConfig.icon)}
             {getItemTitle(itemConfig.id, itemConfig.label)}
           </SubTrigger>
-          <SubContent>{renderItems(itemConfig.children || [])}</SubContent>
+          <SubContent>
+            {itemConfig.id === "research-common-align" && p.stageManager.getSelectedEntities().length < 2 && (
+              <ContextMenuLabel>{t("alignSelectionHint")}</ContextMenuLabel>
+            )}
+            {renderItems(itemConfig.children || [])}
+          </SubContent>
         </Sub>
       );
     }
 
     // Standard item
-    if (!checkVisible(itemConfig.id)) return null;
+    const enabled = checkVisible(itemConfig.id);
+    if (!enabled && !(research && RESEARCH_CONTEXT_ACTIONS.has(itemConfig.id))) return null;
     const uiKb = KeyBindsUI.getUIKeyBind(itemConfig.id);
     const keyBind = uiKb ?? allKeyBinds.find((k) => k.id === itemConfig.id);
     const action = keyBind?.onPress;
@@ -336,7 +350,12 @@ export default function MyContextMenuContent() {
     };
 
     return (
-      <Item key={itemConfig.id} onClick={handleClick} disabled={!action}>
+      <Item
+        key={itemConfig.id}
+        onSelect={handleClick}
+        disabled={!action || !enabled}
+        variant={itemConfig.id === "deleteSelectedStageObjects" ? "destructive" : "default"}
+      >
         {getIcon(itemConfig.id, itemConfig.icon)}
         {getItemTitle(itemConfig.id, itemConfig.label)}
         {shortcut && <ContextMenuShortcut>{shortcut}</ContextMenuShortcut>}
@@ -414,5 +433,5 @@ export default function MyContextMenuContent() {
     return rendered;
   };
 
-  return <Content>{renderItems(config)}</Content>;
+  return <Content>{renderItems(menuConfig)}</Content>;
 }

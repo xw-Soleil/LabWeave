@@ -277,7 +277,16 @@ function ResearchWelcome({ tabId }: { tabId: string }) {
               </ol>
             </div>
             <div className="-mx-2 flex flex-col">
-              <button type="button" className={actionRow} onClick={() => void closeWelcome(tabId)}>
+              <button
+                type="button"
+                className={actionRow}
+                onClick={() =>
+                  void (async () => {
+                    await onNewDraft();
+                    await closeWelcome(tabId);
+                  })().catch(showError)
+                }
+              >
                 <FilePlus className="text-muted-foreground size-4 shrink-0" />
                 <span className="truncate">{t("welcome.draft")}</span>
               </button>
@@ -651,9 +660,9 @@ WelcomeWindow.open = () => {
     children: (componentTab) => <WelcomeWindow tabId={componentTab.id} />,
     rect: getWelcomeRect(),
     canDock: false,
-    closable: false,
+    closable: true,
     titleBarOverlay: true,
-    closeWhenClickOutside: true,
+    closeWhenClickOutside: false,
   });
   welcomeTabIds.add(tab.id);
   return tab;

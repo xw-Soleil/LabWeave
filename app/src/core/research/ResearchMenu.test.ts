@@ -4,6 +4,7 @@ import { URI } from "vscode-uri";
 vi.mock("@/core/service/Settings", () => ({ Settings: { researchFolderPath: "/Users/me/Research" } }));
 
 import {
+  shouldRestoreChildKeybind,
   isRecentFileVisible,
   keyBindI18nKey,
   pendingResearchKeyBindDefaults,
@@ -71,8 +72,17 @@ describe("research keybind defaults", () => {
     "generateNodeTreeWithBroadMode",
   ];
 
-  it("turns off Tab / \\ tree growth", () => {
-    for (const id of treeGrowthIds) expect(RESEARCH_DISABLED_KEYBIND_IDS.has(id)).toBe(true);
+  it("enables Tab child growth without enabling the other tree gestures", () => {
+    expect(RESEARCH_DISABLED_KEYBIND_IDS.has(treeGrowthIds[0])).toBe(false);
+    for (const id of treeGrowthIds.slice(1)) expect(RESEARCH_DISABLED_KEYBIND_IDS.has(id)).toBe(true);
+  });
+
+  it("restores only the old disabled child binding, once, preserving customized keys", () => {
+    const id = treeGrowthIds[0];
+    expect(shouldRestoreChildKeybind(id, { key: "", isEnabled: false }, undefined)).toBe(true);
+    expect(shouldRestoreChildKeybind(id, { key: "C-j", isEnabled: true }, undefined)).toBe(false);
+    expect(shouldRestoreChildKeybind(id, { key: "", isEnabled: false }, true)).toBe(false);
+    expect(shouldRestoreChildKeybind("other", { key: "", isEnabled: false }, undefined)).toBe(false);
   });
 
   it("rewrites every disabled keybind on the first research start", () => {
@@ -80,7 +90,7 @@ describe("research keybind defaults", () => {
   });
 
   it("only rewrites the keybinds added after an older marker", () => {
-    expect(pendingResearchKeyBindDefaults(true)).toEqual(new Set([...treeGrowthIds, "checkoutClassroomMode"]));
+    expect(pendingResearchKeyBindDefaults(true)).toEqual(new Set([...treeGrowthIds.slice(1), "checkoutClassroomMode"]));
   });
 
   it("leaves the keybinds alone once the marker lists them all", () => {

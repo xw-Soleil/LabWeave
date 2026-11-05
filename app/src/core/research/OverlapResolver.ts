@@ -4,6 +4,7 @@ import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { Vector } from "@graphif/data-structures";
+import { Rectangle } from "@graphif/shapes";
 
 /** 世界坐标下的轴对齐矩形 */
 export interface Box {
@@ -195,6 +196,107 @@ function translateRigidly(project: Project, roots: readonly Entity[], delta: Vec
   for (const root of roots) {
     for (let parent = root.parentSection; parent; parent = parent.parentSection) parent.adjustLocationAndSize();
   }
+}
+
+export function findAlignedPlacement(
+  moving: readonly Box[],
+  obstacles: readonly (readonly Box[])[],
+  tolerance: number,
+  align: boolean,
+  grid: boolean,
+): { x: number; y: number } | null {
+  if (moving.length === 0) return { x: 0, y: 0 };
+  const bounds = {
+    left: Math.min(...moving.map((box) => box.left)),
+    right: Math.max(...moving.map((box) => box.right)),
+    top: Math.min(...moving.map((box) => box.top)),
+    bottom: Math.max(...moving.map((box) => box.bottom)),
+  };
+  const xs = new Set<number>(),
+    ys = new Set<number>();
+  if (align)
+    for (const other of obstacles.flat()) {
+      for (const d of [
+        other.left - bounds.left,
+        other.right - bounds.right,
+        (other.left + other.right - bounds.left - bounds.right) / 2,
+      ])
+        if (Math.abs(d) <= tolerance) xs.add(d);
+      for (const d of [
+        other.top - bounds.top,
+        other.bottom - bounds.bottom,
+        (other.top + other.bottom - bounds.top - bounds.bottom) / 2,
+      ])
+        if (Math.abs(d) <= tolerance) ys.add(d);
+    }
+  if (grid) {
+    for (const x of [bounds.left, bounds.right]) xs.add(Math.round(x / 50) * 50 - x);
+    for (const y of [bounds.top, bounds.bottom]) ys.add(Math.round(y / 50) * 50 - y);
+  }
+  const nearest = (values: Set<number>) => [...values].sort((a, b) => Math.abs(a) - Math.abs(b)).slice(0, 8);
+  const xCandidates = nearest(xs),
+    yCandidates = nearest(ys);
+  const candidates = xCandidates.flatMap((x) => yCandidates.map((y) => ({ x, y, axes: 2 })));
+  candidates.push(...xCandidates.map((x) => ({ x, y: 0, axes: 1 })), ...yCandidates.map((y) => ({ x: 0, y, axes: 1 })));
+  candidates.sort((a, b) => b.axes - a.axes || lengthSquared(a) - lengthSquared(b));
+  for (const candidate of candidates) {
+    const clear = moving.every(
+      (box, index) =>
+        !(obstacles[index] ?? []).some((other) =>
+          boxesOverlap(
+            {
+              left: box.left + candidate.x,
+              right: box.right + candidate.x,
+              top: box.top + candidate.y,
+              bottom: box.bottom + candidate.y,
+            },
+            other,
+          ),
+        ),
+    );
+    if (clear) return { x: candidate.x, y: candidate.y };
+  }
+  return findNudgeOffset(moving, obstacles);
+}
+
+export function planDragPlacement(project: Project, entities: readonly Entity[], align: boolean, grid: boolean) {
+  const { roots, moving, obstacles } = buildOverlapProblem(project, entities);
+  const offset = findAlignedPlacement(
+    moving,
+    obstacles.map((items) => items.map((item) => item.box)),
+    8 / Math.max(project.camera.currentScale, 0.01),
+    align,
+    grid,
+  );
+  const bounds = moving.length
+    ? Rectangle.getBoundingRectangle(
+        moving.map(
+          (box) => new Rectangle(new Vector(box.left, box.top), new Vector(box.right - box.left, box.bottom - box.top)),
+        ),
+      )
+    : null;
+  if (bounds && offset) bounds.location = bounds.location.add(new Vector(offset.x, offset.y));
+  const targets =
+    align && bounds && offset
+      ? [...new Set(obstacles.flat().map((item) => item.entity))]
+          .filter((entity) => !entity.isAlignExcluded)
+          .map((entity) => entity.collisionBox.getRectangle())
+          .filter((rect) =>
+            [
+              rect.left - bounds.left,
+              rect.right - bounds.right,
+              rect.center.x - bounds.center.x,
+              rect.top - bounds.top,
+              rect.bottom - bounds.bottom,
+              rect.center.y - bounds.center.y,
+            ].some((difference) => Math.abs(difference) < 1e-7),
+          )
+      : [];
+  return { roots, offset, alignment: bounds && targets.length ? { bounds, targets } : null };
+}
+
+export function applyDragPlacement(project: Project, plan: ReturnType<typeof planDragPlacement>) {
+  if (plan.offset) translateRigidly(project, plan.roots, new Vector(plan.offset.x, plan.offset.y));
 }
 
 /**
