@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   decideWheelAction,
+  mouseZoomFactor,
   wheelDeltaInPixels,
+  wheelNotches,
+  WheelSmoother,
   wheelSourceEvidence,
   WheelSourceTracker,
   wheelZoomFactor,
@@ -90,32 +93,154 @@ describe("wheelZoomFactor", () => {
   });
 });
 
-describe("decideWheelAction", () => {
-  const pixels = { x: 0, y: 40 };
+describe("wheelNotches", () => {
+  it("有 wheelDelta 时按它数格,不管加速后 deltaY 多大多小", () => {
+    expect(wheelNotches(signal({ deltaY: 4, wheelDeltaY: -120 }), { x: 0, y: 4 })).toEqual({ x: 0, y: 1 });
+    expect(wheelNotches(signal({ deltaY: 96, wheelDeltaY: -360 }), { x: 0, y: 96 })).toEqual({ x: 0, y: 3 });
+    expect(wheelNotches(signal({ deltaY: -4, wheelDeltaY: 120 }), { x: 0, y: -4 })).toEqual({ x: 0, y: -1 });
+  });
 
-  it("总是移动:鼠标和触控板都按像素直接移动,同样的滚动量移动同样的距离", () => {
-    expect(decideWheelAction("pan", "mouse", pixels, false, false)).toEqual({ kind: "pan", dx: 0, dy: 40 });
-    expect(decideWheelAction("pan", "trackpad", pixels, false, false)).toEqual({ kind: "pan", dx: 0, dy: 40 });
+  it("横向(Shift + 滚轮)按 wheelDeltaX 数格", () => {
+    expect(wheelNotches(signal({ deltaX: 4, wheelDeltaX: -120 }), { x: 4, y: 0 })).toEqual({ x: 1, y: 0 });
+  });
+
+  it("没有 wheelDelta 时按 3 行或 100 像素一格折算", () => {
+    expect(wheelNotches(signal({ deltaMode: 1, deltaY: 3 }), { x: 0, y: 48 })).toEqual({ x: 0, y: 1 });
+    expect(wheelNotches(signal({ deltaY: 100 }), { x: 0, y: 100 })).toEqual({ x: 0, y: 1 });
+  });
+});
+
+describe("mouseZoomFactor", () => {
+  it("每格固定倍数,往上拨放大,几格连乘", () => {
+    expect(mouseZoomFactor(-1, 15)).toBeCloseTo(1.15);
+    expect(mouseZoomFactor(1, 15)).toBeCloseTo(1 / 1.15);
+    expect(mouseZoomFactor(-2, 15)).toBeCloseTo(1.15 * 1.15);
+  });
+
+  it("单次最多 2 倍", () => {
+    expect(mouseZoomFactor(-20, 50)).toBe(2);
+    expect(mouseZoomFactor(20, 50)).toBe(0.5);
+  });
+});
+
+describe("decideWheelAction", () => {
+  const base = {
+    behavior: "pan" as const,
+    source: "trackpad" as const,
+    pixels: { x: 0, y: 40 },
+    notches: { x: 0, y: 1 },
+    pinchOrModifier: false,
+    shift: false,
+    mouse: { panPx: 100, zoomPercent: 15 },
+  };
+
+  it("总是移动:触控板按像素立刻移动,鼠标每格移动固定距离并平滑过渡", () => {
+    expect(decideWheelAction(base)).toEqual({ kind: "pan", dx: 0, dy: 40, smooth: false });
+    expect(decideWheelAction({ ...base, source: "mouse" })).toEqual({ kind: "pan", dx: 0, dy: 100, smooth: true });
+    expect(decideWheelAction({ ...base, source: "mouse", notches: { x: 0, y: 3 } })).toEqual({
+      kind: "pan",
+      dx: 0,
+      dy: 300,
+      smooth: true,
+    });
   });
 
   it("Shift + 竖向滚动改成横向移动", () => {
-    expect(decideWheelAction("pan", "mouse", pixels, false, true)).toEqual({ kind: "pan", dx: 40, dy: 0 });
+    expect(decideWheelAction({ ...base, shift: true })).toEqual({ kind: "pan", dx: 40, dy: 0, smooth: false });
+    expect(decideWheelAction({ ...base, source: "mouse", shift: true })).toEqual({
+      kind: "pan",
+      dx: 100,
+      dy: 0,
+      smooth: true,
+    });
   });
 
-  it("双指捏合或按着 Ctrl / Cmd 时缩放", () => {
-    expect(decideWheelAction("pan", "mouse", pixels, true, false).kind).toBe("zoom");
+  it("双指捏合立刻缩放;按着 Ctrl / Cmd 拨鼠标滚轮每格缩放固定倍数并平滑过渡", () => {
+    const pinch = decideWheelAction({ ...base, pinchOrModifier: true });
+    expect(pinch).toEqual({ kind: "zoom", factor: wheelZoomFactor(40, true), smooth: false });
+    const mouse = decideWheelAction({ ...base, source: "mouse", pinchOrModifier: true, notches: { x: 0, y: -1 } });
+    expect(mouse.kind === "zoom" && mouse.smooth).toBe(true);
+    expect(mouse.kind === "zoom" && mouse.factor).toBeCloseTo(1.15);
   });
 
   it("自动:鼠标缩放,触控板移动", () => {
-    expect(decideWheelAction("auto", "mouse", pixels, false, false).kind).toBe("zoom");
-    expect(decideWheelAction("auto", "trackpad", pixels, false, false).kind).toBe("pan");
+    expect(decideWheelAction({ ...base, behavior: "auto", source: "mouse" }).kind).toBe("zoom");
+    expect(decideWheelAction({ ...base, behavior: "auto" }).kind).toBe("pan");
   });
 
   it("总是缩放", () => {
-    expect(decideWheelAction("zoom", "trackpad", pixels, false, false).kind).toBe("zoom");
+    expect(decideWheelAction({ ...base, behavior: "zoom" })).toEqual({
+      kind: "zoom",
+      factor: wheelZoomFactor(40, false),
+      smooth: false,
+    });
   });
 
   it("没有滚动量时什么都不做", () => {
-    expect(decideWheelAction("pan", "mouse", { x: 0, y: 0 }, false, false)).toEqual({ kind: "none" });
+    expect(decideWheelAction({ ...base, pixels: { x: 0, y: 0 } })).toEqual({ kind: "none" });
+    expect(decideWheelAction({ ...base, source: "mouse", notches: { x: 0, y: 0 } })).toEqual({ kind: "none" });
+  });
+});
+
+describe("WheelSmoother", () => {
+  /** 按 60 帧 / 秒走 frames 帧,返回加起来移动了多少、缩放了多少 */
+  function run(smoother: WheelSmoother, from: number, frames: number) {
+    let dy = 0;
+    let factor = 1;
+    for (let i = 1; i <= frames; i++) {
+      const step = smoother.step(from + i * 16);
+      if (!step) break;
+      dy += step.dy;
+      factor *= step.factor;
+    }
+    return { dy, factor };
+  }
+
+  it("一格的移动先快后慢,约 0.15 秒走完大部分,最后一点不差", () => {
+    const smoother = new WheelSmoother();
+    smoother.addPan(0, 100, 0);
+    const first = smoother.step(16)!;
+    expect(first.dy).toBeGreaterThan(20);
+    expect(first.dy).toBeLessThan(40);
+    const soon = run(smoother, 16, 8);
+    expect(first.dy + soon.dy).toBeGreaterThan(90);
+    const rest = run(smoother, 16 + 8 * 16, 60);
+    expect(first.dy + soon.dy + rest.dy).toBeCloseTo(100, 10);
+    expect(smoother.active).toBe(false);
+    expect(smoother.step(2000)).toBeNull();
+  });
+
+  it("连续拨时新的一格接在剩下的路程后面", () => {
+    const smoother = new WheelSmoother();
+    smoother.addPan(0, 100, 0);
+    const part = run(smoother, 0, 3);
+    smoother.addPan(0, 100, 48);
+    const rest = run(smoother, 48, 120);
+    expect(part.dy + rest.dy).toBeCloseTo(200, 10);
+  });
+
+  it("缩放按倍数叠加,以最后一次的位置为中心", () => {
+    const smoother = new WheelSmoother();
+    smoother.addZoom(1.15, { x: 10, y: 20 }, 0);
+    smoother.addZoom(1.15, { x: 30, y: 40 }, 5);
+    const first = smoother.step(16)!;
+    expect(first.anchor).toEqual({ x: 30, y: 40 });
+    const rest = run(smoother, 16, 120);
+    expect(first.factor * rest.factor).toBeCloseTo(1.15 * 1.15, 10);
+    expect(smoother.active).toBe(false);
+  });
+
+  it("取消后不再移动", () => {
+    const smoother = new WheelSmoother();
+    smoother.addPan(0, 100, 0);
+    smoother.step(16);
+    smoother.cancel();
+    expect(smoother.step(32)).toBeNull();
+  });
+
+  it("隔了很久才走下一帧,也不会一步跳完", () => {
+    const smoother = new WheelSmoother();
+    smoother.addPan(0, 100, 0);
+    expect(smoother.step(5000)!.dy).toBeLessThan(100);
   });
 });

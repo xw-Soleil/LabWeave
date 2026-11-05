@@ -19,6 +19,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **数据只留在本机**：关闭遥测、账号、支持者名单、素材下载、多人协作、扩展加载；不再注册自动更新和系统全局快捷键插件，不再打包更新文件；`run_command`、`mcp_stdio_*` 和不受 fs 权限范围约束的原始文件命令不再暴露给前端；AI 对话不加载 MCP 和 Skills，回答里的远程图片不自动加载。
 - **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区。
 - **外壳界面**：左侧竖栏（工作区 / AI 对话 / 文件 / 设置）、精简的菜单和 macOS 原生菜单（含编辑菜单）、新快捷键 Cmd+1/2/3/N、没打开工作区时编辑区显示欢迎页（侧栏照常停靠、能拖，AI 对话收起）、启动时恢复上次的工作区和面板、命令面板白名单；设置弹窗改为「设置 / 快捷键 / 菜单 / 关于」四页，设置按用途分 10 页，原版的「个性化」拆进「外观」和「菜单」。
+- **滚轮**：鼠标和触控板分开判断（只认 `wheelDelta` 这类确定的证据），默认滚轮移动、Ctrl / Cmd + 滚轮和双指捏合缩放。触控板按像素立刻移动；鼠标滚轮按格数走固定距离、每格固定缩放倍数，分几帧平滑走完（2026-11-05），每格多远、缩放多少可以在设置里调。
 - **文件卡片**：新实体 `FileCardNode`，用 pdf.js 抽 PDF 的标题、页数、首页缩略图和前几页文字，也支持图片和 Markdown；双击用系统默认程序打开原文件，原文件不见了会标红。
 - **拖放**：从文件面板或 Finder 把文件拖到白板生成卡片；研究文件夹外的文件经用户同意后复制到 `导入/` 子文件夹。
 - **保存**：保存时在 `.workbench/` 下写给 AI 读的 `<名字>.ai.json` / `.ai.md`；`.prg` 元数据记录工作区 id 和视野；科研模式下原子写入（临时文件 + 改名），编辑后约 5 秒自动保存，备份不再写进研究文件夹。
@@ -86,6 +87,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/TabWorkspace.tsx`
 - `app/src/core/TabGroup.ts`
 - `app/src/core/TabGroup.test.ts`
+- `app/src/core/research/WheelGesture.ts`（新增）
+- `app/src/core/research/WheelGesture.test.ts`（新增）
+- `app/src/core/service/controlService/controller/concrete/ControllerCamera.tsx`
+- `app/src/core/service/controlService/controller/concrete/ControllerCamera.test.ts`
 - `app/src/core/TabWorkspace.test.tsx`
 - `app/src/components/research-welcome.tsx`（新增，2026-11-05 取代上游的 `sub/WelcomeWindow.tsx`，后者已删除）
 - `app/src/components/global-menu-content.tsx`

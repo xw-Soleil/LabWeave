@@ -270,6 +270,11 @@ settings:
       straight: Straight Line
       bezier: Bezier Curve
       vertical: Vertical Zigzag Line
+  enableRightClickConnect:
+    title: Right-click to connect
+    description: |
+      When on, right-clicking another entity while one is selected creates a connection, and the context menu only opens on empty space.
+      When off, right-clicking an entity opens the menu and never creates a connection.
   rightClickConnectEdgeType:
     title: Right-Click Connection Edge Type
     description: Default edge type created when using right-click connection
@@ -539,6 +544,9 @@ settings:
       A value of 1 means the zoom will be immediate with no transition effect.
       A value of 0 means the zoom will never complete and can simulate a locked effect.
       Note: If you experience lag while zooming, set this to 1.
+    researchTitle: Keyboard zoom smoothing
+    researchDescription: |
+      How quickly the view eases to the new size when zooming with shortcuts. Larger is faster; 1 jumps straight there. Wheel and trackpad zoom are not affected.
   cameraZoomInLimitBehavior:
     title: Behavior at Max Zoom-In
     description: |
@@ -1232,11 +1240,19 @@ settings:
   researchWheelBehavior:
     title: Mouse wheel
     description: |
-      What the wheel and two-finger trackpad scrolling do on the board. Whatever you pick, pinch and Ctrl/Cmd + scroll zoom around the pointer, and Shift + scroll moves sideways.
+      What the wheel and two-finger trackpad scrolling do on the board. Whatever you pick, pinch and Ctrl/Cmd + scroll zoom, and Shift + scroll moves sideways.
     options:
       pan: Always move (recommended)
       zoom: Always zoom
       auto: "Auto: mouse wheel zooms, trackpad moves"
+  researchMouseWheelPanStep:
+    title: Mouse wheel distance per notch (px)
+    description: |
+      How far one notch of the mouse wheel moves the board. Fast spins count as several notches. The move eases out over about 0.15 s. Trackpads are not affected.
+  researchMouseWheelZoomStep:
+    title: Mouse wheel zoom per notch (%)
+    description: |
+      How much one notch zooms in or out with Ctrl or Cmd held (or always, if the wheel is set to zoom). The zoom eases out over about 0.15 s. Trackpad pinch is not affected.
   uiScalePercent:
     title: UI Scale
     description: |

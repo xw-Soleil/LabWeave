@@ -957,6 +957,9 @@ export const settingsSchema = z.object({
   researchOutsideFileMode: z.union([z.literal("ask"), z.literal("copy"), z.literal("reference")]).default("ask"),
   // 滚轮:pan 总是移动(Ctrl / Cmd + 滚轮、双指捏合缩放),zoom 总是缩放,auto 鼠标缩放、触控板移动
   researchWheelBehavior: z.union([z.literal("pan"), z.literal("zoom"), z.literal("auto")]).default("pan"),
+  // 鼠标滚轮(触控板不受影响):每格移动多少屏幕像素、每格缩放百分之几,都分几帧平滑走完
+  researchMouseWheelPanStep: z.number().int().min(20).max(400).default(100),
+  researchMouseWheelZoomStep: z.number().int().min(5).max(50).default(15),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

@@ -734,6 +734,9 @@ settings:
       值為1代表縮放會立刻完成，沒有中間的過渡效果
       值為0代表縮放永遠都不會完成，可模擬鎖死效果
       注意：若您在縮放畫面時感到卡頓，請調成1
+    researchTitle: 鍵盤縮放的過渡快慢
+    researchDescription: |
+      按快捷鍵放大、縮小時，畫面過渡到目標大小有多快。數值越大越快，1 表示一下到位。滾輪和觸控板的縮放不受它影響
   cameraZoomInLimitBehavior:
     title: 放大到極限時的行為
     description: |
@@ -761,6 +764,9 @@ settings:
     description: |
       開啟後，縮放視角的中心點是鼠標的位置
       關閉後，縮放視角的中心點是當前視野的中心
+    researchTitle: 以鼠標為中心縮放
+    researchDescription: |
+      開著時，滾輪、雙指捏合縮放都以鼠標所在的位置為中心；關掉後以畫面中心為中心
   allowMoveCameraByWSAD:
     title: 允許使用W S A D按鍵移動視角
     description: |
@@ -1266,11 +1272,19 @@ settings:
   researchWheelBehavior:
     title: 鼠標滾輪
     description: |
-      滾輪和觸控板雙指滑動在白板上做什麼。不管選哪種，雙指捏合、按住 Ctrl 或 Cmd 再滾動都是以鼠標位置為中心縮放；按住 Shift 滾動是左右移動
+      滾輪和觸控板雙指滑動在白板上做什麼。不管選哪種，雙指捏合、按住 Ctrl 或 Cmd 再滾動都是縮放；按住 Shift 滾動是左右移動
     options:
       pan: 總是移動（推薦）
       zoom: 總是縮放
       auto: 自動：鼠標滾輪縮放，觸控板移動
+  researchMouseWheelPanStep:
+    title: 鼠標滾輪每格移動多遠（像素）
+    description: |
+      用鼠標滾輪移動白板時，撥一格移動多少。撥得快時一次算好幾格。移動會在約 0.15 秒裡平滑走完。觸控板不受影響
+  researchMouseWheelZoomStep:
+    title: 鼠標滾輪每格縮放多少（%）
+    description: |
+      按住 Ctrl 或 Cmd 用鼠標滾輪縮放（或者「鼠標滾輪」選了縮放）時，撥一格放大或縮小百分之幾。縮放會在約 0.15 秒裡平滑完成。觸控板雙指捏合不受影響
   textIntegerLocationAndSizeRender:
     title: 文本整數位置和大小渲染
     description: |

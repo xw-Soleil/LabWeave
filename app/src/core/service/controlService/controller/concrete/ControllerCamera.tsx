@@ -2,7 +2,7 @@
  * 存放具体的控制器实例
  */
 
-import { decideWheelAction, wheelDeltaInPixels, WheelSourceTracker } from "@/core/research/WheelGesture";
+import { decideWheelAction, wheelDeltaInPixels, wheelNotches, WheelSourceTracker } from "@/core/research/WheelGesture";
 import { Settings } from "@/core/service/Settings";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { MouseTipFeedbackEffect } from "@/core/service/feedbackService/effectEngine/concrete/MouseTipFeedbackEffect";
@@ -175,24 +175,33 @@ export class ControllerCameraClass extends ControllerClass {
 
   /**
    * 滚轮(规则见 core/research/WheelGesture.ts):
-   * 移动按滚动的像素直接移动,鼠标和触控板同一个速度,不加缓动动画,顺滑感交给系统自带的滚动惯性;
-   * 缩放以鼠标位置为中心连续变化。双指捏合在 macOS 上是带 ctrlKey 的滚轮事件,和按着 Ctrl / Cmd 一样缩放。
+   * 触控板按滚动的像素立刻移动,顺滑感来自系统自带的惯性;
+   * 鼠标滚轮按格数走固定的距离(设置里的「每格移动多远」「每格缩放多少」),分几帧平滑走完。
+   * 缩放默认以鼠标位置为中心(设置 scaleCameraByMouseLocation 关掉时以视野中心)。
+   * 双指捏合在 macOS 上是带 ctrlKey 的滚轮事件,和按着 Ctrl / Cmd 一样缩放。
    */
   private researchMousewheel(event: WheelEvent) {
     const pixels = wheelDeltaInPixels(event, this.project.renderer.h);
-    const source = this.researchWheelTracker.resolve(event);
-    const action = decideWheelAction(
-      Settings.researchWheelBehavior,
-      source,
+    const action = decideWheelAction({
+      behavior: Settings.researchWheelBehavior,
+      source: this.researchWheelTracker.resolve(event),
       pixels,
-      event.ctrlKey || event.metaKey,
-      event.shiftKey,
-    );
+      notches: wheelNotches(event, pixels),
+      pinchOrModifier: event.ctrlKey || event.metaKey,
+      shift: event.shiftKey,
+      mouse: { panPx: Settings.researchMouseWheelPanStep, zoomPercent: Settings.researchMouseWheelZoomStep },
+    });
+    const camera = this.project.camera;
     if (action.kind === "pan") {
-      this.project.camera.panByViewDelta(new Vector(action.dx, action.dy));
+      const delta = new Vector(action.dx, action.dy);
+      if (action.smooth) camera.smoothPanByViewDelta(delta);
+      else camera.panByViewDelta(delta);
     } else if (action.kind === "zoom") {
-      const point = this.project.canvas.clientToView(event.clientX, event.clientY);
-      this.project.camera.applyGesture(point, point, action.factor);
+      const point = Settings.scaleCameraByMouseLocation
+        ? this.project.canvas.clientToView(event.clientX, event.clientY)
+        : new Vector(this.project.renderer.w / 2, this.project.renderer.h / 2);
+      if (action.smooth) camera.smoothZoomAt(point, action.factor);
+      else camera.applyGesture(point, point, action.factor);
     }
   }
 

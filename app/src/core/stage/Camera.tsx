@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { WheelSmoother } from "@/core/research/WheelGesture";
 import { easeOutExpo } from "@/core/service/feedbackService/effectEngine/mathTools/easings";
 import { Settings } from "@/core/service/Settings";
 import { SoundService } from "../service/feedbackService/SoundService";
@@ -171,6 +172,15 @@ export class Camera {
 
     this.currentScale = Camera.validScale(this.currentScale, 1);
     this.targetScale = Camera.validScale(this.targetScale, this.currentScale);
+    // 鼠标滚轮的平滑过渡：每帧走一段
+    const wheel = this.wheelSmoother.step(performance.now());
+    if (wheel) {
+      this.location = this.location.add(new Vector(wheel.dx, wheel.dy).divide(this.currentScale));
+      if (wheel.factor !== 1 && wheel.anchor) {
+        const viewPoint = new Vector(wheel.anchor.x, wheel.anchor.y);
+        this.scaleAndPlace(this.project.renderer.transformView2World(viewPoint), viewPoint, wheel.factor);
+      }
+    }
     // 冲击式移动
     if (!this.shockMoveDiffLocationsQueue.isEmpty()) {
       const diffLocation = this.shockMoveDiffLocationsQueue.dequeue();
@@ -276,9 +286,15 @@ export class Camera {
 
   /**
    * 突然停止摄像机所有运动
-   * 清除移动动力、速度、缩放操作
+   * 清除移动动力、速度、缩放操作，以及鼠标滚轮还没走完的平滑过渡
    */
   stopImmediately() {
+    this.stopMotion();
+    this.wheelSmoother.cancel();
+  }
+
+  /** 清除移动动力、速度、缩放操作；鼠标滚轮的平滑过渡留着 */
+  private stopMotion() {
     this.targetScale = this.currentScale;
     this.accelerateCommander = Vector.getZero();
     this.speed = Vector.getZero();
@@ -291,16 +307,36 @@ export class Camera {
     if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
     const anchor = this.project.renderer.transformView2World(previous);
     this.stopImmediately();
-    this.currentScale = Camera.validScale(this.currentScale * scaleFactor, this.currentScale);
+    this.scaleAndPlace(anchor, current, scaleFactor);
+  }
+
+  /** 缩放 factor 倍，并让世界坐标 anchor 落在视野坐标 viewPoint 上 */
+  private scaleAndPlace(anchor: Vector, viewPoint: Vector, factor: number) {
+    this.currentScale = Camera.validScale(this.currentScale * factor, this.currentScale);
     this.targetScale = this.currentScale;
     const center = new Vector(this.project.renderer.w / 2, this.project.renderer.h / 2);
-    this.location = anchor.subtract(current.subtract(center).subtract(this.shakeLocation).divide(this.currentScale));
+    this.location = anchor.subtract(viewPoint.subtract(center).subtract(this.shakeLocation).divide(this.currentScale));
     this.targetLocationByScale = anchor;
   }
 
   panByViewDelta(delta: Vector) {
     this.stopImmediately();
     this.location = this.location.add(delta.divide(this.currentScale));
+  }
+
+  /** 鼠标滚轮的平滑过渡（见 core/research/WheelGesture.ts），在 tick 里每帧走一段 */
+  private readonly wheelSmoother = new WheelSmoother();
+
+  /** 鼠标滚轮移动：按屏幕像素，分到接下来几帧里走完；连续拨时接着上一格剩下的路程 */
+  smoothPanByViewDelta(delta: Vector) {
+    this.stopMotion();
+    this.wheelSmoother.addPan(delta.x, delta.y, performance.now());
+  }
+
+  /** 鼠标滚轮缩放：以视野坐标 viewPoint 为中心，分到接下来几帧里缩放完 */
+  smoothZoomAt(viewPoint: Vector, factor: number) {
+    this.stopMotion();
+    this.wheelSmoother.addZoom(factor, { x: viewPoint.x, y: viewPoint.y }, performance.now());
   }
 
   /**

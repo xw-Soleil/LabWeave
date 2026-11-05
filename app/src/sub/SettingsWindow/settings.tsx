@@ -146,7 +146,16 @@ export const settingsPages: SettingsPage[] = [
     id: "mouse",
     icon: Mouse,
     sections: [
-      { id: "wheel", items: ["researchWheelBehavior", "scaleExponent", "scaleCameraByMouseLocation"] },
+      {
+        id: "wheel",
+        items: [
+          "researchWheelBehavior",
+          "researchMouseWheelPanStep",
+          "researchMouseWheelZoomStep",
+          "scaleCameraByMouseLocation",
+          "scaleExponent",
+        ],
+      },
       {
         id: "drag",
         items: [

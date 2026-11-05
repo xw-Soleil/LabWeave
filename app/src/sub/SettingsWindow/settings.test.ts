@@ -48,9 +48,12 @@ describe("settings pages", () => {
     }
   });
 
-  // 页名、小标题和子页面的文字缺了，界面上会直接露出 key
-  it.each(["zh_CN.yml", "en.yml"])("has page, section and sub-page titles in %s", (name) => {
+  // 设置名、页名、小标题和子页面的文字缺了，界面上会直接露出 key
+  it.each(["zh_CN.yml", "en.yml"])("has setting, page, section and sub-page titles in %s", (name) => {
     const locale = YAML.parse(readFileSync(new URL(`../../locales/${name}`, import.meta.url), "utf8"));
+    for (const key of shownKeys) {
+      expect(locale.settings[key]?.title, `${name}: settings.${key}.title`).toBeTypeOf("string");
+    }
     const texts = locale.research.settings;
     for (const page of settingsPages) {
       expect(texts.pages[page.id]?.title, `${name}: pages.${page.id}.title`).toBeTypeOf("string");
