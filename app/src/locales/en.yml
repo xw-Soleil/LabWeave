@@ -1093,7 +1093,7 @@ settings:
     title: Auto Backup Strategy
     description: "Choose how to save backup files: default (backup folder), side-by-side (same folder as original), or subfolder ({filename}_backup folder)."
     researchDescription: |
-      Where backup files go. In the research workbench they always go to the backup folder: the custom auto backup path if you set one, otherwise the app's own cache folder. No backup files are left in the research folder.
+      Where backup files go. They always go to the backup folder: the custom auto backup path if you set one, otherwise the app's own cache folder. No backup files are left in the research folder.
     options:
       default: Default (backup folder)
       sideBySide: Side-by-side (same folder)

@@ -1,37 +1,7 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { emitResearchEvent, fileKindOf, isResearchShell, onResearchEvent } from "./ResearchShell";
-
-describe("isResearchShell", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("is on when the flag is not set", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", undefined);
-    expect(isResearchShell()).toBe(true);
-  });
-
-  it("is off only when the flag is the string false", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    expect(isResearchShell()).toBe(false);
-    vi.stubEnv("LR_RESEARCH_SHELL", "true");
-    expect(isResearchShell()).toBe(true);
-  });
-
-  it("reads the runtime process.env when import.meta.env does not carry the flag (command line)", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", undefined);
-    const previous = process.env.LR_RESEARCH_SHELL;
-    process.env.LR_RESEARCH_SHELL = "false";
-    try {
-      expect(isResearchShell()).toBe(false);
-    } finally {
-      if (previous === undefined) delete process.env.LR_RESEARCH_SHELL;
-      else process.env.LR_RESEARCH_SHELL = previous;
-    }
-  });
-});
+import { describe, expect, it, vi } from "vitest";
+import { emitResearchEvent, fileKindOf, onResearchEvent } from "./ResearchShell";
 
 describe("fileKindOf", () => {
   it("classifies by extension, case-insensitively", () => {

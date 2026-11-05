@@ -18,16 +18,9 @@ afterEach(() => {
 });
 
 describe("telemetry", () => {
-  it("sends nothing in research mode, even when every other switch is on", async () => {
+  it("sends nothing, even when every other switch is on", async () => {
     await Telemetry.event("opened");
     expect(fetch).not.toHaveBeenCalled();
     expect(getDeviceId).not.toHaveBeenCalled();
-  });
-
-  it("keeps the upstream behaviour when research mode is off", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    vi.stubEnv("LR_API_BASE_URL", "https://api.example.com");
-    await Telemetry.event("opened");
-    expect(fetch).toHaveBeenCalledWith("https://api.example.com/api/telemetry", expect.anything());
   });
 });

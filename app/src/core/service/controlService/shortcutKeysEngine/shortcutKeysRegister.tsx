@@ -1,7 +1,7 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
-import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
+import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { ViewFlashEffect } from "@/core/service/feedbackService/effectEngine/concrete/ViewFlashEffect";
@@ -421,7 +421,7 @@ const researchKeyBinds: KeyBindItem[] = [
     when: whenAlways,
     onPress: () => emitResearchEvent("chooseFolder"),
   },
-  // 不给默认键位：科研模式下原版白板的快捷键大多还开着，⌘ 组合很容易撞车，置顶又不常用；需要的话在设置里自己绑
+  // 不给默认键位：白板原有的快捷键大多还开着，⌘ 组合很容易撞车，置顶又不常用；需要的话在设置里自己绑
   {
     id: WINDOW_PIN_KEYBIND_ID,
     defaultKey: "",
@@ -433,14 +433,12 @@ const researchKeyBinds: KeyBindItem[] = [
 
 /**
  * 快捷键、菜单、命令面板都不 await onPress，不在这里提示的话保存失败（比如草稿存到研究文件夹外面）用户看不到。
- * 科研模式下提示后返回 true；没选路径算用户取消，拒绝存到研究文件夹外面时 Project 已经提示过。
+ * 没选路径算用户取消，拒绝存到研究文件夹外面时 Project 已经提示过。
  */
-function reportResearchSaveError(error: unknown): boolean {
-  if (!isResearchShell()) return false;
-  if (error instanceof ResearchSaveRefusedError) return true;
-  if (error instanceof Error && error.message === "未选择路径") return true;
+function reportResearchSaveError(error: unknown): void {
+  if (error instanceof ResearchSaveRefusedError) return;
+  if (error instanceof Error && error.message === "未选择路径") return;
   toast.error(error instanceof Error ? error.message : String(error));
-  return true;
 }
 
 export const allKeyBinds: KeyBindItem[] = [
@@ -1365,8 +1363,8 @@ export const allKeyBinds: KeyBindItem[] = [
   /*------- 顶部菜单窗口, UI操作 -------*/
   {
     id: "clickAppMenuSettingsButton",
-    // 科研模式用 macOS 惯用的 ⌘,(Windows 上是 Ctrl+,)打开设置
-    defaultKey: isResearchShell() ? "C-," : "S-!",
+    // 用 macOS 惯用的 ⌘,(Windows 上是 Ctrl+,)打开设置
+    defaultKey: "C-,",
     icon: SettingsIcon,
     when: whenAlways,
     onPress: () => SettingsWindow.open("settings"),
@@ -1612,7 +1610,7 @@ export const allKeyBinds: KeyBindItem[] = [
       try {
         await project.save();
       } catch (error) {
-        if (!reportResearchSaveError(error)) throw error;
+        reportResearchSaveError(error);
         return;
       }
       if (Settings.clearHistoryWhenManualSave) {
@@ -3444,10 +3442,8 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenHasProject,
     onPress: async (project) => {
       const p = project!;
-      // 科研模式只在研究文件夹里读写，对话框默认打开到研究文件夹
-      const researchRoot = isResearchShell()
-        ? (await import("@/core/research/ResearchFolder")).ResearchFolder.getRoot()
-        : "";
+      // 只在研究文件夹里读写，对话框默认打开到研究文件夹
+      const researchRoot = (await import("@/core/research/ResearchFolder")).ResearchFolder.getRoot();
       const path = await save({
         title: i18next.t("file.saveAs", { ns: "globalMenu" }),
         filters: [{ name: "Project Graph", extensions: ["prg"] }],
@@ -3457,7 +3453,7 @@ export const allKeyBinds: KeyBindItem[] = [
       try {
         await p.saveAs(URI.file(path));
       } catch (error) {
-        if (!reportResearchSaveError(error)) throw error;
+        reportResearchSaveError(error);
         return;
       }
       await RecentFileManager.addRecentFileByUri(p.uri);
@@ -4578,15 +4574,13 @@ export const allKeyBinds: KeyBindItem[] = [
       store.set(commandPaletteVisibleAtom, !store.get(commandPaletteVisibleAtom));
     },
   },
-  ...(isResearchShell() ? researchKeyBinds : []),
+  ...researchKeyBinds,
 ];
 
-if (isResearchShell()) {
-  for (const keyBind of allKeyBinds) {
-    if (RESEARCH_DISABLED_KEYBIND_IDS.has(keyBind.id)) {
-      keyBind.defaultKey = "";
-      keyBind.defaultEnabled = false;
-    }
+for (const keyBind of allKeyBinds) {
+  if (RESEARCH_DISABLED_KEYBIND_IDS.has(keyBind.id)) {
+    keyBind.defaultKey = "";
+    keyBind.defaultEnabled = false;
   }
 }
 

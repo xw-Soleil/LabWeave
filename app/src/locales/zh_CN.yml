@@ -728,7 +728,7 @@ settings:
     description: |
       选择备份文件的保存方式：default（备份文件夹）、sideBySide（与原始文件同目录）、subfolder（{filename}_backup 子文件夹）
     researchDescription: |
-      备份文件放在哪里。科研模式只放进备份文件夹：填了「自定义自动备份路径」就用它，否则用软件自己的缓存目录，不会在研究文件夹里留下备份文件
+      备份文件放在哪里。一律放进备份文件夹：填了「自定义自动备份路径」就用它，否则用软件自己的缓存目录，不会在研究文件夹里留下备份文件
     options:
       default: 默认（备份文件夹）
       sideBySide: 同目录备份

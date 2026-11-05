@@ -32,11 +32,10 @@ function project(uri: string, metadata?: unknown) {
 
 describe("getAIChatProjectKey", () => {
   afterEach(() => {
-    vi.unstubAllEnvs();
     setAIChatProjectOpenCheck(() => true);
   });
 
-  it("keys chats by the workspace id in research mode", () => {
+  it("keys chats by the workspace id", () => {
     const workspace = project("file:///root/a.prg", { version: "2.0.0", workbench: { id: "w-1" } });
     expect(getAIChatProjectKey(workspace)).toBe("workbench:w-1");
   });
@@ -85,11 +84,5 @@ describe("getAIChatProjectKey", () => {
     setAIChatProjectOpenCheck((candidate) => candidate !== closed);
     const reopened = project("file:///root/b.prg", { workbench: { id: "w-closed" } });
     expect(getAIChatProjectKey(reopened)).toBe("workbench:w-closed");
-  });
-
-  it("keeps the upstream URI key when the research shell is off", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    expect(getAIChatProjectKey(project("draft:1"))).toBe("draft:1");
-    expect(getAIChatProjectKey(project("file:///root/a.prg", { workbench: { id: "w-1" } }))).toBe("file:///root/a.prg");
   });
 });

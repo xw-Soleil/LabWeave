@@ -1,5 +1,4 @@
 import { isRecentFileVisible, keyBindI18nKey, RESEARCH_COMMAND_IDS } from "@/core/research/ResearchMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { onOpenFile } from "@/core/service/GlobalMenu";
@@ -30,7 +29,7 @@ export default function CommandPalette({ zoomStyle }: { zoomStyle?: React.CSSPro
   const { t } = useTranslation("keyBinds");
   const allUIKeyBinds = KeyBindsUI.use();
   const [showFullMenu] = Settings.use("researchShowFullMenu");
-  const researchCommandsOnly = isResearchShell() && !showFullMenu;
+  const researchCommandsOnly = !showFullMenu;
   const uiKeyBinds = researchCommandsOnly
     ? allUIKeyBinds.filter((kb) => RESEARCH_COMMAND_IDS.has(kb.id))
     : allUIKeyBinds;

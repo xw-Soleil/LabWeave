@@ -1,6 +1,5 @@
 import { Project } from "@/core/Project";
 import { isRecentFileVisible, RESEARCH_GLOBAL_MENU, researchMenuTitleKey } from "@/core/research/ResearchMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
@@ -52,9 +51,9 @@ function command(id: string) {
 export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean) => void }) {
   const [config] = Settings.use("globalMenuConfig");
   const [showFullMenu] = Settings.use("researchShowFullMenu");
-  const researchMenu = isResearchShell() && !showFullMenu;
+  const researchMenu = !showFullMenu;
   const project = useAtomValue(activeResourceTabAtom);
-  // 只有科研菜单里有「窗口置顶」；原版模式不因置顶状态重建菜单
+  // 只有科研菜单里有「窗口置顶」；完整菜单不因置顶状态重建菜单
   const alwaysOnTop = useAtomValue(isWindowAlwaysOnTopAtom) && researchMenu;
   const { t, i18n } = useTranslation("keyBinds");
   const queue = useRef(Promise.resolve());
@@ -123,7 +122,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
     };
 
     // 系统自带的「退出」直接结束进程，不经过 onCloseRequested，关闭前的自动保存和未保存提示都会被跳过；
-    // 科研模式下（包括打开了完整菜单时）换成关主窗口，走同一条关闭流程
+    // 所以科研菜单和完整菜单都换成关主窗口，走同一条关闭流程
     const replaceQuit = async (applicationMenu: Submenu) => {
       const quitIndex = (await applicationMenu.items()).length - 1;
       const previousQuit = await applicationMenu.removeAt(quitIndex);
@@ -142,7 +141,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
       );
     };
 
-    // 科研模式：应用菜单里是「关于」「设置…」，然后是 文件、编辑、视图、窗口，都用文字标题。
+    // 科研菜单：应用菜单里是「关于」「设置…」，然后是 文件、编辑、视图、窗口，都用文字标题。
     const installResearchMenu = async (menu: Menu, defaults: NativeMenuEntry[]): Promise<Submenu> => {
       let systemWindowItems: NativeMenuEntry[] = [];
       for (const entry of defaults) {
@@ -223,7 +222,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
             const built = await buildItem(item);
             if (built) await applicationMenu.insert(built, applicationIndex++);
           }
-          if (isResearchShell()) await replaceQuit(applicationMenu);
+          await replaceQuit(applicationMenu);
           for (const id of nativeMacosMenuIds) {
             if (id === "settings" || id === "about") continue;
             const top = config.find((item) => item.id === id && item.type === "topMenu");

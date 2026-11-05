@@ -1,5 +1,4 @@
 import { FileSystemProvider } from "@/core/interfaces/Service";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { exists, lstat, mkdir, readDir, readFile, remove, rename, writeFile } from "@tauri-apps/plugin-fs";
 import type { FileInfo } from "@tauri-apps/plugin-fs";
 import { URI } from "vscode-uri";
@@ -47,10 +46,9 @@ export class FileSystemProviderFile implements FileSystemProvider {
     return await readDir(uri.fsPath);
   }
   async write(uri: URI, content: Uint8Array) {
-    if (!isResearchShell()) return await writeFile(uri.fsPath, content);
     const target = await atomicWriteTarget(uri.fsPath);
     // 改名会把符号链接换成普通文件，也会绕过只读权限（只要文件夹可写）。
-    // 这两种情况以及查不清楚的时候都退回原版的就地写入：沿链接写到真正的文件，只读时照常报错。
+    // 这两种情况以及查不清楚的时候都就地写入：沿链接写到真正的文件，只读时照常报错。
     if (target === "write-in-place") return await writeFile(uri.fsPath, content);
     // 先写临时文件再改名：写到一半崩溃或断电时，原文件还是完整的旧版本
     const temporaryPath = temporaryPathFor(uri.fsPath);

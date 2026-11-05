@@ -75,7 +75,7 @@ import type { StageManager } from "@/core/stage/stageManager/StageManager";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import type { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
-import { isResearchShell, SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, WORKBENCH_DIR } from "@/core/research/ResearchShell";
+import { SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, WORKBENCH_DIR } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { nextProjectIdAtom, store, tabsAtom } from "@/state";
 import { createDefaultMetadata, PrgMetadata, readWorkbenchMetadata, WorkbenchMetadata } from "@/types/metadata";
@@ -129,7 +129,7 @@ interface SaveAsTarget {
   isCopy: boolean;
 }
 
-/** 科研模式拒绝存到研究文件夹外面：抛出前已经弹过提示，调用方不用再提示一遍 */
+/** 拒绝存到研究文件夹外面：抛出前已经弹过提示，调用方不用再提示一遍 */
 export class ResearchSaveRefusedError extends Error {}
 
 /** 提示按纯文本显示，路径和报错里的 / & 不能被转成 HTML 实体 */
@@ -320,7 +320,7 @@ export class Project extends Tab {
       this.references = references;
       this.metadata = upgradedMetadata;
       this.readme = readme;
-      if (isResearchShell()) this.restoreSavedCamera();
+      this.restoreSavedCamera();
 
       // 更新引用关系，包括双向线的偏移状态
       // 注意：这里需要在服务加载后才能调用，所以需要检查服务是否已加载
@@ -347,12 +347,12 @@ export class Project extends Tab {
   }
 
   /**
-   * 科研模式下，工作区一打开（草稿一创建）就有固定的 id。AI 对话记录按它存，
+   * 工作区一打开（草稿一创建）就有固定的 id。AI 对话记录按它存，
    * 不能等到第一次保存或备份才生成，否则对话中途换了 key，记录就丢了。
    * 返回这次是否新生成了 id。
    */
   private ensureWorkbenchId(): boolean {
-    if (!isResearchShell() || readWorkbenchMetadata(this.metadata)) return false;
+    if (readWorkbenchMetadata(this.metadata)) return false;
     this.metadata = { ...this.metadata, workbench: { id: crypto.randomUUID(), createdAt: Date.now() } };
     return true;
   }
@@ -401,8 +401,8 @@ export class Project extends Tab {
   async save(options: { includeThumbnail?: boolean } = {}) {
     if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (this.isDraft || this.isCollab) {
-      // 科研模式：草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
-      const researchRoot = isResearchShell() ? (await loadResearchFolder()).getRoot() : "";
+      // 草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
+      const researchRoot = (await loadResearchFolder()).getRoot();
       const path = await saveDialog({
         title: this.isDraft ? "保存草稿" : "保存协作工程",
         filters: [{ name: "Project Graph", extensions: ["prg"] }],
@@ -430,7 +430,7 @@ export class Project extends Tab {
     if (targetUri.scheme !== "file") throw new Error("Project Save As requires a file URI");
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!fileSystemProvider) throw new Error("File Project provider is not registered");
-    const saveAsTarget = isResearchShell() ? await this.prepareResearchSaveAs(targetUri) : null;
+    const saveAsTarget = await this.prepareResearchSaveAs(targetUri);
 
     try {
       this.isSaving = true;
@@ -440,7 +440,7 @@ export class Project extends Tab {
       this.saveAsTarget = null;
       await this.projectOwnership.saveAs(targetUri, () => fileSystemProvider.write(targetUri, content));
       // 写盘成功、uri 已换成新位置后再改内存里的路径：失败时原工程保持原样
-      for (const [card, sourcePath] of saveAsTarget?.sourcePaths ?? []) {
+      for (const [card, sourcePath] of saveAsTarget.sourcePaths) {
         card.sourcePath = sourcePath;
       }
       this.adoptSavedWorkbench(content);
@@ -453,7 +453,7 @@ export class Project extends Tab {
   }
 
   /**
-   * 科研模式的另存为（草稿保存也走这里）：程序只在研究文件夹里读写，目标在外面就拒绝；
+   * 另存为（草稿保存也走这里）：程序只在研究文件夹里读写，目标在外面就拒绝；
    * 文件卡片存的是相对 .prg 所在文件夹的路径，换了文件夹要重新算。
    */
   private async prepareResearchSaveAs(targetUri: URI): Promise<SaveAsTarget> {
@@ -488,9 +488,9 @@ export class Project extends Tab {
     return { uri: targetUri, sourcePaths, isCopy };
   }
 
-  /** 研究模式下，写盘期间又有新编辑就保持未保存，让自动保存下一轮把它写进去 */
+  /** 写盘期间又有新编辑就保持未保存，让自动保存下一轮把它写进去 */
   private markSavedIfUnchangedSince(revision: number) {
-    if (isResearchShell() && this._editRevision !== revision) return;
+    if (this._editRevision !== revision) return;
     this.projectState = ProjectState.Saved;
   }
 
@@ -553,7 +553,7 @@ export class Project extends Tab {
    * file 协议的 FileSystemProvider 写入本身就是「临时文件 + 改名」（命令行版换成 node:fs 实现，也一样）。
    */
   private async writeAiSidecar(targetUri: URI, content: Uint8Array) {
-    if (!isResearchShell() || targetUri.scheme !== "file" || !Settings.writeAiSidecarOnSave) return;
+    if (targetUri.scheme !== "file" || !Settings.writeAiSidecarOnSave) return;
     const serializedStage = this.serializedStageByContent.get(content);
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!serializedStage || !fileSystemProvider) return;
@@ -590,10 +590,8 @@ export class Project extends Tab {
   async getFileContent(options: { includeThumbnail?: boolean } = {}) {
     const includeThumbnail = options.includeThumbnail !== false;
     const saveAsTarget = this.saveAsTarget;
-    const workbench = isResearchShell()
-      ? await this.workbenchForSave(saveAsTarget?.uri ?? this.uri, saveAsTarget?.isCopy ?? false)
-      : undefined;
-    const metadata = workbench ? { ...this.metadata, workbench } : this.metadata;
+    const workbench = await this.workbenchForSave(saveAsTarget?.uri ?? this.uri, saveAsTarget?.isCopy ?? false);
+    const metadata = { ...this.metadata, workbench };
     const serializedStage: unknown[] = serialize(this.stage);
     if (saveAsTarget) {
       this.stage.forEach((stageObject, index) => {
@@ -634,7 +632,7 @@ export class Project extends Tab {
 
     const fileContent = await uwriter.getData();
     this.serializedStageByContent.set(fileContent, serializedStage);
-    if (workbench) this.workbenchByContent.set(fileContent, workbench);
+    this.workbenchByContent.set(fileContent, workbench);
     return fileContent;
   }
 

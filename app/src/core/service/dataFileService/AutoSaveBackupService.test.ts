@@ -44,7 +44,6 @@ function fakeProject<T extends object>(fields: T): EventEmitter & T {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
-  vi.unstubAllEnvs();
   Settings.autoBackup = false;
   Settings.autoSave = true;
 });
@@ -244,7 +243,7 @@ describe("saving soon after an edit", () => {
     expect(project.save).toHaveBeenCalledOnce();
   });
 
-  it("does nothing when autosave is off, after dispose, or outside the research shell", () => {
+  it("does nothing when autosave is off or after dispose", () => {
     vi.useFakeTimers();
     Settings.autoSave = false;
     const disabled = fileProject();
@@ -260,13 +259,6 @@ describe("saving soon after an edit", () => {
     service.dispose();
     vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS);
     expect(disposed.save).not.toHaveBeenCalled();
-
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const upstream = fileProject();
-    new AutoSaveBackupService(upstream as unknown as Project);
-    upstream.emit("stage-commit");
-    vi.advanceTimersByTime(SAVE_AFTER_EDIT_DELAY_MS);
-    expect(upstream.save).not.toHaveBeenCalled();
   });
 
   it("never saves drafts from the timer", () => {

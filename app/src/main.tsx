@@ -10,7 +10,7 @@ import { Settings } from "@/core/service/Settings";
 import { Tutorials } from "@/core/service/Tutorials";
 import { UserState } from "@/core/service/UserState";
 import { EdgeCollisionBoxGetter } from "@/core/stage/stageObject/association/EdgeCollisionBoxGetter";
-import { type AuthUser, currentUserAtom, isAuthLoadingAtom, store, tabsAtom } from "@/state";
+import { type AuthUser, currentUserAtom, isAuthLoadingAtom, store } from "@/state";
 import { exit, writeStderr } from "@/utils/otherApi";
 import { isDesktop, isMobile, isWeb } from "@/utils/platform";
 import { invoke } from "@tauri-apps/api/core";
@@ -33,9 +33,8 @@ import { URI } from "vscode-uri";
 import App from "./App";
 import { ExtensionManager } from "./core/extension/ExtensionManager";
 import { startResearchSession } from "./core/research/ResearchSession";
-import { isResearchShell } from "./core/research/ResearchShell";
 import { handleDeepLink, isProjectGraphDeepLink } from "./core/service/dataFileService/DeepLinkHandler";
-import { onNewDraft, onOpenFile } from "./core/service/GlobalMenu";
+import { onOpenFile } from "./core/service/GlobalMenu";
 import WelcomeWindow from "./sub/WelcomeWindow";
 import "./css/index.css";
 import Fallback from "./Fallback";
@@ -161,8 +160,8 @@ async function loadLanguageFiles() {
     // debug: import.meta.env.DEV,
     debug: false,
     defaultNS: "",
-    // 科研模式的 research: 文案只手写了 en / zh_CN（zh_TW 由 zh_CN 自动生成），其他语言缺的键按这里回退，不显示原始 key
-    fallbackLng: isResearchShell() ? { zh_TWC: ["zh_TW", "en"], id: ["en"], default: [] } : false,
+    // research: 文案只手写了 en / zh_CN（zh_TW 由 zh_CN 自动生成），其他语言缺的键按这里回退，不显示原始 key
+    fallbackLng: { zh_TWC: ["zh_TW", "en"], id: ["en"], default: [] },
     saveMissing: false,
     resources: {
       en: await import("./locales/en.yml").then((m) => m.default),
@@ -175,7 +174,7 @@ async function loadLanguageFiles() {
 }
 
 /**
- * 科研模式的提示框：白底卡片、发丝边框、浮层阴影，不用 richColors 的整块彩色底（错误只把图标标红）。
+ * 提示框：白底卡片、发丝边框、浮层阴影，不用 richColors 的整块彩色底（错误只把图标标红）。
  * 文案里的 \n 要换行（多个出错文件一行一个），长路径、长文件名要能在任意位置断开。
  * 传 style 会整个替换 Toaster 组件自带的那份，所以三个 --normal-* 变量要再写一遍。
  */
@@ -198,8 +197,6 @@ const RESEARCH_TOASTER_PROPS = {
 
 /** 渲染应用 */
 async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = false) {
-  // 给全局样式用的标记(比如科研模式的滚动条),弹窗挂在 body 下也能匹配到
-  if (isResearchShell()) document.documentElement.dataset.researchShell = "";
   const root = createRoot(el);
   if (cli) {
     await getCurrentWindow().hide();
@@ -217,11 +214,7 @@ async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = f
     // }
     root.render(
       <Provider store={store}>
-        {isResearchShell() ? (
-          <Toaster visibleToasts={5} expand {...RESEARCH_TOASTER_PROPS} />
-        ) : (
-          <Toaster richColors visibleToasts={5} expand />
-        )}
+        <Toaster visibleToasts={5} expand {...RESEARCH_TOASTER_PROPS} />
         <ErrorBoundary FallbackComponent={Fallback}>
           <App />
         </ErrorBoundary>
@@ -301,14 +294,8 @@ async function loadStartFile() {
   });
 }
 
-/** 无外部文件时创建空草稿并弹出欢迎窗（类 Blender splash） */
+/** 恢复上次的会话；没有可恢复的内容时弹出欢迎窗（类 Blender splash） */
 async function ensureStartupDraftAndWelcome() {
-  if (isResearchShell()) {
-    // 欢迎页不创建工程；只有用户主动新建时才分配草稿。
-    if (!(await startResearchSession())) WelcomeWindow.open();
-    return;
-  }
-  if (store.get(tabsAtom).length > 0) return;
-  await onNewDraft();
-  WelcomeWindow.open();
+  // 欢迎页不创建工程；只有用户主动新建时才分配草稿。
+  if (!(await startResearchSession())) WelcomeWindow.open();
 }

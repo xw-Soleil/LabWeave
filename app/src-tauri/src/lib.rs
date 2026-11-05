@@ -101,11 +101,7 @@ pub fn run() {
         }
     }
 
-    let builder = tauri::Builder::default();
-    #[cfg(all(desktop, not(feature = "research-shell")))]
-    let builder = builder.manage(cmd::mcp::McpStdioManager::default());
-
-    let app = builder
+    let app = tauri::Builder::default()
         .manage(PendingOpenFiles::default())
         .manage(Arc::new(
             project_ownership::DesktopProjectOwnershipManager::default(),
@@ -141,17 +137,6 @@ pub fn run() {
                 app.handle().plugin(tauri_plugin_system_info::init())?;
                 app.handle()
                     .plugin(tauri_plugin_window_state::Builder::new().build())?;
-                #[cfg(not(feature = "research-shell"))]
-                {
-                    // The updater plugin fails to initialize without plugins.updater.pubkey,
-                    // which this fork's tauri.conf.json does not ship.
-                    if app.config().plugins.0.contains_key("updater") {
-                        app.handle()
-                            .plugin(tauri_plugin_updater::Builder::new().build())?;
-                    }
-                    app.handle()
-                        .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
-                }
             }
             #[cfg(target_os = "windows")]
             custom_drag_drop::install(app.handle().clone());
@@ -179,36 +164,10 @@ pub fn run() {
             project_reference_store::save_project_reference_snapshot,
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
-            // Still called by "generate from folder" and the recent-files folder import.
+            // Called by "generate from folder" and the recent-files folder import.
             cmd::fs::read_folder_structure,
             cmd::fs::read_folder_recursive,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::exists,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::read_folder,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::delete_file,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::read_text_file,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::read_file_base64,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::write_text_file,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::write_file_base64,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::fs::create_folder,
-            #[cfg(not(feature = "research-shell"))]
-            cmd::shell::run_command,
             cmd::device::get_distribution,
-            #[cfg(all(desktop, not(feature = "research-shell")))]
-            cmd::mcp::mcp_stdio_start,
-            #[cfg(all(desktop, not(feature = "research-shell")))]
-            cmd::mcp::mcp_stdio_list_tools,
-            #[cfg(all(desktop, not(feature = "research-shell")))]
-            cmd::mcp::mcp_stdio_call_tool,
-            #[cfg(all(desktop, not(feature = "research-shell")))]
-            cmd::mcp::mcp_stdio_stop,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

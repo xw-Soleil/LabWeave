@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const settings = vi.hoisted(() => ({
   unwatch: vi.fn(),
@@ -89,10 +89,6 @@ describe("HistoryManager cleanup", () => {
 });
 
 describe("undo and redo after the project was saved", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   /** 模拟「编辑一步 → 自动保存把状态改成已保存」之后的工程 */
   function savedProjectWithOneStep(mode: "memoryEfficient" | "timeEfficient") {
     settings.watch.mockReset().mockImplementation((_key, callback) => {
@@ -135,15 +131,6 @@ describe("undo and redo after the project was saved", () => {
   it("leaves the state alone when there is nothing to redo", () => {
     const { project, manager } = savedProjectWithOneStep("memoryEfficient");
     manager.redo();
-    expect(project.projectState).toBe("saved");
-    expect(project.emit).not.toHaveBeenCalled();
-  });
-
-  it("keeps upstream behaviour outside the research shell", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const { project, manager } = savedProjectWithOneStep("memoryEfficient");
-    manager.undo();
-    expect(project.stage).toHaveLength(1);
     expect(project.projectState).toBe("saved");
     expect(project.emit).not.toHaveBeenCalled();
   });

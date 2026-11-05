@@ -41,7 +41,7 @@ const upstreamToolNames = [
   "recognize_image",
 ] as const;
 
-// vitest 里没有设置 LR_RESEARCH_SHELL，科研模式默认开，目录末尾多两个科研工作台工具
+// 目录末尾是两个科研工作台工具
 const researchToolNames = ["dump_workspace", "create_file_card"] as const;
 const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
 
@@ -59,18 +59,6 @@ describe("Built-in Tool Registry catalog", () => {
     expect(builtInToolCatalog.map(({ name }) => name)).toEqual(expectedToolNames);
     expect(new Set(expectedToolNames).size).toBe(expectedToolNames.length);
     expect(executorModule.loaded).toBe(false);
-  });
-
-  it("keeps exactly the 29 upstream tools when the research shell is off", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    vi.resetModules();
-    try {
-      const registry = await import("./BuiltInToolRegistry");
-      expect(registry.builtInToolCatalog.map(({ name }) => name)).toEqual(upstreamToolNames);
-    } finally {
-      vi.unstubAllEnvs();
-      vi.resetModules();
-    }
   });
 
   it("keeps dump_workspace read-only and create_file_card open-project-only", () => {

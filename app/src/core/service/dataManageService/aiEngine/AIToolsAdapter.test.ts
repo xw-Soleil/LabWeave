@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import z from "zod/v4";
 
-// 这里测的是原版的 29 个工具；科研模式的过滤单独在最后一个用例里测
-vi.hoisted(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
-
 const mocks = vi.hoisted(() => {
   class ReferenceError extends Error {
     readonly name = "AIObjectReferenceError";
@@ -54,7 +51,7 @@ mocks.executors = Object.fromEntries(
     name,
     vi.fn(async (_project, input, references, context) => {
       mocks.executorCalls.push({ index, input, references, context });
-      if (index === 1) throw new mocks.ReferenceError("stale_ref", input.ref, "引用已失效");
+      if (name === "get_children") throw new mocks.ReferenceError("stale_ref", input.ref, "引用已失效");
       if (index === 0) return mocks.rawResult;
       return { index, input };
     }),
@@ -95,7 +92,7 @@ describe("Built-in Tool consumer adapters", () => {
 
   it("projects the canonical catalog into the unchanged tool-window shape without loading executors", () => {
     const windowEntries = getBuiltInToolWindowEntries();
-    expect(windowEntries).toHaveLength(29);
+    expect(windowEntries).toHaveLength(31);
     expect(windowEntries.map(({ name, description, parameters }) => ({ name, description, parameters }))).toEqual(
       builtInToolCatalog.map(({ name, description, inputSchema }) => ({
         name,
@@ -105,7 +102,6 @@ describe("Built-in Tool consumer adapters", () => {
     );
 
     const toolSet = createBuiltInToolAgentTools({} as never, {} as never) as Record<string, Record<string, unknown>>;
-    expect(Object.keys(toolSet)).toEqual(builtInToolCatalog.map(({ name }) => name));
     expect(toolSet.get_all_nodes).not.toHaveProperty("toModelOutput");
     expect(() => windowEntries.map(({ parameters }) => z.toJSONSchema(parameters))).not.toThrow();
     expect(mocks.executorModuleLoaded).toBe(false);
@@ -191,10 +187,17 @@ describe("Built-in Tool consumer adapters", () => {
       { execute(input: unknown, context?: unknown): Promise<string> }
     >;
 
-    await tools.delete_all_nodes.execute({}, { abortSignal: "undeclared-signal" });
+    await tools.dump_workspace.execute({}, { abortSignal: "undeclared-signal" });
 
-    expect(mocks.executorCalls).toEqual([{ index: 4, input: {}, references: undefined, context: {} }]);
-    expect(mocks.loaderCalls).toEqual(["delete_all_nodes"]);
+    expect(mocks.executorCalls).toEqual([
+      {
+        index: builtInToolCatalog.findIndex(({ name }) => name === "dump_workspace"),
+        input: {},
+        references: undefined,
+        context: {},
+      },
+    ]);
+    expect(mocks.loaderCalls).toEqual(["dump_workspace"]);
   });
 
   it("loads and invokes only the selected executor when an AI SDK tool executes", async () => {
@@ -210,13 +213,26 @@ describe("Built-in Tool consumer adapters", () => {
     expect(mocks.executorCalls).toEqual([{ index: 0, input: {}, references: expect.any(Object), context: {} }]);
   });
 
-  it("passes an abort signal only to the executor that declares it", async () => {
+  it("hands the chat's abort signal to the tool call, so a stopped chat does not run the tool", async () => {
     const tools = createBuiltInToolAgentTools({} as never, {} as never) as unknown as Record<
       string,
       { execute(input: unknown, context?: unknown): Promise<string> }
     >;
+    const controller = new AbortController();
+    controller.abort();
 
-    await tools.search_and_add_image_node.execute({ query: "diagram" }, { abortSignal: "signal" });
+    await expect(tools.get_all_nodes.execute({}, { abortSignal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(mocks.executorCalls).toEqual([]);
+  });
+
+  it("passes an abort signal only to the executor that declares it", async () => {
+    const { host } = createRuntimeHost();
+
+    await invokeBuiltInTool("search_and_add_image_node", { query: "diagram" }, host as never, {
+      abortSignal: "signal" as never,
+    });
 
     expect(mocks.loaderCalls).toEqual(["search_and_add_image_node"]);
     expect(mocks.executorCalls).toEqual([
@@ -235,7 +251,7 @@ describe("Built-in Tool consumer adapters", () => {
       { execute(input: unknown): Promise<string> }
     >;
 
-    const result = await tools.delete_node.execute({ ref: "n1" });
+    const result = await tools.get_children.execute({ ref: "n1" });
 
     expect(JSON.parse(result)).toEqual({
       success: false,
@@ -243,23 +259,19 @@ describe("Built-in Tool consumer adapters", () => {
     });
   });
 
-  it("gives the research-mode chat only tools that cannot change the board, call out, or call a model", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "true");
-    try {
-      const toolSet = createBuiltInToolAgentTools({} as never, {} as never) as Record<string, unknown>;
-      expect(Object.keys(toolSet)).toEqual([
-        "get_all_nodes",
-        "search_text_nodes_by_regex",
-        "get_children",
-        "get_parents",
-        "get_object_details",
-        "check_connections",
-        "get_selected_nodes",
-        "get_nodes_in_viewport",
-        "get_selected_refs",
-      ]);
-    } finally {
-      vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    }
+  it("gives the in-app chat only tools that cannot change the board, call out, or call a model", () => {
+    const toolSet = createBuiltInToolAgentTools({} as never, {} as never) as Record<string, unknown>;
+    expect(Object.keys(toolSet)).toEqual([
+      "get_all_nodes",
+      "search_text_nodes_by_regex",
+      "get_children",
+      "get_parents",
+      "get_object_details",
+      "check_connections",
+      "get_selected_nodes",
+      "get_nodes_in_viewport",
+      "get_selected_refs",
+      "dump_workspace",
+    ]);
   });
 });

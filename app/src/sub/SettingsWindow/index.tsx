@@ -1,132 +1,21 @@
 import { OverlayHost } from "@/components/overlay-host";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isResearchShell } from "@/core/research/ResearchShell";
-import { createSubWindow } from "@/core/subWindowOpen";
-import { ComponentTabContext } from "@/core/Tab";
-import { activeTabAtom, store } from "@/state";
+import { store } from "@/state";
 import { cn } from "@/utils/cn";
-import { Vector } from "@graphif/data-structures";
-import { Rectangle } from "@graphif/shapes";
 import { atom, useAtomValue } from "jotai";
-import { Blocks, Brush, HandHeart, Info, Keyboard, type LucideIcon, Settings, User, X } from "lucide-react";
+import { Brush, Info, Keyboard, type LucideIcon, Settings, X } from "lucide-react";
 import { Tabs as TabsPrimitive } from "radix-ui";
-import { useContext, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AboutTab from "./about";
-import AccountTab from "./account";
-import CreditsTab from "./credits";
 import CustomizationTab from "./customization";
-import QuickSettingsTab from "./customization/quick-settings";
-import ExtensionsTab from "./extensions";
 import KeyBindsPage from "./keybinds";
 import SettingsTab, { type SettingsDialogTab, SettingsNavigationContext } from "./settings";
 
 type TabName = "settings" | "linuxRuntime" | "keybinds" | "customization" | "about" | "extensions" | "account";
-
-// 科研模式不需要账户、扩展和鸣谢（捐助）页
-const researchHiddenTabs: ReadonlySet<string> = new Set(["account", "extensions", "credits"]);
-
-export default function SettingsWindow({ defaultTab = "settings" }: { defaultTab?: TabName }) {
-  const researchShell = isResearchShell();
-  const [currentTab, setCurrentTab] = useState<TabName>(
-    researchShell && researchHiddenTabs.has(defaultTab) ? "settings" : defaultTab,
-  );
-  const owner = useContext(ComponentTabContext);
-  const activeTab = useAtomValue(activeTabAtom);
-  const [navigationHost, setNavigationHost] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setNavigationHost(document.getElementById("pg-titlebar-navigation"));
-  }, []);
-  const portalHost = owner?.layout === "docked" && activeTab === owner ? navigationHost : null;
-  const navigation = (
-    <div className="scrollbar-hide h-full max-w-full min-w-0 overflow-x-auto rounded-full">
-      <TabsList
-        variant="capsule"
-        className="w-max [&_[data-slot=tabs-indicator]]:rounded-full [&_[role=tab]]:shrink-0 [&_[role=tab]]:rounded-full"
-      >
-        <TabsTrigger value="settings">
-          <Settings />
-          设置
-        </TabsTrigger>
-        <TabsTrigger value="keybinds">
-          <Keyboard />
-          快捷键
-        </TabsTrigger>
-        <TabsTrigger value="customization">
-          <Brush />
-          个性化
-        </TabsTrigger>
-        {!researchShell && (
-          <TabsTrigger value="account">
-            <User />
-            账户
-          </TabsTrigger>
-        )}
-        {!researchShell && (
-          <TabsTrigger value="extensions">
-            <Blocks />
-            扩展
-          </TabsTrigger>
-        )}
-        <TabsTrigger value="about">
-          <Info />
-          关于
-        </TabsTrigger>
-        {!researchShell && (
-          <TabsTrigger value="credits">
-            <HandHeart />
-            鸣谢
-          </TabsTrigger>
-        )}
-      </TabsList>
-    </div>
-  );
-
-  return (
-    <Tabs
-      data-pg-settings-view
-      value={currentTab}
-      onValueChange={setCurrentTab as any}
-      className="h-full gap-0 overflow-hidden"
-    >
-      {portalHost ? createPortal(navigation, portalHost) : <div className="flex h-10 shrink-0">{navigation}</div>}
-      <TabsContent value="settings" className="min-h-0 overflow-hidden">
-        <SettingsTab />
-      </TabsContent>
-      <TabsContent value="keybinds" className="min-h-0 overflow-hidden">
-        <KeyBindsPage />
-      </TabsContent>
-      <TabsContent value="customization" className="overflow-auto">
-        <CustomizationTab />
-      </TabsContent>
-      {!researchShell && (
-        <TabsContent value="account" className="overflow-auto">
-          <AccountTab />
-        </TabsContent>
-      )}
-      <TabsContent value="quickSettings" className="overflow-auto">
-        <QuickSettingsTab />
-      </TabsContent>
-      {!researchShell && (
-        <TabsContent value="extensions" className="overflow-auto">
-          <ExtensionsTab />
-        </TabsContent>
-      )}
-      <TabsContent value="about" className="overflow-auto">
-        <AboutTab />
-      </TabsContent>
-      {!researchShell && (
-        <TabsContent value="credits" className="overflow-auto">
-          <CreditsTab />
-        </TabsContent>
-      )}
-    </Tabs>
-  );
-}
 
 const researchDialogTabs: { value: SettingsDialogTab; icon: LucideIcon }[] = [
   { value: "settings", icon: Settings },
@@ -142,15 +31,6 @@ function researchDialogTab(tab: TabName): SettingsDialogTab {
 // 每次 open 都换一个 seq，已经开着的弹窗据此切到要求的页面并拿回焦点
 const researchDialogRequestAtom = atom<{ tab: SettingsDialogTab; seq: number }>({ tab: "settings", seq: 0 });
 let researchDialogOpen = false;
-
-/** 科研模式：设置是居中的弹窗，只开一个，不暂停白板 */
-function openResearchSettingsDialog(tab: TabName) {
-  const previous = store.get(researchDialogRequestAtom);
-  store.set(researchDialogRequestAtom, { tab: researchDialogTab(tab), seq: previous.seq + 1 });
-  if (researchDialogOpen) return;
-  researchDialogOpen = true;
-  OverlayHost.open(<ResearchSettingsDialog />);
-}
 
 function ResearchSettingsDialog({ overlayId }: { overlayId?: string }) {
   const { t } = useTranslation("research");
@@ -252,18 +132,16 @@ function ResearchSettingsDialog({ overlayId }: { overlayId?: string }) {
   );
 }
 
-// TODO: page参数
-SettingsWindow.open = (tab: TabName = "settings") => {
-  if (isResearchShell()) {
-    openResearchSettingsDialog(tab);
-    return;
-  }
-  store.get(activeTabAtom)?.pause();
-  createSubWindow("SettingsWindow", {
-    icon: Settings,
-    title: "设置",
-    children: <SettingsWindow defaultTab={tab} />,
-    rect: Rectangle.inCenter(new Vector(innerWidth > 1653 ? 1240 : innerWidth * 0.75, innerHeight * 0.875)),
-    titleBarOverlay: true,
-  });
+const SettingsWindow = {
+  // TODO: page参数
+  /** 设置是居中的弹窗，只开一个，不暂停白板 */
+  open(tab: TabName = "settings") {
+    const previous = store.get(researchDialogRequestAtom);
+    store.set(researchDialogRequestAtom, { tab: researchDialogTab(tab), seq: previous.seq + 1 });
+    if (researchDialogOpen) return;
+    researchDialogOpen = true;
+    OverlayHost.open(<ResearchSettingsDialog />);
+  },
 };
+
+export default SettingsWindow;

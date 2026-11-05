@@ -6,7 +6,6 @@ import i18next from "i18next";
 import { toast } from "sonner";
 import { Project } from "@/core/Project";
 import { isOutsideResearchFolder, ResearchFolder } from "@/core/research/ResearchFolder";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Vector } from "@graphif/data-structures";
 
 interface DeepLinkParams {
@@ -18,17 +17,9 @@ interface DeepLinkParams {
 
 const handledUrls = new Set<string>();
 
-// 科研工作台注册的是 rwb:// 协议，prg:// 留给可能同时装着的原版
-function deepLinkScheme() {
-  return isResearchShell() ? "rwb" : "prg";
-}
-
-function deepLinkSchemePattern() {
-  return isResearchShell() ? "(?:rwb|prg)" : "prg";
-}
-
+// 注册和生成的都是 rwb://（prg:// 协议留给可能同时装着的 Project Graph）；解析时 rwb:// 和 prg:// 都认
 export function isProjectGraphDeepLink(input: string) {
-  return new RegExp(`^${deepLinkSchemePattern()}:(\\/\\/)?`, "i").test(input);
+  return /^(?:rwb|prg):(\/\/)?/i.test(input);
 }
 
 function buildProjectGraphUrl(params: DeepLinkParams) {
@@ -43,7 +34,7 @@ function buildProjectGraphUrl(params: DeepLinkParams) {
   if (params.zoom !== undefined) {
     queryEntries.push(`zoom=${encodeReadableQueryValue(String(params.zoom))}`);
   }
-  return `${deepLinkScheme()}://open?${queryEntries.join("&")}`;
+  return `rwb://open?${queryEntries.join("&")}`;
 }
 
 function encodeReadableQueryValue(value: string) {
@@ -123,8 +114,8 @@ async function normalizeFilePath(rawPath: string): Promise<string | null> {
 
   const fileName = path.toLowerCase().endsWith(".prg") ? path : path + ".prg";
 
-  // 科研模式下相对路径先按研究文件夹解析
-  if (isResearchShell() && ResearchFolder.getRoot()) {
+  // 相对路径先按研究文件夹解析
+  if (ResearchFolder.getRoot()) {
     const insideRoot = ResearchFolder.toAbsolute(fileName);
     if (ResearchFolder.isInside(insideRoot)) {
       await ResearchFolder.ensureRootRegistered().catch((error) =>

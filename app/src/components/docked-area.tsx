@@ -1,6 +1,6 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
-import { emitResearchEvent, isResearchShell } from "@/core/research/ResearchShell";
+import { emitResearchEvent } from "@/core/research/ResearchShell";
 import WelcomeWindow from "@/sub/WelcomeWindow";
 import { Tab } from "@/core/Tab";
 import {
@@ -13,9 +13,8 @@ import {
   type TabGroupNode,
 } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { activeGroupIdAtom, activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } from "@/state";
+import { activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
-import { isMac } from "@/utils/platform";
 import { useAtomValue } from "jotai";
 import { Minus, Plus } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -30,7 +29,6 @@ interface ProjectStatusInfo {
   selected: number;
   state: "saved" | "stashed" | "unsaved";
   scalePercent: number;
-  emptyCanvas: boolean;
   noVisibleNodes: boolean;
 }
 
@@ -55,7 +53,6 @@ function readProjectStatus(project: Project): ProjectStatusInfo {
       } as const
     )[project.projectState],
     scalePercent: Math.round(project.camera.currentScale * 100),
-    emptyCanvas: entities.length === 0,
     noVisibleNodes: entities.length > 0 && !hasVisibleNode,
   };
 }
@@ -77,35 +74,6 @@ function useProjectStatus(project: Project) {
     return () => window.clearInterval(interval);
   }, [project]);
   return status;
-}
-
-function ProjectStatus({ project, isClassroomMode }: { project: Project; isClassroomMode: boolean }) {
-  const { t } = useTranslation("projectStatus");
-  const status = useProjectStatus(project);
-  const viewHint = !status
-    ? ""
-    : status.emptyCanvas
-      ? t("emptyCanvas")
-      : status.noVisibleNodes
-        ? t("noVisibleNodes")
-        : "";
-  const text = status
-    ? `${t("nodes", { count: status.nodes })} · ${t("edges", { count: status.edges })} · ${t("selected", { count: status.selected })}  |  ${status.scalePercent}%  |  ${t(status.state)}`
-    : "";
-
-  return (
-    <div
-      className={cn(
-        "bg-background text-muted-foreground absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full px-3 py-1.5 text-xs shadow-xs transition-opacity hover:opacity-100",
-        isClassroomMode && "opacity-0",
-      )}
-    >
-      <span className="truncate">{viewHint || text}</span>
-      <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs" onClick={() => project.camera.reset()}>
-        {t("fitView")}
-      </Button>
-    </div>
-  );
 }
 
 function StatusBarButton({
@@ -142,7 +110,7 @@ function StatusBarButton({
   );
 }
 
-/** 科研模式：编辑区底部固定的一行状态栏，取代原版浮在画布左下角的胶囊 */
+/** 编辑区底部固定的一行状态栏 */
 function ResearchStatusBar({ project, isClassroomMode }: { project: Project; isClassroomMode: boolean }) {
   const { t } = useTranslation("research");
   const status = useProjectStatus(project);
@@ -209,49 +177,6 @@ function ResearchStatusBar({ project, isClassroomMode }: { project: Project; isC
   );
 }
 
-function SplitView({
-  node,
-  renderNode,
-}: {
-  node: Extract<TabGroupNode, { type: "split" }>;
-  renderNode: (node: TabGroupNode) => React.ReactNode;
-}) {
-  const horizontal = node.direction === "horizontal";
-  return (
-    <div className={cn("flex size-full min-h-0 min-w-0", horizontal ? "flex-row" : "flex-col")}>
-      <div className="min-h-0 min-w-0" style={{ flexBasis: `${node.sizes[0]}%`, flexGrow: 0, flexShrink: 1 }}>
-        {renderNode(node.children[0])}
-      </div>
-      <div
-        className={cn(
-          "bg-border hover:bg-primary z-20 shrink-0 touch-none transition-colors",
-          horizontal ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
-        )}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          const parent = event.currentTarget.parentElement;
-          if (!parent) return;
-          const rect = parent.getBoundingClientRect();
-          const update = (clientX: number, clientY: number) => {
-            const total = horizontal ? rect.width : rect.height;
-            const position = horizontal ? clientX - rect.left : clientY - rect.top;
-            const first = Math.max(10, Math.min(90, (position / total) * 100));
-            TabWorkspace.resizeSplit(node.id, [first, 100 - first]);
-          };
-          const onMove = (moveEvent: PointerEvent) => update(moveEvent.clientX, moveEvent.clientY);
-          const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-          };
-          window.addEventListener("pointermove", onMove);
-          window.addEventListener("pointerup", onUp);
-        }}
-      />
-      <div className="min-h-0 min-w-0 flex-1">{renderNode(node.children[1])}</div>
-    </div>
-  );
-}
-
 const SIDE_PANEL_WIDTH_STORAGE_KEY = {
   left: "pg-research-side-panel-width-left",
   right: "pg-research-side-panel-width-right",
@@ -268,7 +193,7 @@ function readSidePanelWidths(): SidePanelWidths {
 }
 
 /**
- * 科研模式的分栏：分隔线只画 1px，鼠标可按的范围左右各多 4px，悬停或拖动时显示 2px 强调色线。
+ * 分栏：分隔线只画 1px，鼠标可按的范围左右各多 4px，悬停或拖动时显示 2px 强调色线。
  * 直接挂在左右分栏上的固定侧栏（文件面板、AI 对话）按像素定宽，拖宽后记住；其余分栏照旧按比例。
  */
 function ResearchSplitView({
@@ -382,9 +307,8 @@ function DropPreview({ groupId }: { groupId: string }) {
   );
   if (!group) return null;
   const tabBar = group.querySelector<HTMLElement>("[data-pg-tab-bar]");
-  // 科研模式的侧栏只有一页时不显示标签行，拖进来就整块高亮，松手后标签放进这一组
+  // 侧栏只有一页时不显示标签行，拖进来就整块高亮，松手后标签放进这一组
   if (!tabBar) {
-    if (!isResearchShell()) return null;
     return <div className="bg-primary/10 border-primary pointer-events-none absolute inset-0 z-30 border-2" />;
   }
   const tabs = Array.from(tabBar.querySelectorAll<HTMLElement>("[data-pg-docked-tab-id]"));
@@ -423,13 +347,9 @@ export default function DockedArea({
 }) {
   const root = useAtomValue(tabGroupRootAtom);
   const tabs = useAtomValue(tabsAtom);
-  const activeGroupId = useAtomValue(activeGroupIdAtom);
-  const research = isResearchShell();
   const { t } = useTranslation("research");
-  const empty = research && !tabs.some((tab) => tab instanceof Project && !tab.closing);
-  const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() =>
-    research ? readSidePanelWidths() : { left: 0, right: 0 },
-  );
+  const empty = !tabs.some((tab) => tab instanceof Project && !tab.closing);
+  const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
   const changeSideWidth = (edge: FixedSideEdge, width: number) =>
     setSideWidths((current) => (current[edge] === width ? current : { ...current, [edge]: width }));
   const commitSideWidth = (edge: FixedSideEdge, width: number) =>
@@ -439,7 +359,7 @@ export default function DockedArea({
     if (activeTab && store.get(activeTabAtom) !== activeTab) TabWorkspace.focus(activeTab.id);
   };
 
-  // 科研模式：分组之间只有 1px 分隔线，不画边框和焦点框；标签行 → 内容 → 状态栏自上而下排，内容不被压住
+  // 分组之间只有 1px 分隔线，不画边框和焦点框；标签行 → 内容 → 状态栏自上而下排，内容不被压住
   const renderResearchGroup = (node: TabGroup, groupTabs: Tab[], activeTab: Tab | undefined) => {
     // 侧栏只有面板自己这一页时不要标签行；放进了工作区或多页时照常显示，才能切换、关闭和拖走
     const showTabBar =
@@ -474,27 +394,16 @@ export default function DockedArea({
     );
   };
 
-  const renderNode = (node: TabGroupNode, atWindowTop = true): React.ReactNode => {
+  const renderNode = (node: TabGroupNode): React.ReactNode => {
     if (node.type === "split") {
-      if (research) {
-        return (
-          <ResearchSplitView
-            key={node.id}
-            node={node}
-            renderNode={(child) => renderNode(child, false)}
-            sideWidths={sideWidths}
-            onSideWidthChange={changeSideWidth}
-            onSideWidthCommit={commitSideWidth}
-          />
-        );
-      }
       return (
-        <SplitView
+        <ResearchSplitView
           key={node.id}
           node={node}
-          renderNode={(child) =>
-            renderNode(child, atWindowTop && (node.direction === "horizontal" || child === node.children[0]))
-          }
+          renderNode={renderNode}
+          sideWidths={sideWidths}
+          onSideWidthChange={changeSideWidth}
+          onSideWidthCommit={commitSideWidth}
         />
       );
     }
@@ -503,48 +412,7 @@ export default function DockedArea({
       return tab ? [tab] : [];
     });
     const activeTab = groupTabs.find((tab) => tab.id === node.activeTabId) ?? groupTabs.at(-1);
-    if (research) return renderResearchGroup(node, groupTabs, activeTab);
-    return (
-      <section
-        key={node.id}
-        data-pg-tab-group-id={node.id}
-        className={cn(
-          "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden",
-          root?.type === "split" && "border-border border",
-          root?.type === "split" && activeGroupId === node.id && "border-primary/60",
-        )}
-        onPointerDownCapture={() => focusGroupTab(activeTab)}
-      >
-        <div
-          className={cn(
-            "relative z-10 shrink-0",
-            atWindowTop && "pt-[calc(2rem*var(--pg-ui-scale,1))] sm:pt-[calc(3.5rem*var(--pg-ui-scale,1))]",
-            atWindowTop && isMac && root?.type === "group" && "w-[35%] pt-7 sm:pt-7",
-          )}
-        >
-          <ProjectTabs
-            groupId={node.id}
-            tabs={groupTabs}
-            activeTab={activeTab}
-            onTabClick={onTabClick}
-            onTabClose={onTabClose}
-            isClassroomMode={isClassroomMode}
-          />
-        </div>
-        <div
-          className={cn(
-            "min-h-0 min-w-0 overflow-hidden",
-            activeTab instanceof Project ? "absolute inset-0" : "relative flex-1",
-          )}
-        >
-          {activeTab && React.createElement(activeTab.getComponent())}
-          {activeTab instanceof Project && (
-            <ProjectStatus key={activeTab.id} project={activeTab} isClassroomMode={isClassroomMode} />
-          )}
-        </div>
-        <DropPreview groupId={node.id} />
-      </section>
-    );
+    return renderResearchGroup(node, groupTabs, activeTab);
   };
 
   return (

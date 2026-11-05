@@ -55,8 +55,9 @@ vi.mock("@/core/Tab", () => ({
 import { Project, ProjectState } from "@/core/Project";
 import { parseProjectFile } from "@/core/ProjectFile";
 import { Settings } from "@/core/service/Settings";
-import { Decoder } from "@msgpack/msgpack";
+import { Decoder, encode } from "@msgpack/msgpack";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
 
@@ -107,11 +108,10 @@ afterEach(() => {
   failPrgWrites = false;
   beforePrgWrite = undefined;
   toastWarning.mockClear();
-  vi.unstubAllEnvs();
   Object.assign(Settings, { writeAiSidecarOnSave: true });
 });
 
-describe("saving a workspace in the research shell", () => {
+describe("saving a workspace", () => {
   it("writes the AI sidecar into .workbench next to the .prg", async () => {
     const project = makeProject("/research/topic/综述.prg");
     project.readme = "为什么注意力有效？";
@@ -191,15 +191,6 @@ describe("saving a workspace in the research shell", () => {
     expect(files.size).toBe(0);
     expect(draft.isDraft).toBe(true);
   });
-
-  it("leaves upstream saves untouched outside the research shell", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const project = makeProject("/research/a.prg");
-    await project.save({ includeThumbnail: false });
-    expect(files.has("/research/a.prg")).toBe(true);
-    expect([...files.keys()].some((path) => path.includes(".workbench"))).toBe(false);
-    expect(project.metadata.workbench).toBeUndefined();
-  });
 });
 
 describe("saved state while a save is in flight", () => {
@@ -216,23 +207,17 @@ describe("saved state while a save is in flight", () => {
     await project.save({ includeThumbnail: false });
     expect(project.projectState).toBe(ProjectState.Saved);
   });
-
-  it("keeps the upstream behaviour outside the research shell", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const project = makeProject("/research/a.prg");
-    beforePrgWrite = () => {
-      project.projectState = ProjectState.Unsaved;
-    };
-    await project.save({ includeThumbnail: false });
-    expect(project.projectState).toBe(ProjectState.Saved);
-  });
 });
 
 describe("workbench id", () => {
+  /** 写一个元数据里没有 workbench 的旧 .prg */
   async function writeLegacyFile(path: string) {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    await makeProject(path).save({ includeThumbnail: false });
-    vi.unstubAllEnvs();
+    const output = new Uint8ArrayWriter();
+    const writer = new ZipWriter(output);
+    await writer.add("stage.msgpack", new Uint8ArrayReader(encode([])));
+    await writer.add("metadata.msgpack", new Uint8ArrayReader(encode({ version: "2.7.0" })));
+    await writer.close();
+    files.set(path, await output.getData());
     const parsed = await parseProjectFile(files.get(path)!, new Decoder(), new Map());
     expect(parsed.metadata.workbench).toBeUndefined();
   }
@@ -268,15 +253,6 @@ describe("workbench id", () => {
     expect(reopened.projectState).toBe(ProjectState.Saved);
   });
 
-  it("is not added when opening outside the research shell", async () => {
-    await writeLegacyFile("/research/old.prg");
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const project = makeProject("/research/old.prg");
-    await project.init();
-    expect(project.metadata.workbench).toBeUndefined();
-    expect(project.projectState).toBe(ProjectState.Saved);
-  });
-
   it("is not changed by backups, which also leave the in-memory metadata alone", async () => {
     const project = makeProject("/research/a.prg");
     project.metadata = { version: "2.7.0", workbench: { id: "kept", createdAt: 1 } };
@@ -293,7 +269,7 @@ describe("workbench id", () => {
   });
 });
 
-describe("Save As in the research shell", () => {
+describe("Save As", () => {
   async function workspaceWithCards() {
     const { FileCardNode } = await import("@/core/stage/stageObject/entity/FileCardNode");
     const project = makeProject("/research/topic/a.prg");

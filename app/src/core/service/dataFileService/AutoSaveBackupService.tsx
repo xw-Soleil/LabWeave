@@ -1,5 +1,4 @@
 import { Project, ProjectState, service } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { appCacheDir } from "@tauri-apps/api/path";
 import { join } from "@tauri-apps/api/path";
 import { exists, writeFile, readDir, stat, remove, mkdir } from "@tauri-apps/plugin-fs";
@@ -8,9 +7,9 @@ import i18next from "i18next";
 import { toast } from "sonner";
 import { PathString } from "@/utils/pathString";
 
-/** 科研模式下，最后一次编辑之后多久自动保存 */
+/** 最后一次编辑之后多久自动保存 */
 export const SAVE_AFTER_EDIT_DELAY_MS = 5000;
-/** 科研模式下自动保存失败、又没有新编辑时，多久之后再试；之后每次翻倍，最长 10 分钟 */
+/** 自动保存失败、又没有新编辑时，多久之后再试；之后每次翻倍，最长 10 分钟 */
 export const SAVE_RETRY_FIRST_DELAY_MS = 30_000;
 const SAVE_RETRY_MAX_DELAY_MS = 600_000;
 
@@ -34,7 +33,7 @@ export class AutoSaveBackupService {
   /** 上一次看到的保存状态：只有真正变成未保存时才安排保存，isSaving 来回切换发的 state-change 不算 */
   private lastProjectState: ProjectState;
   /**
-   * 科研模式下自动保存连续失败的情况。没有新编辑（editRevision 没变）时，到 retryAt 之前不再重试，
+   * 自动保存连续失败的情况。没有新编辑（editRevision 没变）时，到 retryAt 之前不再重试，
    * 间隔逐次翻倍；有新编辑就照常保存。
    */
   private saveFailure: { revision: number; retryAt: number; delay: number } | undefined;
@@ -42,11 +41,9 @@ export class AutoSaveBackupService {
   constructor(private readonly project: Project) {
     this.lastBackupTime = Date.now();
     this.lastProjectState = project.projectState;
-    if (isResearchShell()) {
-      this.project.on("stage-commit", this.scheduleSaveAfterEdit);
-      this.project.on("history-change", this.scheduleSaveAfterEdit);
-      this.project.on("state-change", this.onProjectStateChange);
-    }
+    this.project.on("stage-commit", this.scheduleSaveAfterEdit);
+    this.project.on("history-change", this.scheduleSaveAfterEdit);
+    this.project.on("state-change", this.onProjectStateChange);
   }
 
   dispose() {
@@ -112,10 +109,6 @@ export class AutoSaveBackupService {
       return;
     }
     if (this.project.projectState !== ProjectState.Unsaved) return;
-    if (!isResearchShell()) {
-      await this.project.save({ includeThumbnail: false });
-      return;
-    }
     const revision = this.project.editRevision;
     const failure = this.saveFailure;
     if (failure && failure.revision === revision && Date.now() < failure.retryAt) return;
@@ -169,19 +162,7 @@ export class AutoSaveBackupService {
       return;
     }
 
-    const strategy = Settings.autoBackupStrategy;
-
-    // New strategies: backup near the original file
-    // 科研模式下不在研究文件夹里留 *_backup* 文件，这两种策略都改走应用缓存目录
-    if (!isResearchShell() && (strategy === "sideBySide" || strategy === "subfolder")) {
-      const ok = await this.localAutoBackup(strategy);
-      if (ok) {
-        this.lastBackupHash = currentHash;
-      }
-      return;
-    }
-
-    // Original default strategy with custom path fallback
+    // 备份不写进研究文件夹，也不看备份策略：先试自定义路径，都不行就放应用缓存目录
     const primaryCustomPath = Settings.autoBackupCustomPath?.trim() ?? "";
     const secondaryCustomPath = Settings.autoBackupCustomPath2?.trim() ?? "";
 
@@ -208,61 +189,6 @@ export class AutoSaveBackupService {
     }
 
     toast.error("自动备份失败：所有备份路径均不可用");
-  }
-
-  /**
-   * Backup near the original file (sideBySide or subfolder strategy)
-   */
-  private async localAutoBackup(strategy: "sideBySide" | "subfolder"): Promise<boolean> {
-    if (!this.project.uri || this.project.isDraft) {
-      return false;
-    }
-
-    const uriStr = decodeURI(this.project.uri.toString());
-    const dir = PathString.dirPath(uriStr);
-    const fileName = PathString.getFileNameFromPath(uriStr);
-
-    let backupDir: string;
-    let backupFileName: string;
-
-    if (strategy === "sideBySide") {
-      // {filename}_backup_{timestamp}.prg in same folder
-      backupDir = dir;
-      backupFileName = `${fileName}_backup_${this.generateTimestamp()}.prg`;
-    } else {
-      // {filename}_backup/{timestamp}.prg
-      backupDir = await join(dir, `${fileName}_backup`);
-      backupFileName = `${this.generateTimestamp()}.prg`;
-    }
-
-    // Ensure backup dir exists (for subfolder)
-    if (strategy === "subfolder" && !(await exists(backupDir))) {
-      try {
-        await mkdir(backupDir, { recursive: true });
-      } catch (err) {
-        toast.error(`创建备份子目录失败: ${err}`);
-        return false;
-      }
-    }
-
-    const backupFilePath = await join(backupDir, backupFileName);
-
-    try {
-      const fileContent = await this.project.getFileContent({ includeThumbnail: false });
-      await writeFile(backupFilePath, fileContent);
-      toast.success(`备份成功：${backupFilePath}`);
-    } catch (err) {
-      toast.error(`备份失败: ${err}`);
-      return false;
-    }
-
-    // Manage old backup files with appropriate prefix filter
-    if (strategy === "sideBySide") {
-      await this.manageBackupFiles(backupDir, `${fileName}_backup_`);
-    } else {
-      await this.manageBackupFiles(backupDir);
-    }
-    return true;
   }
 
   public async manualBackup() {
@@ -369,7 +295,7 @@ export class AutoSaveBackupService {
   /**
    * 管理备份文件数量，删除过旧的备份文件
    */
-  private async manageBackupFiles(backupDir: string, prefix?: string): Promise<void> {
+  private async manageBackupFiles(backupDir: string): Promise<void> {
     try {
       // 获取备份目录中的所有文件
       const files = await readDir(backupDir);
@@ -377,7 +303,7 @@ export class AutoSaveBackupService {
       // 过滤出.prg文件并获取文件信息
       const prgFiles = [];
       for (const file of files) {
-        if (file.name.endsWith(".prg") && (!prefix || file.name.startsWith(prefix))) {
+        if (file.name.endsWith(".prg")) {
           try {
             const fileStat = await stat(await join(backupDir, file.name));
             prgFiles.push({

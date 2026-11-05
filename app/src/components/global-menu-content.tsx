@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/menubar";
 import { Project } from "@/core/Project";
 import { isRecentFileVisible, RESEARCH_GLOBAL_MENU, researchMenuTitleKey } from "@/core/research/ResearchMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
@@ -98,7 +97,7 @@ export default function GlobalMenuContent() {
   const [config] = Settings.use("globalMenuConfig");
   const [showFullMenu] = Settings.use("researchShowFullMenu");
   const { t } = useTranslation("keyBinds");
-  const researchMenu = isResearchShell() && !showFullMenu;
+  const researchMenu = !showFullMenu;
   const menuConfig = researchMenu ? RESEARCH_GLOBAL_MENU : config;
 
   const isVisible = (item: GlobalMenuConfigItem): boolean => {

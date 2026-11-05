@@ -6,7 +6,6 @@ import {
   RESEARCH_KEYBIND_DEFAULTS_MARKER,
   RESEARCH_SHELL_SCOPE_KEYBIND_IDS,
 } from "@/core/research/ResearchMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { activeResourceTabAtom, activeTabAtom, store } from "@/state";
 import {
   formatEmacsKey,
@@ -223,10 +222,8 @@ export namespace KeyBindsUI {
     const store = await createStore("keybinds2.json");
     const childKeyMigrated = await store.get("__researchChildKeyRestoredV3");
     // 默认键位第一次启动就写进了 keybinds2.json，改代码里的默认值管不到已有的文件；
-    // 所以以科研模式启动时，把停用清单里还没改写过的那几个改成科研模式的默认值，之后尊重用户自己的修改
-    const pendingResearchDefaults = isResearchShell()
-      ? pendingResearchKeyBindDefaults(await store.get(RESEARCH_KEYBIND_DEFAULTS_MARKER))
-      : new Set<string>();
+    // 所以启动时把停用清单里还没改写过的那几个改成代码里的默认值，之后尊重用户自己的修改
+    const pendingResearchDefaults = pendingResearchKeyBindDefaults(await store.get(RESEARCH_KEYBIND_DEFAULTS_MARKER));
     for (const keybind of allKeyBinds.filter((keybindItem) => !keybindItem.isGlobal)) {
       const savedData = await store.get<any>(keybind.id);
       let key: string;
@@ -242,7 +239,7 @@ export namespace KeyBindsUI {
         await store.set(keybind.id, { key, isEnabled });
       } else if (
         pendingResearchDefaults.has(keybind.id) ||
-        (isResearchShell() && shouldRestoreChildKeybind(keybind.id, savedData, childKeyMigrated))
+        shouldRestoreChildKeybind(keybind.id, savedData, childKeyMigrated)
       ) {
         key = isMac ? transEmacsKeyWinToMac(keybind.defaultKey) : keybind.defaultKey;
         isEnabled = keybind.defaultEnabled !== false;
@@ -272,7 +269,7 @@ export namespace KeyBindsUI {
     if (pendingResearchDefaults.size > 0) {
       await store.set(RESEARCH_KEYBIND_DEFAULTS_MARKER, [...RESEARCH_DISABLED_KEYBIND_IDS]);
     }
-    if (isResearchShell()) await store.set("__researchChildKeyRestoredV3", true);
+    await store.set("__researchChildKeyRestoredV3", true);
     await store.save();
   }
   /**
@@ -515,18 +512,18 @@ export namespace KeyBindsUI {
     );
   }
 
-  /** 焦点在侧边面板（ComponentTab）上时，科研模式的外壳快捷键改用最近激活的白板，Cmd+S 才能保存 */
+  /** 焦点在侧边面板（ComponentTab）上时，外壳快捷键改用最近激活的白板，Cmd+S 才能保存 */
   function projectForKeyBind(id: string, focusedProject: Project | undefined): Project | undefined {
-    if (focusedProject || !isResearchShell() || !RESEARCH_SHELL_SCOPE_KEYBIND_IDS.has(id)) return focusedProject;
+    if (focusedProject || !RESEARCH_SHELL_SCOPE_KEYBIND_IDS.has(id)) return focusedProject;
     return getActiveProject();
   }
 
   /**
-   * 科研模式下在文本框（比如 AI 对话）里打字时，Cmd+S、Cmd+1/2/3 这几个外壳快捷键也要能用。
+   * 在文本框（比如 AI 对话）里打字时，Cmd+S、Cmd+1/2/3 这几个外壳快捷键也要能用。
    * 只认带 Ctrl/Cmd 的单键快捷键，不会吞掉正常输入；preventDefault 必须在第一个 await 之前调用才有效。
    */
   async function runShellKeyBindInTextInput(event: KeyboardEvent) {
-    if (!isResearchShell() || event.isComposing || !(event.ctrlKey || event.metaKey)) return;
+    if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
     const keyBind = allUIKeyBinds.find(
       (uiKeyBind) =>
         uiKeyBind.isEnabled &&

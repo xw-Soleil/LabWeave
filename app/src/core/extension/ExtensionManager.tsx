@@ -1,9 +1,7 @@
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { exists, mkdir, readDir } from "@tauri-apps/plugin-fs";
 import { URI } from "vscode-uri";
 import { FileSystemProviderFile } from "../fileSystemProvider/FileSystemProviderFile";
-import { Settings } from "../service/Settings";
 import { Extension } from "./Extension";
 import { ExtensionRuntime } from "./ExtensionRuntime";
 
@@ -38,17 +36,9 @@ export namespace ExtensionManager {
     extensions.set(name, extension);
     return extension;
   }
-  export async function getRuntime(name: string) {
-    if (isResearchShell()) {
-      throw new Error("科研工作台不运行扩展：扩展可以执行系统命令、任意联网，和「数据只留在本机」冲突。");
-    }
-    if (runtimes.has(name)) {
-      return runtimes.get(name)!;
-    }
-    const extension = await getExtension(name);
-    const runtime = new ExtensionRuntime(extension);
-    runtimes.set(name, runtime);
-    return runtime;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  export async function getRuntime(_name: string): Promise<ExtensionRuntime> {
+    throw new Error("科研工作台不运行扩展：扩展可以执行系统命令、任意联网，和「数据只留在本机」冲突。");
   }
 
   /**
@@ -64,19 +54,9 @@ export namespace ExtensionManager {
   }
 
   /**
-   * 创建并运行所有扩展
+   * 不运行扩展，什么也不做
    */
-  export async function init() {
-    if (isResearchShell()) return;
-    const extensionNames = await getExtensions();
-    for (const name of extensionNames) {
-      if (Settings.disabledExtensions.includes(name)) {
-        console.log(`扩展 ${name} 已被禁用，跳过加载`);
-        continue;
-      }
-      await getRuntime(name);
-    }
-  }
+  export async function init() {}
 
   export async function reload() {
     // 终止所有扩展的 Worker

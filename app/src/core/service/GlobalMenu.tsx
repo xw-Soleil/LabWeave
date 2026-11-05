@@ -5,8 +5,6 @@ import { loadAllServicesAfterInit, loadAllServicesBeforeInit } from "@/core/load
 import { Project, ProjectState } from "@/core/Project";
 import { loadWithProjectOwnership, ProjectOwnershipError, type ProjectOwnershipLease } from "@/core/ProjectOwnership";
 import { isOutsideResearchFolder, ResearchFolder } from "@/core/research/ResearchFolder";
-import { isResearchShell } from "@/core/research/ResearchShell";
-import { isResourceTab } from "@/core/Tab";
 import { TabFactory } from "@/core/TabFactory";
 import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
 import { PathString } from "@/utils/pathString";
@@ -183,24 +181,15 @@ export async function closeEmptyDrafts(except?: Project) {
 }
 
 async function focusExistingTab(tab: Project | Extension) {
-  if (isResearchShell()) {
-    // 只改 activeTabAtom 的话分组的 activeTabId 不变，界面上还是原来那个工作区，保存和 AI 却改成对着这个
-    const { TabWorkspace } = await import("@/core/TabWorkspace");
-    TabWorkspace.focus(tab.id);
-  } else {
-    store.set(activeTabAtom, tab);
-    if (isResourceTab(tab)) store.set(activeResourceTabAtom, tab);
-  }
+  // 只改 activeTabAtom 的话分组的 activeTabId 不变，界面上还是原来那个工作区，保存和 AI 却改成对着这个
+  const { TabWorkspace } = await import("@/core/TabWorkspace");
+  TabWorkspace.focus(tab.id);
   if (tab instanceof Project) tab.loop();
   if (Settings.pauseRenderWhenTabUnfocused) {
     store
       .get(tabsAtom)
       .filter((candidate) => candidate instanceof Project && candidate !== tab)
       .forEach((candidate) => candidate.pause());
-  }
-  // 科研模式下文件面板和工作区列表的行上已经标着「已打开」，切过去就够了，不再弹提示
-  if (!isResearchShell()) {
-    toast.success(i18next.t("alreadyOpen", { ns: "projectOwnership" }), { id: "project-already-open" });
   }
 }
 
@@ -210,7 +199,7 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
       directory: false,
       multiple: false,
       filters: [{ name: "工程文件", extensions: ["prg"] }],
-      defaultPath: isResearchShell() ? ResearchFolder.getRoot() || undefined : undefined,
+      defaultPath: ResearchFolder.getRoot() || undefined,
     });
     if (!path) return;
     uri = URI.file(path);
@@ -233,7 +222,7 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
     });
     return undefined;
   }
-  if (uri.scheme === "file" && isResearchShell()) {
+  if (uri.scheme === "file") {
     try {
       await ResearchFolder.ensureRootRegistered();
     } catch (error) {
@@ -466,7 +455,7 @@ export async function onUpgradeOldJson() {
     directory: false,
     multiple: false,
     filters: [{ name: "旧版工程文件", extensions: ["json"] }],
-    defaultPath: isResearchShell() ? ResearchFolder.getRoot() || undefined : undefined,
+    defaultPath: ResearchFolder.getRoot() || undefined,
   });
   if (!path) return;
   // 升级结果会写在原文件旁边，文件夹外的就不处理

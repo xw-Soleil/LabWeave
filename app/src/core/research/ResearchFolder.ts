@@ -1,11 +1,5 @@
 import { LATEST_PROJECT_VERSION } from "@/core/ProjectFile";
-import {
-  fileKindOf,
-  isResearchShell,
-  SIDECAR_JSON_SUFFIX,
-  SIDECAR_MD_SUFFIX,
-  type FileKind,
-} from "@/core/research/ResearchShell";
+import { fileKindOf, SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, type FileKind } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { createDefaultMetadata } from "@/types/metadata";
 import { encode } from "@msgpack/msgpack";
@@ -375,7 +369,7 @@ export const ResearchFolder = {
   },
 };
 
-/** 科研模式下选过研究文件夹时，文件夹外的本地文件一律不打开 */
+/** 选过研究文件夹时，文件夹外的本地文件一律不打开 */
 export function isOutsideResearchFolder(absPath: string): boolean {
-  return isResearchShell() && ResearchFolder.getRoot() !== "" && !ResearchFolder.isInside(absPath);
+  return ResearchFolder.getRoot() !== "" && !ResearchFolder.isInside(absPath);
 }

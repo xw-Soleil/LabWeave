@@ -13,21 +13,18 @@ import {
   registerResearchSession,
   setResearchSessionTracking,
 } from "@/core/research/ResearchSession";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { isResourceTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { GlobalMenu } from "@/core/service/GlobalMenu";
 import { flushSettingsLoadErrors, Settings } from "@/core/service/Settings";
 import { Telemetry } from "@/core/service/Telemetry";
 import { Themes } from "@/core/service/Themes";
-import { toggleWindowAlwaysOnTop } from "@/core/service/WindowPin";
 import { globalShortcutManager } from "@/core/service/controlService/shortcutKeysEngine/GlobalShortcutManager";
 import {
   activeResourceTabAtom,
   activeTabAtom,
   isClassroomModeAtom,
   isClickThroughEnabledAtom,
-  isWindowAlwaysOnTopAtom,
   isWindowMaxsizedAtom,
   tabsAtom,
 } from "@/state";
@@ -37,7 +34,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { arch, platform, version } from "@tauri-apps/plugin-os";
 import { restoreStateCurrent, saveWindowState, StateFlags } from "@tauri-apps/plugin-window-state";
 import { useAtom, useAtomValue } from "jotai";
-import { Copy, Minus, Pin, PinOff, Square, X } from "lucide-react";
+import { Copy, Minus, Square, X } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -52,14 +49,14 @@ import { cn } from "./utils/cn";
 import { replaceTextWhenProtect } from "./utils/font";
 import { isLinux, isMac, isWindows } from "./utils/platform";
 
-/** 科研模式下关标签页失败时提示用户；取消、没选路径不算失败，拒绝存到研究文件夹外面时 Project 已经提示过 */
+/** 关标签页失败时提示用户；取消、没选路径不算失败，拒绝存到研究文件夹外面时 Project 已经提示过 */
 function reportResearchCloseError(error: unknown) {
   if (error instanceof ResearchSaveRefusedError) return;
   if (error instanceof Error && (error.message === "取消操作" || error.message === "未选择路径")) return;
   toast.error(error instanceof Error ? error.message : String(error));
 }
 
-/** 科研模式里给人看的工作区名，和标签栏一致：文件名去掉 .prg，草稿叫「未命名 1」 */
+/** 给人看的工作区名，和标签栏一致：文件名去掉 .prg，草稿叫「未命名 1」 */
 function researchWorkspaceName(project: Project, untitled: (n: string) => string): string {
   if (project.isDraft) return untitled(project.uri.path);
   if (project.uri.scheme === "file") return displayWorkspaceName(project.title);
@@ -71,7 +68,7 @@ const TITLE_BAR_INTERACTIVE_SELECTOR =
   "button, a, input, select, textarea, [role=switch], [role=menubar], [role=menuitem], [contenteditable=true]";
 
 /**
- * 科研模式的标题栏：一整行 36px，左边给红绿灯（或窗口内菜单）留位置，中间是当前工作区名，右边是浅/深色切换。
+ * 标题栏：一整行 36px，左边给红绿灯（或窗口内菜单）留位置，中间是当前工作区名，右边是浅/深色切换。
  * 除了控件，整行都能拖动窗口、双击缩放。
  */
 function ResearchTitleBar({
@@ -119,7 +116,7 @@ function ResearchTitleBar({
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-2">
         <ThemeModeSwitch />
-        {!isMac && <WindowButtons showPin={false} />}
+        {!isMac && <WindowButtons />}
       </div>
     </div>
   );
@@ -137,7 +134,6 @@ export default function App() {
   const [isClassroomMode, setIsClassroomMode] = useAtom(isClassroomModeAtom);
   const [uiScalePercent, setUiScalePercent] = useState(Settings.uiScalePercent);
   const { t: tResearch } = useTranslation("research");
-  const showActivityRail = isResearchShell();
 
   const contextMenuTriggerRef = useRef<HTMLDivElement>(null);
 
@@ -296,12 +292,11 @@ export default function App() {
   }, [tabs]);
 
   useEffect(() => {
-    if (!isResearchShell()) return;
     return registerResearchSession();
   }, []);
 
   useEffect(() => {
-    if (isResearchShell()) persistResearchSession();
+    persistResearchSession();
   }, [tabs, activeResourceTab]);
 
   useEffect(() => {
@@ -313,8 +308,8 @@ export default function App() {
       .onCloseRequested(async (e) => {
         e.preventDefault();
 
-        // 科研工作台：已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
-        if (isResearchShell() && (Settings.autoSaveWhenClose || Settings.autoSave)) {
+        // 已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
+        if (Settings.autoSaveWhenClose || Settings.autoSave) {
           for (const tab of tabs) {
             if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
             if (tab.projectState !== ProjectState.Unsaved) continue;
@@ -360,11 +355,9 @@ export default function App() {
           }
         } catch (error) {
           Telemetry.event("关闭应用提示是否保存文件选择了取消");
-          if (isResearchShell()) {
-            reportResearchCloseError(error);
-            setResearchSessionTracking(true);
-            persistResearchSession();
-          }
+          reportResearchCloseError(error);
+          setResearchSessionTracking(true);
+          persistResearchSession();
           return;
         }
         Telemetry.event("关闭应用");
@@ -397,7 +390,7 @@ export default function App() {
 
     return () => {
       unlisten1?.();
-      // 只摘自己挂的监听：科研模式的自动保存也监听 state-change，不能一起删掉
+      // 只摘自己挂的监听：自动保存也监听 state-change，不能一起删掉
       for (const tab of tabs) {
         tab.off("state-change", onStateChange);
         tab.off("contextmenu", onContextMenu);
@@ -412,10 +405,8 @@ export default function App() {
       } else if (tab.projectState === ProjectState.Unsaved) {
         // 切换到这个文件
         setActiveTab(tab);
-        // 科研模式只显示工作区名，不显示 file:// 地址
-        const description = isResearchShell()
-          ? researchWorkspaceName(tab, (n) => tResearch("tabs.untitled", { n }))
-          : decodeURI(tab.uri.toString());
+        // 只显示工作区名，不显示 file:// 地址
+        const description = researchWorkspaceName(tab, (n) => tResearch("tabs.untitled", { n }));
         const response = await Dialog.buttons("是否保存更改？", description, [
           { id: "cancel", label: "取消", variant: "ghost" },
           { id: "discard", label: "不保存", variant: "destructive" },
@@ -440,8 +431,7 @@ export default function App() {
       try {
         await closeTab(tab);
       } catch (error) {
-        // 标签栏不接这个异常，科研模式下保存失败（比如存到研究文件夹外面）要提示，不能当成取消
-        if (!isResearchShell()) throw error;
+        // 标签栏不接这个异常，保存失败（比如存到研究文件夹外面）要提示，不能当成取消
         reportResearchCloseError(error);
       }
     },
@@ -456,33 +446,10 @@ export default function App() {
         className={cn(
           "has-[[data-pg-settings-view]]:bg-background/[0.9516] relative flex h-full w-full flex-col overflow-clip sm:gap-2",
           !isMac && "rounded-lg",
-          // 窗口本身是透明的,原版只有画布自己画背景;科研模式下侧边面板也要不透明,不然会透出后面的窗口
-          showActivityRail && "bg-background",
+          // 窗口本身是透明的,侧边面板要不透明,不然会透出后面的窗口
+          "bg-background",
         )}
         style={{ "--pg-ui-scale": uiScalePercent / 100 } as React.CSSProperties}
-        onMouseDownCapture={(event) => {
-          if (!isMac || event.button !== 0) return;
-          const navigation = event.currentTarget.querySelector("#pg-titlebar-navigation");
-          if (!navigation?.childElementCount) return;
-          const target = event.target as Element;
-          if (
-            target.closest(
-              "button, a, input, select, textarea, [contenteditable=true], [role=tablist], [role=menu], [role=menubar], [data-pg-docked-tab-id]",
-            )
-          )
-            return;
-          const toolbar = event.currentTarget.querySelector("[data-pg-titlebar]");
-          const tabBar = event.currentTarget.querySelector("[data-pg-tab-bar]");
-          const top = event.currentTarget.getBoundingClientRect().top;
-          const bottom = Math.max(
-            toolbar?.getBoundingClientRect().bottom ?? top,
-            tabBar?.getBoundingClientRect().bottom ?? top,
-          );
-          if (event.clientY < top || event.clientY >= bottom) return;
-          event.preventDefault();
-          event.stopPropagation();
-          handleTitleBarMouseDown(event);
-        }}
         onContextMenu={(event) => {
           if ((event.target as Element).closest('[data-slot="context-menu-trigger"]')) return;
           event.preventDefault();
@@ -493,26 +460,11 @@ export default function App() {
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}
           isClassroomMode={isClassroomMode}
-          leftInset={showActivityRail ? ACTIVITY_RAIL_WIDTH : undefined}
-          topInset={showActivityRail ? RESEARCH_TITLE_BAR_HEIGHT : undefined}
+          leftInset={ACTIVITY_RAIL_WIDTH}
+          topInset={RESEARCH_TITLE_BAR_HEIGHT}
         />
         {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放；从标题栏下方开始 */}
-        {showActivityRail && <ActivityRail isClassroomMode={isClassroomMode} />}
-
-        {/* 科研模式由标题栏整行负责拖动窗口，置顶改在菜单「视图 → 窗口置顶」 */}
-        {isMac && !showActivityRail && (
-          <>
-            <div
-              aria-hidden="true"
-              className="absolute top-0 right-3 left-[100px] z-20 h-[calc(0.5rem*var(--pg-ui-scale))] sm:h-[calc(1rem*var(--pg-ui-scale))]"
-              onMouseDown={handleTitleBarMouseDown}
-            />
-            {/* Native traffic lights do not follow the application's UI zoom. */}
-            <div className="absolute top-[2px] left-[71px] z-20 h-7">
-              <WindowButtons />
-            </div>
-          </>
-        )}
+        <ActivityRail isClassroomMode={isClassroomMode} />
 
         {/* Zoomed UI layer - 缩放所有 DOM UI 元素，不缩放 Canvas 画布 */}
         <div
@@ -522,56 +474,7 @@ export default function App() {
             !isMac && "*:pointer-events-auto",
           )}
         >
-          {showActivityRail ? (
-            <ResearchTitleBar isClassroomMode={isClassroomMode} onDragStart={handleTitleBarMouseDown} />
-          ) : (
-            /* 菜单 | 标签页 | ...移动窗口区域... | 窗口控制按钮 */
-            <div
-              data-pg-titlebar
-              className={cn(
-                "z-10 grid h-8 shrink-0 grid-cols-[minmax(0,max-content)_minmax(min(30%,18rem),1fr)_max-content] items-center gap-2 px-1 py-1 transition-opacity hover:opacity-100 has-[#pg-titlebar-navigation:empty]:grid-cols-[minmax(0,max-content)_minmax(0,1fr)_max-content] sm:h-14 sm:gap-4 sm:px-3 sm:py-2",
-                isMac &&
-                  "pointer-events-none grid-cols-[35%_minmax(0,1fr)_max-content] has-[#pg-titlebar-navigation:empty]:grid-cols-[35%_minmax(0,1fr)_max-content] sm:h-14 sm:pt-4 sm:pb-0",
-                isClassroomMode && "opacity-0",
-              )}
-            >
-              <div
-                className="scrollbar-hide flex h-full min-w-0 items-center overflow-x-auto rounded-full"
-                onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) handleTitleBarMouseDown(event);
-                }}
-              >
-                <div
-                  className="pointer-events-none flex h-full w-max shrink-0 items-center gap-1 *:pointer-events-auto"
-                  style={isMac ? { paddingLeft: "calc(100px / var(--pg-ui-scale))" } : undefined}
-                >
-                  <GlobalMenu />
-                </div>
-              </div>
-              <div
-                id="pg-titlebar-navigation"
-                className={cn(
-                  "flex h-full min-w-0 items-center justify-center",
-                  isMac &&
-                    "scrollbar-hide pointer-events-auto justify-end overflow-x-auto rounded-full empty:pointer-events-none",
-                )}
-                onMouseDown={handleTitleBarMouseDown}
-              />
-              <div
-                className="flex h-full min-w-0 items-center justify-end"
-                onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) handleTitleBarMouseDown(event);
-                }}
-              >
-                <div className="bg-background pointer-events-auto flex h-full shrink-0 items-center gap-2 rounded-full px-2 shadow-xs">
-                  <div className="hidden sm:block">
-                    <ThemeModeSwitch />
-                  </div>
-                  {!isMac && <WindowButtons />}
-                </div>
-              </div>
-            </div>
-          )}
+          <ResearchTitleBar isClassroomMode={isClassroomMode} onDragStart={handleTitleBarMouseDown} />
 
           {/* 右键菜单 */}
           <ContextMenu modal={false}>
@@ -593,8 +496,8 @@ export default function App() {
             onClick={() => getCurrentWindow().close()}
           ></div>
         )}
-        {/* 科研模式下不依赖当前白板（没开白板也能拖 .prg 进来）；原版模式没有 project 时组件自己返回 null */}
-        <DropWindowCover project={activeResourceTab instanceof Project ? activeResourceTab : undefined} />
+        {/* 不依赖当前白板（没开白板也能拖 .prg 进来） */}
+        <DropWindowCover />
 
         <CommandPalette zoomStyle={zoomStyle} />
         <RenderOverlays />
@@ -670,135 +573,54 @@ function WindowResizeHandles() {
 }
 
 /**
- * 窗口右上角的最小化，最大化，关闭等按钮
- * @param showPin 科研模式的置顶在菜单「视图 → 窗口置顶」里，这里不再放按钮
+ * 窗口右上角的最小化，最大化，关闭等按钮（只在 Windows / Linux 上显示；置顶在菜单「视图 → 窗口置顶」里）
  */
-function WindowButtons({ showPin = true }: { showPin?: boolean }) {
-  const { t } = useTranslation("windowControls");
-  const [isWindowFocused, setIsWindowFocused] = useState(false);
-  const [isNativeDark, setIsNativeDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+function WindowButtons() {
   const [maximized] = useAtom(isWindowMaxsizedAtom);
   const [isClickThroughEnabled] = useAtom(isClickThroughEnabledAtom);
-  const isWindowAlwaysOnTop = useAtomValue(isWindowAlwaysOnTopAtom);
-  useEffect(() => {
-    if (!isMac) return;
-    const appWindow = getCurrentWindow();
-    let disposed = false;
-    let focusChanged = false;
-    let themeChanged = false;
-    const unlistenTheme = appWindow.onThemeChanged(({ payload }) => {
-      themeChanged = true;
-      if (!disposed) setIsNativeDark(payload === "dark");
-    });
-    void appWindow.theme().then((theme) => {
-      if (!disposed && !themeChanged && theme !== null) setIsNativeDark(theme === "dark");
-    });
-    const unlisten = appWindow.onFocusChanged(({ payload }) => {
-      focusChanged = true;
-      if (!disposed) setIsWindowFocused(payload);
-    });
-    void appWindow.isFocused().then((focused) => {
-      if (!disposed && !focusChanged) setIsWindowFocused(focused);
-    });
-    return () => {
-      disposed = true;
-      void unlisten.then((stop) => stop());
-      void unlistenTheme.then((stop) => stop());
-    };
-  }, []);
   return (
-    <div className={cn("flex h-full items-center", !isMac && "rounded-full [&_button]:rounded-full")}>
+    <div className="flex h-full items-center rounded-full [&_button]:rounded-full">
       {isClickThroughEnabled && <span className="text-destructive font-bold">Alt + 2关闭窗口穿透点击</span>}
-      {isMac ? (
-        <span className="flex items-center pr-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="group size-7 rounded-full hover:bg-transparent dark:hover:bg-transparent"
-            aria-label={t("alwaysOnTop")}
-            aria-pressed={isWindowAlwaysOnTop}
-            title={t("alwaysOnTop")}
-            onClick={async (e) => {
-              e.stopPropagation();
-              await toggleWindowAlwaysOnTop();
-            }}
-          >
-            <span
-              className={cn(
-                "flex size-3.5 items-center justify-center rounded-full border [corner-shape:round]",
-                isWindowFocused
-                  ? "border-blue-600/30 bg-blue-400 text-blue-950 group-hover:bg-blue-300"
-                  : isNativeDark
-                    ? "border-white/10 bg-[#3b3c41] text-neutral-500"
-                    : "border-black/10 bg-[#cdced0] text-neutral-500",
-                isWindowFocused && isWindowAlwaysOnTop && "bg-blue-500 group-hover:bg-blue-400",
-              )}
-            >
-              {isWindowFocused &&
-                (isWindowAlwaysOnTop ? (
-                  <Pin className="size-2.5 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-                ) : (
-                  <PinOff className="size-2.5 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-                ))}
-            </span>
-          </Button>
-        </span>
-      ) : (
-        <span className="flex h-full flex-row sm:gap-1">
-          {/* 钉住 */}
-          {showPin && (
-            <Button
-              className="size-4 sm:h-full sm:w-6"
-              variant="ghost"
-              size="icon"
-              onClick={async (e) => {
-                e.stopPropagation();
-                await toggleWindowAlwaysOnTop();
-              }}
-            >
-              {isWindowAlwaysOnTop ? <Pin strokeWidth={3} /> : <PinOff strokeWidth={3} className="opacity-50" />}
-            </Button>
-          )}
-          {/* 最小化 */}
+      <span className="flex h-full flex-row sm:gap-1">
+        {/* 最小化 */}
+        <Button
+          className="size-4 sm:h-full sm:w-6"
+          variant="ghost"
+          size="icon"
+          onClick={() => getCurrentWindow().minimize()}
+        >
+          <Minus strokeWidth={3} />
+        </Button>
+        {/* 最大化/还原 */}
+        {maximized ? (
           <Button
             className="size-4 sm:h-full sm:w-6"
             variant="ghost"
             size="icon"
-            onClick={() => getCurrentWindow().minimize()}
+            onClick={() => getCurrentWindow().unmaximize()}
           >
-            <Minus strokeWidth={3} />
+            <Copy className="size-3" strokeWidth={3} />
           </Button>
-          {/* 最大化/还原 */}
-          {maximized ? (
-            <Button
-              className="size-4 sm:h-full sm:w-6"
-              variant="ghost"
-              size="icon"
-              onClick={() => getCurrentWindow().unmaximize()}
-            >
-              <Copy className="size-3" strokeWidth={3} />
-            </Button>
-          ) : (
-            <Button
-              className="size-4 sm:h-full sm:w-6"
-              variant="ghost"
-              size="icon"
-              onClick={() => getCurrentWindow().maximize()}
-            >
-              <Square className="size-3" strokeWidth={4} />
-            </Button>
-          )}
-          {/* 关闭 */}
+        ) : (
           <Button
             className="size-4 sm:h-full sm:w-6"
             variant="ghost"
             size="icon"
-            onClick={() => getCurrentWindow().close()}
+            onClick={() => getCurrentWindow().maximize()}
           >
-            <X strokeWidth={3} />
+            <Square className="size-3" strokeWidth={4} />
           </Button>
-        </span>
-      )}
+        )}
+        {/* 关闭 */}
+        <Button
+          className="size-4 sm:h-full sm:w-6"
+          variant="ghost"
+          size="icon"
+          onClick={() => getCurrentWindow().close()}
+        >
+          <X strokeWidth={3} />
+        </Button>
+      </span>
     </div>
   );
 }

@@ -1,21 +1,4 @@
-// 这个模块不能 import Settings / FeatureFlags 等服务：它会被 ProjectToolSettingsSchema（命令行也会加载）引用，引入服务会造成循环依赖。
-
-/**
- * 是否处于「科研工作台」模式。只有显式设置 LR_RESEARCH_SHELL=false 才会关闭。
- * 桌面端在构建时由 Vite 注入（envPrefix "LR_"）。命令行版不经过这一步：用 vite.cli.config 打包时
- * import.meta.env 里没有这个变量，用 tsx 直接跑源码时 import.meta.env 是 undefined，
- * 所以再看运行时的 process.env，例如 `LR_RESEARCH_SHELL=false project-graph-cli ...` 就按原版行为运行。
- * 写成函数而不是常量，测试里可以用 vi.stubEnv 切换。
- */
-export function isResearchShell(): boolean {
-  return (import.meta.env?.LR_RESEARCH_SHELL ?? runtimeEnvFlag()) !== "false";
-}
-
-/** 桌面端窗口里没有 process，返回 undefined */
-function runtimeEnvFlag(): string | undefined {
-  const runtime = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return runtime.process?.env?.LR_RESEARCH_SHELL;
-}
+// 这个模块不能 import Settings / FeatureFlags 等服务：命令行也会加载它，引入服务会造成循环依赖。
 
 export const WORKBENCH_DIR = ".workbench";
 export const SIDECAR_JSON_SUFFIX = ".ai.json";

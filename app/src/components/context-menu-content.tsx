@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
 import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { ColorManager } from "@/core/service/feedbackService/ColorManager";
@@ -98,8 +97,7 @@ export default function MyContextMenuContent() {
   const { t } = useTranslation("contextMenu");
   const { t: tKeyBind } = useTranslation("keyBinds");
   const [config] = Settings.use("contextMenuConfig");
-  const research = isResearchShell();
-  const menuConfig = research ? researchContextMenu(config) : config;
+  const menuConfig = researchContextMenu(config);
 
   // 加载用户自定义颜色
   const [userColorList, setUserColorList] = useState<Color[]>([]);
@@ -142,7 +140,7 @@ export default function MyContextMenuContent() {
   };
 
   const isConfigVisible = (it: ContextMenuConfigItem): boolean => {
-    if (research && RESEARCH_CONTEXT_ACTIONS.has(it.id)) return true;
+    if (RESEARCH_CONTEXT_ACTIONS.has(it.id)) return true;
     if (it.visible === false) return false;
     if (it.type === "separator") return true;
     if (it.type === "setColorForSelected") {
@@ -332,7 +330,7 @@ export default function MyContextMenuContent() {
 
     // Standard item
     const enabled = checkVisible(itemConfig.id);
-    if (!enabled && !(research && RESEARCH_CONTEXT_ACTIONS.has(itemConfig.id))) return null;
+    if (!enabled && !RESEARCH_CONTEXT_ACTIONS.has(itemConfig.id)) return null;
     const uiKb = KeyBindsUI.getUIKeyBind(itemConfig.id);
     const keyBind = uiKb ?? allKeyBinds.find((k) => k.id === itemConfig.id);
     const action = keyBind?.onPress;

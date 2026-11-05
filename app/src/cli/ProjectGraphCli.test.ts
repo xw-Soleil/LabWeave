@@ -396,7 +396,7 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     const tools = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
-    // 29 个上游工具 + 科研模式的 dump_workspace / create_file_card（命令行默认是科研模式）
+    // 29 个上游工具 + 科研工作台的 dump_workspace / create_file_card
     expect(tools).toHaveLength(31);
     expect(tools[0]).toMatchObject({
       name: "get_all_nodes",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Vector } from "@graphif/data-structures";
 import { Line, Rectangle } from "@graphif/shapes";
 
@@ -137,16 +137,11 @@ function pointerAt(clientX: number, clientY: number) {
 }
 
 beforeEach(() => {
-  vi.stubEnv("LR_RESEARCH_SHELL", "true");
   VirtualClipboard.clear();
   clipboard.text = "";
   clipboard.writes = [];
   vi.mocked(nudgeEntitiesOutOfOverlap).mockClear();
   pointerAt(400, 300);
-});
-
-afterEach(() => {
-  vi.unstubAllEnvs();
 });
 
 describe("computePasteOffset", () => {
@@ -217,7 +212,7 @@ describe("VirtualClipboard outdated check", () => {
   });
 });
 
-describe("research paste", () => {
+describe("paste", () => {
   async function copyOneNode(project: FakeProject) {
     const original = textNode(project, "原节点", 0, 0);
     original.isSelected = true;
@@ -379,38 +374,5 @@ describe("cut", () => {
     expect(restored).toHaveLength(1);
     expect(restored[0].text).toBe("剪下来");
     expect(restored[0].collisionBox.getRectangle().location.toArray()).toEqual([0, 0]);
-  });
-});
-
-describe("upstream mode", () => {
-  it("still pastes below the original and empties the virtual clipboard", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const project = fakeProject();
-    const original = textNode(project, "原节点", 0, 0);
-    original.isSelected = true;
-    const engine = engineOf(project);
-    await engine.copy();
-    Object.assign(project.sectionMethods, { shallowerNotSectionEntities: (entities: Entity[]) => entities });
-    Object.assign(project, {
-      controllerUtils: { selectedEntityNormalizing: vi.fn() },
-      entityMoveManager: {
-        moveSelectedEntities: (delta: Vector) => {
-          for (const entity of project.stageManager.getSelectedEntities()) {
-            const rect = entity.collisionBox.getRectangle();
-            entity.collisionBox.shapes[0] = new Rectangle(rect.location.add(delta), rect.size);
-          }
-        },
-      },
-    });
-
-    await engine.paste();
-
-    const pasted = stageTextNodes(project).filter((it) => it !== original);
-    expect(pasted).toHaveLength(1);
-    expect(pasted[0].collisionBox.getRectangle().location.toArray()).toEqual([
-      0,
-      original.collisionBox.getRectangle().height,
-    ]);
-    expect(VirtualClipboard.hasData()).toBe(false);
   });
 });

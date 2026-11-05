@@ -163,19 +163,14 @@ describe("createEmptyProjectFile", () => {
 
 describe("isOutsideResearchFolder", () => {
   afterEach(() => {
-    vi.unstubAllEnvs();
     settings.researchFolderPath = "/Users/me/Research";
   });
 
-  it("only blocks paths outside a chosen folder in research mode", () => {
+  it("only blocks paths outside a chosen folder", () => {
     expect(isOutsideResearchFolder("/Users/me/Research/a.prg")).toBe(false);
     expect(isOutsideResearchFolder("/Users/me/Other/a.prg")).toBe(true);
 
     settings.researchFolderPath = "";
-    expect(isOutsideResearchFolder("/Users/me/Other/a.prg")).toBe(false);
-
-    settings.researchFolderPath = "/Users/me/Research";
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
     expect(isOutsideResearchFolder("/Users/me/Other/a.prg")).toBe(false);
   });
 });

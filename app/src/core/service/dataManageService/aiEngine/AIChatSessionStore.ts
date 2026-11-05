@@ -1,6 +1,5 @@
 import type { AIMessageMetadata } from "@/core/service/dataManageService/aiEngine/AIEngine";
 import type { AIChatSessionMemory } from "@/core/service/dataManageService/aiEngine/AIChatSessionMemory";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { isActivatedSkillSnapshot } from "./AISkillSession";
 import type { ActivatedSkillSnapshot } from "./AISkills";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -139,17 +138,15 @@ function resolveAndRemember(project: AIChatKeyProject): ResolvedChatKey {
 }
 
 /**
- * 聊天记录按什么存。科研模式下优先用工作区 id（存在 .prg 元数据里，改名、移动、草稿存盘都不变）；
+ * 聊天记录按什么存。优先用工作区 id（存在 .prg 元数据里，改名、移动、草稿存盘都不变）；
  * 草稿的 URI 每次启动都从 draft:1 重新数，不能拿来当键，改用这个草稿对象自己的随机 id。
  */
 export function getAIChatProjectKey(project: AIChatKeyProject) {
-  if (!isResearchShell()) return project.uri.toString();
   return resolveAndRemember(project).key;
 }
 
 /** 面板的 React key：对话跟着换了存储键时不变，避免正在进行的对话被卸载 */
 export function getAIChatViewKey(project: AIChatKeyProject) {
-  if (!isResearchShell()) return project.uri.toString();
   return resolveAndRemember(project).viewKey;
 }
 

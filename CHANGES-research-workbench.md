@@ -14,7 +14,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 ## 改了什么（概要）
 
-- **科研模式开关**：前端新增的功能都挂在 `isResearchShell()` 后面（`app/src/core/research/ResearchShell.ts`）。默认开启；用 `LR_RESEARCH_SHELL=false` 启动时行为与上游一致。Rust 端对应 cargo feature `research-shell`（默认开启），用 `--no-default-features` 构建可恢复上游的命令集合。
+- **不再有「原版模式」**：最初新功能都挂在一个开关 `isResearchShell()` 后面，关掉时行为与上游一致；Rust 端对应 cargo feature `research-shell`。2026-11-05 去掉了这个开关和这个 feature：现在的行为是唯一行为，只在关掉开关时才用到的上游代码已删除，Rust 端原先被 feature 排除的命令（`run_command`、`mcp_stdio_*`、几条不受 fs 权限范围约束的原始文件命令）和全局快捷键、自动更新插件的代码也一并删除。本程序不再跟进上游的新版本。
 - **产品身份**：identifier 改为 `com.ai4know.researchworkbench`，产品名 Research Workbench，主窗口标题「科研工作台」，深链接协议从 `prg` 改为 `rwb`，文件扩展名仍是 `.prg`。设置、快捷键等数据目录因此和已安装的 Project Graph 分开，不会互相读取。
 - **数据只留在本机**：关闭遥测、账号、支持者名单、素材下载、多人协作、扩展加载；不再注册自动更新和系统全局快捷键插件，不再打包更新文件；`run_command`、`mcp_stdio_*` 和不受 fs 权限范围约束的原始文件命令不再暴露给前端；AI 对话不加载 MCP 和 Skills，回答里的远程图片不自动加载。
 - **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区。
@@ -26,7 +26,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **macOS**：在访达里双击 `.prg` 会转给前端打开（包括程序还没启动的情况）；补充了外置磁盘和网络磁盘的访问说明文字。
 - **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）和 `@ai-sdk/anthropic`（Apache-2.0）。
 
-不挂在开关后面、开关关掉时也生效的改动（属于修 bug 或兼容性需要）：
+对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
 
 - 原版欢迎页的「MIT和GPL-3.0双许可协议」改为「采用 GPL-3.0 许可协议」，与 `package.json` 一致。
 - 固定侧栏是当前标签组时，新打开的工作区改插进主编辑组（`TabWorkspace.tsx`）；不可关闭的标签页不显示关闭按钮、中键也关不掉（`ProjectTabs.tsx`）。
@@ -48,7 +48,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src-tauri/Info.plist`
 - `app/src-tauri/capabilities/default.json`
 - `app/src-tauri/capabilities/desktop.json`
-- `app/src-tauri/capabilities/upstream/upstream-only.json`（新增）
+- `app/src-tauri/capabilities/upstream/upstream-only.json`（新增；2026-11-05 随开关一起删除）
 - `app/src-tauri/src/lib.rs`
 - `app/src-tauri/src/cmd/mod.rs`
 - `app/src-tauri/src/cmd/fs.rs`

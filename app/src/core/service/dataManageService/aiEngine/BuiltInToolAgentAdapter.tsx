@@ -1,5 +1,4 @@
 import type { Project } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { encode } from "@toon-format/toon";
 import { tool, type ToolSet } from "ai";
@@ -13,7 +12,7 @@ import {
   type BuiltInToolExecutionContext,
 } from "./BuiltInToolRegistry";
 
-// 会改白板、联网或再调一次模型的工具都不给科研模式的聊天用
+// 会改白板、联网或再调一次模型的工具都不给应用内聊天用
 const READ_ONLY_EXCLUDED_CAPABILITIES: readonly BuiltInToolCapability[] = [
   "history",
   "delete",
@@ -27,8 +26,7 @@ export function isReadOnlyBuiltInTool(definition: BuiltInToolDefinition): boolea
 }
 
 export function getAgentBuiltInToolCatalog(): readonly BuiltInToolDefinition[] {
-  const catalog = getListedBuiltInToolCatalog();
-  return isResearchShell() ? catalog.filter(isReadOnlyBuiltInTool) : catalog;
+  return getListedBuiltInToolCatalog().filter(isReadOnlyBuiltInTool);
 }
 
 export function createBuiltInToolAgentTools(project: Project, references: AIObjectReferenceRegistry): ToolSet {

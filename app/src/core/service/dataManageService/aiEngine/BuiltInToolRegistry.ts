@@ -1,6 +1,4 @@
 import type { Project } from "@/core/Project";
-// 命令行入口用 tsx 直接加载这个文件，不认 @/ 别名，值导入只能写相对路径
-import { isResearchShell } from "../../../research/ResearchShell";
 import type { AIObjectReferenceErrorCode, AIObjectReferenceRegistry } from "./AIObjectReferenceRegistry";
 import z from "zod/v4";
 
@@ -570,18 +568,13 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   }),
 ];
 
-// 科研工具只在科研模式下列出；命令行没有 import.meta.env 时由 isResearchShell 读运行时的 LR_RESEARCH_SHELL
 export const builtInToolCatalog: readonly BuiltInToolDefinition[] = Object.freeze(
-  [...definitions, ...(isResearchShell() ? researchDefinitions : [])].map((definition) => deepFreeze(definition)),
+  [...definitions, ...researchDefinitions].map((definition) => deepFreeze(definition)),
 );
 
-const researchToolNames: ReadonlySet<string> = new Set(researchDefinitions.map(({ name }) => name));
-
-/** 目录在模块加载时定下；列给 agent 时再按当前开关过滤一次，免得开关变了还列出科研工具 */
+/** 列给 agent（应用内聊天、命令行）的工具目录 */
 export function getListedBuiltInToolCatalog(): readonly BuiltInToolDefinition[] {
-  return isResearchShell()
-    ? builtInToolCatalog
-    : builtInToolCatalog.filter((definition) => !researchToolNames.has(definition.name));
+  return builtInToolCatalog;
 }
 
 const builtInToolsByName = new Map(builtInToolCatalog.map((definition) => [definition.name, definition]));

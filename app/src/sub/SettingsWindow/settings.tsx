@@ -1,25 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { researchSettingText, SettingField, SettingRow } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from "@/components/ui/sidebar";
-import { SoundService } from "@/core/service/feedbackService/SoundService";
-import { Settings, settingsSchema } from "@/core/service/Settings";
+import { Settings } from "@/core/service/Settings";
 import { cn } from "@/utils/cn";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import Fuse from "fuse.js";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import _ from "lodash";
 import {
   BookOpenText,
@@ -70,50 +52,10 @@ import {
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const SETTING_FIELD_ESTIMATE_SIZE = 88;
-
-function SettingFieldVirtualList({ keys }: { keys: string[] }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: keys.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => SETTING_FIELD_ESTIMATE_SIZE,
-    overscan: 6,
-    getItemKey: (index) => keys[index] ?? index,
-  });
-
-  const keysIdentity = keys.join("\0");
-  useEffect(() => {
-    parentRef.current?.scrollTo({ top: 0 });
-  }, [keysIdentity]);
-
-  return (
-    <div ref={parentRef} className="min-h-0 flex-1 overflow-auto">
-      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const key = keys[virtualItem.index];
-          if (!key) return null;
-          return (
-            <div
-              key={virtualItem.key}
-              data-index={virtualItem.index}
-              ref={virtualizer.measureElement}
-              className="absolute top-0 left-0 w-full"
-              style={{ transform: `translateY(${virtualItem.start}px)` }}
-            >
-              <SettingField settingKey={key as keyof Settings} />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 type SettingsTarget = { category: string; group: string };
 
 let pendingInitialCategory: SettingsTarget | null = null;
-// 科研模式的设置弹窗只有一个，已经开着时由它自己跳过去
+// 设置弹窗只有一个，已经开着时由它自己跳过去
 const initialCategoryListeners = new Set<(target: SettingsTarget) => void>();
 
 /** 下一次打开设置页时直接定位到某个分组，例如 AI 面板里的「去设置」按钮 */
@@ -124,19 +66,19 @@ export function setSettingsInitialCategory(category: string, group: string) {
 
 export type SettingsDialogTab = "settings" | "keybinds" | "customization" | "about";
 
-/** 科研模式的设置弹窗提供：在弹窗顶部的几页之间切换 */
+/** 设置弹窗提供：在弹窗顶部的几页之间切换 */
 export const SettingsNavigationContext = createContext<{ openTab: (tab: SettingsDialogTab) => void } | null>(null);
 
-// 科研模式下强制关闭、用不上或者不起作用的设置，不在设置页出现
-const researchHiddenSettingKeys = new Set([
+// 启动时强制关闭、用不上或者不起作用的设置，不在设置页出现
+const hiddenSettingKeys = new Set([
   "telemetry",
   "allowGlobalHotKeys",
-  // 专注(课堂)模式会把整圈界面设成透明,科研模式启动时强制关闭,这里也不再提供开关
+  // 专注(课堂)模式会把整圈界面设成透明,启动时强制关闭,设置页也不提供
   "isClassroomMode",
   "autoImportTxtFileWhenOpenPrg",
   "aiAutoApproveMcpTools",
   "researchSession",
-  // 科研模式的滚轮由 researchWheelBehavior 一项决定(见 core/research/WheelGesture.ts),原版这些滚轮设置不起作用
+  // 滚轮由 researchWheelBehavior 一项决定(见 core/research/WheelGesture.ts),这些滚轮设置不起作用
   "mouseWheelMode",
   "mouseWheelModeReverse",
   "mouseWheelWithShiftMode",
@@ -148,13 +90,13 @@ const researchHiddenSettingKeys = new Set([
   "mouseSideWheelMode",
   "macTrackpadAndMouseWheelDifference",
   "macMouseWheelIsSmoothed",
-  // 科研模式的窗口始终不透明，也没有穿透模式
+  // 窗口始终不透明，也没有穿透模式
   "windowBackgroundAlpha",
   "windowBackgroundOpacityAfterOpenClickThrough",
   "windowBackgroundOpacityAfterCloseClickThrough",
-  // 快捷设置栏在科研模式不显示
+  // 快捷设置栏不显示
   "showQuickSettingsToolbar",
-  // 科研模式拖动卡片不推开别的卡片（见 StageEntity），这个开关不起作用
+  // 拖动卡片不推开别的卡片（见 StageEntity），这一项不起作用
   "isEnableEntityCollision",
   // 每次启动都恢复成「选择并移动」
   "mouseLeftMode",
@@ -163,19 +105,8 @@ const researchHiddenSettingKeys = new Set([
   "nodeDetailsPanel",
 ]);
 
-// 只有科研模式会用到的设置，原版模式下不显示
-const researchOnlySettingKeys = new Set([
-  "researchFolderPath",
-  "writeAiSidecarOnSave",
-  "researchShowFullMenu",
-  "researchSession",
-  "aiPdfTextPages",
-  "researchWheelBehavior",
-  "researchOutsideFileMode",
-]);
-
 function isSettingKeyVisible(key: string): boolean {
-  return isResearchShell() ? !researchHiddenSettingKeys.has(key) : !researchOnlySettingKeys.has(key);
+  return !hiddenSettingKeys.has(key);
 }
 
 const researchCategory = {
@@ -185,9 +116,8 @@ const researchCategory = {
   menu: ["researchShowFullMenu"],
 };
 
-/** 科研模式只留下有内容的分组和大类 */
+/** 只留下有内容的分组和大类 */
 export function getVisibleCategories(): Record<string, Record<string, string[]>> {
-  if (!isResearchShell()) return categories;
   const all: Record<string, Record<string, string[]>> = { research: researchCategory, ...categories };
   return Object.fromEntries(
     Object.entries(all)
@@ -206,7 +136,7 @@ export function getVisibleCategories(): Record<string, Record<string, string[]>>
   );
 }
 
-/** 科研模式「常用」页：一页放完，「themePicker」是跳到「个性化 → 主题」的按钮 */
+/** 「常用」页：一页放完，「themePicker」是跳到「个性化 → 主题」的按钮 */
 export const researchCommonSections: { id: string; items: (keyof Settings | "themePicker")[] }[] = [
   { id: "folder", items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"] },
   { id: "board", items: ["researchWheelBehavior", "mouseRightDragBackground"] },
@@ -215,13 +145,9 @@ export const researchCommonSections: { id: string; items: (keyof Settings | "the
   { id: "save", items: ["autoSave", "autoSaveInterval", "autoSaveWhenClose"] },
 ];
 
-export default function SettingsTab() {
-  return isResearchShell() ? <ResearchSettingsTab /> : <UpstreamSettingsTab />;
-}
-
 type ResearchPage = { kind: "common" } | { kind: "group"; category: string; group: string };
 
-/** 外部要求打开的分组在科研模式下对应哪一页：AI 接口在「常用」里 */
+/** 外部要求打开的分组对应哪一页：AI 接口在「常用」里 */
 function researchPageOf(
   target: SettingsTarget | null,
   visibleCategories: Record<string, Record<string, string[]>>,
@@ -234,7 +160,7 @@ function researchPageOf(
   return { page: { kind: "common" }, section: null };
 }
 
-function ResearchSettingsTab() {
+export default function SettingsTab() {
   const { t } = useTranslation("settings");
   const { t: tr } = useTranslation("research");
   const visibleCategories = useMemo(getVisibleCategories, []);
@@ -519,159 +445,6 @@ function ThemePickerRow() {
         {t("settings.theme.button")}
       </Button>
     </SettingRow>
-  );
-}
-
-function UpstreamSettingsTab() {
-  const { t } = useTranslation("settings");
-  const [initialCategory] = useState(() => pendingInitialCategory);
-  const [currentCategory, setCurrentCategory] = useState(initialCategory?.category ?? "search");
-  const [currentGroup, setCurrentGroup] = useState(initialCategory?.group ?? "");
-  useEffect(() => {
-    pendingInitialCategory = null;
-  }, []);
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [searchResult, setSearchResult] = useState<string[]>([]);
-  const fuse = useRef<Fuse<{ key: string; i18n: { title: string; description: string } }>>(null);
-  const visibleCategories = useMemo(getVisibleCategories, []);
-
-  useEffect(() => {
-    fuse.current = new Fuse(
-      Object.keys(settingsSchema.shape)
-        .filter(isSettingKeyVisible)
-        .map(
-          (key) =>
-            ({
-              key,
-              i18n: t(key, { returnObjects: true }),
-            }) as any,
-        ),
-      { keys: ["key", "i18n.title", "i18n.description"], useExtendedSearch: true },
-    );
-  }, []);
-  useEffect(() => {
-    if (!fuse.current) return;
-    const result = fuse.current.search(searchKeyword).map((it) => it.item.key);
-    setSearchResult(result);
-  }, [searchKeyword, fuse]);
-
-  const groupKeys = useMemo(() => {
-    if (currentCategory === "search" || !currentCategory || !currentGroup) return [] as string[];
-    return visibleCategories[currentCategory]?.[currentGroup] ?? [];
-  }, [currentCategory, currentGroup, visibleCategories]);
-
-  return (
-    <div className="flex h-full min-h-0">
-      <Sidebar className="h-full overflow-hidden">
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={currentCategory === "search"}
-                    onClick={() => setCurrentCategory("search")}
-                  >
-                    <div>
-                      <Search />
-                      <span>搜索</span>
-                    </div>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                {Object.entries(visibleCategories).map(([category, value]) => {
-                  // @ts-expect-error fuck ts
-                  const CategoryIcon = categoryIcons[category].icon;
-                  return (
-                    <Collapsible key={category} defaultOpen className="group/collapsible">
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild>
-                          <CollapsibleTrigger
-                            onMouseEnter={() => {
-                              SoundService.play.mouseEnterButton();
-                            }}
-                            onMouseDown={() => {
-                              SoundService.play.mouseClickButton();
-                            }}
-                          >
-                            <CategoryIcon />
-                            <span>{t(`categories.${category}.title`)}</span>
-                            <ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                          </CollapsibleTrigger>
-                        </SidebarMenuButton>
-                        <SidebarMenuSub>
-                          <CollapsibleContent>
-                            {Object.entries(value).map(([group]) => {
-                              // @ts-expect-error fuck ts
-                              const GroupIcon = categoryIcons[category][group];
-                              return (
-                                <SidebarMenuSubItem key={group}>
-                                  <SidebarMenuSubButton
-                                    onMouseEnter={() => {
-                                      SoundService.play.mouseEnterButton();
-                                    }}
-                                    onMouseDown={() => {
-                                      SoundService.play.mouseClickButton();
-                                    }}
-                                    asChild
-                                    isActive={category === currentCategory && group === currentGroup}
-                                    onClick={() => {
-                                      setCurrentCategory(category);
-                                      setCurrentGroup(group);
-                                    }}
-                                  >
-                                    <a href="#">
-                                      <GroupIcon />
-                                      <span>{t(`categories.${category}.${group}`)}</span>
-                                    </a>
-                                  </SidebarMenuSubButton>
-                                </SidebarMenuSubItem>
-                              );
-                            })}
-                          </CollapsibleContent>
-                        </SidebarMenuSub>
-                      </SidebarMenuItem>
-                    </Collapsible>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-      </Sidebar>
-      <div className="mx-auto flex min-h-0 w-2/3 min-w-0 flex-col py-2">
-        {currentCategory === "search" ? (
-          <>
-            <Input
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="搜索..."
-              autoFocus
-              className="shrink-0"
-            />
-            {searchResult.length === 0 ? (
-              <div className="flex flex-col">
-                <span className="h-4"></span>
-                <span>直接输入: 模糊匹配</span>
-                <span>空格分割: “与”</span>
-                <span>竖线分割: “或”</span>
-                <span>=: 精确匹配</span>
-                <span>&apos;: 包含</span>
-                <span>!: 反向匹配</span>
-                <span>^: 匹配开头</span>
-                <span>!^: 反向匹配开头</span>
-                <span>$: 匹配结尾</span>
-                <span>!$: 反向匹配结尾</span>
-              </div>
-            ) : (
-              <SettingFieldVirtualList keys={searchResult} />
-            )}
-          </>
-        ) : (
-          groupKeys.length > 0 && <SettingFieldVirtualList keys={groupKeys} />
-        )}
-      </div>
-    </div>
   );
 }
 

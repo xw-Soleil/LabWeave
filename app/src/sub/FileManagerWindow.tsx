@@ -20,7 +20,7 @@ import {
   type ResearchFileEntry,
   type ResearchFolderScan,
 } from "@/core/research/ResearchFolder";
-import { emitResearchEvent, isResearchShell, onResearchEvent } from "@/core/research/ResearchShell";
+import { emitResearchEvent, onResearchEvent } from "@/core/research/ResearchShell";
 import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { createSubWindow } from "@/core/subWindowOpen";
@@ -614,9 +614,7 @@ FileManagerWindow.toggle = async () => {
 };
 
 // 这个模块需要被常驻模块静态 import，监听才会生效。chooseFolder / newWorkspace 由 ResearchSession 处理
-if (isResearchShell()) {
-  const unsubscribe = onResearchEvent("toggleFiles", () => {
-    FileManagerWindow.toggle().catch(showError);
-  });
-  import.meta.hot?.dispose(unsubscribe);
-}
+const unsubscribe = onResearchEvent("toggleFiles", () => {
+  FileManagerWindow.toggle().catch(showError);
+});
+import.meta.hot?.dispose(unsubscribe);

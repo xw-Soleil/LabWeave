@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/service/Settings", () => ({ Settings: { isEnableEntityCollision: true } }));
 vi.mock("../tools/entityDetailsManager", () => ({ DetailsManager: class {} }));
@@ -35,10 +35,6 @@ describe("entity collision separation", () => {
 });
 
 describe("pushing other entities after a move", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   function overlappingPair() {
     const pushed = vi.fn();
     const other = Object.assign(Object.create(Entity.prototype), {
@@ -55,18 +51,10 @@ describe("pushing other entities after a move", () => {
     return { pushed, updateOthers };
   }
 
-  it("never pushes in research mode", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "true");
+  it("never pushes", () => {
     const { pushed, updateOthers } = overlappingPair();
     updateOthers();
     expect(pushed).not.toHaveBeenCalled();
-  });
-
-  it("still pushes in the original mode", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    const { pushed, updateOthers } = overlappingPair();
-    updateOthers();
-    expect(pushed).toHaveBeenCalledWith(new Vector(50, 0));
   });
 });
 

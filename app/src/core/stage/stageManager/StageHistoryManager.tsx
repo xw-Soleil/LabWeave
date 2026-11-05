@@ -1,5 +1,4 @@
 import { Project, ProjectState, service } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { deserialize, serialize } from "@graphif/serializer";
 import { cn } from "@udecode/cn";
@@ -482,12 +481,12 @@ export class HistoryManager extends HistoryManagerAbs {
   }
 
   /**
-   * 撤销、重做真的换了舞台内容时，科研模式要把工程标成未保存并通知自动保存：
+   * 撤销、重做真的换了舞台内容时，要把工程标成未保存并通知自动保存：
    * 自动保存之后再撤销，恢复出来的内容不能只留在内存里。
    * 不复用 stage-commit，协作服务会把它当成一次新编辑同步出去。
    */
   private afterHistoryMove(stageBefore: unknown) {
-    if (!isResearchShell() || this.project.stage === stageBefore) return;
+    if (this.project.stage === stageBefore) return;
     this.project.projectState = ProjectState.Unsaved;
     this.project.emit("history-change");
   }

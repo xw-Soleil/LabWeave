@@ -1,13 +1,4 @@
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import {
   CircleGauge,
   LayoutPanelLeft,
   Menu as MenuIcon,
@@ -17,9 +8,8 @@ import {
   Sparkles,
   Volume2,
 } from "lucide-react";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { cn } from "@/utils/cn";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import ThemesTab from "../themes";
 import ContextMenuPage from "./context-menu";
 import EffectsPage from "./effects";
@@ -29,16 +19,12 @@ import QuickSettingsTab from "./quick-settings";
 import SoundEffectsPage from "./sounds";
 import WindowOpenModesPage from "./window-open-modes";
 
-// 科研模式的菜单栏是固定的（见 core/research/ResearchMenu.ts），快捷设置栏也不显示
-const researchHiddenCategories: ReadonlySet<string> = new Set(["globalMenu", "quickSettings"]);
+// 菜单栏是固定的（见 core/research/ResearchMenu.ts），快捷设置栏也不显示
+const hiddenCategories: ReadonlySet<string> = new Set(["globalMenu", "quickSettings"]);
 
 export default function CustomizationTab() {
-  return isResearchShell() ? <ResearchCustomizationTab /> : <UpstreamCustomizationTab />;
-}
-
-function ResearchCustomizationTab() {
   const [currentCategory, setCurrentCategory] = useState<keyof typeof categories>("themes");
-  const visible = Object.entries(categories).filter(([key]) => !researchHiddenCategories.has(key));
+  const visible = Object.entries(categories).filter(([key]) => !hiddenCategories.has(key));
   const Component = categories[currentCategory].component;
   return (
     <div className="flex h-full min-h-0">
@@ -64,40 +50,6 @@ function ResearchCustomizationTab() {
       </nav>
       {/* 主题页自带左右两栏和内边距，其他页面要留边 */}
       <div className={cn("flex min-w-0 flex-1 flex-col overflow-auto", currentCategory !== "themes" && "p-4")}>
-        <Component />
-      </div>
-    </div>
-  );
-}
-
-function UpstreamCustomizationTab() {
-  const [currentCategory, setCurrentCategory] = useState("effects");
-
-  // @ts-expect-error fuck ts
-  const Component = currentCategory && currentCategory in categories ? categories[currentCategory].component : Fragment;
-  return (
-    <div className="flex h-full">
-      <Sidebar className="h-full overflow-auto">
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {Object.entries(categories).map(([k, v]) => (
-                  <SidebarMenuItem key={k}>
-                    <SidebarMenuButton asChild onClick={() => setCurrentCategory(k)} isActive={currentCategory === k}>
-                      <div>
-                        <v.icon className="size-4" />
-                        <span>{v.name}</span>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-      </Sidebar>
-      <div className="mx-auto flex w-full flex-col overflow-auto">
         <Component />
       </div>
     </div>

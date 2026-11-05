@@ -150,7 +150,7 @@ html[data-theme-transition="ripple"] *::after {
     width: 1.5em;
     height: 1.5em;
   } */
-  /* 原版提示框跟随鼠标，要去掉 Radix 的定位；科研模式的提示框（data-pg-tooltip="anchored"）贴着按钮，保留定位 */
+  /* 跟随鼠标的提示框（比如 toolbar.tsx 里的）要去掉 Radix 的定位；贴着按钮的提示框（data-pg-tooltip="anchored"）保留定位 */
   [data-radix-popper-content-wrapper]:has([data-slot="tooltip-content"]:not([data-pg-tooltip="anchored"])) {
     transform: none !important;
   }
@@ -277,11 +277,8 @@ html[data-theme-transition="ripple"] *::after {
   height: 4px;
 }
 
+/* 滚动条轨道透明,只留滑块,和细线分隔的面板风格一致 */
 ::-webkit-scrollbar-track {
-  background: rgba(87, 95, 107, 0.1);
-}
-/* 科研模式:滚动条轨道透明,只留滑块,和细线分隔的面板风格一致 */
-[data-research-shell] ::-webkit-scrollbar-track {
   background: transparent;
 }
 

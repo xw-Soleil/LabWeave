@@ -8,7 +8,6 @@ import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { resolveSourcePath, rewriteSerializedFileCardPaths, toStoredSourcePath } from "@/core/research/FileCardFactory";
 import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
@@ -123,12 +122,9 @@ export class CopyEngine {
     const rect = Rectangle.getBoundingRectangle(selectedEntities.map((it) => it.collisionBox.getRectangle()));
     this.project.effects.addEffect(new RectangleNoteReversedEffect(new ProgressNumber(0, 100), rect, Color.Green));
 
-    const systemClipboardWritten = this.writeSystemClipboard(selectedEntities);
-    if (isResearchShell()) {
-      // 记下复制完成时系统剪贴板里是什么，粘贴时对比，就知道用户之后有没有在别处复制新东西
-      await systemClipboardWritten;
-      VirtualClipboard.rememberSystemClipboardText(copyGeneration, await readSystemClipboardText());
-    }
+    await this.writeSystemClipboard(selectedEntities);
+    // 记下复制完成时系统剪贴板里是什么，粘贴时对比，就知道用户之后有没有在别处复制新东西
+    VirtualClipboard.rememberSystemClipboardText(copyGeneration, await readSystemClipboardText());
     return selectedEntities;
   }
 
@@ -157,19 +153,10 @@ export class CopyEngine {
    * 用户按下了ctrl+v，将粘贴板数据粘贴到画布上
    */
   async paste() {
-    if (isResearchShell()) {
-      if (await this.hasFreshVirtualClipboardData()) {
-        this.virtualClipboardPaste("pointer");
-      } else {
-        await this.readSystemClipboardAndPaste();
-      }
-      return;
-    }
-    // 如果有虚拟粘贴板数据，则优先粘贴虚拟粘贴板上的东西
-    if (VirtualClipboard.hasData()) {
-      this.virtualClipboardPaste();
+    if (await this.hasFreshVirtualClipboardData()) {
+      this.virtualClipboardPaste("pointer");
     } else {
-      void this.readSystemClipboardAndPaste();
+      await this.readSystemClipboardAndPaste();
     }
   }
 
@@ -178,15 +165,14 @@ export class CopyEngine {
    * 从别处复制来的文字和图片没有原位置，照常贴到鼠标处。
    */
   async pasteWithOriginLocation() {
-    const hasVirtualData = isResearchShell() ? await this.hasFreshVirtualClipboardData() : VirtualClipboard.hasData();
-    if (hasVirtualData) {
+    if (await this.hasFreshVirtualClipboardData()) {
       this.virtualClipboardPaste("origin");
     } else {
       await this.readSystemClipboardAndPaste();
     }
   }
 
-  /** 科研模式下虚拟剪贴板可以反复粘贴；但用户在别处复制了新东西以后，就该贴新的了 */
+  /** 虚拟剪贴板可以反复粘贴；但用户在别处复制了新东西以后，就该贴新的了 */
   private async hasFreshVirtualClipboardData(): Promise<boolean> {
     if (!VirtualClipboard.hasData()) return false;
     if (VirtualClipboard.isOutdatedBy(await readSystemClipboardText())) {
@@ -196,20 +182,11 @@ export class CopyEngine {
   }
 
   /**
-   * below：原版行为，贴在原内容正下方，粘贴一次就清空虚拟剪贴板；
-   * pointer：贴到鼠标处（科研模式的 Cmd+V）；origin：贴在原坐标。
+   * pointer：贴到鼠标处（Cmd+V）；origin：贴在原坐标。
+   * 粘贴后虚拟剪贴板留着，可以连续粘贴多份。
    */
-  virtualClipboardPaste(placement: "below" | "pointer" | "origin" = "below") {
-    const pasteData = this.instantiateVirtualClipboard();
-    if (placement === "below") {
-      this.pasteBelowOriginal(pasteData);
-    } else {
-      this.pasteAt(pasteData, placement);
-    }
-    // 原版粘贴一次就清空；科研模式留着，可以连续粘贴多份
-    if (!isResearchShell()) {
-      VirtualClipboard.clear();
-    }
+  virtualClipboardPaste(placement: "pointer" | "origin") {
+    this.pasteAt(this.instantiateVirtualClipboard(), placement);
   }
 
   /** 把虚拟剪贴板里的数据变成一份新的舞台对象：新的 uuid、新的附件，文件卡片路径换成相对本工程 */
@@ -338,36 +315,6 @@ export class CopyEngine {
     return pasteData;
   }
 
-  private pasteBelowOriginal(pasteData: StageObject[]) {
-    // 将pasteData设为选中状态
-    const shouldSelectedEntities = this.project.sectionMethods.shallowerNotSectionEntities(
-      pasteData.filter((it) => it instanceof Entity) as Entity[],
-    );
-    shouldSelectedEntities.forEach((it) => (it.isSelected = true));
-    // 粘贴到舞台上（必须先粘贴到舞台上，再运行选择标准化、移动函数）
-    this.project.stage.push(...pasteData);
-    // 粘贴出的 Section / Edge 需要先重建运行时引用和层级树，否则后续点选与拖拽会失效。
-    this.project.stageManager.updateReferences();
-    // 选中标准化
-    this.project.controllerUtils.selectedEntityNormalizing();
-
-    // 将所有选中的实体，往右下角移动一点
-    const rect = Rectangle.getBoundingRectangle(pasteData.map((it: StageObject) => it.collisionBox.getRectangle()));
-    this.project.entityMoveManager.moveSelectedEntities(new Vector(0, rect.height));
-    // 加特效
-    const effectRect = Rectangle.getBoundingRectangle(
-      shouldSelectedEntities.map((it) => it.collisionBox.getRectangle()),
-    );
-    this.project.effects.addEffect(new RectangleNoteEffect(new ProgressNumber(0, 50), effectRect, Color.Green));
-    toast.success(
-      <div>
-        <h2 className="text-lg">粘贴成功</h2>
-        <p className="text-xs">粘贴位置在{effectRect.leftTop.toString()}，如果您是跨文档粘贴，请注意调整位置</p>
-        <p className="text-xs">已帮您自动选中该内容，按下默认快捷键 `F` 即可快速聚焦到该内容</p>
-      </div>,
-    );
-  }
-
   /**
    * 把粘贴内容的外接矩形中心对到鼠标处（pointer），或者原样留在原坐标（origin）。
    * 落点在分组框里就放进那个框；pointer 时最后把它整体挪到最近的空位，不推开别的卡片。整个粘贴记一步历史。
@@ -414,15 +361,6 @@ export class CopyEngine {
       );
     }
     this.project.historyManager.recordStep();
-    if (!isResearchShell()) {
-      toast.success(
-        <div>
-          <h2 className="text-lg">粘贴成功</h2>
-          <p className="text-xs">已粘贴到原位置{effectRect.leftTop.toString()}</p>
-          <p className="text-xs">已帮您自动选中该内容，按下默认快捷键 `F` 即可快速聚焦到该内容</p>
-        </div>,
-      );
-    }
   }
 
   /**

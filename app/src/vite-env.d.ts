@@ -11,8 +11,6 @@ interface ImportMetaEnv {
   LR_FRAME?: string;
   LR_VITEST?: "true";
   LR_TURNSTILE_SITE_KEY?: string;
-  /** 科研工作台模式，缺省开启；只有写 "false" 才关闭 */
-  LR_RESEARCH_SHELL?: string;
 }
 
 interface Window {

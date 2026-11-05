@@ -20,11 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Project } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { isTabVisibleInWorkspace, markResearchPanelTab } from "@/core/research/ResearchSession";
 import {
   AIChatSessionStore,
@@ -55,7 +53,7 @@ import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
+import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
@@ -79,14 +77,13 @@ import {
   Plus,
   Send,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Square,
   Trash2,
   User,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
@@ -95,7 +92,7 @@ import { getOriginalNameOf } from "virtual:original-class-name";
 
 let pendingInitialText: string | null = null;
 let pendingInitialPrompt: string | null = null;
-// 科研模式下 AI 面板是单例，已经打开的面板也要能收到新的预填文字
+// AI 面板是单例，已经打开的面板也要能收到新的预填文字
 const pendingInitialTextListeners = new Set<() => void>();
 
 export function setAIWindowInitialText(text: string, prompt?: string) {
@@ -122,12 +119,8 @@ export default function AIWindow({ tabId }: { tabId: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         <FolderOpen className="text-muted-foreground size-10" />
-        <div className="font-medium">{isResearchShell() ? t("ai.noWorkspace") : "请先打开一个文件"}</div>
-        <div className="text-muted-foreground max-w-64 text-sm">
-          {isResearchShell()
-            ? t("ai.noWorkspaceHint")
-            : "AI 工具需要当前画布上下文，打开文件后就可以帮你创建、整理和修改节点。"}
-        </div>
+        <div className="font-medium">{t("ai.noWorkspace")}</div>
+        <div className="text-muted-foreground max-w-64 text-sm">{t("ai.noWorkspaceHint")}</div>
       </div>
     );
   }
@@ -578,18 +571,18 @@ function AIChatPanel({
   const messagesElRef = useRef<HTMLDivElement>(null);
   const [showTokenCount] = Settings.use("aiShowTokenCount");
   const [showDebug] = Settings.use("showDebug");
-  const [autoApproveMcpTools, setAutoApproveMcpTools] = Settings.use("aiAutoApproveMcpTools");
-  const autoApproveMcpToolsId = useId();
   const [apiBaseUrl] = Settings.use("aiApiBaseUrl");
   const [apiKey] = Settings.use("aiApiKey");
   const [model] = Settings.use("aiModel");
   const [manualContextWindow] = Settings.use("aiContextWindow");
   const [apiFormat] = Settings.use("aiApiFormat");
-  const researchShell = isResearchShell();
   const { t } = useTranslation("research");
-  const configProblems = researchShell
-    ? getAIConfigProblems({ aiApiFormat: apiFormat, aiApiBaseUrl: apiBaseUrl, aiApiKey: apiKey, aiModel: model })
-    : [];
+  const configProblems = getAIConfigProblems({
+    aiApiFormat: apiFormat,
+    aiApiBaseUrl: apiBaseUrl,
+    aiApiKey: apiKey,
+    aiModel: model,
+  });
   const contextWindowTokenLimitRef = useRef<number | undefined>(undefined);
   const conversation = useMemo(
     () => project.aiEngine.createConversation(project, references, () => contextWindowTokenLimitRef.current),
@@ -665,7 +658,7 @@ function AIChatPanel({
 
   useEffect(() => {
     // 引用快照找不回来时，新发的 n/e 引用不能和这段旧对话里出现过的重号
-    if (isResearchShell()) references.reserveRefsMentionedIn(JSON.stringify(session.messages));
+    references.reserveRefsMentionedIn(JSON.stringify(session.messages));
     setMessages(session.messages);
     messagesRef.current = session.messages;
     lastSavedMessagesRef.current = session.messages;
@@ -709,8 +702,6 @@ function AIChatPanel({
       if (initialInput) setInputValue(initialInput);
     };
     consume();
-    // 原版每次打开都是新窗口，由新窗口在挂载时取走；只有单例模式下才让已打开的面板接收
-    if (!isResearchShell()) return;
     pendingInitialTextListeners.add(consume);
     return () => {
       pendingInitialTextListeners.delete(consume);
@@ -791,22 +782,21 @@ function AIChatPanel({
     [project, references],
   );
 
-  const markdownComponents = useMemo(() => {
-    const components: Record<string, React.ComponentType<any>> = { inlineCode: ObjectRefCode };
-    if (researchShell) components.img = SafeMarkdownImage;
-    return components;
-  }, [ObjectRefCode, researchShell]);
+  const markdownComponents = useMemo<Record<string, React.ComponentType<any>>>(
+    () => ({ inlineCode: ObjectRefCode, img: SafeMarkdownImage }),
+    [ObjectRefCode],
+  );
 
   if (configProblems.length > 0) {
     return <AIConfigNotice problems={configProblems} />;
   }
 
-  const quickPrompts = researchShell ? [t("ai.quickPrompts.lineOfThought"), t("ai.quickPrompts.whatIsMissing")] : [];
+  const quickPrompts = [t("ai.quickPrompts.lineOfThought"), t("ai.quickPrompts.whatIsMissing")];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={messagesElRef} className="flex-1 overflow-y-auto px-3 py-4">
-        {messages.length === 0 && researchShell ? (
+        {messages.length === 0 ? (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-center">
             <Bot className="size-10" />
             <div className="text-foreground font-medium">{t("ai.emptyTitle")}</div>
@@ -823,14 +813,6 @@ function AIChatPanel({
                   {prompt}
                 </Button>
               ))}
-            </div>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-center">
-            <Bot className="size-10" />
-            <div className="text-foreground font-medium">说说你想怎么改这张图</div>
-            <div className="max-w-72 text-sm">
-              例如：整理当前选中的节点、生成一棵知识树、批量改颜色，或者让它先读取画布再规划。
             </div>
           </div>
         ) : (
@@ -895,39 +877,13 @@ function AIChatPanel({
           )}
         </div>
         <Textarea
-          placeholder={researchShell ? t("ai.inputPlaceholder") : "让 AI 读取画布、创建节点、连线、整理选区..."}
+          placeholder={t("ai.inputPlaceholder")}
           className="max-h-36 resize-none"
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           value={inputValue}
           disabled={requesting || !sessionLoaded}
         />
-        <div className={cn("mt-2 flex items-center gap-2", researchShell && "hidden")}>
-          <Switch
-            id={autoApproveMcpToolsId}
-            checked={autoApproveMcpTools}
-            disabled={requesting || !sessionLoaded}
-            onCheckedChange={setAutoApproveMcpTools}
-            aria-label="自动批准 MCP 工具"
-          />
-          <label htmlFor={autoApproveMcpToolsId} className="flex cursor-pointer items-center gap-1.5 text-xs">
-            <ShieldCheck className="size-3.5" />
-            自动批准 MCP 工具
-          </label>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="text-muted-foreground cursor-help text-xs underline decoration-dotted underline-offset-2"
-              >
-                安全说明
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-72">
-              开启后 MCP 工具无需逐次批准；本地 stdio 进程首次启动仍需单独确认。设置从下一次请求开始生效。
-            </TooltipContent>
-          </Tooltip>
-        </div>
         <ContextWindowUsage
           usage={contextUsage}
           state={contextWindowState}
@@ -1345,8 +1301,8 @@ function findOpenAIWindowTab() {
 }
 
 AIWindow.open = () => {
-  // 科研模式只留一个 AI 面板，其他入口（右键菜单、快捷键）打开时也切到这一个
-  const existing = isResearchShell() ? findOpenAIWindowTab() : undefined;
+  // 只留一个 AI 面板，其他入口（右键菜单、快捷键）打开时也切到这一个
+  const existing = findOpenAIWindowTab();
   if (existing) {
     TabWorkspace.focus(existing.id);
     return existing;
@@ -1361,7 +1317,7 @@ AIWindow.open = () => {
     rect: new Rectangle(new Vector(8, 88), new Vector(380, window.innerHeight - 96)),
   });
   aiWindowTabIds.add(tab.id);
-  if (isResearchShell()) markResearchPanelTab("ai", tab.id);
+  markResearchPanelTab("ai", tab.id);
   return tab;
 };
 
@@ -1372,8 +1328,7 @@ AIWindow.toggle = () => {
     AIWindow.open();
     return;
   }
-  const visible = isResearchShell() ? isTabVisibleInWorkspace(existing.id) : store.get(activeTabAtom) === existing;
-  if (visible) {
+  if (isTabVisibleInWorkspace(existing.id)) {
     const close = aiWindowCloseHandlers.get(existing.id);
     if (close) {
       close();

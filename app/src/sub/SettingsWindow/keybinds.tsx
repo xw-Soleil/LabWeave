@@ -21,7 +21,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { keyBindI18nKey, RESEARCH_KEYBIND_IDS } from "@/core/research/ResearchMenu";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds, getKeyBindTypeById } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import Fuse from "fuse.js";
@@ -580,9 +579,7 @@ type ShortcutKeysGroup = {
 
 export const shortcutKeysGroups: ShortcutKeysGroup[] = [
   // 分组名按 `${title}.title` 去 keyBindsGroup 命名空间里找；带命名空间前缀后会去 research 命名空间里找
-  ...(isResearchShell()
-    ? [{ title: "research:menu.keyBindsGroup", icon: <PanelsTopLeft />, keys: [...RESEARCH_KEYBIND_IDS] }]
-    : []),
+  { title: "research:menu.keyBindsGroup", icon: <PanelsTopLeft />, keys: [...RESEARCH_KEYBIND_IDS] },
   {
     title: "basic",
     icon: <Keyboard />,

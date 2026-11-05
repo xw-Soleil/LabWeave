@@ -5,12 +5,10 @@ import { URI } from "vscode-uri";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  research: true,
   aiPanelTab: undefined as unknown,
   toastWarning: vi.fn(),
 }));
 
-vi.mock("./core/research/ResearchShell", () => ({ isResearchShell: () => mocks.research }));
 vi.mock("./core/research/ResearchSession", () => ({ findResearchPanelTab: () => mocks.aiPanelTab }));
 vi.mock("./core/service/Settings", () => ({ Settings: { protectingPrivacy: false, watch: () => () => {} } }));
 vi.mock("./core/service/feedbackService/SoundService", () => ({
@@ -27,11 +25,6 @@ vi.mock("./core/TabWorkspace", () => ({
 }));
 vi.mock("./components/tab-context-menu", () => ({
   default: ({ children }: { children: React.ReactNode }) => children,
-}));
-vi.mock("./components/ui/tooltip", () => ({
-  Tooltip: ({ children }: { children: React.ReactNode }) => children,
-  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
-  TooltipContent: () => null,
 }));
 vi.mock("./utils/font", () => ({ replaceTextWhenProtect: (text: string) => text }));
 vi.mock("./state", async () => {
@@ -115,7 +108,6 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  mocks.research = true;
   mocks.aiPanelTab = undefined;
   mocks.toastWarning.mockClear();
   store.set(activeResourceTabAtom, undefined);
@@ -152,7 +144,7 @@ const tabElement = (tab: Tab) => container.querySelector<HTMLElement>(`[data-pg-
 const closeButton = (tab: Tab) => tabElement(tab).querySelector<HTMLButtonElement>('button[aria-label="tabs.close"]')!;
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
-describe("ProjectTabs (research)", () => {
+describe("ProjectTabs", () => {
   it("shows workspace names without .prg, the full path as tooltip, and drafts as untitled", () => {
     const file = newProject(URI.file("/research/垃圾分类模型对比.prg"));
     const draft = newProject(URI.parse("draft:3"));
@@ -222,16 +214,5 @@ describe("ProjectTabs (research)", () => {
     const panel = newComponentTab({ title: "文件", closable: false });
     render([panel]);
     expect(closeButton(panel)).toBeNull();
-  });
-});
-
-describe("ProjectTabs (classic)", () => {
-  it("keeps the original pill tabs and title", () => {
-    mocks.research = false;
-    const file = newProject(URI.file("/research/a.prg"));
-    render([file]);
-    expect(tabElement(file).tagName).toBe("BUTTON");
-    expect(tabElement(file).className).toContain("rounded-full");
-    expect(tabElement(file).textContent).toBe("a.prg");
   });
 });

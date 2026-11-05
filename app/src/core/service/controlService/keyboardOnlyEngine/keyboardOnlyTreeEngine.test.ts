@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/service/Settings", () => ({ Settings: { autoLayoutWhenTreeGenerate: true } }));
@@ -69,11 +69,7 @@ beforeEach(() => {
   Settings.autoLayoutWhenTreeGenerate = true;
 });
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe("layout after Tab / \\ growth and probe connect in the research shell", () => {
+describe("layout after Tab / \\ growth and probe connect", () => {
   it("skips the layout without a warning when the structure is not a tree", () => {
     const { project, engine } = setup({ validation: diamond });
     expect(engine.layoutTreeAfterAutoGrowth(node)).toBeNull();
@@ -103,35 +99,8 @@ describe("layout after Tab / \\ growth and probe connect in the research shell",
   });
 });
 
-describe("layout after tree growth in the original app", () => {
-  beforeEach(() => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-  });
-
-  it("warns about the tree problems", () => {
-    const { project, engine } = setup({ validation: diamond });
-    expect(engine.layoutTreeAfterAutoGrowth(node)).toBeNull();
-    expect(project.autoAlign.autoLayoutSelectedFastTreeMode).not.toHaveBeenCalled();
-    expect(toast.warning).toHaveBeenCalledOnce();
-    expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain("菱形结构");
-  });
-
-  it("warns when there is no single root", () => {
-    const { engine } = setup({ roots: [] });
-    engine.layoutTreeAfterAutoGrowth(node);
-    expect(toast.warning).toHaveBeenCalledWith("当前结构不符合树形结构：无法确定唯一的根节点");
-  });
-
-  it("stays quiet when auto layout is switched off", () => {
-    Settings.autoLayoutWhenTreeGenerate = false;
-    const { engine } = setup({ validation: diamond });
-    engine.layoutTreeAfterAutoGrowth(node);
-    expect(toast.warning).not.toHaveBeenCalled();
-  });
-});
-
 describe("explicit tree formatting", () => {
-  it("still reports a non-tree structure in the research shell", () => {
+  it("still reports a non-tree structure", () => {
     const { project } = setup({ validation: diamond });
     new AutoAlign(project as unknown as Project).autoLayoutSelectedFastTreeMode(root);
     expect(toast.error).toHaveBeenCalledOnce();

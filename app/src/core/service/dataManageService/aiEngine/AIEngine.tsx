@@ -1,8 +1,7 @@
 import { Project, service } from "@/core/Project";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { AIChatSessionStore, getAIChatProjectKey } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
-import { composeAgentSystemPrompt, mergeAgentToolSets } from "@/core/service/dataManageService/aiEngine/AIAgentRuntime";
+import { composeAgentSystemPrompt } from "@/core/service/dataManageService/aiEngine/AIAgentRuntime";
 import {
   createSessionMemoryCompactionPlan,
   formatSessionMemoryTranscript,
@@ -10,7 +9,6 @@ import {
   SUMMARY_TOOL_OUTPUT_CHARS,
 } from "@/core/service/dataManageService/aiEngine/AIChatSessionMemory";
 import { createBuiltInToolAgentTools } from "@/core/service/dataManageService/aiEngine/BuiltInToolAgentAdapter";
-import { AIMCPStore, materializeMCPServers, prepareMCPTools } from "@/core/service/dataManageService/aiEngine/AIMCP";
 import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { AIProjectReferenceStore } from "@/core/service/dataManageService/aiEngine/AIProjectReferenceStore";
 import { createChatModel, mergeAIRequestHeaders } from "@/core/service/dataManageService/aiEngine/AIProvider";
@@ -23,15 +21,6 @@ import {
   AIRequestTraceBuffer,
   type AIRequestTraceCallKind,
 } from "@/core/service/dataManageService/aiEngine/AIRequestTrace";
-import {
-  buildSkillSystemContext,
-  filterActivatedSkillSnapshots,
-} from "@/core/service/dataManageService/aiEngine/AISkillSession";
-import {
-  AISkillTrustStore,
-  createSkillTools,
-  discoverSkills,
-} from "@/core/service/dataManageService/aiEngine/AISkills";
 import { fetch } from "@tauri-apps/plugin-http";
 import {
   convertToModelMessages,
@@ -43,9 +32,6 @@ import {
   type UIMessage,
   wrapLanguageModel,
 } from "ai";
-
-const SYSTEM_PROMPT =
-  "尽可能尝试使用工具解决问题，如果实在不行才能问用户。TextNode正常情况下高度为75，多个节点叠起来时需要适当留padding。节点正常情况下的颜色应该是透明[0,0,0,0]，注意透明色并非是“看不见文本”。工具使用n1、n2、e1等当前项目对象引用，这些引用在项目的不同会话间保持一致；不要猜测引用，提及对象时用反引号包裹引用，以便用户点击定位。MCP 工具被用户拒绝后，不要在当前任务中重新尝试该调用，也不要用等价参数绕过拒绝。";
 
 const RESEARCH_SYSTEM_PROMPT = [
   "你是「科研工作台」里的研究助手。用户把论文、图片和笔记做成卡片放在白板上，用连线和分组表达自己的思路。",
@@ -186,8 +172,7 @@ export class AIEngine {
         },
       });
       const contextWindowTokenLimit = getContextWindowTokenLimit(body.contextWindowTokenLimit);
-      const researchShell = isResearchShell();
-      const researchContext = researchShell ? await buildResearchContext(project, contextWindowTokenLimit) : "";
+      const researchContext = await buildResearchContext(project, contextWindowTokenLimit);
       const chatKey = getAIChatProjectKey(project);
       let sessionMemory = sessionId ? await AIChatSessionStore.getSessionMemory(chatKey, sessionId) : undefined;
       let workingMessages = getSessionMemoryWorkingMessages(messages, sessionMemory);
@@ -211,7 +196,7 @@ export class AIEngine {
             sessionMemory ? `已有会话记忆：\n${sessionMemory.summary}` : "尚无已有会话记忆。",
             `需要压缩的旧会话记录：\n${formatSessionMemoryTranscript(
               compactionPlan.messagesToSummarize,
-              researchShell ? SUMMARY_TOOL_OUTPUT_CHARS : undefined,
+              SUMMARY_TOOL_OUTPUT_CHARS,
             )}`,
           ].join("\n\n"),
           maxOutputTokens: compactionPlan.maxOutputTokens,
@@ -229,95 +214,53 @@ export class AIEngine {
         workingMessages = compactionPlan.retainedMessages;
       }
 
-      // 科研模式不启动 MCP 服务、不扫描 Skills：两者每次请求都会起进程或读用户目录
-      const { skillTools, skillContext } = researchShell
-        ? { skillTools: {}, skillContext: "" }
-        : await this.prepareSkills(project, chatKey, sessionId);
-      const mcpRuntime = researchShell
-        ? { tools: {}, close: async () => {} }
-        : await prepareMCPTools(materializeMCPServers(await AIMCPStore.load()), {
-            requireApproval: !Settings.aiAutoApproveMcpTools,
-          });
-
-      try {
-        const tools = mergeAgentToolSets(
-          createBuiltInToolAgentTools(project, references),
-          mcpRuntime.tools,
-          skillTools,
-        );
-        const memoryContext = sessionMemory
-          ? `以下是当前会话的压缩记忆，仅用于保持对话连续性。当前用户消息和工具读取到的项目状态优先。\n${sessionMemory.summary}`
-          : undefined;
-        const system = researchShell
-          ? composeAgentSystemPrompt(`${RESEARCH_SYSTEM_PROMPT}\n\n${researchContext}`, skillContext, memoryContext)
-          : composeAgentSystemPrompt(SYSTEM_PROMPT, skillContext, memoryContext);
-        const modelMessages = pruneMessages({
-          messages: await convertToModelMessages(workingMessages, {
-            tools,
-            ignoreIncompleteToolCalls: true,
-          }),
-          reasoning: "all",
-        });
-        this.requestTraceBuffer.recordPreparedInput(traceRunId, {
-          system,
-          messages: modelMessages,
-        });
-
-        let lastStepUsage: { inputTokens?: number; outputTokens?: number } | undefined;
-        const textStream = streamText({
-          model,
-          system,
-          messages: modelMessages,
+      const tools = createBuiltInToolAgentTools(project, references);
+      const memoryContext = sessionMemory
+        ? `以下是当前会话的压缩记忆，仅用于保持对话连续性。当前用户消息和工具读取到的项目状态优先。\n${sessionMemory.summary}`
+        : undefined;
+      const system = composeAgentSystemPrompt(`${RESEARCH_SYSTEM_PROMPT}\n\n${researchContext}`, "", memoryContext);
+      const modelMessages = pruneMessages({
+        messages: await convertToModelMessages(workingMessages, {
           tools,
-          stopWhen: stepCountIs(8),
-          abortSignal: options?.signal ?? undefined,
-          maxRetries: 0,
-          onStepFinish: ({ usage }) => {
-            lastStepUsage = usage;
-          },
-          onFinish: mcpRuntime.close,
-          onError: mcpRuntime.close,
-          onAbort: mcpRuntime.close,
-        });
+          ignoreIncompleteToolCalls: true,
+        }),
+        reasoning: "all",
+      });
+      this.requestTraceBuffer.recordPreparedInput(traceRunId, {
+        system,
+        messages: modelMessages,
+      });
 
-        return textStream.toUIMessageStreamResponse<UIMessage<AIMessageMetadata>>({
-          originalMessages: messages as UIMessage<AIMessageMetadata>[],
-          messageMetadata: ({ part }) => {
-            if (part.type !== "finish") return;
-            return {
-              inputTokens: part.totalUsage.inputTokens,
-              outputTokens: part.totalUsage.outputTokens,
-              totalTokens: part.totalUsage.totalTokens,
-              lastStepInputTokens: lastStepUsage?.inputTokens,
-              lastStepOutputTokens: lastStepUsage?.outputTokens,
-            };
-          },
-        });
-      } catch (error) {
-        await mcpRuntime.close();
-        throw error;
-      }
+      let lastStepUsage: { inputTokens?: number; outputTokens?: number } | undefined;
+      const textStream = streamText({
+        model,
+        system,
+        messages: modelMessages,
+        tools,
+        stopWhen: stepCountIs(8),
+        abortSignal: options?.signal ?? undefined,
+        maxRetries: 0,
+        onStepFinish: ({ usage }) => {
+          lastStepUsage = usage;
+        },
+        // 出错信息随消息流显示在界面上，不另外打到控制台（streamText 默认会 console.error）
+        onError: () => {},
+      });
+
+      return textStream.toUIMessageStreamResponse<UIMessage<AIMessageMetadata>>({
+        originalMessages: messages as UIMessage<AIMessageMetadata>[],
+        messageMetadata: ({ part }) => {
+          if (part.type !== "finish") return;
+          return {
+            inputTokens: part.totalUsage.inputTokens,
+            outputTokens: part.totalUsage.outputTokens,
+            totalTokens: part.totalUsage.totalTokens,
+            lastStepInputTokens: lastStepUsage?.inputTokens,
+            lastStepOutputTokens: lastStepUsage?.outputTokens,
+          };
+        },
+      });
     };
-  }
-
-  private async prepareSkills(project: Project, chatKey: string, sessionId: string | undefined) {
-    const projectUri = project.uri.toString();
-    const projectSkillsTrusted =
-      project.uri.scheme === "file" && (await AISkillTrustStore.isProjectTrusted(projectUri));
-    const activatedSkills = filterActivatedSkillSnapshots(
-      sessionId ? await AIChatSessionStore.getActivatedSkills(chatKey, sessionId) : [],
-      projectSkillsTrusted,
-    );
-    const skillCatalog = await discoverSkills(projectUri);
-    const skillTools = createSkillTools({
-      catalog: skillCatalog,
-      activatedSkills,
-      onActivate: async (snapshot) => {
-        if (!sessionId) throw new Error("当前 AI 请求缺少会话，无法激活 Skill");
-        await AIChatSessionStore.activateSkill(chatKey, sessionId, snapshot);
-      },
-    });
-    return { skillTools, skillContext: buildSkillSystemContext(skillCatalog, activatedSkills) };
   }
 
   async getModels() {

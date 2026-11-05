@@ -2,7 +2,6 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Project } from "@/core/Project";
 import { isOutsideResearchFolder } from "@/core/research/ResearchFolder";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { DragFileIntoStageEngine } from "@/core/service/dataManageService/dragFileIntoStageEngine/dragFileIntoStageEngine";
 import { SoundService } from "@/core/service/feedbackService/SoundService";
@@ -17,8 +16,6 @@ import { isMac } from "@/utils/platform";
 import { readCachedPrgThumbnail, readPrgThumbnailBlob, refreshPrgThumbnailCache } from "@/utils/readPrgThumbnail";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useAtom } from "jotai";
 import {
   DoorClosed,
@@ -27,7 +24,6 @@ import {
   EyeOff,
   FileImage,
   HardDriveDownload,
-  Import,
   Link,
   LoaderPinwheel,
   RefreshCcw,
@@ -36,7 +32,6 @@ import {
 } from "lucide-react";
 import React, { type ChangeEventHandler, useEffect } from "react";
 import { toast } from "sonner";
-import { URI } from "vscode-uri";
 
 /**
  * 文件名隐私保护加密函数（强制使用凯撒移位）
@@ -176,45 +171,6 @@ export default function RecentFilesWindow({ tabId }: { tabId: string }) {
     }
   }, [showThumbnails]);
 
-  // 选择文件夹并导入PRG文件
-  const importPrgFilesFromFolder = async () => {
-    try {
-      // 打开文件夹选择对话框
-      const folderPath = await open({
-        directory: true,
-        multiple: false,
-      });
-
-      if (!folderPath) return;
-
-      // 递归读取文件夹中的所有.prg文件
-      setIsLoading(true);
-      const files: string[] = await invoke("read_folder_recursive", {
-        path: folderPath,
-        fileExts: [".prg"],
-      });
-
-      if (files.length === 0) {
-        toast.info("未找到.prg文件");
-        return;
-      }
-
-      // 转换文件路径为URI并添加到最近文件历史
-      const uris = files.map((filePath) => URI.file(filePath));
-      await RecentFileManager.addRecentFilesByUris(uris);
-
-      // 更新列表
-      await updateRecentFiles();
-
-      toast.success(`成功导入 ${files.length} 个.prg文件`);
-    } catch (error) {
-      console.error("导入文件失败:", error);
-      toast.error("导入文件失败");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   /**
    * 用于刷新页面显示
    */
@@ -222,7 +178,7 @@ export default function RecentFilesWindow({ tabId }: { tabId: string }) {
     setIsLoading(true);
     await RecentFileManager.validAndRefreshRecentFiles();
     await RecentFileManager.sortTimeRecentFiles();
-    // 科研模式下只列研究文件夹里的文件，也就不会去读文件夹外 .prg 的缩略图
+    // 只列研究文件夹里的文件，也就不会去读文件夹外 .prg 的缩略图
     const files = (await RecentFileManager.getRecentFiles()).filter(
       (file) => file.uri.scheme !== "file" || !isOutsideResearchFolder(file.uri.fsPath),
     );
@@ -570,18 +526,6 @@ export default function RecentFilesWindow({ tabId }: { tabId: string }) {
           // 搜索结果只有一条的时候，在页面下方文字中提示一下用户说按下回车键直接能够打开这个文件
           className="max-w-96 min-w-32 flex-1"
         />
-
-        {/* 科研模式下由文件面板列出研究文件夹里的工作区；这个导入会跟随符号链接扫到文件夹外面 */}
-        {!isResearchShell() && (
-          <button
-            onClick={importPrgFilesFromFolder}
-            className="bg-primary/10 hover:bg-primary/20 flex gap-2 rounded-md p-2 transition-colors"
-            title="递归导入文件夹中的所有.prg文件"
-          >
-            <Import />
-            <span>递归导入文件夹中的所有.prg文件</span>
-          </button>
-        )}
 
         <button
           onClick={clearAllRecentHistory}

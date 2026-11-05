@@ -1,6 +1,5 @@
 import { Project, service } from "@/core/Project";
 import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { EntityJumpMoveEffect } from "@/core/service/feedbackService/effectEngine/concrete/EntityJumpMoveEffect";
 import { RectanglePushInEffect } from "@/core/service/feedbackService/effectEngine/concrete/RectanglePushInEffect";
@@ -61,9 +60,7 @@ export class EntityMoveManager {
       this.moveSpeed = Vector.getZero();
       // 速度真正停止时记录一次历史
       if (this.moveAccelerateCommander.isZero()) {
-        if (isResearchShell()) {
-          nudgeEntitiesOutOfOverlap(this.project, this.getSelectedEntitiesWithChildren(true));
-        }
+        nudgeEntitiesOutOfOverlap(this.project, this.getSelectedEntitiesWithChildren(true));
         this.project.historyManager.recordStep();
       }
       return;

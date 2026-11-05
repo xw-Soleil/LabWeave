@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Vector } from "@graphif/data-structures";
 
 vi.mock("@/core/service/Settings", () => ({
   Settings: {
-    enableWindowsTouchPad: true,
     moveAmplitude: 2,
     moveFriction: 0.1,
     scaleExponent: 0.2,
@@ -11,8 +10,6 @@ vi.mock("@/core/service/Settings", () => ({
     researchWheelBehavior: "pan",
   },
 }));
-// 下面「trackpad camera handoff」测的是原版的滚轮逻辑;科研模式的滚轮另有一组测试(文件末尾)
-vi.stubEnv("LR_RESEARCH_SHELL", "false");
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {} }));
 vi.mock("@/core/stage/stageObject/abstract/StageEntity", () => ({ Entity: class {} }));
@@ -20,8 +17,7 @@ vi.mock("@/core/service/feedbackService/effectEngine/concrete/MouseTipFeedbackEf
   MouseTipFeedbackEffect: {},
 }));
 vi.mock("@/utils/externalOpen", () => ({ openBrowserOrFileByEntity: vi.fn() }));
-vi.mock("@/utils/platform", () => ({ isMac: false, isIpad: false }));
-vi.stubGlobal("WheelEvent", { DOM_DELTA_PIXEL: 0 });
+vi.mock("@/utils/platform", () => ({ isMac: false }));
 
 import { ControllerCameraClass } from "./ControllerCamera";
 import type { Project } from "@/core/Project";
@@ -73,29 +69,6 @@ describe("trackpad camera handoff", () => {
     expect(camera.currentScale).toBe(scale);
     expect(camera.location).toEqual(location);
   });
-  it.each([0.000001, 1000000])("keeps wheel zoom proportional at %s", (scale) => {
-    const { camera, control } = setup();
-    Object.assign(control, { lastZoomFeedbackTime: 0 });
-    camera.currentScale = camera.targetScale = scale;
-    const wheelControl = control as unknown as {
-      applyWheelZoom: (delta: number, time: number, mode: number) => void;
-    };
-    wheelControl.applyWheelZoom(-100, 0, 0);
-    expect(camera.targetScale / scale).toBeCloseTo(Math.exp(0.14));
-    wheelControl.applyWheelZoom(100, 0, 0);
-    expect(camera.targetScale).toBeCloseTo(scale);
-  });
-  it("direct panning clears velocity, queued movement and old zoom targets", () => {
-    const { camera, control } = setup();
-    camera.speed = new Vector(5, 3);
-    camera.accelerateCommander = new Vector(1, 1);
-    camera.isStartZoomIn = true;
-    camera.bombMove(new Vector(1000, 1000));
-    control.mousewheel(wheel({ deltaX: 20, deltaY: 12 }));
-    for (let i = 0; i < 240; i++) camera.tick();
-    expect(camera.location).toEqual(new Vector(5, 3));
-    expect(camera.currentScale).toBe(1);
-  });
   it("mouse drag survives a zoom between pointer moves without snapping to the old world anchor", () => {
     const { camera, control, project } = setup();
     project.controller.isMouseDown[1] = true;
@@ -108,21 +81,6 @@ describe("trackpad camera handoff", () => {
     expect(camera.location.x).toBe(location);
     control.mouseup({ button: 1 } as MouseEvent);
     expect(control.isUsingMouseGrabMove).toBe(false);
-  });
-  it("combines pinch and pan and stays completely still for 240 ticks after release", () => {
-    const { camera, control, project } = setup();
-    control.mousewheel(wheel({ ctrlKey: true, deltaY: 0 }));
-    const anchor = new Vector(0, 0);
-    control.mousewheel(wheel({ ctrlKey: true, deltaY: -10, clientX: 70, clientY: 60, timeStamp: 1016 }));
-    expect(project.renderer.transformWorld2View(anchor).x).toBeCloseTo(70);
-    expect(project.renderer.transformWorld2View(anchor).y).toBeCloseTo(60);
-    control.mousewheel(wheel({ ctrlKey: true, deltaY: 0, clientX: 80, clientY: 65, timeStamp: 1032 }));
-    const location = camera.location.clone(),
-      scale = camera.currentScale;
-    for (let i = 0; i < 240; i++) camera.tick();
-    expect(camera.location).toEqual(location);
-    expect(camera.currentScale).toBe(scale);
-    expect(camera.speed.isZero()).toBe(true);
   });
   it("handles touch-screen pinch with the same anchor and leaves no release acceleration", () => {
     const { camera, control, project } = setup();
@@ -150,47 +108,9 @@ describe("trackpad camera handoff", () => {
     for (let i = 0; i < 240; i++) camera.tick();
     expect(camera.location).toEqual(location);
   });
-  it("does not inherit touchpad classification for a discrete mouse event", () => {
-    const { control } = setup();
-    control.mousewheel(wheel({ deltaX: 20, deltaY: 12 }));
-    const mousewheelFunction = vi.fn();
-    Object.assign(control, { mousewheelFunction });
-    control.mousewheel(wheel({ deltaMode: 1, deltaY: 3, timeStamp: 1016 }));
-    expect(mousewheelFunction).toHaveBeenCalledOnce();
-  });
-  it("keeps physical Ctrl + mouse wheel on the configured mouse path", () => {
-    const { project, control } = setup();
-    project.controller.pressingKeySet.add("control");
-    const mousewheelFunction = vi.fn();
-    Object.assign(control, { mousewheelFunction });
-    control.mousewheel(wheel({ ctrlKey: true, deltaY: 120 }));
-    expect(mousewheelFunction).toHaveBeenCalledOnce();
-  });
-  it("handles large initial pinch deltas directly without a residual zoom target", () => {
-    const { camera, control } = setup();
-    control.mousewheel(wheel({ ctrlKey: true, deltaY: 90 }));
-    expect(camera.currentScale).toBeCloseTo(Math.exp(-0.9));
-    expect(camera.targetScale).toBe(camera.currentScale);
-  });
-  it("pan cancels an outstanding wheel zoom and uses reduced sensitivity", () => {
-    const { camera, control } = setup();
-    control.mousewheel(wheel({ deltaX: 20, deltaY: 12 }));
-    expect(camera.targetScale).toBe(1);
-    expect(camera.location).toEqual(new Vector(5, 3));
-  });
-  it("corrects a mouse classification when diagonal touchpad movement arrives", () => {
-    const { camera, control } = setup();
-    Object.assign(control, { wheelGesture: "mouse", lastWheelEventTime: 990 });
-    control.mousewheel(wheel({ deltaX: 10, deltaY: 100 }));
-    expect(camera.location).toEqual(new Vector(2.5, 25));
-    expect(camera.targetScale).toBe(camera.currentScale);
-  });
 });
 
-describe("research mode wheel", () => {
-  beforeEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "true"));
-  afterEach(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
-
+describe("wheel", () => {
   it("moves by the scrolled pixels right away, with no easing left for later frames", () => {
     const { camera, control } = setup();
     camera.currentScale = camera.targetScale = 2;
@@ -199,6 +119,21 @@ describe("research mode wheel", () => {
     expect(camera.location).toEqual(start.add(new Vector(0, 20)));
     for (let i = 0; i < 60; i++) camera.tick();
     expect(camera.location).toEqual(start.add(new Vector(0, 20)));
+  });
+
+  it("stops leftover inertia, queued movement and an old zoom target when the wheel pans", () => {
+    const { camera, control } = setup();
+    camera.currentScale = camera.targetScale = 1;
+    camera.speed = new Vector(5, 3);
+    camera.accelerateCommander = new Vector(1, 1);
+    camera.isStartZoomIn = true;
+    camera.bombMove(new Vector(1000, 1000));
+    const start = camera.location.clone();
+    control.mousewheel(wheel({ deltaX: 20, deltaY: 12 }));
+    expect(camera.location).toEqual(start.add(new Vector(20, 12)));
+    for (let i = 0; i < 240; i++) camera.tick();
+    expect(camera.location).toEqual(start.add(new Vector(20, 12)));
+    expect(camera.currentScale).toBe(1);
   });
 
   it("moves a mouse wheel and a trackpad at the same speed, even when the guess would flip mid-scroll", () => {

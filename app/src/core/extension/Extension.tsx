@@ -6,13 +6,11 @@ import KeyBind from "@/components/ui/key-bind";
 import Markdown from "@/components/ui/markdown";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Themes } from "@/core/service/Themes";
 import { PrgMetadata } from "@/types/metadata";
-import { Decoder, Encoder } from "@msgpack/msgpack";
+import { Decoder } from "@msgpack/msgpack";
 import i18next from "i18next";
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { mkdir, writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js";
 import {
   Blocks,
@@ -29,7 +27,6 @@ import { toast } from "sonner";
 import { URI } from "vscode-uri";
 import { KeyBindsUI } from "../service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "../service/Settings";
-import { Tutorials } from "../service/Tutorials";
 import { Tab } from "../Tab";
 import { ExtensionKeyBindManager } from "./ExtensionKeyBindManager";
 import { ExtensionManager } from "./ExtensionManager";
@@ -41,10 +38,6 @@ export class Extension extends Tab {
   public code: string = "";
   /** 扩展图标的 blob URL，用于显示；加载失败或未配置时为 null */
   public iconBlobUrl: string | null = null;
-  /** 扩展自定义图标的原始字节，安装时用于写入目标目录 */
-  private iconRawData: Uint8Array | null = null;
-  /** 图标文件名（如 icon.png），用于安装时确定写入路径 */
-  private iconFileName: string | null = null;
 
   public stage: any[] = []; // 占位以防止部分 Service 访问报错
   private _uri: URI;
@@ -94,8 +87,6 @@ export class Extension extends Tab {
         try {
           if (iconEntry.directory) throw new Error("图标不能是文件夹");
           const iconData = await iconEntry.getData!(new Uint8ArrayWriter());
-          this.iconRawData = iconData;
-          this.iconFileName = iconEntry.filename;
           const mimeType = getMimeType(iconEntry.filename);
           this.iconBlobUrl = URL.createObjectURL(new Blob([iconData], { type: mimeType }));
         } catch (e) {
@@ -138,8 +129,6 @@ export class Extension extends Tab {
         try {
           const iconUri = this.uri.with({ path: this.uri.path + "/" + iconName });
           const iconData = await fs.read(iconUri);
-          this.iconRawData = iconData;
-          this.iconFileName = iconName;
           const mimeType = getMimeType(iconName);
           this.iconBlobUrl = URL.createObjectURL(new Blob([iconData], { type: mimeType }));
           break;
@@ -244,49 +233,11 @@ export class Extension extends Tab {
                     </Button>
                   )}
                 </>
-              ) : isResearchShell() ? (
-                // ExtensionManager 在科研模式下不运行扩展，装上也用不了，所以不给安装按钮
+              ) : (
+                // ExtensionManager 不运行扩展，装上也用不了，所以不给安装按钮
                 <span className="text-muted-foreground text-sm">
                   {i18next.t("shell.extensionsDisabled", { ns: "research" })}
                 </span>
-              ) : (
-                <Button
-                  onClick={async () => {
-                    if (!(await Tutorials.isFinished("thirdPartyExtensionsWarning"))) {
-                      const s = await Dialog.buttons(
-                        "安装第三方扩展",
-                        "在您继续安装第三方扩展之前，请务必仔细阅读并理解以下声明：\nProject Graph 作为一个开放生态系统，允许用户通过扩展增强其功能。您当前尝试安装的扩展程序由第三方开发者独立提供，未经 Project Graph 开发者审核、测试或验证，其安全性、稳定性及对隐私保护的合规性无法得到保证。\n根据 GPL-3.0 的相关条款，本软件及其所有配套扩展均按「原样（AS IS）」提供，不附带任何形式的明示或暗示担保。在适用法律允许的最大范围内，开发者明确声明不承担任何关于适销性、特定用途适用性或不侵权的担保责任。您需自行承担因安装、运行此类扩展而可能导致的任何风险，包括但不限于数据丢失、系统损坏、隐私泄露或工作中断。\n一旦点击“确认安装”，即表示您已阅读并同意上述条款，并确认开发者不对任何因使用该第三方扩展而产生的直接或间接损害承担法律责任。",
-                        [
-                          { id: "cancel", label: "取消安装", variant: "outline" },
-                          { id: "proceed", label: "我已了解风险，继续安装且不再提醒", variant: "destructive" },
-                        ],
-                      );
-                      if (s === "cancel") return;
-                      await Tutorials.finish("thirdPartyExtensionsWarning");
-                    }
-                    const base = await join(await appDataDir(), "extensions", self.metadata.extension?.id || "unknown");
-                    await mkdir(base, { recursive: true });
-                    await writeFile(
-                      await join(base, "metadata.msgpack"),
-                      new Uint8Array(new Encoder().encode(self.metadata)),
-                    );
-                    await writeFile(await join(base, "extension.js"), new TextEncoder().encode(self.code));
-                    await writeFile(await join(base, "README.md"), new TextEncoder().encode(self.readmeContent));
-                    // 安装图标文件（固定文件名，直接写入根目录）
-                    if (self.iconFileName && self.iconRawData) {
-                      await writeFile(await join(base, self.iconFileName), self.iconRawData);
-                    }
-                    // 安装完成后立即运行插件，使其快捷键等功能即时生效，无需重载
-                    // 先 unload 清除可能残留的旧缓存，再创建新 Runtime
-                    const extId = self.metadata.extension?.id || "unknown";
-                    ExtensionManager.unload(extId);
-                    await ExtensionManager.getRuntime(extId);
-                    setInstalled(true);
-                    toast.success("扩展已安装");
-                  }}
-                >
-                  安装
-                </Button>
               )}
             </div>
           </div>

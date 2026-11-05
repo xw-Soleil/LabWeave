@@ -2,9 +2,6 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-// 这里测的是原版的改图工具；科研模式下聊天只拿到只读工具
-vi.hoisted(() => vi.stubEnv("LR_RESEARCH_SHELL", "false"));
-
 vi.mock("@/core/service/Settings", () => ({
   Settings: {
     aiApiBaseUrl: "",
@@ -33,7 +30,7 @@ vi.mock("@/core/service/dataManageService/imageNodeFactory", () => ({
 vi.mock("./imageNodeFinder", () => ({ findFirstImageInChildren: () => undefined }));
 vi.mock("./OpenverseImageSearch", () => ({ findDownloadableOpenverseImage: async () => undefined }));
 
-import { createBuiltInToolAgentTools } from "./BuiltInToolAgentAdapter";
+import { createLiveProjectBuiltInToolRuntimeHost, invokeBuiltInTool } from "./BuiltInToolRegistry";
 import { getBuiltInToolWindowEntries } from "./BuiltInToolWindowAdapter";
 import { AIObjectReferenceRegistry } from "./AIObjectReferenceRegistry";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
@@ -46,6 +43,12 @@ function getTool(name: string) {
   const tool = getBuiltInToolWindowEntries().find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool: ${name}`);
   return tool;
+}
+
+// 改图工具不给应用内聊天，命令行和桥接会用到，这里直接调执行器
+function createToolRunner(project: unknown, references: AIObjectReferenceRegistry) {
+  const host = createLiveProjectBuiltInToolRuntimeHost(project as never, references);
+  return (name: string, input: unknown) => invokeBuiltInTool(name, input, host);
 }
 
 function getFields(value: unknown): string[] {
@@ -135,16 +138,13 @@ describe("AI layout tool schemas", () => {
       autoLayout: { autoLayoutDAG },
     };
     const references = new AIObjectReferenceRegistry(project as never);
-    const tools = createBuiltInToolAgentTools(project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(project, references);
 
-    const result = await tools.auto_layout_dag.execute({
+    const result = await runTool("auto_layout_dag", {
       refs: [references.getOrCreateRef(first), references.getOrCreateRef(second)],
     });
 
-    expect(result).toContain("no_internal_edges");
+    expect(result).toMatchObject({ success: false, error: { code: "no_internal_edges" } });
     expect(autoLayoutDAG).not.toHaveBeenCalled();
   });
 
@@ -166,17 +166,14 @@ describe("AI layout tool schemas", () => {
       autoLayout: { autoLayoutDAG },
     };
     const references = new AIObjectReferenceRegistry(project as never);
-    const tools = createBuiltInToolAgentTools(project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(project, references);
 
-    const result = await tools.auto_layout_dag.execute({
+    const result = await runTool("auto_layout_dag", {
       refs: [references.getOrCreateRef(first), references.getOrCreateRef(second)],
     });
 
     expect(autoLayoutDAG).toHaveBeenCalledWith([first, second]);
-    expect(result).toContain("movedCount");
+    expect(result).toEqual({ success: true, movedCount: 2, internalEdgeCount: 1 });
   });
 });
 
@@ -197,19 +194,15 @@ describe("AI node deletion tools", () => {
     const association = { uuid: "edge", associationList: [deleted, remaining] };
     const fixture = createDeletionProject([deleted, remaining], [association]);
     const references = new AIObjectReferenceRegistry(fixture.project as never);
-    const tools = createBuiltInToolAgentTools(fixture.project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(fixture.project, references);
 
-    const result = await tools.delete_node.execute({ ref: references.getOrCreateRef(deleted) });
+    const result = await runTool("delete_node", { ref: references.getOrCreateRef(deleted) });
 
     expect(fixture.deleteEntities).toHaveBeenCalledOnce();
     expect(fixture.deleteEntities).toHaveBeenCalledWith([deleted]);
     expect(fixture.getEntities()).toEqual([remaining]);
     expect(fixture.getAssociations()).toEqual([]);
-    expect(result).toContain("deletedNodeCount: 1");
-    expect(result).toContain("deletedAssociationCount: 1");
+    expect(result).toEqual({ deletedNodeCount: 1, deletedAssociationCount: 1 });
   });
 
   it("resolves an entire batch before deleting anything", async () => {
@@ -220,14 +213,11 @@ describe("AI node deletion tools", () => {
     const firstRef = references.getOrCreateRef(first);
     const staleRef = references.getOrCreateRef(stale);
     fixture.removeEntityFromStage(stale);
-    const tools = createBuiltInToolAgentTools(fixture.project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(fixture.project, references);
 
-    const result = await tools.delete_nodes.execute({ refs: [firstRef, staleRef] });
-
-    expect(result).toContain("stale_ref");
+    await expect(runTool("delete_nodes", { refs: [firstRef, staleRef] })).rejects.toMatchObject({
+      code: "stale_ref",
+    });
     expect(fixture.deleteEntities).not.toHaveBeenCalled();
     expect(fixture.getEntities()).toEqual([first]);
   });
@@ -239,16 +229,13 @@ describe("AI node deletion tools", () => {
     const references = new AIObjectReferenceRegistry(fixture.project as never);
     const firstRef = references.getOrCreateRef(first);
     const secondRef = references.getOrCreateRef(second);
-    const tools = createBuiltInToolAgentTools(fixture.project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(fixture.project, references);
 
-    const result = await tools.delete_nodes.execute({ refs: [firstRef, secondRef, firstRef] });
+    const result = await runTool("delete_nodes", { refs: [firstRef, secondRef, firstRef] });
 
     expect(fixture.deleteEntities).toHaveBeenCalledOnce();
     expect(fixture.deleteEntities).toHaveBeenCalledWith([first, second]);
-    expect(result).toContain("deletedNodeCount: 2");
+    expect(result).toMatchObject({ deletedNodeCount: 2 });
   });
 
   it("deletes all selected nodes through one shared transaction", async () => {
@@ -258,16 +245,13 @@ describe("AI node deletion tools", () => {
     remaining.isSelected = false;
     const fixture = createDeletionProject([selected, remaining]);
     const references = new AIObjectReferenceRegistry(fixture.project as never);
-    const tools = createBuiltInToolAgentTools(fixture.project as never, references) as unknown as Record<
-      string,
-      { execute: (data: unknown) => Promise<string> }
-    >;
+    const runTool = createToolRunner(fixture.project, references);
 
-    const result = await tools.delete_selected_nodes.execute({});
+    const result = await runTool("delete_selected_nodes", {});
 
     expect(fixture.deleteEntities).toHaveBeenCalledOnce();
     expect(fixture.deleteEntities).toHaveBeenCalledWith([selected]);
     expect(fixture.getEntities()).toEqual([remaining]);
-    expect(result).toContain("deletedNodeCount: 1");
+    expect(result).toMatchObject({ deletedNodeCount: 1 });
   });
 });

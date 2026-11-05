@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import {
   getAllSubWindowOpenModes,
@@ -94,8 +93,8 @@ export default function WindowOpenModesPage() {
       </div>
 
       <div className="space-y-2">
-        {/* 科研模式的设置总是居中弹窗，不受这里的设置影响 */}
-        {SUB_WINDOW_IDS.filter((id) => !isResearchShell() || id !== "SettingsWindow").map((id) => {
+        {/* 设置总是居中弹窗，不受这里的设置影响 */}
+        {SUB_WINDOW_IDS.filter((id) => id !== "SettingsWindow").map((id) => {
           const mode = modes[id];
           const isDefault = mode === DEFAULT_SUB_WINDOW_OPEN_MODES[id];
           return (

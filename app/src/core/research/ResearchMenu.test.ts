@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { URI } from "vscode-uri";
 
 vi.mock("@/core/service/Settings", () => ({ Settings: { researchFolderPath: "/Users/me/Research" } }));
@@ -14,10 +14,6 @@ import {
   RESEARCH_KEYBIND_IDS,
   RESEARCH_SHELL_SCOPE_KEYBIND_IDS,
 } from "./ResearchMenu";
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 function menuItemIds(nodes: typeof RESEARCH_GLOBAL_MENU): string[] {
   return nodes.flatMap((node) => [
@@ -99,14 +95,9 @@ describe("research keybind defaults", () => {
 });
 
 describe("recent files", () => {
-  it("only lists files inside the research folder in the research shell", () => {
+  it("only lists files inside the research folder", () => {
     expect(isRecentFileVisible(URI.file("/Users/me/Research/topic/a.prg"))).toBe(true);
     expect(isRecentFileVisible(URI.file("/Users/me/Other/b.prg"))).toBe(false);
     expect(isRecentFileVisible(URI.parse("draft:1"))).toBe(false);
-  });
-
-  it("lists every file when the research shell is off", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    expect(isRecentFileVisible(URI.file("/Users/me/Other/b.prg"))).toBe(true);
   });
 });

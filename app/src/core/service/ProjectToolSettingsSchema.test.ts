@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseProjectToolSettings } from "./ProjectToolSettingsSchema";
 
 describe("Project tool Settings schema", () => {
@@ -48,20 +48,7 @@ describe("Project tool Settings schema", () => {
 });
 
 describe("Project tool Settings schema AI endpoint defaults", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("leaves the AI endpoint empty in research shell mode", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "true");
+  it("leaves the AI endpoint empty by default", () => {
     expect(parseProjectToolSettings({}, "test-font")).toMatchObject({ aiApiBaseUrl: "", aiModel: "" });
-  });
-
-  it("keeps the upstream AI endpoint when research shell mode is off", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    expect(parseProjectToolSettings({}, "test-font")).toMatchObject({
-      aiApiBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-      aiModel: "gemini-2.5-flash",
-    });
   });
 });

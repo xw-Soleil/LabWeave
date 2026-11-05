@@ -1,9 +1,6 @@
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { authClient } from "./AuthClient";
 
-// 账户使用官方默认服务；其他云功能仍由显式配置启用。科研工作台模式下一律关闭。
-const hasApiBaseUrl = !isResearchShell() && (import.meta.env.LR_API_BASE_URL ?? "").trim() !== "";
-
+// 云服务一律关闭：没有账号服务，AI 云功能和遥测也不开
 export namespace FeatureFlags {
   /**
    * 用户登录、注册以及所有和云服务有关的功能
@@ -12,6 +9,6 @@ export namespace FeatureFlags {
   /**
    * AI扩展节点等所有和AI有关的功能
    */
-  export const AI = hasApiBaseUrl;
-  export const TELEMETRY = hasApiBaseUrl;
+  export const AI: boolean = false;
+  export const TELEMETRY: boolean = false;
 }

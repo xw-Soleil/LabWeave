@@ -1,5 +1,4 @@
 import { Dialog } from "@/components/ui/dialog";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import {
   createProjectToolSettingSchemas,
   DEFAULT_FONT_FAMILY,
@@ -52,12 +51,8 @@ export const settingsSchema = z.object({
   viewerMode: z.boolean().default(false),
   showQuickSettingsToolbar: z.boolean().default(true),
   showRecentFilesThumbnails: z.boolean().default(true),
-  // 科研模式下窗口不透明，避免白板背后透出桌面
-  windowBackgroundAlpha: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(isResearchShell() ? 1 : 0.72),
+  // 窗口不透明，避免白板背后透出桌面
+  windowBackgroundAlpha: z.number().min(0).max(1).default(1),
   windowBackgroundOpacityAfterOpenClickThrough: z.number().min(0).max(1).default(0),
   windowBackgroundOpacityAfterCloseClickThrough: z.number().min(0).max(1).default(0.72),
   isRenderCenterPointer: z.boolean().default(false),
@@ -120,7 +115,7 @@ export const settingsSchema = z.object({
   autoNamerDetailsTemplate: z.string().default(""),
   autoNamerTreeNodeTemplate: z.string().default("Node_{{i}}"),
   autoSaveWhenClose: z.boolean().default(false),
-  autoSave: z.boolean().default(isResearchShell()),
+  autoSave: z.boolean().default(true),
   autoSaveInterval: z.number().int().min(1).max(60).default(10),
   autoBackup: z.boolean().default(true),
   autoBackupInterval: z.number().int().min(60).max(6000).default(600),
@@ -143,8 +138,8 @@ export const settingsSchema = z.object({
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
-  // 科研模式拖动卡片时显示对齐参考线
-  enableDragAutoAlign: z.boolean().default(isResearchShell()),
+  // 拖动卡片时显示对齐参考线
+  enableDragAutoAlign: z.boolean().default(true),
   reverseTreeMoveMode: z.boolean().default(false),
   mouseWheelMode: z
     .union([z.literal("zoom"), z.literal("move"), z.literal("moveX"), z.literal("none"), z.literal("zoomUI")])
@@ -185,7 +180,7 @@ export const settingsSchema = z.object({
     .default("trackpadIntAndWheelFloat"),
   macTrackpadScaleSensitivity: z.number().min(0).max(1).multipleOf(0.001).default(0.5),
   macEnableControlToCut: z.boolean().default(false),
-  allowGlobalHotKeys: z.boolean().default(!isResearchShell()),
+  allowGlobalHotKeys: z.boolean().default(false),
   cameraFollowsSelectedNodeOnArrowKeys: z.boolean().default(false),
   arrowKeySelectOnlyInViewport: z.boolean().default(false),
   moveAmplitude: projectToolSettingSchemas.moveAmplitude,
@@ -199,7 +194,7 @@ export const settingsSchema = z.object({
   cameraKeyboardScaleRate: z.number().min(0).max(3).default(0.2),
   rectangleSelectWhenRight: z.union([z.literal("intersect"), z.literal("contain")]).default("intersect"),
   rectangleSelectWhenLeft: z.union([z.literal("intersect"), z.literal("contain")]).default("contain"),
-  enableRightClickConnect: z.boolean().default(!isResearchShell()),
+  enableRightClickConnect: z.boolean().default(false),
   rightClickConnectEdgeType: z.union([z.literal("normal"), z.literal("arc")]).default("arc"),
   defaultEdgeLineType: projectToolSettingSchemas.defaultEdgeLineType,
   defaultEdgeArrowType: projectToolSettingSchemas.defaultEdgeArrowType,
@@ -237,16 +232,16 @@ export const settingsSchema = z.object({
   textNodeManualDefaultCharWidth: z.number().int().min(3).max(60).default(10),
   allowAddCycleEdge: z.boolean().default(false),
   enableDragNodeShakeDetachFromEdge: z.boolean().default(false),
-  autoLayoutWhenTreeGenerate: z.boolean().default(!isResearchShell()),
+  autoLayoutWhenTreeGenerate: z.boolean().default(false),
   autoLayoutWhenSectionCollapseToggle: z.boolean().default(false),
   // Tab 创建新节点，不隐式连接附近已有节点。
-  enableTreeGenerateConnectByProbe: z.boolean().default(!isResearchShell()),
+  enableTreeGenerateConnectByProbe: z.boolean().default(false),
   treeGenerateInheritParentColor: z.boolean().default(false),
   textNodeAutoFormatTreeWhenInput: z.boolean().default(false),
   treeGenerateCameraBehavior: z
     .union([z.literal("none"), z.literal("moveToNewNode"), z.literal("resetToTree")])
     .default("moveToNewNode"),
-  enableTabGenerateNodeInInput: z.boolean().default(!isResearchShell()),
+  enableTabGenerateNodeInInput: z.boolean().default(false),
   enableBackslashGenerateNodeInInput: z.boolean().default(false),
   gamepadDeadzone: z.number().min(0).max(1).default(0.1),
   showGrid: z.boolean().default(true),
@@ -286,11 +281,11 @@ export const settingsSchema = z.object({
   uiSwitchButtonOffSoundFile: z.string().default(""),
   githubToken: z.string().default(""),
   githubUser: z.string().default(""),
-  theme: z.string().default(isResearchShell() ? "research-light" : "catppuccin-mocha"),
-  themeMode: z.union([z.literal("light"), z.literal("dark")]).default(isResearchShell() ? "light" : "dark"),
-  lightTheme: z.string().default(isResearchShell() ? "research-light" : "catppuccin-latte"),
-  darkTheme: z.string().default(isResearchShell() ? "research-dark" : "catppuccin-mocha"),
-  telemetry: z.boolean().default(!isResearchShell()),
+  theme: z.string().default("research-light"),
+  themeMode: z.union([z.literal("light"), z.literal("dark")]).default("light"),
+  lightTheme: z.string().default("research-light"),
+  darkTheme: z.string().default("research-dark"),
+  telemetry: z.boolean().default(false),
   historyManagerMode: projectToolSettingSchemas.historyManagerMode,
   isStealthModeEnabled: z.boolean().default(false),
   stealthModeScopeRadius: z.number().int().min(10).max(500).default(150),
@@ -298,8 +293,8 @@ export const settingsSchema = z.object({
   stealthModeMaskShape: z
     .union([z.literal("circle"), z.literal("square"), z.literal("topLeft"), z.literal("smartContext")])
     .default("circle"),
-  // 科研模式下保存不清空撤销记录，保留思考过程
-  clearHistoryWhenManualSave: z.boolean().default(!isResearchShell()),
+  // 保存不清空撤销记录，保留思考过程
+  clearHistoryWhenManualSave: z.boolean().default(false),
   soundPitchVariationRange: z.number().int().min(0).max(1200).default(150),
   autoImportTxtFileWhenOpenPrg: z.boolean().default(false),
   imageImportOrder: z.union([z.literal("mtime"), z.literal("path")]).default("mtime"),
@@ -347,7 +342,7 @@ export const settingsSchema = z.object({
         id: "clipboard-group",
         layout: "row",
         children: [
-          ...(isResearchShell() ? [{ type: "item" as const, id: "cut", icon: "Scissors" }] : []),
+          { type: "item", id: "cut", icon: "Scissors" },
           { type: "item", id: "copy", icon: "Copy" },
           { type: "item", id: "paste", icon: "Clipboard" },
           { type: "item", id: "deleteSelectedStageObjects", icon: "Trash" },
@@ -960,7 +955,7 @@ export const settingsSchema = z.object({
   researchShowFullMenu: z.boolean().default(false),
   // 拖进研究文件夹外的文件时:ask 每次问,copy 总是复制到研究文件夹的「导入/」,reference 总是直接引用原文件
   researchOutsideFileMode: z.union([z.literal("ask"), z.literal("copy"), z.literal("reference")]).default("ask"),
-  // 科研模式的滚轮:pan 总是移动(Ctrl / Cmd + 滚轮、双指捏合缩放),zoom 总是缩放,auto 鼠标缩放、触控板移动
+  // 滚轮:pan 总是移动(Ctrl / Cmd + 滚轮、双指捏合缩放),zoom 总是缩放,auto 鼠标缩放、触控板移动
   researchWheelBehavior: z.union([z.literal("pan"), z.literal("zoom"), z.literal("auto")]).default("pan"),
 });
 
@@ -1007,14 +1002,14 @@ for (const [rawKey, rawValue] of Object.entries(rawSettings)) {
   pendingSettingsLoadErrorValues.set(rawKey, rawValue);
 }
 
-if (isResearchShell() && rawSettings.researchContextMenusV1 !== true) {
+if (rawSettings.researchContextMenusV1 !== true) {
   savedSettings.enableRightClickConnect = false;
   await store.set("enableRightClickConnect", false);
   await store.set("researchContextMenusV1", true);
   await store.save();
 }
 
-if (isResearchShell() && rawSettings.researchInteractionDefaultsV3 !== true) {
+if (rawSettings.researchInteractionDefaultsV3 !== true) {
   savedSettings.mouseRightDragBackground = "cut";
   savedSettings.autoLayoutWhenTreeGenerate = false;
   await store.set("mouseRightDragBackground", "cut");
@@ -1036,33 +1031,31 @@ if (rawSettings.mouseLeftMode !== "selectAndMove") {
   await store.save();
 }
 
-// 科研模式每次启动都强制关闭：遥测、系统级全局快捷键、打开 prg 时导入并清空同名 txt、
+// 每次启动都强制关闭：遥测、系统级全局快捷键、打开 prg 时导入并清空同名 txt、
 // 专注(课堂)模式——它会把标题栏、竖栏、标签栏、状态栏都设成透明,只有鼠标移上去才出现,看起来像界面丢了
-if (isResearchShell()) {
-  const researchForcedSettings = {
-    telemetry: false,
-    allowGlobalHotKeys: false,
-    autoImportTxtFileWhenOpenPrg: false,
-    isClassroomMode: false,
-  } satisfies Partial<Settings>;
-  let researchForcedSettingsChanged = false;
-  for (const [key, value] of Object.entries(researchForcedSettings)) {
-    (savedSettings as Record<string, unknown>)[key] = value;
-    if (rawSettings[key] !== value) {
-      await store.set(key, value);
-      researchForcedSettingsChanged = true;
-    }
-  }
-  if (researchForcedSettingsChanged) {
-    await store.save();
+const forcedSettings = {
+  telemetry: false,
+  allowGlobalHotKeys: false,
+  autoImportTxtFileWhenOpenPrg: false,
+  isClassroomMode: false,
+} satisfies Partial<Settings>;
+let forcedSettingsChanged = false;
+for (const [key, value] of Object.entries(forcedSettings)) {
+  (savedSettings as Record<string, unknown>)[key] = value;
+  if (rawSettings[key] !== value) {
+    await store.set(key, value);
+    forcedSettingsChanged = true;
   }
 }
+if (forcedSettingsChanged) {
+  await store.save();
+}
 
-// 科研模式升级到 research 主题，只做一次。App.tsx 启动时监听 theme，会把当时的主题写进 lightTheme / darkTheme，
+// 升级到 research 主题，只做一次。App.tsx 启动时监听 theme，会把当时的主题写进 lightTheme / darkTheme，
 // 所以老用户的 settings.json 里多半存着原版默认的 catppuccin，光改默认值换不掉。这里把这两个默认值换成新主题，
 // 用户另选的主题不动；做完记个标记（不在 settingsSchema 里，加载时会被跳过），以后用户再选回 catppuccin 也不会被改。
 const RESEARCH_THEME_MIGRATED_KEY = "researchThemeMigrated";
-if (isResearchShell() && rawSettings[RESEARCH_THEME_MIGRATED_KEY] !== true) {
+if (rawSettings[RESEARCH_THEME_MIGRATED_KEY] !== true) {
   const researchThemeReplacements: Record<string, string> = {
     "catppuccin-latte": "research-light",
     "catppuccin-mocha": "research-dark",

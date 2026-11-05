@@ -1,6 +1,5 @@
 import type { Project } from "@/core/Project";
 import type { AIObjectReferenceSnapshot } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { getAIChatProjectKey } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
 import { invoke } from "@tauri-apps/api/core";
 import { URI } from "vscode-uri";
@@ -14,9 +13,9 @@ function projectIdentity(project: ProjectReferenceStoreProject) {
   const pathProjectUri = project.canonicalProjectPath
     ? URI.file(project.canonicalProjectPath).toString()
     : legacyProjectUri;
-  // 科研模式下和聊天记录用同一个工作区 id：改名、移动后对象引用还对得上，不会把旧对话里的 n3 指到别的卡片
+  // 和聊天记录用同一个工作区 id：改名、移动后对象引用还对得上，不会把旧对话里的 n3 指到别的卡片
   const chatKey = getAIChatProjectKey(project);
-  const projectUri = isResearchShell() && chatKey.startsWith("workbench:") ? chatKey : pathProjectUri;
+  const projectUri = chatKey.startsWith("workbench:") ? chatKey : pathProjectUri;
   const fallbackUri = projectUri === pathProjectUri ? legacyProjectUri : pathProjectUri;
   return {
     projectUri,

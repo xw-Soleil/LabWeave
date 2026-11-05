@@ -12,10 +12,15 @@ const state = vi.hoisted(() => ({
   errors: vi.fn(),
   invoke: vi.fn().mockResolvedValue(undefined),
   openFile: vi.fn().mockResolvedValue(undefined),
+  researchRoot: "",
 }));
 vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: state.openFile }));
 vi.mock("@/core/service/dataFileService/RecentFileManager", () => ({
-  RecentFileManager: { getRecentFiles: async () => [{ uri: { toString: () => "/test/recent.prg" }, time: 1 }] },
+  RecentFileManager: {
+    getRecentFiles: async () => [
+      { uri: { scheme: "file", fsPath: "/test/recent.prg", toString: () => "/test/recent.prg" }, time: 1 },
+    ],
+  },
 }));
 vi.mock("@/utils/pathString", () => ({ PathString: { absolute2file: (path: string) => path.split("/").at(-1) } }));
 
@@ -26,7 +31,12 @@ vi.mock("./native-menu-icon", () => ({
 
 vi.mock("@/core/Project", () => ({ Project: class {} }));
 vi.mock("@/core/service/Settings", () => ({
-  Settings: { use: (key: string) => [key === "globalMenuConfig" ? state.config : state.settings[key]] },
+  Settings: {
+    use: (key: string) => [key === "globalMenuConfig" ? state.config : state.settings[key]],
+    get researchFolderPath() {
+      return state.researchRoot;
+    },
+  },
 }));
 vi.mock("@/core/service/controlService/shortcutKeysEngine/KeyBindsUI", () => ({
   KeyBindsUI: { getUIKeyBind: (id: string) => state.bindings.get(id) },
@@ -138,6 +148,7 @@ beforeEach(() => {
     { type: "topMenu", id: "extensions", children: [] },
   ];
   state.settings = { researchShowFullMenu: false };
+  state.researchRoot = "";
   state.bindings.clear();
   state.bindings.set("openSettings", { onPress: vi.fn() });
   state.bindings.set("openAboutWindow", { onPress: vi.fn() });
@@ -161,10 +172,9 @@ beforeEach(() => {
   );
 });
 
-describe("macOS system menus", () => {
+describe("macOS system menus (full menu)", () => {
   beforeEach(() => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    return () => vi.unstubAllEnvs();
+    state.settings.researchShowFullMenu = true;
   });
 
   it("replaces About with Settings in the application menu and preserves system actions", async () => {
@@ -180,13 +190,7 @@ describe("macOS system menus", () => {
     });
     expect(entries[6].options.items[0].options.text).toBe("Minimize");
     expect(entries[6].options.systemWindowMenu).toBe(true);
-    const recent = entries[1].options.items[0].options.items[0];
-    expect(recent.options.text).toBe("recent.prg");
-    recent.options.action();
-    expect(state.openFile).toHaveBeenCalledOnce();
     expect(entries[0].options.items.map((item: any) => item.options.text)).toEqual(["settings", "Services", "Quit"]);
-    // 上游模式保留系统自带的「退出」
-    expect(entries[0].options.items[2].options.accelerator).toBeUndefined();
     entries[0].options.items[0].options.items[0].options.action();
     await vi.waitFor(() => expect(state.bindings.get("openSettings").onPress).toHaveBeenCalledOnce());
   });
@@ -218,7 +222,7 @@ describe("macOS system menus", () => {
   });
 });
 
-describe("macOS system menus in the research shell", () => {
+describe("macOS system menus (research menu)", () => {
   it("shows About and Settings first, then File, Edit, View and Window with text titles", async () => {
     const ready = vi.fn();
     NativeMacosMenu({ onReady: ready });
@@ -317,6 +321,19 @@ describe("macOS system menus in the research shell", () => {
     const quit = state.installed.options.items[0].options.items.at(-1);
     expect(quit.options.accelerator).toBe("CmdOrCtrl+Q");
     expect(typeof quit.options.action).toBe("function");
+  });
+
+  it("lists recent files inside the research folder and opens them on click", async () => {
+    state.settings.researchShowFullMenu = true;
+    state.researchRoot = "/test";
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const file = state.installed.options.items.find((entry: any) => entry.options.text === "file");
+    const recent = file.options.items[0].options.items[0];
+    expect(recent.options.text).toBe("recent.prg");
+    recent.options.action();
+    expect(state.openFile).toHaveBeenCalledOnce();
   });
 
   it("hides recent files outside the research folder", async () => {

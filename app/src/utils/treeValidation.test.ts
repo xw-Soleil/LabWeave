@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/stage/stageObject/abstract/ConnectableEntity", () => ({ ConnectableEntity: class {} }));
@@ -21,15 +21,11 @@ import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { UrlNode } from "@/core/stage/stageObject/entity/UrlNode";
 import { getNodeDisplayName } from "./treeValidation";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
 function make(Class: { prototype: object }, fields: Record<string, unknown>): ConnectableEntity {
   return Object.assign(Object.create(Class.prototype), fields);
 }
 
-describe("getNodeDisplayName in the research shell", () => {
+describe("getNodeDisplayName", () => {
   it("names file cards, web links and sections by their titles", () => {
     expect(getNodeDisplayName(make(FileCardNode, { title: "ResNet 论文", sourcePath: "papers/resnet.pdf" }))).toBe(
       "ResNet 论文",
@@ -57,16 +53,6 @@ describe("getNodeDisplayName in the research shell", () => {
 
   it("still says 节点 for entities without a name", () => {
     expect(getNodeDisplayName({} as ConnectableEntity)).toBe("节点");
-  });
-});
-
-describe("getNodeDisplayName in the original app", () => {
-  it("keeps the five-character text node names and the generic label", () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    expect(getNodeDisplayName(make(TextNode, { text: "Attention" }))).toBe("Atten...");
-    expect(getNodeDisplayName(make(TextNode, { text: "" }))).toBe("未命名");
-    expect(getNodeDisplayName(make(FileCardNode, { title: "ResNet 论文", sourcePath: "" }))).toBe("节点");
-    expect(getNodeDisplayName(make(Section, { text: "实验设计" }))).toBe("节点");
   });
 });
 

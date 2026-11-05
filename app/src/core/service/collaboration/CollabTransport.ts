@@ -1,4 +1,3 @@
-import { isResearchShell } from "@/core/research/ResearchShell";
 import type { ClientToServerMessage, ServerToClientMessage } from "./CollabProtocol";
 
 export type CollabTransportHandlers = {
@@ -9,33 +8,10 @@ export type CollabTransportHandlers = {
 };
 
 /**
- * 将 LR_API_BASE_URL 转为协作服务地址。
- * 开发默认：API http://localhost:3000 → collab http://localhost:3100
- * 可通过 LR_COLLAB_BASE_URL 覆盖。
+ * 协作服务地址。科研工作台只在本机工作：返回空地址，所有协作请求都会在发出前报错。
  */
 export function resolveCollabHttpBase(): string {
-  // 科研工作台只在本机工作：返回空地址，所有协作请求都会在发出前报错。
-  if (isResearchShell()) return "";
-  if (import.meta.env.LR_COLLAB_BASE_URL) {
-    return String(import.meta.env.LR_COLLAB_BASE_URL).replace(/\/+$/, "");
-  }
-  const api = import.meta.env.LR_API_BASE_URL;
-  if (!api) return "";
-  try {
-    const url = new URL(String(api));
-    if (url.port === "3000" || url.hostname === "localhost" || url.hostname === "127.0.0.1") {
-      url.port = "3100";
-      return url.origin;
-    }
-    // 生产：默认同 host 的 collab 子域
-    if (url.hostname.startsWith("hub.") || url.hostname.startsWith("api.")) {
-      url.hostname = url.hostname.replace(/^(hub|api)\./, "collab.");
-      return url.origin;
-    }
-    return url.origin;
-  } catch {
-    return String(api).replace(/\/+$/, "");
-  }
+  return "";
 }
 
 export function resolveCollabWsUrl(token: string): string {

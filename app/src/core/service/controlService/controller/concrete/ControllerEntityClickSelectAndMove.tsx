@@ -1,5 +1,4 @@
 import { applyDragPlacement, findOverlappedEntities, planDragPlacement } from "@/core/research/OverlapResolver";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { ShakeDetector } from "@/core/service/controlService/controller/utils/ShakeDetector";
 import { ConnectNodeSmartTools } from "@/core/service/dataManageService/connectNodeSmartTools";
@@ -31,7 +30,7 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
   private shiftAccumulatedDelta = Vector.getZero();
   /** 最近一次拖动是不是连同子树一起移动的（决定松手时挪哪些实体） */
   private isLastMoveWithChildren = false;
-  /** 科研模式：拖动中被拖动的实体压住的实体，渲染时描红；不拖动时为空 */
+  /** 拖动中被拖动的实体压住的实体，渲染时描红；不拖动时为空 */
   public overlapHintEntities: ReadonlySet<Entity> = new Set();
 
   private getDraggedEntities(): Entity[] {
@@ -227,29 +226,24 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
       }
 
       // 预瞄反馈
-      if (Settings.enableDragAutoAlign && !isResearchShell()) {
-        this.project.autoAlign.preAlignAllSelected();
-      }
-      if (isResearchShell()) {
-        this.overlapHintEntities = findOverlappedEntities(this.project, this.getDraggedEntities());
-        const plan = planDragPlacement(
-          this.project,
-          this.getDraggedEntities(),
-          Settings.enableDragAutoAlign,
-          Settings.enableDragAlignToGrid,
-        );
-        if (plan.alignment) {
-          for (const target of plan.alignment.targets) {
-            this.project.effects.addEffect(EntityAlignEffect.fromEntity(plan.alignment.bounds, target));
-          }
+      this.overlapHintEntities = findOverlappedEntities(this.project, this.getDraggedEntities());
+      const plan = planDragPlacement(
+        this.project,
+        this.getDraggedEntities(),
+        Settings.enableDragAutoAlign,
+        Settings.enableDragAlignToGrid,
+      );
+      if (plan.alignment) {
+        for (const target of plan.alignment.targets) {
+          this.project.effects.addEffect(EntityAlignEffect.fromEntity(plan.alignment.bounds, target));
         }
-        if (plan.offset)
-          for (const entity of plan.roots) {
-            const rect = entity.collisionBox.getRectangle().clone();
-            rect.location = rect.location.add(new Vector(plan.offset.x, plan.offset.y));
-            this.project.effects.addEffect(RectangleRenderEffect.fromPreAlign(this.project, rect));
-          }
       }
+      if (plan.offset)
+        for (const entity of plan.roots) {
+          const rect = entity.collisionBox.getRectangle().clone();
+          rect.location = rect.location.add(new Vector(plan.offset.x, plan.offset.y));
+          this.project.effects.addEffect(RectangleRenderEffect.fromPreAlign(this.project, rect));
+        }
 
       // 检测摇晃动作 - 只在开启设置且选中单个节点时检测
       if (Settings.enableDragNodeShakeDetachFromEdge && !this.shakeDetector.hasTriggered()) {
@@ -290,25 +284,16 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
     if (diffLocation.magnitude() > 5) {
       // 判定为有效吸附的拖拽操作
       if (this.isMovingEntity) {
-        // 这个时候可以触发对齐吸附事件
-        if (Settings.enableDragAutoAlign && !isResearchShell()) {
-          this.project.autoAlign.alignAllSelected();
-        }
-        if (Settings.enableDragAlignToGrid && !isResearchShell()) {
-          this.project.autoAlign.alignAllSelectedToGrid();
-        }
         // 拖动中允许叠放，松手时只把被拖的这一组挪到最近的空位
-        if (isResearchShell()) {
-          applyDragPlacement(
+        applyDragPlacement(
+          this.project,
+          planDragPlacement(
             this.project,
-            planDragPlacement(
-              this.project,
-              this.getDraggedEntities(),
-              Settings.enableDragAutoAlign,
-              Settings.enableDragAlignToGrid,
-            ),
-          );
-        }
+            this.getDraggedEntities(),
+            Settings.enableDragAutoAlign,
+            Settings.enableDragAlignToGrid,
+          ),
+        );
 
         this.project.historyManager.recordStep(); // 记录一次历史
       }

@@ -22,16 +22,16 @@ function expectIcons(tree: Record<string, Record<string, unknown>>) {
 
 // 设置页按 categoryIcons 取大类和分组的图标，缺一个整页就会报错
 describe("settings categories", () => {
-  it("has an icon for every category and group of the research navigation", () => {
+  it("has an icon for every category and group of the visible navigation", () => {
     expectIcons(getVisibleCategories());
     expectIcons({ common: Object.fromEntries(researchCommonSections.map((section) => [section.id, section.items])) });
   });
 
-  it("has an icon for every category and group of the original navigation", () => {
+  it("has an icon for every category and group in the full category list", () => {
     expectIcons(categories);
   });
 
-  it("hides settings that do nothing in research mode", () => {
+  it("hides settings that do nothing", () => {
     const visible = Object.values(getVisibleCategories()).flatMap((groups) => Object.values(groups).flat());
     for (const key of [
       "windowBackgroundAlpha",

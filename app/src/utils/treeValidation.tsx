@@ -1,4 +1,3 @@
-import { isResearchShell } from "@/core/research/ResearchShell";
 import type { TreeValidationResult } from "@/core/stage/stageManager/basicMethods/GraphMethods";
 import type { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
@@ -12,13 +11,10 @@ function truncateName(text: string, maxLength: number): string {
 }
 
 /**
- * 树形结构提示里节点的名字。原版只认文本节点（最多 5 个字），其他一律叫「节点」；
- * 科研模式下文件卡片、网页节点用标题，分组框用框名，长度放宽到 16 个字，不然论文标题只剩开头一个词。
+ * 树形结构提示里节点的名字。文本节点用文字，文件卡片、网页节点用标题，分组框用框名，
+ * 最多 16 个字，不然论文标题只剩开头一个词；其他实体叫「节点」。
  */
 export function getNodeDisplayName(node: ConnectableEntity): string {
-  if (!isResearchShell()) {
-    return node instanceof TextNode ? truncateName(node.text || "未命名", 5) : "节点";
-  }
   let name: string;
   if (node instanceof TextNode || node instanceof Section) {
     name = node.text;

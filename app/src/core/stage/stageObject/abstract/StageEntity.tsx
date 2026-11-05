@@ -1,4 +1,3 @@
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import type { Section } from "@/core/stage/stageObject/entity/Section";
@@ -98,20 +97,11 @@ export abstract class Entity extends StageObject {
     }
   }
   /**
-   * 由于自身位置的更新，排开所有同级节点的位置
-   * 此函数在move函数中被调用，更新
+   * 自身位置更新后对同级节点的处理
+   * 此函数在move函数中被调用
    */
   protected updateOtherEntityLocationByMove() {
-    // 科研模式下移动谁都不推别人（推挤会连锁），拖动松手后由 OverlapResolver 只把被拖的挪到空位
-    if (isResearchShell() || !Settings.isEnableEntityCollision || this.project.sectionMoveDepth > 0) {
-      return;
-    }
-    for (const entity of this.project.stageManager.getEntities()) {
-      if (entity === this) {
-        continue;
-      }
-      this.collideWithOtherEntity(entity);
-    }
+    // 移动谁都不推别人（推挤会连锁），拖动松手后由 OverlapResolver 只把被拖的挪到空位
   }
 
   /**

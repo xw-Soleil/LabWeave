@@ -8,7 +8,6 @@ import {
 import { Tab } from "@/core/Tab";
 import { Project } from "@/core/Project";
 import { promptResearchRename } from "@/core/research/ResearchRename";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { TabWorkspace } from "@/core/TabWorkspace";
@@ -29,7 +28,7 @@ export default function TabContextMenu({
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        {isResearchShell() && tab instanceof Project && (
+        {tab instanceof Project && (
           <ContextMenuItem
             onSelect={() => {
               if (tab.isDraft) void tab.save().catch((error) => toast.error(String(error)));

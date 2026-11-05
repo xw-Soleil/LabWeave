@@ -1,12 +1,11 @@
 import { ResearchFolder } from "@/core/research/ResearchFolder";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import type { Settings } from "@/core/service/Settings";
 import type { URI } from "vscode-uri";
 
 type GlobalMenuNode = Settings["globalMenuConfig"][number];
 
 /**
- * 科研模式的顶部菜单。写成静态树而不是改 globalMenuConfig：用户存过的菜单树只会追加缺的节点，改不掉旧节点。
+ * 科研菜单（没打开「显示完整菜单」时）的顶部菜单。写成静态树而不是改 globalMenuConfig：用户存过的菜单树只会追加缺的节点，改不掉旧节点。
  * 文案都在 research 命名空间的 menu.items.<id> 下，用 researchMenuTitleKey 取。
  */
 export const RESEARCH_GLOBAL_MENU: GlobalMenuNode[] = [
@@ -48,7 +47,7 @@ export const RESEARCH_GLOBAL_MENU: GlobalMenuNode[] = [
   },
 ];
 
-/** 科研模式新增的快捷键，文案在 research:menu.items 下 */
+/** 科研工作台新增的快捷键，文案在 research:menu.items 下 */
 export const RESEARCH_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "researchFocusWorkspace",
   "researchToggleAIChat",
@@ -79,7 +78,7 @@ const RESEARCH_DISABLED_KEYBIND_IDS_V1 = [
 ];
 
 /**
- * 科研模式下默认清空键位并停用的快捷键：
+ * 默认清空键位并停用的快捷键：
  * 和新快捷键或系统快捷键撞车（Cmd+N、Cmd+2、Cmd+Tab、Cmd+W），Cmd+0 会把白板变透明，
  * 或者会往研究文件夹里写文件，或者会打开一个带绘图工具的 AI 窗口；
  * 保留 Tab 创建子节点；E Tab 和横向树生长仍默认停用。
@@ -92,7 +91,7 @@ export const RESEARCH_DISABLED_KEYBIND_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * keybinds2.json 里的标记：记着哪些快捷键已经按科研模式的默认键位改写过，之后尊重用户自己的修改。
+ * keybinds2.json 里的标记：记着哪些快捷键已经按科研工作台的默认键位改写过，之后尊重用户自己的修改。
  * 早先的版本只存一个 true，对应 RESEARCH_DISABLED_KEYBIND_IDS_V1；现在存改写过的 id 列表。
  */
 export const RESEARCH_KEYBIND_DEFAULTS_MARKER = "__researchShellKeyBindDefaultsApplied";
@@ -128,7 +127,7 @@ export const RESEARCH_SHELL_SCOPE_KEYBIND_IDS: ReadonlySet<string> = new Set([
   "openCurrentProjectFileFolder",
 ]);
 
-/** 命令面板在科研模式下只列这些命令 */
+/** 没打开「显示完整菜单」时，命令面板只列这些命令 */
 export const RESEARCH_COMMAND_IDS: ReadonlySet<string> = new Set([
   ...RESEARCH_KEYBIND_IDS,
   "saveFile",
@@ -153,8 +152,7 @@ export function keyBindI18nKey(id: string): string {
   return RESEARCH_KEYBIND_IDS.has(id) ? `research:menu.items.${id}` : id;
 }
 
-/** 科研模式下的最近文件只显示研究文件夹里的 */
+/** 最近文件只显示研究文件夹里的 */
 export function isRecentFileVisible(uri: URI): boolean {
-  if (!isResearchShell()) return true;
   return uri.scheme === "file" && ResearchFolder.isInside(uri.fsPath);
 }

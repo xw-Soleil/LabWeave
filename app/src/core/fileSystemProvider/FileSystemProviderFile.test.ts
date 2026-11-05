@@ -19,7 +19,6 @@ import { FileSystemProviderFile } from "./FileSystemProviderFile";
 
 afterEach(() => {
   vi.clearAllMocks();
-  vi.unstubAllEnvs();
 });
 
 describe("FileSystemProviderFile.write", () => {
@@ -70,13 +69,5 @@ describe("FileSystemProviderFile.write", () => {
     const temporaryPath = vi.mocked(writeFile).mock.calls[0][0];
     expect(exists).toHaveBeenCalledWith(temporaryPath);
     expect(remove).toHaveBeenCalledWith(temporaryPath);
-  });
-
-  it("writes in place outside the research shell", async () => {
-    vi.stubEnv("LR_RESEARCH_SHELL", "false");
-    await new FileSystemProviderFile().write(target, content);
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith(target.fsPath, content);
-    expect(rename).not.toHaveBeenCalled();
-    expect(lstat).not.toHaveBeenCalled();
   });
 });

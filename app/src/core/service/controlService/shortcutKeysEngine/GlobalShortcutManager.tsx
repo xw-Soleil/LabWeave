@@ -1,6 +1,5 @@
 import { register, unregisterAll, isRegistered, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isResearchShell } from "@/core/research/ResearchShell";
 import { Settings } from "../../Settings";
 import { toast } from "sonner";
 
@@ -14,9 +13,7 @@ interface GlobalShortcut {
 
 export class GlobalShortcutManager {
   private shortcuts: GlobalShortcut[] = [];
-  private isInitialized = false;
   private isClickThroughEnabled = false;
-  private settingsUnsubscribe: (() => void) | null = null;
 
   constructor() {
     this.initializeShortcuts();
@@ -42,20 +39,7 @@ export class GlobalShortcutManager {
 
   // 初始化服务
   public async init() {
-    // 科研模式不占用系统级 Alt+1 / Alt+2，以免和别的软件冲突；Rust 端也可能没装全局快捷键插件
-    if (this.isInitialized || isResearchShell()) {
-      return;
-    }
-
-    this.isInitialized = true;
-    Settings.watch("allowGlobalHotKeys", (v) => {
-      // v 是变化后的值
-      if (v) {
-        this.updateShortcuts();
-      } else {
-        unregisterAll();
-      }
-    });
+    // 不占用系统级 Alt+1 / Alt+2，以免和别的软件冲突；Rust 端也可能没装全局快捷键插件
   }
 
   // 更新快捷键注册状态
@@ -118,18 +102,7 @@ export class GlobalShortcutManager {
 
   // 清理资源
   public async dispose() {
-    if (isResearchShell()) return;
-    // 注销所有快捷键
-    await unregisterAll();
-
-    // 移除设置监听器
-    if (this.settingsUnsubscribe) {
-      this.settingsUnsubscribe();
-      this.settingsUnsubscribe = null;
-    }
-
-    this.isInitialized = false;
-    console.log("全局快捷键管理器已清理");
+    // init 没有注册任何东西，不用清理
   }
 
   // 获取所有快捷键信息
