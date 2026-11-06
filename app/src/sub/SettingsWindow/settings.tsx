@@ -19,6 +19,7 @@ import {
   Search,
   Sparkles,
   SplinePointer,
+  Terminal,
   Volume2,
   X,
 } from "lucide-react";
@@ -27,12 +28,13 @@ import { useTranslation } from "react-i18next";
 import EffectsPage from "./customization/effects";
 import SoundEffectsPage from "./customization/sounds";
 import ExternalAiPage from "./ExternalAiPage";
+import LocalAgentsPage from "./LocalAgentsPage";
 import ThemesTab from "./themes";
 
 export type SettingsDialogTab = "settings" | "keybinds" | "menus" | "about";
 
 /** 主题、画布动画、音效各有自己的整页界面，从「外观」里点进去 */
-export type SettingsSubPageId = "themes" | "effects" | "sounds" | "externalAi";
+export type SettingsSubPageId = "themes" | "effects" | "sounds" | "externalAi" | "localAgents";
 
 type SettingsItem = keyof Settings | { subPage: SettingsSubPageId };
 
@@ -67,6 +69,10 @@ export const settingsPages: SettingsPage[] = [
     id: "ai",
     icon: Brain,
     sections: [
+      {
+        id: "source",
+        items: ["aiBackend", "aiLocalAgent", "aiLocalAgentPermission", { subPage: "localAgents" }],
+      },
       { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
       { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
       {
@@ -214,6 +220,7 @@ const subPages: Record<SettingsSubPageId, { icon: LucideIcon; component: Compone
   effects: { icon: Sparkles, component: EffectsPage, padded: true },
   sounds: { icon: Volume2, component: SoundEffectsPage, padded: true },
   externalAi: { icon: Plug, component: ExternalAiPage, padded: true },
+  localAgents: { icon: Terminal, component: LocalAgentsPage, padded: true },
 };
 
 /** 每页里的设置项（不含点进去的子页面），搜索和测试用 */
@@ -223,14 +230,16 @@ export function settingKeysOf(page: SettingsPage): (keyof Settings)[] {
   );
 }
 
-let pendingInitialPage: string | null = null;
-// 设置弹窗只有一个，已经开着时由它自己跳过去
-const initialPageListeners = new Set<(pageId: string) => void>();
+type SettingsTarget = { pageId: string; subPage?: SettingsSubPageId };
 
-/** 下一次打开设置页时直接停在某一页，例如 AI 面板里的「去设置」按钮停在 AI 页 */
-export function setSettingsInitialPage(pageId: string) {
-  pendingInitialPage = pageId;
-  for (const listener of initialPageListeners) listener(pageId);
+let pendingInitialPage: SettingsTarget | null = null;
+// 设置弹窗只有一个，已经开着时由它自己跳过去
+const initialPageListeners = new Set<(target: SettingsTarget) => void>();
+
+/** 下一次打开设置页时直接停在某一页（或页里的子页面），例如 AI 面板里的「去设置」按钮停在 AI 页 */
+export function setSettingsInitialPage(pageId: string, subPage?: SettingsSubPageId) {
+  pendingInitialPage = { pageId, subPage };
+  for (const listener of initialPageListeners) listener(pendingInitialPage);
 }
 
 function knownPageId(pageId: string | null): string {
@@ -240,21 +249,21 @@ function knownPageId(pageId: string | null): string {
 export default function SettingsTab() {
   const { t } = useTranslation("settings");
   const { t: tr } = useTranslation("research");
-  const [pageId, setPageId] = useState(() => knownPageId(pendingInitialPage));
-  const [subPage, setSubPage] = useState<SettingsSubPageId | null>(null);
+  const [pageId, setPageId] = useState(() => knownPageId(pendingInitialPage?.pageId ?? null));
+  const [subPage, setSubPage] = useState<SettingsSubPageId | null>(() => pendingInitialPage?.subPage ?? null);
   const [keyword, setKeyword] = useState("");
 
-  const goTo = (next: string) => {
+  const goTo = (next: string, nextSubPage: SettingsSubPageId | null = null) => {
     setKeyword("");
-    setSubPage(null);
+    setSubPage(nextSubPage);
     setPageId(knownPageId(next));
   };
 
   useEffect(() => {
     pendingInitialPage = null;
-    const listener = (next: string) => {
+    const listener = (next: SettingsTarget) => {
       pendingInitialPage = null;
-      goTo(next);
+      goTo(next.pageId, next.subPage ?? null);
     };
     initialPageListeners.add(listener);
     return () => {

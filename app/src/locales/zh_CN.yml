@@ -1236,6 +1236,33 @@ settings:
     title: 自动批准 MCP 工具
     description: |
       启用后，MCP 工具无需手动批准即可执行。本地 stdio 进程的首次启动仍需单独确认。
+  aiBackend:
+    title: AI 来源
+    description: |
+      用上面填的 AI 接口，还是用你在这台电脑上装好的 AI 程序（Codex、Claude Code 等）。AI 面板标题下面也能随时切换
+    options:
+      api: AI 接口
+      localAgent: 本机 AI 程序
+  aiLocalAgent:
+    title: 本机 AI 程序
+    description: |
+      来源选「本机 AI 程序」时用哪一个。标「未实测」的还没试过，可能连不上
+    options:
+      codex: Codex
+      claude: Claude Code
+      gemini: Gemini CLI（未实测）
+      kimi: Kimi Code（未实测）
+      cursor: Cursor（未实测）
+      opencode: OpenCode（未实测）
+      qodercn: Qoder CN（未实测）
+  aiLocalAgentPermission:
+    title: 本机 AI 程序的权限
+    description: |
+      本机 AI 程序要写文件、执行命令时怎么处理。读白板、改白板不受这一项限制，由本页最后「外部 AI（MCP）」的三个开关决定
+    options:
+      restricted: 受限（拒绝写文件、执行命令等请求）
+      ask: 每次询问
+      auto: 自动批准
   aiApiFormat:
     title: AI 接口格式
     description: |
@@ -3101,6 +3128,30 @@ research:
       lineOfThought: 我的思路是什么？
       whatIsMissing: 还缺什么？
     inputPlaceholder: 问问白板上的内容，例如：这几篇论文之间是什么关系？
+    emptyDescriptionLocal: "{{name}} 会读当前白板上的卡片、连线、分组和文件摘要，也能按你的要求改白板，改之前会先说明要做什么。"
+    localAgent:
+      api: AI 接口
+      localGroup: 本机 AI 程序
+      untested: 未实测
+      missing: 没找到
+      noneFound: 还没找到装好的程序
+      searching: 正在查找…
+      manage: 管理本机 AI 程序…
+      starting: 正在启动 {{name}}
+      notFound: 没找到 {{name}}。在设置里装好以后就能在这里用。
+      needsLogin: "{{name}} 还没登录。在终端里登录一次，再发消息就行。"
+      noWhiteboardTools: 这个版本还不能让 {{name}} 直接读改白板，它只能根据白板的文字版回答。
+      errors:
+        spawn-failed: "{{name}} 启动失败。"
+        exited: "{{name}} 意外退出了。"
+        protocol: 和 {{name}} 通信出错了。
+        no-research-folder: 还没选研究文件夹。本机 AI 程序在研究文件夹里工作，请先选一个。
+      details: 详细信息
+      retry: 重试
+      openSettings: 去设置
+      login: 在终端中登录
+      permissionTitle: "{{name}} 请求批准"
+      permissionInput: 参数
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话
@@ -3154,6 +3205,7 @@ research:
         undo: 撤销
       ai:
         title: AI
+        source: 来源
         api: 接口
         context: 读取与用量
         external: 外部 AI（MCP）
@@ -3199,6 +3251,10 @@ research:
         title: 连接外部 AI
         description: 让 Claude Code、Codex 等通过 MCP 读和改你的白板
         button: 查看方法…
+      localAgents:
+        title: 本机 AI 程序
+        description: 这台电脑上装了哪些；没装的可以在终端里一键安装、登录
+        button: 管理…
     externalAi:
       intro: Claude Code、Codex 这类 AI 软件可以通过 MCP 读和改你的白板。在终端里运行一次下面的命令，以后在那个软件里直接让它「看看我的工作区」就行。
       live: 工作区开在这里时，AI 的改动马上出现在白板上，可以按 Cmd+Z 撤销；没开时直接改文件。AI 能做哪些事由上一页的三个开关决定，改了马上生效。
@@ -3211,6 +3267,23 @@ research:
       unavailable: 安装包版本还不能连接外部 AI，以后打包时补上。现在请用从仓库启动的开发版。
       noNode: 没找到 Node.js。外部 AI 要靠它运行这个接口，请先安装 Node.js，再回到这里复制命令。
       appHomeNote: 命令里的 --app-home（{{home}}）是这个程序存设置的位置，外部 AI 要靠它找到正开着的工作区，不要删掉。
+    localAgents:
+      intro: 用你自己在这台电脑上装好、登录好的 AI 程序。Claude Code 的用量按 Anthropic 的规则算在你的订阅里。
+      adapterNote: Codex 和 Claude Code 除了本体，还要装一个「转接器」才能接进来。点「在终端中安装」会打开终端并填好命令，按回车就行；装好后回到这里会自动刷新。
+      untested: 未实测
+      state:
+        found: 已找到
+        custom: 手动指定
+        noAdapter: 缺转接器
+        missing: 没找到
+      noAdapterHint: 找到了 {{name}} 本体，还缺转接器。
+      installByHomepage: 按官网说明安装：
+      install: 在终端中安装
+      copyInstall: 复制安装命令
+      copied: 已复制
+      login: 在终端中登录
+      choosePath: 指定位置…
+      clearPath: 改回自动查找
     menus:
       contextMenu: 右键菜单
       pieMenu: 饼状菜单

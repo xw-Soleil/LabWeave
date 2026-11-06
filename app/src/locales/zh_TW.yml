@@ -1236,6 +1236,33 @@ settings:
     title: 自動批准 MCP 工具
     description: |
       啟用後，MCP 工具無需手動批准即可執行。本地 stdio 進程的首次啟動仍需單獨確認。
+  aiBackend:
+    title: AI 來源
+    description: |
+      用上面填的 AI 接口，還是用你在這臺電腦上裝好的 AI 程序（Codex、Claude Code 等）。AI 面板標題下面也能隨時切換
+    options:
+      api: AI 接口
+      localAgent: 本機 AI 程序
+  aiLocalAgent:
+    title: 本機 AI 程序
+    description: |
+      來源選「本機 AI 程序」時用哪一個。標「未實測」的還沒試過，可能連不上
+    options:
+      codex: Codex
+      claude: Claude Code
+      gemini: Gemini CLI（未實測）
+      kimi: Kimi Code（未實測）
+      cursor: Cursor（未實測）
+      opencode: OpenCode（未實測）
+      qodercn: Qoder CN（未實測）
+  aiLocalAgentPermission:
+    title: 本機 AI 程序的權限
+    description: |
+      本機 AI 程序要寫文件、執行命令時怎麼處理。讀白板、改白板不受這一項限制，由本頁最後「外部 AI（MCP）」的三個開關決定
+    options:
+      restricted: 受限（拒絕寫文件、執行命令等請求）
+      ask: 每次詢問
+      auto: 自動批准
   aiApiFormat:
     title: AI 接口格式
     description: |
@@ -3101,6 +3128,30 @@ research:
       lineOfThought: 我的思路是什麼？
       whatIsMissing: 還缺什麼？
     inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
+    emptyDescriptionLocal: "{{name}} 會讀當前白板上的卡片、連線、分組和文件摘要，也能按你的要求改白板，改之前會先說明要做什麼。"
+    localAgent:
+      api: AI 接口
+      localGroup: 本機 AI 程序
+      untested: 未實測
+      missing: 沒找到
+      noneFound: 還沒找到裝好的程序
+      searching: 正在查找…
+      manage: 管理本機 AI 程序…
+      starting: 正在啟動 {{name}}
+      notFound: 沒找到 {{name}}。在設置裡裝好以後就能在這裡用。
+      needsLogin: "{{name}} 還沒登錄。在終端裡登錄一次，再發消息就行。"
+      noWhiteboardTools: 這個版本還不能讓 {{name}} 直接讀改白板，它只能根據白板的文字版回答。
+      errors:
+        spawn-failed: "{{name}} 啟動失敗。"
+        exited: "{{name}} 意外退出了。"
+        protocol: 和 {{name}} 通信出錯了。
+        no-research-folder: 還沒選研究文件夾。本機 AI 程序在研究文件夾裡工作，請先選一個。
+      details: 詳細信息
+      retry: 重試
+      openSettings: 去設置
+      login: 在終端中登錄
+      permissionTitle: "{{name}} 請求批准"
+      permissionInput: 參數
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話
@@ -3154,6 +3205,7 @@ research:
         undo: 撤銷
       ai:
         title: AI
+        source: 來源
         api: 接口
         context: 讀取與用量
         external: 外部 AI（MCP）
@@ -3199,6 +3251,10 @@ research:
         title: 連接外部 AI
         description: 讓 Claude Code、Codex 等通過 MCP 讀和改你的白板
         button: 查看方法…
+      localAgents:
+        title: 本機 AI 程序
+        description: 這臺電腦上裝了哪些；沒裝的可以在終端裡一鍵安裝、登錄
+        button: 管理…
     externalAi:
       intro: Claude Code、Codex 這類 AI 軟件可以通過 MCP 讀和改你的白板。在終端裡運行一次下面的命令，以後在那個軟件裡直接讓它「看看我的工作區」就行。
       live: 工作區開在這裡時，AI 的改動馬上出現在白板上，可以按 Cmd+Z 撤銷；沒開時直接改文件。AI 能做哪些事由上一頁的三個開關決定，改了馬上生效。
@@ -3211,6 +3267,23 @@ research:
       unavailable: 安裝包版本還不能連接外部 AI，以後打包時補上。現在請用從倉庫啟動的開發版。
       noNode: 沒找到 Node.js。外部 AI 要靠它運行這個接口，請先安裝 Node.js，再回到這裡複製命令。
       appHomeNote: 命令裡的 --app-home（{{home}}）是這個程序存設置的位置，外部 AI 要靠它找到正開著的工作區，不要刪掉。
+    localAgents:
+      intro: 用你自己在這臺電腦上裝好、登錄好的 AI 程序。Claude Code 的用量按 Anthropic 的規則算在你的訂閱裡。
+      adapterNote: Codex 和 Claude Code 除了本體，還要裝一個「轉接器」才能接進來。點「在終端中安裝」會打開終端並填好命令，按回車就行；裝好後回到這裡會自動刷新。
+      untested: 未實測
+      state:
+        found: 已找到
+        custom: 手動指定
+        noAdapter: 缺轉接器
+        missing: 沒找到
+      noAdapterHint: 找到了 {{name}} 本體，還缺轉接器。
+      installByHomepage: 按官網說明安裝：
+      install: 在終端中安裝
+      copyInstall: 複製安裝命令
+      copied: 已複製
+      login: 在終端中登錄
+      choosePath: 指定位置…
+      clearPath: 改回自動查找
     menus:
       contextMenu: 右鍵菜單
       pieMenu: 餅狀菜單

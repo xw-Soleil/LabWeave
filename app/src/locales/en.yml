@@ -1204,6 +1204,33 @@ settings:
     title: Automatically approve MCP tools
     description: |
       When enabled, MCP tools can run without manual approval. The first launch of a local stdio process still requires separate confirmation.
+  aiBackend:
+    title: AI source
+    description: |
+      Use the AI API configured above, or an AI app installed on this computer (Codex, Claude Code, …). You can also switch under the AI panel title
+    options:
+      api: AI API
+      localAgent: Local AI app
+  aiLocalAgent:
+    title: Local AI app
+    description: |
+      Which app to use when the source is a local AI app. Apps marked "untested" have not been tried yet and may not connect
+    options:
+      codex: Codex
+      claude: Claude Code
+      gemini: Gemini CLI (untested)
+      kimi: Kimi Code (untested)
+      cursor: Cursor (untested)
+      opencode: OpenCode (untested)
+      qodercn: Qoder CN (untested)
+  aiLocalAgentPermission:
+    title: Local AI app permissions
+    description: |
+      What happens when a local AI app wants to write files or run commands. Reading and editing the board is not affected by this; the three switches under "External AI (MCP)" at the end of this page decide that
+    options:
+      restricted: Restricted (deny writing files, running commands and similar requests)
+      ask: Ask every time
+      auto: Approve automatically
   aiApiFormat:
     title: AI API format
     description: |
@@ -2982,6 +3009,30 @@ research:
       lineOfThought: What is my line of thought?
       whatIsMissing: What is missing?
     inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
+    emptyDescriptionLocal: "{{name}} reads the cards, links, groups and file excerpts on the current board, and can edit the board when you ask. It says what it will change first."
+    localAgent:
+      api: AI API
+      localGroup: Local AI apps
+      untested: untested
+      missing: not found
+      noneFound: No installed app found yet
+      searching: Searching…
+      manage: Manage local AI apps…
+      starting: "Starting {{name}}"
+      notFound: "{{name}} was not found. Install it in Settings and you can use it here."
+      needsLogin: "{{name}} is not signed in. Sign in once in a terminal, then send your message again."
+      noWhiteboardTools: "This build cannot let {{name}} read or edit the board directly yet; it only answers from the text version of the board."
+      errors:
+        spawn-failed: "{{name}} failed to start."
+        exited: "{{name}} quit unexpectedly."
+        protocol: "Something went wrong talking to {{name}}."
+        no-research-folder: No research folder is chosen yet. Local AI apps work inside the research folder; choose one first.
+      details: Details
+      retry: Retry
+      openSettings: Open Settings
+      login: Sign in in Terminal
+      permissionTitle: "{{name}} asks for approval"
+      permissionInput: Arguments
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat
@@ -3035,6 +3086,7 @@ research:
         undo: Undo
       ai:
         title: AI
+        source: Source
         api: Provider
         context: Reading and usage
         external: External AI (MCP)
@@ -3080,6 +3132,10 @@ research:
         title: Connect external AI
         description: Let Claude Code, Codex and others read and edit your boards over MCP
         button: Show how…
+      localAgents:
+        title: Local AI apps
+        description: Which ones are installed on this computer; install or sign in to the others from a terminal
+        button: Manage…
     externalAi:
       intro: AI apps such as Claude Code and Codex can read and edit your boards over MCP. Run the command below once in a terminal; after that, just ask that app to "look at my workspace".
       live: While a workspace is open here, the AI's changes appear on the board right away and can be undone with Cmd+Z; a closed workspace is changed in its file directly. What the AI may do is set by the three switches on the previous page and takes effect immediately.
@@ -3092,6 +3148,23 @@ research:
       unavailable: The installed build cannot connect external AI yet; this comes with packaging. For now, use the development build started from the repository.
       noNode: Node.js was not found. External AI apps need it to run this interface. Install Node.js, then come back and copy the command.
       appHomeNote: "--app-home ({{home}}) in the command is where this app keeps its settings; the external AI needs it to find open workspaces. Do not remove it."
+    localAgents:
+      intro: Use AI apps you have installed and signed in to on this computer. Claude Code usage counts toward your subscription under Anthropic's terms.
+      adapterNote: Besides the app itself, Codex and Claude Code need an adapter to connect. "Install in Terminal" opens a terminal with the command filled in; press Return. This page refreshes when you come back.
+      untested: Untested
+      state:
+        found: Found
+        custom: Set manually
+        noAdapter: Adapter missing
+        missing: Not found
+      noAdapterHint: "{{name}} is installed, but its adapter is missing."
+      installByHomepage: "Install it as described at "
+      install: Install in Terminal
+      copyInstall: Copy install command
+      copied: Copied
+      login: Sign in in Terminal
+      choosePath: Choose location…
+      clearPath: Find automatically
     menus:
       contextMenu: Right-click menu
       pieMenu: Pie menu

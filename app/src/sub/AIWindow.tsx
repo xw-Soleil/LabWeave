@@ -33,7 +33,7 @@ import {
   type AIChatSessionSummary,
   type StoredAIChatSession,
 } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
-import type { AIMessageMetadata } from "@/core/service/dataManageService/aiEngine/AIEngine";
+import type { AIConversation, AIMessageMetadata } from "@/core/service/dataManageService/aiEngine/AIEngine";
 import {
   getAIConfigProblems,
   getEffectiveAIBaseUrl,
@@ -58,6 +58,16 @@ import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { setSettingsInitialPage } from "@/sub/SettingsWindow/settings";
+import { useLocalAgentCatalog } from "@/sub/SettingsWindow/LocalAgentsPage";
+import {
+  AISourceMenu,
+  isLocalAgentReady,
+  LocalAgentNotice,
+  LocalAgentPermissionCard,
+  useLocalAgentPermission,
+  useLocalAgentStatus,
+} from "@/sub/AIWindowLocalAgent";
+import type { LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import { useChat } from "@ai-sdk/react";
 import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
@@ -247,6 +257,24 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
   const [deletingSession, setDeletingSession] = useState<AIChatSessionSummary | null>(null);
   const activeChatController = useRef<ActiveChatController | null>(null);
   const references = useMemo(() => project.aiEngine.getProjectReferences(project), [project]);
+  const [backend] = Settings.use("aiBackend");
+  const [agentId] = Settings.use("aiLocalAgent");
+  const [agentPaths] = Settings.use("aiLocalAgentPaths");
+  const agentPath = agentPaths[agentId];
+  const [catalog, refreshCatalog] = useLocalAgentCatalog();
+  const contextWindowTokenLimitRef = useRef<number | undefined>(undefined);
+  const conversationCount = useRef(0);
+  const [conversation, setConversation] = useState<{ id: number; value: AIConversation } | null>(null);
+
+  // 本机 AI 程序的进程跟着对话对象走：切换会话时沿用，换来源、换程序或关面板时结束。
+  // 在 effect 里建而不是 useMemo，严格模式下重跑 effect 也不会拿到已经结束的那个
+  useEffect(() => {
+    const value = project.aiEngine.createConversation(project, references, () => contextWindowTokenLimitRef.current);
+    setConversation({ id: ++conversationCount.current, value });
+    return () => {
+      void value.localAgent?.dispose();
+    };
+  }, [project, references, backend, agentId, agentPath]);
 
   useEffect(
     () =>
@@ -381,7 +409,7 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
           <div className="truncate text-sm font-semibold">
             {sessionState?.activeSession.title ?? "Project Graph AI"}
           </div>
-          <div className="text-muted-foreground truncate text-xs">{model}</div>
+          <AISourceMenu catalog={catalog} onOpen={refreshCatalog} model={model} disabled={actionsDisabled} />
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -426,14 +454,17 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
         <div className="text-destructive flex flex-1 items-center justify-center p-6 text-center text-sm">
           AI 会话加载失败：{loadError}
         </div>
-      ) : !sessionState ? (
+      ) : !sessionState || !conversation ? (
         <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">正在加载 AI 记忆…</div>
       ) : (
         <AIChatPanel
-          key={sessionState.activeSession.id}
+          key={`${sessionState.activeSession.id}:${conversation.id}`}
           project={project}
           session={sessionState.activeSession}
           references={references}
+          conversation={conversation.value}
+          contextWindowTokenLimitRef={contextWindowTokenLimitRef}
+          catalog={catalog}
           onControllerChange={(controller) => {
             activeChatController.current = controller;
           }}
@@ -556,6 +587,9 @@ function AIChatPanel({
   project,
   session,
   references,
+  conversation,
+  contextWindowTokenLimitRef,
+  catalog,
   onControllerChange,
   onRequestingChange,
   onSessionSaved,
@@ -563,6 +597,9 @@ function AIChatPanel({
   project: Project;
   session: StoredAIChatSession;
   references: AIObjectReferenceRegistry;
+  conversation: AIConversation;
+  contextWindowTokenLimitRef: React.RefObject<number | undefined>;
+  catalog: LocalAgentInfo[] | null;
   onControllerChange: (controller: ActiveChatController | null) => void;
   onRequestingChange: (requesting: boolean) => void;
   onSessionSaved: (state: AIChatSessionProjectState) => void;
@@ -577,17 +614,21 @@ function AIChatPanel({
   const [manualContextWindow] = Settings.use("aiContextWindow");
   const [apiFormat] = Settings.use("aiApiFormat");
   const { t } = useTranslation("research");
-  const configProblems = getAIConfigProblems({
-    aiApiFormat: apiFormat,
-    aiApiBaseUrl: apiBaseUrl,
-    aiApiKey: apiKey,
-    aiModel: model,
-  });
-  const contextWindowTokenLimitRef = useRef<number | undefined>(undefined);
-  const conversation = useMemo(
-    () => project.aiEngine.createConversation(project, references, () => contextWindowTokenLimitRef.current),
-    [project, references],
-  );
+  const localAgent = conversation.localAgent;
+  const agentStatus = useLocalAgentStatus(localAgent);
+  const permission = useLocalAgentPermission(localAgent);
+  const [agentId] = Settings.use("aiLocalAgent");
+  const [agentPaths] = Settings.use("aiLocalAgentPaths");
+  const agentInfo = catalog?.find((agent) => agent.id === agentId);
+  // 本机程序不用设置里的接口，接口没填也照常能用
+  const configProblems = localAgent
+    ? []
+    : getAIConfigProblems({
+        aiApiFormat: apiFormat,
+        aiApiBaseUrl: apiBaseUrl,
+        aiApiKey: apiKey,
+        aiModel: model,
+      });
   const [selectedCount, setSelectedCount] = useState(0);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [contextWindowState, setContextWindowState] = useState<ContextWindowState>({ status: "loading" });
@@ -605,7 +646,7 @@ function AIChatPanel({
     [onSessionSaved, project, projectUri, references, session.id],
   );
 
-  const { messages, setMessages, sendMessage, stop, status, addToolApprovalResponse } = useChat<
+  const { messages, setMessages, sendMessage, regenerate, stop, status, addToolApprovalResponse } = useChat<
     UIMessage<AIMessageMetadata>
   >({
     id: session.id,
@@ -613,6 +654,8 @@ function AIChatPanel({
     experimental_throttle: 50,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     onError: (err) => {
+      // 本机程序的错误由输入框上方的提示说明，不再弹一遍
+      if (localAgent && err.message.startsWith("local-agent:")) return;
       toast.error(`AI 请求失败: ${err.message || err.toString() || JSON.stringify(err)}`);
     },
   });
@@ -631,6 +674,7 @@ function AIChatPanel({
   useEffect(() => {
     let cancelled = false;
     contextWindowTokenLimitRef.current = undefined;
+    if (localAgent) return;
     setContextWindowState({ status: "loading" });
     resolveAIModelContextWindow({
       apiBaseUrl: getEffectiveAIBaseUrl({ aiApiFormat: apiFormat, aiApiBaseUrl: apiBaseUrl }),
@@ -654,7 +698,7 @@ function AIChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl, apiFormat, apiKey, manualContextWindow, model]);
+  }, [apiBaseUrl, apiFormat, apiKey, contextWindowTokenLimitRef, localAgent, manualContextWindow, model]);
 
   useEffect(() => {
     // 引用快照找不回来时，新发的 n/e 引用不能和这段旧对话里出现过的重号
@@ -800,7 +844,11 @@ function AIChatPanel({
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-center">
             <Bot className="size-10" />
             <div className="text-foreground font-medium">{t("ai.emptyTitle")}</div>
-            <div className="max-w-72 text-sm">{t("ai.emptyDescription")}</div>
+            <div className="max-w-72 text-sm">
+              {localAgent
+                ? t("ai.emptyDescriptionLocal", { name: agentInfo?.name ?? agentId })
+                : t("ai.emptyDescription")}
+            </div>
             <div className="flex flex-wrap justify-center gap-2">
               {quickPrompts.map((prompt) => (
                 <Button
@@ -831,11 +879,27 @@ function AIChatPanel({
                 }}
               />
             ))}
+            {localAgent && permission && (
+              <LocalAgentPermissionCard
+                request={permission}
+                agentName={agentInfo?.name ?? permission.agentId}
+                onRespond={(optionId) => localAgent.respondPermission(permission.requestId, optionId)}
+              />
+            )}
           </div>
         )}
       </div>
 
       <div className="border-border/70 border-t p-3">
+        {localAgent && !requesting && (
+          <LocalAgentNotice
+            status={agentStatus}
+            agent={agentInfo}
+            agentId={agentId}
+            missing={catalog !== null && !isLocalAgentReady(agentInfo, agentPaths[agentId])}
+            onRetry={() => void regenerate()}
+          />
+        )}
         <div className="mb-2 flex items-center gap-2 text-xs">
           {selectedCount > 0 && (
             <>
@@ -843,7 +907,7 @@ function AIChatPanel({
               <span>已选中 {selectedCount} 个节点</span>
             </>
           )}
-          {showTokenCount && (
+          {showTokenCount && !localAgent && (
             <Tooltip>
               <TooltipTrigger>
                 <div className="text-muted-foreground flex items-center gap-1.5">
@@ -859,7 +923,13 @@ function AIChatPanel({
           )}
           <div className="flex-1" />
           <span className="text-muted-foreground">
-            {!sessionLoaded ? "正在加载记忆" : requesting ? "正在思考" : "准备就绪"}
+            {!sessionLoaded
+              ? "正在加载记忆"
+              : agentStatus?.kind === "starting"
+                ? t("ai.localAgent.starting", { name: agentInfo?.name ?? agentId })
+                : requesting
+                  ? "正在思考"
+                  : "准备就绪"}
           </span>
           {requesting ? (
             <Button size="sm" variant="outline" className="h-8 cursor-pointer" onClick={stop}>
@@ -884,11 +954,13 @@ function AIChatPanel({
           value={inputValue}
           disabled={requesting || !sessionLoaded}
         />
-        <ContextWindowUsage
-          usage={contextUsage}
-          state={contextWindowState}
-          sessionTotalTokens={tokenUsage.totalTokens}
-        />
+        {!localAgent && (
+          <ContextWindowUsage
+            usage={contextUsage}
+            state={contextWindowState}
+            sessionTotalTokens={tokenUsage.totalTokens}
+          />
+        )}
         {showDebug && (
           <AIRequestTraceView buffer={project.aiEngine.getRequestTraceBuffer()} activeSessionId={session.id} />
         )}
