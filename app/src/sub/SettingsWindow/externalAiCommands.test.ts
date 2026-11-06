@@ -4,8 +4,8 @@ import { buildExternalAiMcpCommands, shellQuote } from "./externalAiCommands";
 describe("buildExternalAiMcpCommands", () => {
   const launch = {
     node: "/opt/homebrew/bin/node",
-    script: "/Volumes/soleilMacOS/codes/ai4Know/research-whiteboard/packages/project-graph-cli/src/cli.mjs",
-    appHome: "/Volumes/soleilMacOS/codes/ai4Know/过程文件/app-home",
+    script: "/Users/me/LabWeave/packages/project-graph-cli/src/cli.mjs",
+    appHome: "/Users/me/过程文件/app-home",
   };
 
   it("builds commands that paste into a shell as-is, with the app's HOME", () => {

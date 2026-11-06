@@ -1,0 +1,51 @@
+name: Check
+
+# LabWeave 自己的检查：每次推送都在 Windows 和 macOS 上装依赖、类型检查、跑测试、编译程序（不打安装包）
+on:
+  push:
+    branches: [research-shell, acp-local-agent]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm --filter @graphif/project-graph type-check
+
+      - name: Rust tests
+        working-directory: app/src-tauri
+        run: cargo test --no-default-features --lib
+
+      - name: Frontend tests
+        shell: bash
+        run: |
+          cargo build --manifest-path app/src-tauri/Cargo.toml --no-default-features --bin project-graph-ownership-helper
+          helper="$PWD/app/src-tauri/target/debug/project-graph-ownership-helper"
+          if [ "$RUNNER_OS" = "Windows" ]; then helper="$helper.exe"; fi
+          PROJECT_GRAPH_OWNERSHIP_HELPER_PATH="$helper" pnpm exec vitest run --exclude app/src/cli/ProjectGraphCliProduction.test.ts
+
+      - name: Build app (no installer)
+        shell: bash
+        run: |
+          pnpm build:no-tauri
+          pnpm --filter @graphif/project-graph tauri build --debug --no-bundle
