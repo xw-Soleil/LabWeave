@@ -32,19 +32,26 @@ jobs:
       - name: Type check
         run: pnpm --filter @graphif/project-graph type-check
 
+      # Rust 和前端的测试都要用到这个辅助程序
+      - name: Build ownership helper
+        run: cargo build --manifest-path app/src-tauri/Cargo.toml --no-default-features --bin project-graph-ownership-helper
+
+      # 后面几步前面失败了也照跑，一次看全哪些地方不行
       - name: Rust tests
+        if: ${{ !cancelled() }}
         working-directory: app/src-tauri
         run: cargo test --no-default-features --lib
 
       - name: Frontend tests
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
-          cargo build --manifest-path app/src-tauri/Cargo.toml --no-default-features --bin project-graph-ownership-helper
           helper="$PWD/app/src-tauri/target/debug/project-graph-ownership-helper"
           if [ "$RUNNER_OS" = "Windows" ]; then helper="$helper.exe"; fi
           PROJECT_GRAPH_OWNERSHIP_HELPER_PATH="$helper" pnpm exec vitest run --exclude app/src/cli/ProjectGraphCliProduction.test.ts
 
       - name: Build app (no installer)
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           pnpm build:no-tauri
