@@ -32,6 +32,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **图片卡片整张显示图片**（2026-11-08）：图片卡片不再画类型标签和标题，整张卡片就是图片（比例不一致时居中、不裁切），只描一圈很淡的边。新建的图片卡片按图片比例定大小（长边 300，短边至少 60），图片预览图最长边从 480 提到 1024 像素；以前建的 280×200 图片卡片在原来的框里按图片比例收小、居中。文件名只在鼠标移上去时显示在卡片上方。新增可选的图片标题（`FileCardNode.caption`，旧文件没有这个字段时为空）：右键「加图片标题…」填写，显示在图片左下角的小块里，清空就不显示，不改文件名；给 AI 的白板文字版里优先用它当标题。外部文件、文件不见了改成图片右上角的小块。
 - **粘贴不再弹「Paste」确认**（2026-11-08）：原版在 macOS 上从系统剪贴板粘贴时用网页剪贴板接口，WebKit 读别的程序复制的内容前会先弹一个「Paste」按钮，要再点一下才贴上。现在各系统都走原生剪贴板读取（先读文字，没有文字再读图片），Cmd+V 直接贴上。删掉了设置页里本来就不显示的 `clipboardPasteMode` 设置项和网页读取代码；剪贴板里没有能贴的东西时，提示一句翻译过的话，原生报错放在下面一行。
 - **粘贴在访达里复制的文件**（2026-11-08）：原来在访达 / 资源管理器里复制一个文件再 Cmd+V，只会贴出一个写着文件名的文本节点。现在粘贴时先看剪贴板里有没有复制的文件，有就和把文件拖进来一样处理：PDF、图片、Markdown 做成文件卡片（放在鼠标处），研究文件夹外的文件照样先问复制还是直接引用，.prg 作为工作区打开，其他类型提示暂不支持。Rust 端只读出路径，不碰文件本身。
+- **图片上的连线端点可以拖**（2026-11-08）：原版从图片节点上拉线时，端点落在鼠标按下 / 松手的那一点，按在哪儿往往是随手的，线常常从图片中间出来。现在新拉的线在图片上也停在边框上（引用块照旧）。选中一条连线时，连在图片（粘贴的图片节点、图片文件卡片）上的那头画一个小圆点，拖它可以让箭头指着图里任意一处；离边框近会贴到边框上，拖回默认位置附近就恢复默认。端点只能在它连着的那张图里和边框上移动，不会换到别的卡片上；拖完可以撤销。停在边框上时圆点是空心的，指着图里时是实心的。文字、PDF 卡片的端点照旧。
 - **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令），并直接依赖 `arboard`（MIT / Apache-2.0，原来就随剪贴板插件带进来，用来读剪贴板里的文件列表）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
@@ -285,6 +286,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/ResearchDrop.ts`、`ResearchDrop.test.ts`：拖入的处理抽成 `placeFiles`；新增 `pasteClipboardFiles`，粘贴的文件走同一套流程
 - `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`copyEngine.test.ts`：粘贴时先看有没有复制的文件，再读文字、图片
 
-### 19. 本文件
+### 19. 图片上的连线端点（2026-11-08）
+
+- `app/src/core/research/ImageEdgeEndpoints.ts`（新增）、`ImageEdgeEndpoints.test.ts`（新增）：哪些端点能拖、点中圆点、拖到哪里存什么比例（吸回默认、贴边框、夹在图里）、画圆点
+- `app/src/core/service/controlService/controller/concrete/ControllerImageEdgeEndpoint.tsx`（新增）：拖端点，松手时记一步撤销
+- `app/src/core/service/controlService/controller/Controller.tsx`：登记新控制器
+- `ControllerAssociationReshape.tsx`、`ControllerEntityClickSelectAndMove.tsx`、`ControllerRectangleSelect.tsx`：按在端点圆点上时让开；拖端点时不拖整条线
+- `ControllerNodeConnection.tsx`：只有引用块还记鼠标按下 / 松手的位置，图片上的新线停在边框上
+- `app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`：选中连线时，连在图片上的那头画端点圆点
+
+### 20. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

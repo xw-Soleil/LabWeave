@@ -11,6 +11,7 @@ import { ControllerEntityCreateClass } from "@/core/service/controlService/contr
 import { ControllerLayerMovingClass } from "@/core/service/controlService/controller/concrete/ControllerEntityLayerMoving";
 import { ControllerEntityResizeClass } from "@/core/service/controlService/controller/concrete/ControllerEntityResize";
 import { ControllerExtensionEntityClickClass } from "@/core/service/controlService/controller/concrete/ControllerExtensionEntityClick";
+import { ControllerImageEdgeEndpointClass } from "@/core/service/controlService/controller/concrete/ControllerImageEdgeEndpoint";
 import { ControllerImageScaleClass } from "@/core/service/controlService/controller/concrete/ControllerImageScale";
 import { ControllerNodeConnectionClass } from "@/core/service/controlService/controller/concrete/ControllerNodeConnection";
 import { ControllerNodeEditClass } from "@/core/service/controlService/controller/concrete/ControllerNodeEdit";
@@ -296,6 +297,7 @@ declare module "./Controller" {
     camera: ControllerCameraClass;
     cutting: ControllerCuttingClass;
     edgeEdit: ControllerEdgeEditClass;
+    imageEdgeEndpoint: ControllerImageEdgeEndpointClass;
     entityClickSelectAndMove: ControllerEntityClickSelectAndMoveClass;
     entityCreate: ControllerEntityCreateClass;
     extensionEntityClick: ControllerExtensionEntityClickClass;

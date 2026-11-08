@@ -12,6 +12,7 @@ import { VerticalPolyEdgeRenderer } from "@/core/render/canvas2d/entityRenderer/
 import { EdgeRendererClass } from "@/core/render/canvas2d/entityRenderer/edge/EdgeRendererClass";
 import { renderArcEdge } from "@/core/render/canvas2d/entityRenderer/edge/renderArcEdge";
 import { renderCrEdge } from "@/core/render/canvas2d/entityRenderer/edge/renderCrEdge";
+import { hasEndpointHandle, renderEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { Settings } from "@/core/service/Settings";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
@@ -76,21 +77,20 @@ export class EdgeRenderer {
 
     // 选中的高亮效果
     if (edge.isSelected) {
-      // 还要标注起始点和终止点
-      this.project.shapeRenderer.renderCircle(
-        this.project.renderer.transformWorld2View(edge.sourceLocation),
-        10 * this.project.camera.currentScale,
-        Color.Transparent,
-        this.project.stageStyleManager.currentStyle.CollideBoxSelected,
-        2 * this.project.camera.currentScale,
-      );
-      this.project.shapeRenderer.renderCircle(
-        this.project.renderer.transformWorld2View(edge.targetLocation),
-        10 * this.project.camera.currentScale,
-        Color.Transparent,
-        this.project.stageStyleManager.currentStyle.CollideBoxSelected,
-        2 * this.project.camera.currentScale,
-      );
+      // 还要标注起始点和终止点；连在图片上的那头换成能拖的端点圆点
+      for (const end of ["source", "target"] as const) {
+        if (hasEndpointHandle(edge, end)) {
+          renderEndpointHandle(this.project, edge, end);
+          continue;
+        }
+        this.project.shapeRenderer.renderCircle(
+          this.project.renderer.transformWorld2View(end === "source" ? edge.sourceLocation : edge.targetLocation),
+          10 * this.project.camera.currentScale,
+          Color.Transparent,
+          this.project.stageStyleManager.currentStyle.CollideBoxSelected,
+          2 * this.project.camera.currentScale,
+        );
+      }
       // 画一个虚线
       if (renderer instanceof StraightEdgeRenderer) {
         this.project.curveRenderer.renderDashedLine(

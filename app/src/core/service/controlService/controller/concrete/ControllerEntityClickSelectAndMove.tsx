@@ -1,3 +1,4 @@
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { applyDragPlacement, findOverlappedEntities, planDragPlacement } from "@/core/research/OverlapResolver";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { ShakeDetector } from "@/core/service/controlService/controller/utils/ShakeDetector";
@@ -63,6 +64,10 @@ export class ControllerEntityClickSelectAndMoveClass extends ControllerClass {
 
     // 检查是否点击了缩放控制点，如果是，就不要触发移动事件
     if (this.project.controllerUtils.isClickedResizeRect(pressWorldLocation)) {
+      return;
+    }
+    // 端点圆点画在图片上，按住它是拖端点，不是选中、拖动图片
+    if (findEndpointHandle(this.project, pressWorldLocation)) {
       return;
     }
 
