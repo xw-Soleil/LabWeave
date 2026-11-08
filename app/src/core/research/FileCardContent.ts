@@ -1,8 +1,10 @@
 import type { FileKind } from "@/core/research/ResearchShell";
 import i18next from "i18next";
 
-/** 缩略图最长边（像素），存进 .prg 的附件不需要更大 */
+/** PDF 首页缩略图最长边（像素），存进 .prg 的附件不需要更大 */
 export const THUMBNAIL_MAX_SIZE = 480;
+/** 图片卡片整张显示图片，放大看也要清楚，预览图存大一些 */
+export const IMAGE_THUMBNAIL_MAX_SIZE = 1024;
 export const MAX_EXCERPT_LENGTH = 4000;
 
 export interface FileCardContent {
@@ -11,6 +13,8 @@ export interface FileCardContent {
   excerpt: string;
   pageCount: number;
   thumbnail: Blob | null;
+  /** 图片的原始宽高，卡片按这个比例定大小；其他类型没有 */
+  imageSize?: { width: number; height: number };
   /** 读取时遇到的问题（给用户看的一句话），没有问题时为 "" */
   problem: string;
 }
@@ -95,13 +99,13 @@ function createCanvas(width: number, height: number): { canvas: HTMLCanvasElemen
 }
 
 // 用 DOM canvas 而不是 OffscreenCanvas：最低支持的 macOS 11 自带的 WebKit 没有 OffscreenCanvas 2D
-async function makeImageThumbnail(blob: Blob): Promise<Blob> {
+async function makeImageThumbnail(blob: Blob): Promise<{ thumbnail: Blob; width: number; height: number }> {
   const bitmap = await createImageBitmap(blob);
   try {
-    const scale = Math.min(1, THUMBNAIL_MAX_SIZE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, IMAGE_THUMBNAIL_MAX_SIZE / Math.max(bitmap.width, bitmap.height));
     const { canvas, context } = createCanvas(bitmap.width * scale, bitmap.height * scale);
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return await canvasToBlob(canvas);
+    return { thumbnail: await canvasToBlob(canvas), width: bitmap.width, height: bitmap.height };
   } finally {
     bitmap.close();
   }
@@ -337,7 +341,9 @@ export async function extractFileCardContent(
     };
     try {
       const type = IMAGE_MIME_TYPES[extensionOf(fileName)] ?? "";
-      result.thumbnail = await makeImageThumbnail(new Blob([bytes], { type }));
+      const { thumbnail, width, height } = await makeImageThumbnail(new Blob([bytes], { type }));
+      result.thumbnail = thumbnail;
+      result.imageSize = { width, height };
     } catch (error) {
       result.problem = cardText("thumbnailFailed", { error: errorMessage(error) });
     }

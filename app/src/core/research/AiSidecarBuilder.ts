@@ -416,7 +416,8 @@ export function buildAiSidecar(input: {
       case "FileCardNode": {
         const path = shareablePath(asString(object.sourcePath), scope);
         const kind = isFileKind(object.fileKind) ? object.fileKind : (fileKindOf(path) ?? "pdf");
-        card.title = asString(object.title) || baseName(path);
+        // 用户给图片填的标题比文件名更能说明内容
+        card.title = asString(object.caption) || asString(object.title) || baseName(path);
         card.text = asString(object.excerpt);
         card.file = { path, kind, pages: asNumber(object.pageCount) };
         break;

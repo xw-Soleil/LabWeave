@@ -8,11 +8,13 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
+import { promptImageCaption } from "@/core/research/FileCardFactory";
 import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { ColorManager } from "@/core/service/feedbackService/ColorManager";
 import { Settings } from "@/core/service/Settings";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { activeResourceTabAtom } from "@/state";
 import ColorPaletteWindow from "@/sub/ColorPaletteWindow";
 import ColorWindow from "@/sub/ColorWindow";
@@ -96,6 +98,7 @@ export default function MyContextMenuContent() {
   const p = tab instanceof Project ? tab : undefined;
   const { t } = useTranslation("contextMenu");
   const { t: tKeyBind } = useTranslation("keyBinds");
+  const { t: tResearch } = useTranslation("research");
   const [config] = Settings.use("contextMenuConfig");
   const menuConfig = researchContextMenu(config);
 
@@ -431,5 +434,25 @@ export default function MyContextMenuContent() {
     return rendered;
   };
 
-  return <Content>{renderItems(menuConfig)}</Content>;
+  // 只选中一张图片卡片时，最上面多一项「图片标题…」：图片卡片不显示文件名，想要标题就在这里填
+  const selected = p.stageManager.getSelectedEntities();
+  const imageCard =
+    selected.length === 1 && selected[0] instanceof FileCardNode && selected[0].fileKind === "image"
+      ? selected[0]
+      : undefined;
+
+  return (
+    <Content>
+      {imageCard && (
+        <>
+          <Item onClick={() => void promptImageCaption(p, imageCard)}>
+            <LucideIcons.Captions />
+            {tResearch(imageCard.caption ? "card.caption.editMenu" : "card.caption.menu")}
+          </Item>
+          <div className="bg-border my-1 h-px" />
+        </>
+      )}
+      {renderItems(menuConfig)}
+    </Content>
+  );
 }

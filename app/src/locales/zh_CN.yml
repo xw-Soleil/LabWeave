@@ -3043,6 +3043,12 @@ research:
     pdfNoText: 这个 PDF 里没有能复制的文字，可能是扫描件
     thumbnailFailed: "缩略图没做出来：{{error}}"
     targetClosed: 要放卡片的白板已经关掉了，{{count}} 张卡片没有放上去，请重新拖一次
+    caption:
+      menu: 加图片标题…
+      editMenu: 改图片标题…
+      title: 图片标题
+      description: 显示在图片左下角。清空就不显示。不会改文件名。
+      placeholder: 比如：B 模型在新数据上的准确率
   drop:
     title: 放到白板上
     hint: 松开鼠标，把文件放到白板上

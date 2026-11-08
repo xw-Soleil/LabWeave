@@ -1,3 +1,4 @@
+import { Dialog } from "@/components/ui/dialog";
 import type { Project } from "@/core/Project";
 import { cardText, extractFileCardContent } from "@/core/research/FileCardContent";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
@@ -158,7 +159,16 @@ async function parseFile(absPath: string): Promise<ParsedFile> {
   return { absPath, fileKind, content };
 }
 
-function buildFileCard(project: Project, { absPath, fileKind, content }: ParsedFile, location: Vector): FileCardNode {
+/** 图片卡片按图片比例，其他卡片固定 280×200 */
+function fileCardSize({ fileKind, content }: ParsedFile): Vector {
+  if (fileKind === "image" && content.imageSize) {
+    return FileCardNode.imageCardSize(content.imageSize.width, content.imageSize.height);
+  }
+  return new Vector(FileCardNode.width, FileCardNode.height);
+}
+
+function buildFileCard(project: Project, file: ParsedFile, location: Vector): FileCardNode {
+  const { absPath, fileKind, content } = file;
   const card = new FileCardNode(project, {
     title: content.title,
     sourcePath: toStoredSourcePath(project, absPath),
@@ -166,10 +176,23 @@ function buildFileCard(project: Project, { absPath, fileKind, content }: ParsedF
     attachmentId: content.thumbnail ? project.addAttachment(content.thumbnail) : "",
     excerpt: content.excerpt,
     pageCount: content.pageCount,
-    collisionBox: new CollisionBox([new Rectangle(location, new Vector(FileCardNode.width, FileCardNode.height))]),
+    collisionBox: new CollisionBox([new Rectangle(location, fileCardSize(file))]),
   });
   card.missingCheckedAt = performance.now();
   return card;
+}
+
+/** 右键「图片标题…」：填了就显示在图片左下角，清空就不显示；不改文件名 */
+export async function promptImageCaption(project: Project, card: FileCardNode) {
+  const input = await Dialog.input(cardText("caption.title"), cardText("caption.description"), {
+    defaultValue: card.caption,
+    placeholder: cardText("caption.placeholder"),
+  });
+  if (input === undefined) return;
+  const caption = input.trim();
+  if (caption === card.caption) return;
+  card.caption = caption;
+  project.historyManager.recordStep();
 }
 
 /**
@@ -221,16 +244,15 @@ export async function createFileCards(
     }
 
     const columns = Math.max(1, Math.ceil(Math.sqrt(parsed.length)));
+    // 图片卡片大小不一，格子按这批里最大的卡片算，免得叠在一起
+    const sizes = parsed.map(fileCardSize);
+    const cellWidth = Math.max(...sizes.map((size) => size.x)) + GRID_GAP;
+    const cellHeight = Math.max(...sizes.map((size) => size.y)) + GRID_GAP;
     const cards = parsed.map((file, index) =>
       buildFileCard(
         target.project,
         file,
-        target.worldPos.add(
-          new Vector(
-            (index % columns) * (FileCardNode.width + GRID_GAP),
-            Math.floor(index / columns) * (FileCardNode.height + GRID_GAP),
-          ),
-        ),
+        target.worldPos.add(new Vector((index % columns) * cellWidth, Math.floor(index / columns) * cellHeight)),
       ),
     );
     const { stageManager, sectionMethods, historyManager } = target.project;

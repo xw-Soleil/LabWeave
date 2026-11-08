@@ -2924,6 +2924,12 @@ research:
     pdfNoText: This PDF has no selectable text. It may be a scan
     thumbnailFailed: "Could not make a thumbnail: {{error}}"
     targetClosed: "The board was closed before the cards were ready, so {{count}} card(s) were not placed. Please drop the files again"
+    caption:
+      menu: Add image caption…
+      editMenu: Edit image caption…
+      title: Image caption
+      description: Shown at the bottom-left of the image. Leave it empty to hide it. The file name doesn't change.
+      placeholder: "e.g. Accuracy of model B on the new data"
   drop:
     title: Place on the board
     hint: Release to place the files on the board

@@ -67,12 +67,44 @@ describe("FileCardNode serialization", () => {
       project,
     ) as FileCardNode[];
 
-    expect(restored).toMatchObject({ attachmentId: "", excerpt: "", pageCount: 0, details: [] });
+    expect(restored).toMatchObject({ attachmentId: "", excerpt: "", pageCount: 0, caption: "", details: [] });
     expect(restored.color).toEqual(Color.Transparent);
   });
 
   it("keeps at most 4000 characters of excerpt", () => {
     const card = new FileCardNode(project as never, { excerpt: "字".repeat(5000) });
     expect(card.excerpt).toHaveLength(FileCardNode.maxExcerptLength);
+  });
+
+  it("round-trips an image caption", () => {
+    const card = new FileCardNode(project as never, { fileKind: "image", caption: "B 模型准确率" });
+    const [restored] = deserialize(structuredClone(serialize([card])), project) as FileCardNode[];
+    expect(restored.caption).toBe("B 模型准确率");
+  });
+});
+
+describe("image card size", () => {
+  it("follows the image's shape with a 300 long side", () => {
+    expect(FileCardNode.imageCardSize(1600, 900)).toEqual(new Vector(300, 169));
+    expect(FileCardNode.imageCardSize(900, 1600)).toEqual(new Vector(169, 300));
+    expect(FileCardNode.imageCardSize(500, 500)).toEqual(new Vector(300, 300));
+  });
+
+  it("keeps very thin images at least 60 across", () => {
+    expect(FileCardNode.imageCardSize(3000, 100)).toEqual(new Vector(300, 60));
+  });
+
+  it("falls back to the normal card size when the image size is unknown", () => {
+    expect(FileCardNode.imageCardSize(0, 0)).toEqual(new Vector(FileCardNode.width, FileCardNode.height));
+  });
+
+  it("shrinks an old 280×200 card around the image, centred, never growing", () => {
+    const box = new Rectangle(new Vector(100, 100), new Vector(280, 200));
+    const wide = FileCardNode.fitImageInBox(box, 1600, 900);
+    expect(wide.size).toEqual(new Vector(280, 158));
+    expect(wide.center).toEqual(box.center);
+    const tall = FileCardNode.fitImageInBox(box, 900, 1600);
+    expect(tall.size).toEqual(new Vector(113, 200));
+    expect(tall.center).toEqual(box.center);
   });
 });
