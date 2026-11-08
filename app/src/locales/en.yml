@@ -2794,6 +2794,9 @@ research:
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
     resizeSidePanel: Drag to resize the panel
+    pinSidePanel: Pin the panel
+    unpinSidePanel: Hide the panel; it slides out when you move the mouse to the window edge
+    showSidePanel: Show the panel
   statusBar:
     nodes: "{{count}} nodes"
     edges: "{{count}} edges"

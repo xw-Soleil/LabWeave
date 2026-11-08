@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { getViewInsets, NO_VIEW_INSETS } from "@/core/research/ViewInsets";
 import { WheelSmoother } from "@/core/research/WheelGesture";
 import { easeOutExpo } from "@/core/service/feedbackService/effectEngine/mathTools/easings";
 import { Settings } from "@/core/service/Settings";
@@ -92,14 +93,32 @@ export class Camera {
     } else if (direction === Direction.Right) {
       targetLocation.x += rect.width * 0.5;
     }
-    // 生成接下来一些帧里的移动轨迹位置点。
-    this.bombMove(targetLocation);
+    // 翻页是相对当前视野挪半屏，不做面板避让，否则每翻一次都会多偏一点
+    this.glideTo(targetLocation);
   }
   /**
-   * 爆炸式移动
-   * @param targetLocation 摄像机即将要移动到的世界坐标
+   * 爆炸式移动：把 targetLocation 移到画面上没被浮动面板挡住的那块区域的正中
+   * @param targetLocation 要看的世界坐标
    */
   bombMove(targetLocation: Vector, frameCount = 40) {
+    this.glideTo(this.centerOfVisibleArea(targetLocation, this.currentScale), frameCount);
+  }
+
+  /** 画布左右被浮动面板挡住的视图像素；挡掉大半个画布时（窗口很窄）不避让，免得可用宽度不够 */
+  private visibleAreaInsets() {
+    const insets = getViewInsets(this.project);
+    if (insets.left + insets.right >= this.project.renderer.w * 0.7) return NO_VIEW_INSETS;
+    return insets;
+  }
+
+  /** 想让 target 落在没被挡住那块区域的正中，视野中心应该放在哪里 */
+  private centerOfVisibleArea(target: Vector, scale: number) {
+    const { left, right } = this.visibleAreaInsets();
+    return new Vector(target.x + (right - left) / 2 / scale, target.y);
+  }
+
+  /** 摄像机中心沿缓动曲线移到 targetLocation */
+  private glideTo(targetLocation: Vector, frameCount = 40) {
     // 先清空之前的队列
     this.shockMoveDiffLocationsQueue.clear();
     // 生成接下来一些帧里的移动轨迹位置点。
@@ -380,17 +399,21 @@ export class Camera {
     }
     this.hasResetOnOpen = true;
     // --
-    this.location = this.project.stageManager.getCenter();
-    this.targetLocationByScale = this.location.clone();
     // this.currentScale = 0.01;
     const allEntitiesSize = this.project.stageManager.getSize();
     allEntitiesSize.multiply(Settings.cameraResetViewPaddingRate);
+    const insets = this.visibleAreaInsets();
     // 添加缩放上限，与resetByRectangle方法保持一致
     this.currentScale = Math.min(
       Settings.cameraResetViewPaddingRate,
-      Math.min(this.project.renderer.h / allEntitiesSize.y, this.project.renderer.w / allEntitiesSize.x),
+      Math.min(
+        this.project.renderer.h / allEntitiesSize.y,
+        (this.project.renderer.w - insets.left - insets.right) / allEntitiesSize.x,
+      ),
     );
     this.targetScale = this.currentScale;
+    this.location = this.centerOfVisibleArea(this.project.stageManager.getCenter(), this.currentScale);
+    this.targetLocationByScale = this.location.clone();
     this.stopImmediately();
     SoundService.play.viewAdjustSoundFile();
   }
@@ -407,18 +430,20 @@ export class Camera {
   }
 
   resetByRectangle(viewRectangle: Rectangle) {
-    const center = viewRectangle.center;
-    this.location = center;
-    this.targetLocationByScale = center.clone();
-
     const selectedRectangleSize = viewRectangle.size.multiply(Settings.cameraResetViewPaddingRate);
+    const insets = this.visibleAreaInsets();
 
     // 再取max是为了防止缩放过大
     this.currentScale = Math.min(
       Settings.cameraResetMaxScale,
-      Math.min(this.project.renderer.h / selectedRectangleSize.y, this.project.renderer.w / selectedRectangleSize.x),
+      Math.min(
+        this.project.renderer.h / selectedRectangleSize.y,
+        (this.project.renderer.w - insets.left - insets.right) / selectedRectangleSize.x,
+      ),
     );
     this.targetScale = this.currentScale;
+    this.location = this.centerOfVisibleArea(viewRectangle.center, this.currentScale);
+    this.targetLocationByScale = this.location.clone();
   }
 
   resetScale() {

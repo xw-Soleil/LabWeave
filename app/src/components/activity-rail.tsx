@@ -8,14 +8,17 @@ import {
   findResearchPanelTab,
   listResearchWorkspaces,
   openResearchWorkspace,
+  peekFilesPanel,
   researchFilesVersionAtom,
   workspacePopoverOpenAtom,
   type ResearchWorkspaceItem,
 } from "@/core/research/ResearchSession";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
+import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelStates } from "@/core/research/SidePanels";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
-import { tabsAtom } from "@/state";
+import { findTabGroupByTabId, type FixedSideEdge } from "@/core/TabGroup";
+import { tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { cn } from "@/utils/cn";
 import { formatKeyBindSequenceToString } from "@/utils/keyDisplay";
@@ -34,10 +37,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-/** 竖栏宽度，DockedArea 按这个值往右让出位置；不在缩放层里，所以手动乘 UI 缩放 */
-export const ACTIVITY_RAIL_WIDTH = "calc(3rem * var(--pg-ui-scale, 1))";
-/** 科研模式标题栏高度（36px，在缩放层里随 UI 缩放）；竖栏和 DockedArea 从它下面开始 */
-export const RESEARCH_TITLE_BAR_HEIGHT = "calc(2.25rem * var(--pg-ui-scale, 1))";
+/*
+ * 画布铺满整个窗口，竖栏、标签、侧栏都浮在上面。这些都不在缩放层里，所以手动乘 UI 缩放。
+ * 最上面一行（约 36px）留给红绿灯、标签和右上角的按钮；竖栏和侧栏从它下面开始。
+ */
+export const RESEARCH_FLOAT_TOP = "calc(2.75rem * var(--pg-ui-scale, 1))";
+/** 竖栏离窗口左边 8px、宽 2.5rem；左侧栏紧挨在它右边，再空 8px */
+export const RESEARCH_SIDE_PANEL_LEFT = "calc(1rem + 2.5rem * var(--pg-ui-scale, 1))";
 
 /** 快捷键的显示文本（macOS 上写成「⌘2」）；没绑或停用时为空。改键后自动更新 */
 export function useShortcutText(keyBindId: string): string {
@@ -64,6 +70,9 @@ function RailButton({
   children,
   buttonRef,
   unavailableHint,
+  peekEdge,
+  onPeek,
+  hideTooltip,
 }: {
   label: string;
   keyBindId: string;
@@ -73,11 +82,16 @@ function RailButton({
   buttonRef?: React.Ref<HTMLButtonElement>;
   /** 有值时按钮变灰、点了没反应，提示框改显示这句说明；不用 disabled，否则悬停时不出提示框 */
   unavailableHint?: string;
+  /** 鼠标停在按钮上会弹出这一侧的侧栏 */
+  peekEdge?: FixedSideEdge;
+  onPeek?: () => void;
+  /** 侧栏弹出来以后不再显示提示框，免得盖在面板上 */
+  hideTooltip?: boolean;
 }) {
   const shortcut = useShortcutText(keyBindId);
   const unavailable = unavailableHint !== undefined;
   return (
-    <Tooltip>
+    <Tooltip open={hideTooltip ? false : undefined}>
       <TooltipTrigger>
         <Button
           ref={buttonRef}
@@ -85,8 +99,12 @@ function RailButton({
           aria-label={label}
           aria-pressed={unavailable ? undefined : active}
           aria-disabled={unavailable || undefined}
+          data-pg-side-trigger={peekEdge}
+          // 拖着卡片经过时不弹出
+          onPointerEnter={onPeek ? (event) => event.buttons === 0 && onPeek() : undefined}
+          onPointerLeave={peekEdge ? () => leaveSidePeekArea(peekEdge) : undefined}
           className={cn(
-            "size-[calc(2.5rem*var(--pg-ui-scale,1))] rounded-[6px] p-0 [&_svg:not([class*='size-'])]:size-[calc(1rem*var(--pg-ui-scale,1))]",
+            "size-[calc(2rem*var(--pg-ui-scale,1))] rounded-[8px] p-0 [&_svg:not([class*='size-'])]:size-[calc(1rem*var(--pg-ui-scale,1))]",
             unavailable
               ? "text-muted-foreground hover:text-muted-foreground cursor-default opacity-40 hover:bg-transparent dark:hover:bg-transparent"
               : active
@@ -223,11 +241,19 @@ function WorkspaceList({ onOpened }: { onOpened: () => void }) {
 export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boolean }) {
   const { t } = useTranslation("research");
   const tabs = useAtomValue(tabsAtom);
+  const root = useAtomValue(tabGroupRootAtom);
+  const sideStates = useSidePanelStates();
   const [popoverOpen, setPopoverOpen] = useAtom(workspacePopoverOpenAtom);
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
 
-  const filesOpen = findResearchPanelTab("files", tabs) !== undefined;
-  const aiOpen = findResearchPanelTab("ai", tabs) !== undefined;
+  // 面板在侧栏里时，按钮亮着表示「侧栏显示着，最前面就是它」；不在侧栏里（定制成了浮动等）时，打开着就算
+  const panelShown = (panel: "files" | "ai") => {
+    const tab = findResearchPanelTab(panel, tabs);
+    if (!tab) return false;
+    const group = findTabGroupByTabId(root, tab.id);
+    const edge = sideEdgeOfGroup(group?.id);
+    return !edge || (isSidePanelShown(sideStates[edge]) && group?.activeTabId === tab.id);
+  };
   // 没打开工作区时 AI 对话收起（见 DockedArea），按钮也变灰
   const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
 
@@ -235,11 +261,11 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
     <nav
       aria-label={t("shell.title")}
       className={cn(
-        "bg-background border-border absolute bottom-0 left-0 z-20 flex flex-col items-center gap-[calc(0.25rem*var(--pg-ui-scale,1))] border-r py-[calc(0.25rem*var(--pg-ui-scale,1))]",
+        "bg-background/95 border-border/60 absolute left-2 z-30 flex flex-col items-center gap-[calc(0.25rem*var(--pg-ui-scale,1))] rounded-[12px] border p-[calc(0.25rem*var(--pg-ui-scale,1))] shadow-xs",
         "transition-opacity hover:opacity-100",
         isClassroomMode && "opacity-0",
       )}
-      style={{ width: ACTIVITY_RAIL_WIDTH, top: RESEARCH_TITLE_BAR_HEIGHT }}
+      style={{ top: RESEARCH_FLOAT_TOP }}
     >
       {/* 共用一个 Provider：在相邻按钮之间移动时提示框立刻切换，不用每个都再等一次 */}
       <TooltipProvider>
@@ -275,7 +301,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         <RailButton
           label={t("shell.rail.ai")}
           keyBindId="researchToggleAIChat"
-          active={aiOpen}
+          active={panelShown("ai")}
           unavailableHint={hasWorkspace ? undefined : t("shell.rail.aiNeedsWorkspace")}
           onClick={() => emitResearchEvent("toggleAI")}
         >
@@ -284,12 +310,16 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         <RailButton
           label={t("shell.rail.files")}
           keyBindId="researchToggleFileManager"
-          active={filesOpen}
+          active={panelShown("files")}
           onClick={() => emitResearchEvent("toggleFiles")}
+          peekEdge="left"
+          onPeek={peekFilesPanel}
+          hideTooltip={isSidePanelShown(sideStates.left)}
         >
           <FolderOpen />
         </RailButton>
-        <div className="mt-auto">
+        <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
+        <div>
           <RailButton
             label={t("shell.rail.settings")}
             keyBindId="clickAppMenuSettingsButton"

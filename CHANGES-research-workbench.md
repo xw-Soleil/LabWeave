@@ -27,6 +27,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **macOS**：在访达里双击 `.prg` 会转给前端打开（包括程序还没启动的情况）；补充了外置磁盘和网络磁盘的访问说明文字。
 - **外部 AI（MCP）**（2026-11-05）：命令行新增 `mcp` 子命令，在标准输入输出上提供 MCP 服务，Claude Code、Codex 等外部 AI 可以列出研究文件夹里的工作区、读和改白板。工具就是命令行那套内置工具，每个多一个 `workspace` 参数；新增 `list_workspaces`，以及 `create_text_node_at`（按坐标放文本卡片）、`create_section`（把卡片放进新分组）两个工具，工作区没打开时也能用。设置 → AI →「外部 AI」里有三个开关（允许修改、允许删除、允许联网），默认都开，MCP 每次调用都重新读；同一页给出能直接复制的配置命令。命令行和程序之间的本机通道（TCP）加了口令：程序启动时随机生成，随地址写进只有本账户能读的归属记录，不带口令的请求一律拒绝。
 - **去掉原项目自己的文档和发版流程**（2026-11-08）：删除 `PRD.md`、`TODO.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`docs-pg/`、`docs/superpowers/`、`.trae/documents/`；删除 `.github/` 下的赞助按钮配置、禁止提 issue 的模板、发版用的脚本和工作流（nightly、publish、release、render-docs-svg），只留 LabWeave 自己的 `check.yml`。`app/README.md` 和 `stageObject/README.md` 里指向这些文件的链接改指原项目仓库（提交 `5524363`）。许可证文件和版权声明都没动。
+- **画布铺满窗口，其他都浮在上面**（2026-11-08）：去掉 36px 的标题栏，窗口最上面留一条看不见的拖动区；竖栏缩成左边一根浮着的圆角小条；标签改成左上角的圆角小药丸（macOS 上让开红绿灯）；状态栏缩成左下角一小块；浅/深色切换（Windows 上加窗口按钮）放在右上角。左右固定侧栏不再和画布并排挤占宽度，改成浮在画布上的圆角卡片：固定时一直显示，取消固定后平时收起，鼠标停在竖栏「文件」按钮上或贴住窗口左右边缘约 0.3 秒就弹出、离开约 0.5 秒收回（正在面板里打字、鼠标在面板弹出的菜单上时不收回；从弹出的文件面板往画布拖文件时先收起）。卡片外侧有图钉按钮，右侧栏收起后在右下角留一个圆按钮。文件面板默认收起、AI 对话默认固定，各侧固定与否记在本机。竖栏按钮和快捷键对侧栏里的面板只切换固定/收起，不再关掉它。白板标签不能再拖进侧栏。镜头移到某个对象、适应视野时，把目标放在没被面板挡住的区域正中。
 - **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
@@ -236,6 +237,20 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/locales/{zh_CN,en,zh_TW}.yml`
 - `app/package.json`、`pnpm-lock.yaml`：`@modelcontextprotocol/sdk`
 
-### 14. 本文件
+### 14. 画布铺满窗口、侧栏浮在画布上（2026-11-08）
+
+- `app/src/App.tsx`：去掉标题栏，加顶部拖动区和左上、右上两块浮动按钮区（宽度写进 CSS 变量给标签让位）
+- `app/src/components/docked-area.tsx`：编辑区铺满；标签、状态条浮在白板上；左右侧栏改成浮动卡片（弹出/收起、图钉、拖宽、右下角圆按钮、贴边感应区）
+- `app/src/components/activity-rail.tsx`：浮动圆角小条；「文件」按钮悬停弹出文件面板
+- `app/src/ProjectTabs.tsx`：圆角小药丸样式
+- `app/src/core/research/SidePanels.ts`（新增）、`SidePanels.test.ts`（新增）：侧栏固定/弹出状态、悬停计时、焦点切到收着的侧栏时自动固定、被挡住区域的计算
+- `app/src/core/research/ViewInsets.ts`（新增）：镜头查询「画布左右被挡住多少」的接口
+- `app/src/core/stage/Camera.tsx`、`Camera.test.ts`：移到对象、适应视野时避开被挡住的区域；翻页不避让
+- `app/src/core/TabGroup.ts`、`TabGroup.test.ts`：`separateFixedSideGroups` 取代 `welcomeLayout` 和 `findFixedSideChild`
+- `app/src/core/research/ResearchSession.ts`：面板开关改为固定/收起；恢复会话时不自动固定；注册侧栏状态跟踪
+- `app/src/sub/FileManagerWindow.tsx`：开关监听挪到 `ResearchSession`；开始拖文件时收起弹出的面板
+- `app/src/locales/{zh_CN,en,zh_TW}.yml`
+
+### 15. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

@@ -134,16 +134,32 @@ export function parseSidePanelWidth(stored: string | null, edge: FixedSideEdge):
   return Number.isFinite(width) ? clampSidePanelWidth(width) : SIDE_PANEL_WIDTH.default[edge];
 }
 
-/** 左右分栏里直接挂着的固定侧栏：返回它在 children 里的位置和是哪一侧；没有时返回 undefined */
-export function findFixedSideChild(split: TabSplit): { index: 0 | 1; edge: FixedSideEdge } | undefined {
-  if (split.direction !== "horizontal") return undefined;
-  for (const index of [0, 1] as const) {
-    const child = split.children[index];
-    if (child.type !== "group") continue;
-    if (child.id === FIXED_SIDE_GROUP_IDS.left) return { index, edge: "left" };
-    if (child.id === FIXED_SIDE_GROUP_IDS.right) return { index, edge: "right" };
-  }
-  return undefined;
+/**
+ * 左右固定侧栏不参与分屏，浮在画布上面显示：把它们从布局树里拿出来，剩下的是铺满窗口的编辑区。
+ * 只用来显示，不写回 tabGroupRootAtom（打开、关闭、切换面板照旧在树上操作）。
+ */
+export function separateFixedSideGroups(root: TabGroupNode | null): {
+  main: TabGroupNode | null;
+  sides: Partial<Record<FixedSideEdge, TabGroup>>;
+} {
+  const sides: Partial<Record<FixedSideEdge, TabGroup>> = {};
+  const strip = (node: TabGroupNode): TabGroupNode | null => {
+    if (node.type === "group") {
+      for (const edge of ["left", "right"] as const) {
+        if (node.id !== FIXED_SIDE_GROUP_IDS[edge]) continue;
+        sides[edge] = node;
+        return null;
+      }
+      return node;
+    }
+    const first = strip(node.children[0]);
+    const second = strip(node.children[1]);
+    if (!first) return second;
+    if (!second) return first;
+    if (first === node.children[0] && second === node.children[1]) return node;
+    return { ...node, children: [first, second] };
+  };
+  return { main: root ? strip(root) : null, sides };
 }
 
 export function splitTabGroup(
@@ -181,28 +197,6 @@ export function splitTabGroup(
     return { ...node, children: [first, second] };
   };
   return replace(root);
-}
-
-/** 没打开工作区时，编辑区的位置放欢迎页：这是它的占位分组 id */
-export const WELCOME_GROUP_ID = "pg-welcome";
-
-/**
- * 没打开工作区时显示的布局：先去掉 hiddenTabIds（比如没有工作区时用不上的 AI 对话），
- * 再在侧栏旁边插入欢迎页占位分组。侧栏照常按像素定宽、能拖。只用来显示，不写回 tabGroupRootAtom。
- */
-export function welcomeLayout(root: TabGroupNode | null, hiddenTabIds: string[] = []): TabGroupNode {
-  let visible = root;
-  for (const tabId of hiddenTabIds) visible = removeTabFromGroups(visible, tabId).root;
-  const welcome = createTabGroup([], WELCOME_GROUP_ID);
-  const groups = getTabGroups(visible);
-  const target =
-    groups.find((group) => group.id === FIXED_SIDE_GROUP_IDS.left) ??
-    groups.find((group) => group.id === FIXED_SIDE_GROUP_IDS.right) ??
-    groups[0];
-  if (!target) return welcome;
-  const edge: TabDropEdge = target.id === FIXED_SIDE_GROUP_IDS.right ? "left" : "right";
-  const sizes: [number, number] = edge === "right" ? [30, 70] : [70, 30];
-  return splitTabGroup(visible, target.id, welcome, edge, `${WELCOME_GROUP_ID}-split`, sizes) ?? welcome;
 }
 
 export function updateTabSplitSizes(

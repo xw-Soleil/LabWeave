@@ -2913,6 +2913,9 @@ research:
     autoSaveFailed: "關閉前自動保存「{{name}}」失敗：{{message}}"
     extensionsDisabled: 科研工作臺不運行擴展，數據只留在本機
     resizeSidePanel: 拖動調整面板寬度
+    pinSidePanel: 固定面板
+    unpinSidePanel: 收起面板，鼠標移到窗口邊上再彈出
+    showSidePanel: 展開面板
   statusBar:
     nodes: "{{count}} 個節點"
     edges: "{{count}} 條連線"
