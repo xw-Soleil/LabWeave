@@ -1,6 +1,4 @@
 import { Project, service } from "@/core/Project";
-import { Settings } from "@/core/service/Settings";
-import { isLinux, isMac, isWindows } from "@/utils/platform";
 import { ConnectableAssociation } from "@/core/stage/stageObject/abstract/Association";
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
@@ -22,6 +20,7 @@ import { deserialize, serialize } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
 import { Image as TauriImage } from "@tauri-apps/api/image";
 import { readText, writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import i18next from "i18next";
 import _ from "lodash";
 import { toast } from "sonner";
 import { v4 } from "uuid";
@@ -156,7 +155,7 @@ export class CopyEngine {
     if (await this.hasFreshVirtualClipboardData()) {
       this.virtualClipboardPaste("pointer");
     } else {
-      await this.readSystemClipboardAndPaste();
+      await this.pasteFromSystemClipboard();
     }
   }
 
@@ -168,7 +167,7 @@ export class CopyEngine {
     if (await this.hasFreshVirtualClipboardData()) {
       this.virtualClipboardPaste("origin");
     } else {
-      await this.readSystemClipboardAndPaste();
+      await this.pasteFromSystemClipboard();
     }
   }
 
@@ -394,81 +393,30 @@ export class CopyEngine {
     return section;
   }
 
-  async readSystemClipboardAndPaste() {
-    const mode = Settings.clipboardPasteMode;
-    if (mode === "webview") {
-      await this.pasteFromWebClipboard();
-    } else if (mode === "tauri") {
-      await this.pasteFromTauriClipboard();
-    } else {
-      // AUTO模式
-      if (isMac) {
-        // mac优先用web模式，比较安全不容易崩溃
-        await this.pasteFromWebClipboard();
-      } else if (isWindows) {
-        // windows优先用tauri，因为不需要申请权限
-        await this.pasteFromTauriClipboard();
-      } else if (isLinux) {
-        // 待排查
-        await this.pasteFromTauriClipboard();
-      } else {
-        // 未知系统，先随便了
-        await this.pasteFromTauriClipboard();
-      }
+  /**
+   * 走原生剪贴板读取。macOS 的 WebView 用网页剪贴板接口读别的程序复制的内容时，会先弹一个「粘贴」按钮让用户再点一次。
+   * 先读文字再读图片：Word、Excel 复制文字时剪贴板里也附带一张渲染图，先读图片会把文字贴成图片。
+   */
+  private async pasteFromSystemClipboard() {
+    const text = await readSystemClipboardText();
+    if (text) {
+      await this.copyEngineText.copyEnginePastePlainText(text);
+      return;
     }
-  }
-
-  private async pasteFromWebClipboard() {
     try {
-      await this.copyEngineImage.pasteImageFromWebClipboard();
-
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text && text.length > 0) {
-          this.copyEngineText.copyEnginePastePlainText(text);
-        }
-      } catch {
-        toast.error("无法读取系统剪贴板");
-      }
-    } finally {
-      setTimeout(() => {
-        this.project.controller.pressingKeySet.clear();
-      });
-    }
-  }
-
-  private async pasteFromTauriClipboard() {
-    // 处理粘贴文字
-    let text = "";
-    try {
-      text = await readText();
+      await this.copyEngineImage.pasteImageFromSystemClipboard();
     } catch (err) {
-      if (err instanceof Error) toast.error(`Tauri文字粘贴板出错 ${err}`);
-    }
-
-    if (text && text.length > 0) {
-      this.copyEngineText.copyEnginePastePlainText(text);
-    } else {
-      // 没有文字，应该是有图片，处理粘贴图片
-      try {
-        await this.copyEngineImage.pasteImageFromTauriClipboard();
-      } catch (err) {
-        if (err instanceof Error) {
-          toast.error(`Tauri模式粘贴图片失败，可尝试在设置中换用webview粘贴模式。报错信息：${err.message}`);
-        } else if (typeof err === "string") {
-          // tauri 给的报错信息是个string
-          toast.error(`Tauri模式粘贴图片失败，可尝试在设置中换用webview粘贴模式。报错信息：${err}`);
-        } else {
-          toast.error(`Tauri模式粘贴图片失败，可尝试在设置中换用webview粘贴模式。报错信息：${err}, ${typeof err}`);
-        }
-      }
+      // 剪贴板空着、或者是文件之类贴不上来的东西时，原生接口只给一句英文报错
+      toast.error(i18next.t("clipboard.nothingToPaste", { ns: "research" }), {
+        description: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
 
 /**
- * 只用来判断系统剪贴板有没有变。剪贴板里没有文字（比如是图片）时 arboard 会报错，这里当作空文字：
- * 复制时记下的若是文字，换成图片也能看出变了。
+ * 剪贴板里没有文字（比如是图片）时 arboard 会报错，这里当作空文字。
+ * 复制时也用它记下剪贴板内容：记下的若是文字，换成图片也能看出变了。
  */
 async function readSystemClipboardText(): Promise<string> {
   try {

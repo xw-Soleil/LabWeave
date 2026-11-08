@@ -221,7 +221,6 @@ export const settingsSchema = z.object({
   textNodePasteSizeAdjustMode: z
     .union([z.literal("auto"), z.literal("manual"), z.literal("autoByLength")])
     .default("autoByLength"),
-  clipboardPasteMode: z.union([z.literal("auto"), z.literal("webview"), z.literal("tauri")]).default("auto"),
   resizePastedImages: z.boolean().default(true),
   maxPastedImageSize: projectToolSettingSchemas.maxPastedImageSize,
   compressImageToWebp: z.boolean().default(true),

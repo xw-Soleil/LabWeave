@@ -4,6 +4,7 @@ import { Vector } from "@graphif/data-structures";
 import { Line, Rectangle } from "@graphif/shapes";
 
 const clipboard = vi.hoisted(() => ({ text: "", writes: [] as string[] }));
+const systemPaste = vi.hoisted(() => ({ text: vi.fn(), image: vi.fn() }));
 
 vi.mock("@/core/Project", () => ({
   Project: class Project {},
@@ -23,6 +24,7 @@ vi.mock("@/utils/font", () => ({
   getTextSize: () => new Vector(20, 20),
 }));
 vi.mock("@/utils/platform", () => ({ isMac: true, isWindows: false, isLinux: false }));
+vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), info: vi.fn(), error: vi.fn() }) }));
 vi.mock("@tauri-apps/api/image", () => ({ Image: { fromBytes: vi.fn() } }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
@@ -40,10 +42,19 @@ vi.mock("@/core/research/FileCardFactory", () => ({
   toStoredSourcePath: (_project: unknown, sourcePath: string) => sourcePath,
 }));
 vi.mock("@/core/research/OverlapResolver", () => ({ nudgeEntitiesOutOfOverlap: vi.fn() }));
-vi.mock("./copyEngineImage", () => ({ CopyEngineImage: class CopyEngineImage {} }));
-vi.mock("./copyEngineText", () => ({ CopyEngineText: class CopyEngineText {} }));
+vi.mock("./copyEngineImage", () => ({
+  CopyEngineImage: class CopyEngineImage {
+    pasteImageFromSystemClipboard = systemPaste.image;
+  },
+}));
+vi.mock("./copyEngineText", () => ({
+  CopyEngineText: class CopyEngineText {
+    copyEnginePastePlainText = systemPaste.text;
+  },
+}));
 
 import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
+import { toast } from "sonner";
 import type { Project } from "@/core/Project";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { StageManager } from "@/core/stage/stageManager/StageManager";
@@ -141,6 +152,9 @@ beforeEach(() => {
   clipboard.text = "";
   clipboard.writes = [];
   vi.mocked(nudgeEntitiesOutOfOverlap).mockClear();
+  systemPaste.text.mockClear();
+  systemPaste.image.mockClear();
+  vi.mocked(toast.error).mockClear();
   pointerAt(400, 300);
 });
 
@@ -278,16 +292,32 @@ describe("paste", () => {
     await copyOneNode(project);
     expect(clipboard.writes).toEqual(["原节点"]);
     const engine = engineOf(project);
-    const systemPaste = vi.spyOn(engine, "readSystemClipboardAndPaste").mockResolvedValue();
 
     await engine.paste();
-    expect(systemPaste).not.toHaveBeenCalled();
+    expect(systemPaste.text).not.toHaveBeenCalled();
 
     clipboard.text = "copied from the browser";
     await engine.paste();
-    expect(systemPaste).toHaveBeenCalledTimes(1);
+    expect(systemPaste.text).toHaveBeenCalledExactlyOnceWith("copied from the browser");
+    expect(systemPaste.image).not.toHaveBeenCalled();
     expect(VirtualClipboard.hasData()).toBe(false);
     expect(stageTextNodes(project)).toHaveLength(2);
+  });
+
+  it("reads an image from the system clipboard when it holds no text", async () => {
+    clipboard.text = "";
+    await engineOf(fakeProject()).paste();
+    expect(systemPaste.text).not.toHaveBeenCalled();
+    expect(systemPaste.image).toHaveBeenCalledOnce();
+  });
+
+  it("says so when the system clipboard has nothing it can paste", async () => {
+    clipboard.text = "";
+    systemPaste.image.mockRejectedValueOnce("The clipboard contents were not available in the requested format");
+    await engineOf(fakeProject()).paste();
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("clipboard.nothingToPaste", {
+      description: "The clipboard contents were not available in the requested format",
+    });
   });
 
   it("puts the pasted content into the section under the drop point", async () => {
