@@ -295,6 +295,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `ControllerNodeConnection.tsx`：只有引用块还记鼠标按下 / 松手的位置，图片上的新线停在边框上
 - `app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`：选中连线时，连在图片上的那头画端点圆点
 
-### 20. 本文件
+### 20. 公式混排基础与公式卡片尺寸修复（2026-11-08，2026-11-09 修订）
+
+- `app/src/core/research/InlineMath.ts`（新增）、`InlineMath.test.ts`（新增）：识别行内和块公式，保留源码，区分钱数、转义和未闭合定界符。
+- `app/src/core/research/RichTextLayout.ts`（新增）、`RichTextLayout.test.ts`（新增）：独立计算混排换行、公式整块移动、块公式居中和基线；图片未就绪时按原文排版。
+- `app/src/utils/textWrapping.ts`（新增）、`font.tsx`、`font.test.ts`：抽出原有文字卡片的按码点断行，供纯排版复用，原有调用结果不变。
+- `app/src/core/research/MathImage.ts`（新增）、`MathImage.test.ts`（新增）、`MathImageDom.test.ts`（新增）：共用 KaTeX 出图、基线测量、有上限的异步缓存与通知；无 DOM 或生成失败时提供明确退路。
+- `app/src/core/stage/stageObject/entity/LatexNode.tsx`、`LatexNode.test.ts`（新增）：改用共用出图，保留显示模式、颜色、编号留白及缩放；测量与 SVG 使用同一隔离样式，去掉块公式外边距并统一四周留白，碰撞箱随图片尺寸更新。本步不接入文字卡片的绘制或尺寸计算。
+- `MathImage.ts`、`MathImageDom.test.ts`、`app/src/utils/katexEmbeddedCss.ts`、`katexEmbeddedCss.test.ts`：测量 iframe 全局复用、样式只装一次、出图串行；按文字的计算样式挑选 SVG 字体，保留正常行高并测量可见外伸、预留字形余量。旧公式卡片左上角不动，尺寸更新时同步重算祖先分组框。
+
+### 21. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

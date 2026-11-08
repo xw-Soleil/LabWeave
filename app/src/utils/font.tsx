@@ -1,6 +1,7 @@
 import { Settings } from "@/core/service/Settings";
 import { DEFAULT_FONT_FAMILY, MAC_DEFAULT_FONT_FAMILY } from "@/core/service/ProjectToolSettingsSchema";
 import { MaxSizeCache, Vector } from "@graphif/data-structures";
+import { wrapTextByCharacters } from "./textWrapping";
 
 const _canvas = document.createElement("canvas");
 const _context = _canvas.getContext("2d");
@@ -197,55 +198,7 @@ export function textToTextArray(
   fontFamily?: string,
   fontWeight?: string,
 ): string[] {
-  const lines: string[] = [];
-  const paragraphs = text.split("\n");
-
-  for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex++) {
-    const paragraph = paragraphs[paragraphIndex];
-    const characters = Array.from(paragraph);
-    let start = 0;
-    let isFirstWrappedLine = true;
-
-    while (start < characters.length) {
-      const remaining = characters.slice(start);
-      const remainingText = remaining.join("");
-      if (getTextSize(remainingText, fontSize, fontFamily, fontWeight).x <= limitWidth) {
-        lines.push(remainingText);
-        start = characters.length;
-        break;
-      }
-
-      let low = 1;
-      let high = remaining.length;
-      let fittingLength = 0;
-      while (low <= high) {
-        const middle = Math.floor((low + high) / 2);
-        const width = getTextSize(remaining.slice(0, middle).join(""), fontSize, fontFamily, fontWeight).x;
-        if (width <= limitWidth) {
-          fittingLength = middle;
-          low = middle + 1;
-        } else {
-          high = middle - 1;
-        }
-      }
-
-      if (fittingLength === 0) {
-        if (isFirstWrappedLine) lines.push("");
-        fittingLength = 1;
-      }
-      lines.push(remaining.slice(0, fittingLength).join(""));
-      start += fittingLength;
-      isFirstWrappedLine = false;
-    }
-
-    if (paragraphIndex < paragraphs.length - 1 && paragraph.length === 0) {
-      lines.push("");
-    } else if (paragraphIndex < paragraphs.length - 1 && start === 0) {
-      lines.push(paragraph);
-    }
-  }
-
-  return lines;
+  return wrapTextByCharacters(text, limitWidth, (part) => getTextSize(part, fontSize, fontFamily, fontWeight).x);
 }
 
 /** 量一段文字的宽度；排版函数不直接依赖 Canvas，测试里可以换成假的 */

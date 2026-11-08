@@ -1,13 +1,11 @@
 import { Project } from "@/core/Project";
+import { mathImageCache } from "@/core/research/MathImage";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Color, Vector } from "@graphif/data-structures";
 import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
-import katex from "katex";
 import { toast } from "sonner";
-// 以 raw CSS 字符串形式 import katex 样式，用于嵌入 SVG foreignObject
-import { katexEmbeddedCss } from "@/utils/katexEmbeddedCss";
 
 /**
  * LaTeX 公式节点
@@ -46,7 +44,7 @@ export class LatexNode extends ConnectableEntity {
 
   // ── 运行时状态（不序列化）──────────────────────────────────
   /** 渲染结果图片 */
-  image: HTMLImageElement = new Image();
+  image!: HTMLImageElement;
   /** 渲染后 SVG 的原始像素尺寸 */
   svgOriginalSize: Vector = Vector.getZero();
   /** 渲染状态 */
@@ -143,6 +141,13 @@ export class LatexNode extends ConnectableEntity {
     this.collisionBox.shapes[0] = new Rectangle(this.rectangle.location.clone(), newSize);
     if (anchorRate) {
       this._adjustLocationToKeepAnchor(oldRect, anchorRate);
+    } else if (!oldRect.size.equals(newSize)) {
+      // 异步出图会改变旧卡片尺寸，只重算祖先边框，不能触发移动碰撞求解而挪动卡片。
+      let section = this.parentSection;
+      while (section) {
+        section.adjustLocationAndSize();
+        section = section.parentSection;
+      }
     }
   }
 
@@ -185,92 +190,19 @@ export class LatexNode extends ConnectableEntity {
       return;
     }
     this.state = "loading";
-    let measureDiv: HTMLDivElement | undefined;
-    let url: string | undefined;
-    try {
-      // 1. 使用 katex 渲染为 HTML 字符串
-      const htmlContent = katex.renderToString(latex, {
-        throwOnError: true,
-        displayMode: true,
-        errorColor: "#cc0000",
-        output: "htmlAndMathml",
-      });
-
-      // 2. 获取 katex CSS（直接使用静态 import 的 CSS 字符串）
-      const katexCss = katexEmbeddedCss;
-
-      // 3. 先将 HTML 注入隐藏 div，测量实际渲染尺寸
-      measureDiv = document.createElement("div");
-      measureDiv.style.cssText =
-        "position:fixed;left:-9999px;top:-9999px;visibility:hidden;display:inline-block;font-size:32px;";
-      measureDiv.innerHTML = `<style>${katexCss}</style>${htmlContent}`;
-      document.body.appendChild(measureDiv);
-
-      // 等待浏览器布局
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      await document.fonts.ready;
-      // KaTeX 的公式编号采用绝对定位，需显式留出空间，否则缩成图片后会压住公式。
-      for (const tag of measureDiv.querySelectorAll<HTMLElement>(".tag")) {
-        if (tag.parentElement) tag.parentElement.style.paddingRight = `${tag.getBoundingClientRect().width + 32}px`;
-      }
-
-      const measuredWidth = Math.ceil(measureDiv.getBoundingClientRect().width) || 200;
-      const measuredHeight = Math.ceil(measureDiv.getBoundingClientRect().height) || 60;
-      measureDiv.remove();
-      if (version !== this.renderVersion) return;
-
-      // 4. 构造 SVG，用 foreignObject 包裹 katex HTML
-      //    通过 color CSS 属性让 katex 公式颜色跟随传入的 colorCss
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("width", String(measuredWidth));
-      svg.setAttribute("height", String(measuredHeight));
-      const foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-      foreignObject.setAttribute("width", String(measuredWidth));
-      foreignObject.setAttribute("height", String(measuredHeight));
-      measureDiv.style.cssText = `color:${colorCss};font-size:32px;width:${measuredWidth}px;height:${measuredHeight}px;box-sizing:border-box;`;
-      foreignObject.appendChild(measureDiv);
-      svg.appendChild(foreignObject);
-      // innerHTML 的 &nbsp; 等 HTML 实体不适用于 SVG XML，必须按命名空间序列化。
-      const svgContent = new XMLSerializer().serializeToString(svg);
-
-      // 5. 转为 Blob URL 并加载为 Image
-      const svgBlob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
-      url = URL.createObjectURL(svgBlob);
-
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          if (version !== this.renderVersion) {
-            resolve();
-            return;
-          }
-          this.svgOriginalSize = new Vector(measuredWidth, measuredHeight);
-          this.image = img;
-          // 记录本次渲染使用的颜色，供 LatexNodeRenderer 对比
-          this.currentRenderedColorCss = colorCss;
-
-          // 更新碰撞箱大小
-          const scale = this.getScale();
-          const newSize = this.svgOriginalSize.multiply(scale);
-          this.collisionBox.shapes[0] = new Rectangle(this.rectangle.location.clone(), newSize);
-
-          this.state = "success";
-          resolve();
-        };
-        img.onerror = () => {
-          reject(new Error("图片加载失败"));
-        };
-        img.src = url!;
-      });
-    } catch (e) {
-      if (version === this.renderVersion) {
-        this.state = "error";
-        toast.error(`LaTeX 渲染失败：${String(e)}`);
-      }
-    } finally {
-      measureDiv?.remove();
-      if (url) URL.revokeObjectURL(url);
+    const result = await mathImageCache.load({ source: latex, mode: "display", color: colorCss });
+    if (version !== this.renderVersion) return;
+    if (result.status !== "ready") {
+      this.state = "error";
+      if (result.status === "failed") toast.error(`LaTeX 渲染失败：${String(result.error)}`);
+      return;
     }
+    const { image, width, height } = result.value;
+    this.svgOriginalSize = new Vector(width, height);
+    this.image = image;
+    this.currentRenderedColorCss = colorCss;
+    this.updateCollisionBoxByScale();
+    this.state = "success";
   }
 
   move(delta: Vector): void {
