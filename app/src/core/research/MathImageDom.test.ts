@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getKatexFontFace } from "@/utils/katexEmbeddedCss";
 import { MathImageCache, renderMathImage } from "./MathImage";
+import { splitInlineMath } from "./InlineMath";
+import { layoutRichText } from "./RichTextLayout";
 
 let serialized: SVGSVGElement;
 let autoLoad: boolean;
@@ -75,11 +77,25 @@ beforeEach(() => {
           tag === "div" ? new DOMRect(10, 10, 101.25, 32.5) : new DOMRect(10, 35, 0, 0),
         );
         if (tag === "div") {
+          const querySelector = element.querySelector.bind(element);
+          vi.spyOn(element, "querySelector").mockImplementation((selector) => {
+            const child = querySelector(selector);
+            if (selector === ".katex-html" && child) {
+              vi.spyOn(child, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 10, 81.25, 32.5));
+            }
+            return child;
+          });
           const querySelectorAll = element.querySelectorAll.bind(element);
           vi.spyOn(element, "querySelectorAll").mockImplementation((selector) => {
             const elements = querySelectorAll(selector);
             for (const child of elements) {
-              const rect = child.classList.contains("tag") ? new DOMRect(10, 10, 20, 30) : extraBounds(child);
+              let rect = child.classList.contains("tag") ? new DOMRect(10, 10, 20, 30) : extraBounds(child);
+              if (!rect && child.classList.contains("strut")) {
+                const style = (child as HTMLElement).style;
+                const height = parseFloat(style.height) * 32;
+                const depth = -(parseFloat(style.verticalAlign) || 0) * 32;
+                rect = new DOMRect(10, 35 - height + depth, 0, height);
+              }
               if (rect) vi.spyOn(child, "getBoundingClientRect").mockReturnValue(rect);
             }
             return elements;
@@ -202,7 +218,10 @@ describe("math image geometry", () => {
     String.raw`E=mc^2 \tag{1}`,
   ])("keeps normal line height, symmetric safety space and measured baseline for %s", async (source) => {
     const result = await renderMathImage(request(source));
-    expect(result).toMatchObject({ width: 118, height: 49, descent: 15.75, fontSize: 32 });
+    expect(result).toMatchObject({ width: 118, height: 49, fontSize: 32 });
+    expect(result!.layout.width).toBe(81.25);
+    expect(result!.layoutOffset.x).toBe(8.375);
+    expect(result!.layoutOffset.y + result!.layout.height - result!.layout.descent).toBeCloseTo(33.25);
     const object = serialized.querySelector("foreignObject")!;
     expect(object.getAttribute("x")).toBe("8.375");
     expect(object.getAttribute("y")).toBe("8.25");
@@ -219,11 +238,12 @@ describe("math image geometry", () => {
 
   it("expands for text outside its strut box and adjusts the image baseline with the crop", async () => {
     textBounds = () => new DOMRect(-10, -20, 131.25, 92.5);
-    expect(await renderMathImage(request(String.raw`\hat{x}`))).toMatchObject({
+    const result = await renderMathImage(request(String.raw`\hat{x}`));
+    expect(result).toMatchObject({
       width: 148,
       height: 109,
-      descent: 45.75,
     });
+    expect(result!.layoutOffset.y + result!.layout.height - result!.layout.descent).toBeCloseTo(63.25);
     const object = serialized.querySelector("foreignObject")!;
     expect(Number(object.getAttribute("x"))).toBe(28.375);
     expect(Number(object.getAttribute("y"))).toBe(38.25);
@@ -254,4 +274,40 @@ describe("math image geometry", () => {
     expect((serialized.querySelector(".tag")!.parentElement as HTMLElement).style.paddingRight).toBe("52px");
     expect(serialized.querySelector(".katex-display")).not.toBeNull();
   });
+
+  it.each(["x", "E=mc^2"])("lays out %s without image padding or an extra-tall ordinary line", async (source) => {
+    const image = (await renderMathImage({ ...request(source), mode: "inline" }))!;
+    const options = {
+      fontSize: 32,
+      lineHeight: 1.5,
+      maxWidth: Infinity,
+      measureText: (text: string) => text.length * 16,
+      getMathMetrics: () => image.layout,
+    };
+    const plain = layoutRichText({ ...options, segments: splitInlineMath("abc") });
+    const single = layoutRichText({ ...options, segments: splitInlineMath(`$${source}$`) });
+    const mixed = layoutRichText({ ...options, segments: splitInlineMath(`a$${source}$b`) });
+    expect(single.height).toBe(plain.height);
+    expect(mixed.height).toBe(plain.height);
+    expect(mixed.lines[0].fragments.map((fragment) => fragment.x)).toEqual([0, 16, 16 + image.layout.width]);
+    expect(mixed.width).toBe(32 + image.layout.width);
+    expect(image.width).toBeGreaterThan(image.layout.width);
+  });
+
+  it.each([String.raw`\displaystyle\int_0^1 f(x)\,dx`, String.raw`\displaystyle\sum_{i=1}^{n} i`])(
+    "grows a tall formula line by its TeX box rather than its padded image: %s",
+    async (source) => {
+      const image = (await renderMathImage({ ...request(source), mode: "inline" }))!;
+      const layout = layoutRichText({
+        segments: splitInlineMath(`$${source}$`),
+        fontSize: 32,
+        lineHeight: 1.5,
+        maxWidth: Infinity,
+        measureText: () => 0,
+        getMathMetrics: () => image.layout,
+      });
+      expect(image.layout.height).toBeGreaterThan(48);
+      expect(layout.height).toBe(image.layout.height);
+    },
+  );
 });

@@ -304,6 +304,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/stage/stageObject/entity/LatexNode.tsx`、`LatexNode.test.ts`（新增）：改用共用出图，保留显示模式、颜色、编号留白及缩放；测量与 SVG 使用同一隔离样式，去掉块公式外边距并统一四周留白，碰撞箱随图片尺寸更新。本步不接入文字卡片的绘制或尺寸计算。
 - `MathImage.ts`、`MathImageDom.test.ts`、`app/src/utils/katexEmbeddedCss.ts`、`katexEmbeddedCss.test.ts`：测量 iframe 全局复用、样式只装一次、出图串行；按文字的计算样式挑选 SVG 字体，保留正常行高并测量可见外伸、预留字形余量。旧公式卡片左上角不动，尺寸更新时同步重算祖先分组框。
 
-### 21. 本文件
+### 21. 文字卡片公式混排接入（2026-11-09）
+
+- `app/src/core/research/MathImage.ts`、`MathImageDom.test.ts`、`MathImage.test.ts`、`LatexNode.test.ts`：分开 KaTeX 排版盒与完整图片尺寸，提供排版盒在图片中的偏移；文字排版不计入图片安全留白，公式卡片仍使用整张图片定大小。
+- `app/src/core/research/InlineMathService.ts`、`InlineMathService.test.ts`（新增）：按白板管理混排尺寸与绘制，按源码和模式共享公式尺寸，排版缓存与颜色无关；换色期间保留旧图，新图完成后替换，卡片不跳动。图片仍按源码、模式、颜色分别缓存；图片首次提供尺寸时只重算相关卡片，绘制不修改卡片或分组框。默认字体变更及字体加载完成时主动重算，关闭白板时退订图片、设置和字体事件。保留隐私遮罩、字体与缩放支持。
+- `app/src/core/loadAllServices.tsx`、`app/src/core/stage/stageManager/StageManager.tsx`：注册白板服务，并在删除、撤销和舞台引用重建时维护公式使用索引。
+- `app/src/core/stage/stageObject/entity/TextNode.tsx`、`app/src/core/render/canvas2d/entityRenderer/textNode/TextNodeRenderer.tsx`：文字卡片有公式时使用同一混排结果计算尺寸和绘制，无公式时沿用原路径。
+- `app/src/core/service/controlService/controller/concrete/utilsControl.tsx`：先进入编辑并按源码重算卡片，再读取输入框初始矩形；编辑期间按源码定大小，退出后恢复混排尺寸。
+
+### 22. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

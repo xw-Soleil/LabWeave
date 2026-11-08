@@ -55,16 +55,16 @@ export class ControllerUtils {
     this.project.camera.stopImmediately();
     // 停止实体移动漂移
     this.project.entityMoveManager.stopImmediately();
-    const rectWorld = clickedNode.collisionBox.getRectangle();
-    const rectView = this.project.renderer.transformWorld2View(rectWorld);
-    const rectClient = this.viewRectangleToClient(rectView);
-    const clientScale = this.project.canvas.viewToClientScale();
     // 编辑节点
     const textBeforeEdit = clickedNode.text;
     // 进入编辑状态时，取消所有其他节点的选中，只保留当前节点选中
     this.project.stageManager.clearSelectAll();
     clickedNode.isSelected = true;
     clickedNode.isEditing = true;
+    const rectWorld = clickedNode.collisionBox.getRectangle();
+    const rectView = this.project.renderer.transformWorld2View(rectWorld);
+    const rectClient = this.viewRectangleToClient(rectView);
+    const clientScale = this.project.canvas.viewToClientScale();
     // 添加进入编辑状态的闪烁特效（只在默认缩放级别时显示）
     if (this.project.camera.isDefaultZoom()) {
       this.project.effects.addEffect(

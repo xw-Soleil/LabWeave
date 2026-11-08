@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { MathImageCache, renderMathImage, type MathImage, type MathImageRequest } from "./MathImage";
 
 const request: MathImageRequest = { source: "x", mode: "inline", color: "#000000" };
-const value: MathImage = { image: {} as HTMLImageElement, width: 40, height: 30, descent: 8, fontSize: 32 };
+const value: MathImage = {
+  image: {} as HTMLImageElement,
+  width: 40,
+  height: 30,
+  fontSize: 32,
+  layout: { width: 24, height: 14, descent: 2 },
+  layoutOffset: { x: 8, y: 8 },
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -15,6 +22,24 @@ function deferred<T>() {
 }
 
 describe("MathImageCache", () => {
+  it("reads ready metrics from any color without populating another color or mode's image entry", async () => {
+    const render = vi.fn(async (input: MathImageRequest) => ({
+      ...value,
+      image: { color: input.color } as unknown as HTMLImageElement,
+    }));
+    const cache = new MathImageCache(render);
+    const red = { ...request, color: "red" };
+    await cache.load(red);
+    const fallback = cache.peekAnyColor(request)!;
+    expect(fallback.image).toEqual({ color: "red" });
+    expect(cache.peek(request)).toBeUndefined();
+    expect(cache.peekAnyColor({ ...request, mode: "display" })).toBeUndefined();
+    expect(cache.peekAnyColor({ ...request, source: "y" })).toBeUndefined();
+    expect(render).toHaveBeenCalledOnce();
+    await cache.load(request);
+    expect(cache.peek(request)).toEqual({ status: "ready", value: { ...value, image: { color: request.color } } });
+    expect(cache.peek(red)).toEqual({ status: "ready", value: { ...value, image: { color: "red" } } });
+  });
   it("reports unavailable without document, Image or loading browser assets", async () => {
     expect(typeof document).toBe("undefined");
     expect(typeof Image).toBe("undefined");

@@ -8,9 +8,13 @@ export interface MathMetrics {
   descent: number;
 }
 
-export interface MathImage extends MathMetrics {
+export interface MathImage {
   image: HTMLImageElement;
+  width: number;
+  height: number;
   fontSize: number;
+  layout: MathMetrics;
+  layoutOffset: { x: number; y: number };
 }
 
 export interface MathImageRequest {
@@ -185,7 +189,18 @@ async function renderQueuedMathImage(
       }
     }
     const { width, height, x, y, layout, fontFaces } = measureMathContents(root, getKatexFontFace);
-    const descent = height - (y + baseline.getBoundingClientRect().top - layout.top);
+    const baselineY = baseline.getBoundingClientRect().top;
+    let ascent = 0;
+    let descent = 0;
+    // 顶层 strut 只有 KaTeX 的高度和深度；取实际位置也能涵盖公式内部的显式换行。
+    for (const strut of mathHtml.querySelectorAll<HTMLElement>(":scope > .base > .strut, :scope > .tag > .strut")) {
+      const bounds = strut.getBoundingClientRect();
+      ascent = Math.max(ascent, baselineY - bounds.top);
+      descent = Math.max(descent, bounds.bottom - baselineY);
+    }
+    const mathBounds = mathHtml.getBoundingClientRect();
+    const mathLayout = { width: mathBounds.width, height: ascent + descent, descent };
+    const layoutOffset = { x: x + mathBounds.left - layout.left, y: y + baselineY - ascent - layout.top };
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", String(width));
@@ -210,7 +225,7 @@ async function renderQueuedMathImage(
       image.onerror = () => reject(new Error("MATH_IMAGE_LOAD_FAILED"));
       image.src = url!;
     });
-    return { image, width, height, descent, fontSize: MATH_REFERENCE_FONT_SIZE };
+    return { image, width, height, layout: mathLayout, layoutOffset, fontSize: MATH_REFERENCE_FONT_SIZE };
   } finally {
     root.remove();
     if (url) URL.revokeObjectURL(url);
@@ -228,14 +243,28 @@ export class MathImageCache {
     if (!Number.isInteger(capacity) || capacity < 1) throw new Error("MATH_IMAGE_INVALID_CACHE_CAPACITY");
   }
 
+  peek(request: MathImageRequest): MathImageState | undefined {
+    const key = JSON.stringify([request.source, request.mode, request.color]);
+    const state = this.entries.get(key);
+    if (state) {
+      this.entries.delete(key);
+      this.entries.set(key, state);
+    }
+    return state;
+  }
+
+  peekAnyColor({ source, mode }: Pick<MathImageRequest, "source" | "mode">): MathImage | undefined {
+    for (const [key, state] of this.entries) {
+      if (state.status !== "ready") continue;
+      const [cachedSource, cachedMode] = JSON.parse(key);
+      if (cachedSource === source && cachedMode === mode) return state.value;
+    }
+  }
+
   request(request: MathImageRequest): MathImageState {
     const key = JSON.stringify([request.source, request.mode, request.color]);
-    const existing = this.entries.get(key);
-    if (existing) {
-      this.entries.delete(key);
-      this.entries.set(key, existing);
-      return existing;
-    }
+    const existing = this.peek(request);
+    if (existing) return existing;
     const input = { ...request };
     const state: MathImageState = {
       status: "pending",

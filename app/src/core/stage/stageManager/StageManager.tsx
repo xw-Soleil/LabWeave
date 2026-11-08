@@ -166,6 +166,7 @@ export class StageManager {
     return this.project.stage.filter((node) => node instanceof Entity).length === 0;
   }
   delete(stageObject: StageObject) {
+    if (stageObject instanceof TextNode) this.project.inlineMath?.forget(stageObject);
     this.project.stage.splice(this.project.stage.indexOf(stageObject), 1);
   }
 
@@ -228,6 +229,7 @@ export class StageManager {
       }
     }
     this.rebuildSectionRuntimeTree();
+    this.project.inlineMath?.syncNodes(this.getTextNodes());
 
     // 折叠后共用可见端点、以及方向相反的边也需要分开；锚点不同仍可能画在同一路径上。
     const visibleEndpoint = (entity: ConnectableEntity): ConnectableEntity => {

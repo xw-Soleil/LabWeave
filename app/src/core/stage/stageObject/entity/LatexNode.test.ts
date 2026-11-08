@@ -28,7 +28,14 @@ import { Section } from "./Section";
 const project = { stageStyleManager: { currentStyle: { StageObjectBorder: new Color(20, 30, 40) } } };
 const ready: MathImageResult = {
   status: "ready",
-  value: { image: {} as HTMLImageElement, width: 80, height: 40, descent: 8, fontSize: 32 },
+  value: {
+    image: {} as HTMLImageElement,
+    width: 80,
+    height: 40,
+    fontSize: 32,
+    layout: { width: 64, height: 24, descent: 2 },
+    layoutOffset: { x: 8, y: 8 },
+  },
 };
 
 beforeEach(() => {
