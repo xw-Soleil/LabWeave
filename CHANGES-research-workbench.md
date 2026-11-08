@@ -28,6 +28,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **外部 AI（MCP）**（2026-11-05）：命令行新增 `mcp` 子命令，在标准输入输出上提供 MCP 服务，Claude Code、Codex 等外部 AI 可以列出研究文件夹里的工作区、读和改白板。工具就是命令行那套内置工具，每个多一个 `workspace` 参数；新增 `list_workspaces`，以及 `create_text_node_at`（按坐标放文本卡片）、`create_section`（把卡片放进新分组）两个工具，工作区没打开时也能用。设置 → AI →「外部 AI」里有三个开关（允许修改、允许删除、允许联网），默认都开，MCP 每次调用都重新读；同一页给出能直接复制的配置命令。命令行和程序之间的本机通道（TCP）加了口令：程序启动时随机生成，随地址写进只有本账户能读的归属记录，不带口令的请求一律拒绝。
 - **去掉原项目自己的文档和发版流程**（2026-11-08）：删除 `PRD.md`、`TODO.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`docs-pg/`、`docs/superpowers/`、`.trae/documents/`；删除 `.github/` 下的赞助按钮配置、禁止提 issue 的模板、发版用的脚本和工作流（nightly、publish、release、render-docs-svg），只留 LabWeave 自己的 `check.yml`。`app/README.md` 和 `stageObject/README.md` 里指向这些文件的链接改指原项目仓库（提交 `5524363`）。许可证文件和版权声明都没动。
 - **画布铺满窗口，其他都浮在上面**（2026-11-08）：去掉 36px 的标题栏，窗口最上面留一条看不见的拖动区；竖栏缩成左边一根浮着的圆角小条；标签改成左上角的圆角小药丸（macOS 上让开红绿灯）；状态栏缩成左下角一小块；浅/深色切换（Windows 上加窗口按钮）放在右上角。左右固定侧栏不再和画布并排挤占宽度，改成浮在画布上的圆角卡片：固定时一直显示，取消固定后平时收起，鼠标停在竖栏「文件」按钮上或贴住窗口左右边缘约 0.3 秒就弹出、离开约 0.5 秒收回（正在面板里打字、鼠标在面板弹出的菜单上时不收回；从弹出的文件面板往画布拖文件时先收起）。卡片外侧有图钉按钮，右侧栏收起后在右下角留一个圆按钮。文件面板默认收起、AI 对话默认固定，各侧固定与否记在本机。竖栏按钮和快捷键对侧栏里的面板只切换固定/收起，不再关掉它。白板标签不能再拖进侧栏。镜头移到某个对象、适应视野时，把目标放在没被面板挡住的区域正中。
+- **新的点阵背景**（2026-11-08）：点阵分粗细两层，细的一层间距是粗的一半，缩放时按屏幕上的间距淡入淡出，不再到某个缩放比例一下子变疏或变密；坐标轴上的点不再加粗。启动时把以前打开过的横线、竖线、坐标轴背景关掉一次（设置项 `researchCanvasBackgroundV1` 记下已做过），想要的话还能在设置里再打开。
 - **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
@@ -251,6 +252,12 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/sub/FileManagerWindow.tsx`：开关监听挪到 `ResearchSession`；开始拖文件时收起弹出的面板
 - `app/src/locales/{zh_CN,en,zh_TW}.yml`
 
-### 15. 本文件
+### 15. 点阵背景（2026-11-08）
+
+- `app/src/core/research/CanvasBackground.ts`（新增）、`CanvasBackground.test.ts`（新增）：两层点阵的间距和淡入淡出
+- `app/src/core/render/canvas2d/utilsRenderer/backgroundRenderer.tsx`：`renderDotBackground` 改用两层点阵，去掉坐标轴加粗
+- `app/src/core/service/Settings.tsx`：启动时关掉一次横线、竖线、坐标轴背景
+
+### 16. 本文件
 
 - `CHANGES-research-workbench.md`（新增）
