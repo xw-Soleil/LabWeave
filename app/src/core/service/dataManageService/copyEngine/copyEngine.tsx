@@ -395,9 +395,13 @@ export class CopyEngine {
 
   /**
    * 走原生剪贴板读取。macOS 的 WebView 用网页剪贴板接口读别的程序复制的内容时，会先弹一个「粘贴」按钮让用户再点一次。
-   * 先读文字再读图片：Word、Excel 复制文字时剪贴板里也附带一张渲染图，先读图片会把文字贴成图片。
+   * 先看有没有复制的文件，再读文字，最后读图片：访达复制文件时剪贴板里也有文件名文字和图标；
+   * Word、Excel 复制文字时剪贴板里也附带一张渲染图，先读图片会把文字贴成图片。
    */
   private async pasteFromSystemClipboard() {
+    // ResearchDrop 连着界面和标签页那一大串模块，用到时再加载
+    const { pasteClipboardFiles } = await import("@/core/research/ResearchDrop");
+    if (await pasteClipboardFiles(this.project, this.pointerPasteLocation())) return;
     const text = await readSystemClipboardText();
     if (text) {
       await this.copyEngineText.copyEnginePastePlainText(text);
@@ -406,7 +410,7 @@ export class CopyEngine {
     try {
       await this.copyEngineImage.pasteImageFromSystemClipboard();
     } catch (err) {
-      // 剪贴板空着、或者是文件之类贴不上来的东西时，原生接口只给一句英文报错
+      // 剪贴板空着、或者是贴不上来的东西时，原生接口只给一句英文报错
       toast.error(i18next.t("clipboard.nothingToPaste", { ns: "research" }), {
         description: err instanceof Error ? err.message : String(err),
       });

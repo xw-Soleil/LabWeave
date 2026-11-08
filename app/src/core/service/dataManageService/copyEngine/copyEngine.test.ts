@@ -4,7 +4,7 @@ import { Vector } from "@graphif/data-structures";
 import { Line, Rectangle } from "@graphif/shapes";
 
 const clipboard = vi.hoisted(() => ({ text: "", writes: [] as string[] }));
-const systemPaste = vi.hoisted(() => ({ text: vi.fn(), image: vi.fn() }));
+const systemPaste = vi.hoisted(() => ({ files: vi.fn(), text: vi.fn(), image: vi.fn() }));
 
 vi.mock("@/core/Project", () => ({
   Project: class Project {},
@@ -42,6 +42,7 @@ vi.mock("@/core/research/FileCardFactory", () => ({
   toStoredSourcePath: (_project: unknown, sourcePath: string) => sourcePath,
 }));
 vi.mock("@/core/research/OverlapResolver", () => ({ nudgeEntitiesOutOfOverlap: vi.fn() }));
+vi.mock("@/core/research/ResearchDrop", () => ({ pasteClipboardFiles: systemPaste.files }));
 vi.mock("./copyEngineImage", () => ({
   CopyEngineImage: class CopyEngineImage {
     pasteImageFromSystemClipboard = systemPaste.image;
@@ -152,6 +153,7 @@ beforeEach(() => {
   clipboard.text = "";
   clipboard.writes = [];
   vi.mocked(nudgeEntitiesOutOfOverlap).mockClear();
+  systemPaste.files.mockReset().mockResolvedValue(false);
   systemPaste.text.mockClear();
   systemPaste.image.mockClear();
   vi.mocked(toast.error).mockClear();
@@ -302,6 +304,16 @@ describe("paste", () => {
     expect(systemPaste.image).not.toHaveBeenCalled();
     expect(VirtualClipboard.hasData()).toBe(false);
     expect(stageTextNodes(project)).toHaveLength(2);
+  });
+
+  it("places files copied in Finder at the mouse instead of pasting their names as text", async () => {
+    clipboard.text = "invoice.pdf";
+    systemPaste.files.mockResolvedValue(true);
+    const project = fakeProject();
+    await engineOf(project).paste();
+    expect(systemPaste.files).toHaveBeenCalledExactlyOnceWith(project, new Vector(400, 300).add(VIEW_TO_WORLD));
+    expect(systemPaste.text).not.toHaveBeenCalled();
+    expect(systemPaste.image).not.toHaveBeenCalled();
   });
 
   it("reads an image from the system clipboard when it holds no text", async () => {

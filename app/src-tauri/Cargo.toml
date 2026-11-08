@@ -29,6 +29,8 @@ tauri-plugin-dialog = "2.8.3"
 tauri-plugin-store = "2.5.0"
 tauri-plugin-http = { version = "2.8.3", features = ["unsafe-headers"] }
 tauri-plugin-clipboard-manager = "2.5.0"
+# 剪贴板插件不提供读文件列表；插件本身就依赖它，不会多出一个包
+arboard = { version = "3.6", default-features = false }
 tauri-plugin-process = "2.4.0"
 tauri-plugin-fs = "2.7.1"
 tauri-plugin-devtools = "2.0.0"

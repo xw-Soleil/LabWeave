@@ -17,6 +17,7 @@ import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, activeTabAtom, store, tabGroupRootAtom, tabsAtom } from "@/state";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
+import { invoke } from "@tauri-apps/api/core";
 import { copyFile, exists, mkdir } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { toast } from "sonner";
@@ -273,9 +274,7 @@ function liveDropTarget(target: DropTarget | null): DropTarget | null {
   return null;
 }
 
-async function dropCards(paths: string[], clientX: number, clientY: number) {
-  // 先定下目标白板：后面的对话框不会切换标签页，但打开 .prg 会
-  const target = resolveDropTarget(clientX, clientY);
+async function dropCards(paths: string[], target: DropTarget | null) {
   if (!target) {
     toast.warning(t("drop.noBoard"));
     return;
@@ -310,12 +309,28 @@ async function dropCards(paths: string[], clientX: number, clientY: number) {
  * - 其他类型提示暂不支持
  */
 export async function dropFilesAtClientPoint(absPaths: string[], clientX: number, clientY: number): Promise<void> {
+  // 先定下目标白板：后面的对话框不会切换标签页，但打开 .prg 会
+  await placeFiles(absPaths, resolveDropTarget(clientX, clientY));
+}
+
+/**
+ * Cmd+V 时剪贴板里是在访达 / 资源管理器里复制的文件，就和拖进来一样处理，放在 worldPos。
+ * 剪贴板里没有文件时返回 false，由调用方照常贴文字或图片（访达复制文件时剪贴板里还有文件名文字和图标）。
+ */
+export async function pasteClipboardFiles(project: Project, worldPos: Vector): Promise<boolean> {
+  const paths = await invoke<string[]>("read_clipboard_file_paths");
+  if (paths.length === 0) return false;
+  await placeFiles(paths, { project, worldPos });
+  return true;
+}
+
+async function placeFiles(absPaths: string[], target: DropTarget | null): Promise<void> {
   const { workspaces, cards, unsupported } = splitDroppedPaths(absPaths);
   if (unsupported.length > 0) toast.warning(t("drop.unsupported", { names: listFileNames(unsupported) }));
   let cardFailure: { error: unknown } | null = null;
   if (cards.length > 0) {
     try {
-      await dropCards(cards, clientX, clientY);
+      await dropCards(cards, target);
     } catch (error) {
       cardFailure = { error };
     }
