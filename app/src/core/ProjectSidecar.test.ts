@@ -55,6 +55,7 @@ vi.mock("@/core/Tab", () => ({
 import { Project, ProjectState } from "@/core/Project";
 import { parseProjectFile } from "@/core/ProjectFile";
 import { Settings } from "@/core/service/Settings";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import { Decoder, encode } from "@msgpack/msgpack";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
@@ -112,6 +113,14 @@ afterEach(() => {
 });
 
 describe("saving a workspace", () => {
+  it("saves a temporary workspace to itself without any sidecar or directory", async () => {
+    const project = makeProject("/outside/a.prg");
+    await project.save({ includeThumbnail: false });
+    expect([...files.keys()]).toEqual(["/outside/a.prg"]);
+    expect(directories.size).toBe(0);
+    expect(project.projectState).toBe(ProjectState.Saved);
+    expect(project.metadata.workbench?.workspacePath).toBeUndefined();
+  });
   it("writes the AI sidecar into .workbench next to the .prg", async () => {
     const project = makeProject("/research/topic/综述.prg");
     project.readme = "为什么注意力有效？";
@@ -270,6 +279,31 @@ describe("workbench id", () => {
 });
 
 describe("Save As", () => {
+  it("adopts a temporary workspace, keeping absolute cards and rebasing legacy relative cards", async () => {
+    const { FileCardNode } = await import("@/core/stage/stageObject/entity/FileCardNode");
+    const { resolveSourcePath, toStoredSourcePath } = await import("@/core/research/FileCardFactory");
+    const project = makeProject("/outside/a.prg");
+    const cards = ["/research/papers/a.pdf", "/outside/b.pdf", "papers/old.pdf"].map(
+      (sourcePath) => new FileCardNode(project, { sourcePath }),
+    );
+    project.stage = cards;
+    expect(isTemporaryWorkspace(project)).toBe(true);
+    const targets = cards.map((card) => resolveSourcePath(project, card.sourcePath));
+
+    await project.saveAs(URI.file("/research/topic/adopted.prg"), { includeThumbnail: false });
+
+    expect(isTemporaryWorkspace(project)).toBe(false);
+    expect(cards.map((card) => card.sourcePath)).toEqual([
+      "/research/papers/a.pdf",
+      "/outside/b.pdf",
+      "../../outside/papers/old.pdf",
+    ]);
+    expect(cards.map((card) => resolveSourcePath(project, card.sourcePath))).toEqual(targets);
+    expect(await storedSourcePaths("/research/topic/adopted.prg")).toEqual(cards.map((card) => card.sourcePath));
+    expect(toStoredSourcePath(project, "/research/topic/new.pdf")).toBe("new.pdf");
+    expect(files.has("/research/topic/.workbench/adopted.ai.md")).toBe(true);
+    expect([...files.keys()].some((path) => path.startsWith("/outside/"))).toBe(false);
+  });
   async function workspaceWithCards() {
     const { FileCardNode } = await import("@/core/stage/stageObject/entity/FileCardNode");
     const project = makeProject("/research/topic/a.prg");

@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { URI } from "vscode-uri";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/utils/platform", () => ({ family: () => "unix" }));
 
@@ -46,9 +47,37 @@ afterEach(() => {
   vi.useRealTimers();
   Settings.autoBackup = false;
   Settings.autoSave = true;
+  Settings.researchFolderPath = "";
+  Settings.autoBackupCustomPath = "";
 });
 
 describe("automatic project persistence", () => {
+  it("autosaves temporary boards normally but redirects their custom backups to the app cache", async () => {
+    vi.mocked(writeFile).mockClear();
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    Settings.researchFolderPath = "/research";
+    Settings.autoBackupCustomPath = "/outside";
+    Settings.autoBackup = true;
+    const project = fakeProject({
+      uri: URI.file("/outside/a.prg"),
+      projectState: "unsaved",
+      stageHash: "changed",
+      getFileContent: vi.fn(async () => new Uint8Array()),
+      save: vi.fn(async () => {
+        project.projectState = "saved";
+      }),
+    });
+    const service = new AutoSaveBackupService(project as unknown as Project);
+    now.mockReturnValue(2000);
+    service.tick();
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledOnce());
+    expect(vi.mocked(writeFile).mock.calls[0][0]).toMatch(/^\/app-cache\/auto-backup-v2\//);
+    await vi.waitFor(() => expect((service as unknown as { isBackingUp: boolean }).isBackingUp).toBe(false));
+    now.mockReturnValue(2500);
+    service.tick();
+    expect(project.save).toHaveBeenCalledExactlyOnceWith({ includeThumbnail: false });
+    service.dispose();
+  });
   it("skips an active manual save and collaborative documents", () => {
     vi.spyOn(Date, "now").mockReturnValue(10000);
     const project = fakeProject({ uri: {}, isSaving: true, projectState: "unsaved", save: vi.fn() });

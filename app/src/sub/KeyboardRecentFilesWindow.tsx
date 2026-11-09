@@ -1,5 +1,6 @@
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { onOpenFile } from "@/core/service/GlobalMenu";
+import { isRecentFileVisible } from "@/core/research/ResearchMenu";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { Vector } from "@graphif/data-structures";
@@ -25,7 +26,7 @@ export default function KeyboardRecentFilesWindow({ tabId }: { tabId: string }) 
     setIsLoading(true);
     await RecentFileManager.validAndRefreshRecentFiles();
     await RecentFileManager.sortTimeRecentFiles();
-    const files = await RecentFileManager.getRecentFiles();
+    const files = (await RecentFileManager.getRecentFiles()).filter((file) => isRecentFileVisible(file.uri));
     setRecentFiles(files);
     setIsLoading(false);
   }

@@ -72,6 +72,13 @@ const savedProject = () => makeProject(URI.file("/Users/me/Research/topic/worksp
 const draftProject = () => makeProject(URI.from({ scheme: "draft", path: "1" }));
 
 describe("file card paths", () => {
+  it("stores all new temporary-board cards as absolute paths without changing legacy resolution", () => {
+    const project = makeProject(URI.file("/Users/me/Other/board.prg"));
+    for (const path of ["/Users/me/Research/paper.pdf", "/Users/me/Other/paper.pdf"]) {
+      expect(toStoredSourcePath(project as never, path)).toBe(path);
+    }
+    expect(resolveSourcePath(project as never, "papers/old.pdf")).toBe("/Users/me/Other/papers/old.pdf");
+  });
   it("stores paths relative to the .prg folder once the project is saved", () => {
     const project = savedProject();
     expect(toStoredSourcePath(project as never, "/Users/me/Research/topic/papers/a.pdf")).toBe("papers/a.pdf");
@@ -141,6 +148,15 @@ describe("createFileCards", () => {
     mocks.readFile.mockReset();
     mocks.toastWarning.mockReset();
     mocks.toastError.mockReset();
+  });
+
+  it("creates absolute-path cards on a temporary board through the shared drop/paste factory", async () => {
+    const project = makeProject(URI.file("/Users/me/Other/board.prg"));
+    mocks.readFile.mockResolvedValue(new TextEncoder().encode("正文"));
+    const paths = ["/Users/me/Research/a.md", "/Users/me/Other/b.md"];
+    const cards = await createFileCards(project as never, paths, Vector.getZero());
+    expect(cards.map((card) => card.sourcePath)).toEqual(paths);
+    expect(project.historyManager.recordStep).toHaveBeenCalledOnce();
   });
 
   it("lays cards out in a grid and records exactly one history step", async () => {

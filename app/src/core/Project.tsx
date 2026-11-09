@@ -401,7 +401,7 @@ export class Project extends Tab {
   async save(options: { includeThumbnail?: boolean } = {}) {
     if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (this.isDraft || this.isCollab) {
-      // 草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
+      // 草稿默认存进研究文件夹，另存为目标在外面会被拒绝
       const researchRoot = (await loadResearchFolder()).getRoot();
       const path = await saveDialog({
         title: this.isDraft ? "保存草稿" : "保存协作工程",
@@ -453,7 +453,7 @@ export class Project extends Tab {
   }
 
   /**
-   * 另存为（草稿保存也走这里）：程序只在研究文件夹里读写，目标在外面就拒绝；
+   * 另存为（草稿保存也走这里）：目标在研究文件夹外面就拒绝；
    * 文件卡片存的是相对 .prg 所在文件夹的路径，换了文件夹要重新算。
    */
   private async prepareResearchSaveAs(targetUri: URI): Promise<SaveAsTarget> {
@@ -554,6 +554,8 @@ export class Project extends Tab {
    */
   private async writeAiSidecar(targetUri: URI, content: Uint8Array) {
     if (targetUri.scheme !== "file" || !Settings.writeAiSidecarOnSave) return;
+    const { isTemporaryWorkspace } = await import("@/core/research/TemporaryWorkspace");
+    if (isTemporaryWorkspace({ uri: targetUri })) return;
     const serializedStage = this.serializedStageByContent.get(content);
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!serializedStage || !fileSystemProvider) return;

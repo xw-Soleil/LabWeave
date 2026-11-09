@@ -1,4 +1,5 @@
 import { createStore } from "@/utils/store";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import { exists } from "@tauri-apps/plugin-fs";
 import { Store } from "@tauri-apps/plugin-store";
 import { URI } from "vscode-uri";
@@ -28,6 +29,7 @@ export namespace RecentFileManager {
    * @param file
    */
   export async function addRecentFile(file: RecentFile) {
+    if (isTemporaryWorkspace(file)) return;
     // 如果已经有了，则先删除
     const existingFiles = await getRecentFiles();
     const existingIndex = existingFiles.findIndex((f) => f.uri.toString() === file.uri.toString());
@@ -53,7 +55,9 @@ export namespace RecentFileManager {
 
   export async function addRecentFilesByUris(uris: URI[]) {
     // 先去重
-    const uniqueUris = Array.from(new Set(uris.map((u) => u.toString()))).map((str) => URI.parse(str));
+    const uniqueUris = Array.from(new Set(uris.map((u) => u.toString())))
+      .map((str) => URI.parse(str))
+      .filter((uri) => !isTemporaryWorkspace({ uri }));
     const existingFiles = await getRecentFiles();
     for (const uri of uniqueUris) {
       const addFile = {
