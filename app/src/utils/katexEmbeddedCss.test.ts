@@ -1,23 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { getKatexFontFace, katexEmbeddedCss, katexFontFaces, katexStyleCss } from "./katexEmbeddedCss";
+import { getKatexFontFace, katexFontFaces, katexStyleCss } from "./katexEmbeddedCss";
 
 describe("embedded KaTeX fonts", () => {
   it("embeds every font face without external font URLs", () => {
-    const faces = katexEmbeddedCss.match(/@font-face\{[^}]+\}/g) ?? [];
-    expect(faces).toHaveLength(20);
-    for (const face of faces) {
-      expect(face).toMatch(/src:url\("data:font\/woff2;base64,[A-Za-z0-9+/=]+"\) format\("woff2"\)/);
+    expect(katexFontFaces).toHaveLength(20);
+    for (const face of katexFontFaces) {
+      expect(face.source).toMatch(/^url\("data:font\/woff2;base64,[A-Za-z0-9+/=]+"\) format\("woff2"\)$/);
+      expect(face.css).toContain(`src:${face.source}`);
+      expect(face.css).not.toMatch(/url\((?!"data:)/);
     }
-    expect(katexEmbeddedCss).not.toMatch(/url\((?!"data:)/);
-    expect(katexEmbeddedCss).toContain("KaTeX_Math");
-    expect(katexEmbeddedCss).toContain("KaTeX_Size4");
+    expect(katexFontFaces.map((face) => face.family)).toEqual(expect.arrayContaining(["KaTeX_Math", "KaTeX_Size4"]));
   });
 
   it("separates font faces from the unchanged layout stylesheet", () => {
     expect(katexFontFaces).toHaveLength(20);
     expect(katexStyleCss).not.toContain("@font-face");
     expect(katexStyleCss).not.toContain("data:font");
-    expect(katexEmbeddedCss).toBe(katexFontFaces.map((face) => face.css).join("") + katexStyleCss);
   });
 
   it("selects the family, weight and style instead of embedding every variant", () => {

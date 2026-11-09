@@ -319,6 +319,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 删除 `LatexNode`、`LatexNodeRenderer`、`LatexEditWindow`、`convertLatexNodes` 及旧专用测试；清理注册、编辑、删除、改色、字号快捷键和类型声明中的专用分支。打开文件和编辑结束不再把文字卡片转换成公式卡片。实时编辑预览和 `extractLatexSource` 保留。
 - `AiSidecarBuilder.ts`：公式沿文字卡片的规则输出类型与含定界符的源码。`ProjectSidecar.test.ts`、`ProjectGraphCli.test.ts`、`copyEngine.test.ts` 覆盖旧文件读写、连线分组引用、命令行修改和旧剪贴板粘贴。
 - `InlineMathService.test.ts`、`MathImageDom.test.ts`：锁住整张卡片仅有一个块公式时排版盒的四周居中，以及公式文字卡片编辑后仍能添加前后文字；沿用已有对称行高留白和图片偏移计算。
+- WebKit 右侧裁切修复：`MathImage.ts` 的共享测量 iframe 改为屏外 4096×4096 视口；初始化时显式等待所有内嵌字体的 `FontFace.load()` 并加入测量文档，避免仅靠 `fonts.ready` 测到后备字体。公式根元素按内容自然宽度测量，SVG 中保留实测宽高；`foreignObject` 覆盖整张图片，用内部留白定位内容，不再依赖溢出绘制。
+- `katexEmbeddedCss.ts` 导出字体加载源，与 SVG 字体子集使用同一份资源；移除不再使用的全量字体 CSS 拼接。`MathImageDom.test.ts`、`katexEmbeddedCss.test.ts` 覆盖字体加载顺序、共享与重建、加载失败、非零视口、完整图片范围，以及矩阵、积分、求和、大号括号和根号的字体或 SVG 路径。
+- 字体由测量 iframe 自己窗口的 `FontFace` 构造函数创建；加载失败时移除该 iframe 并清空测量缓存，让下一条公式重新初始化。测试锁住窗口归属，以及前一条失败、后一条成功且失败公式不自动重试的行为。
 
 ### 23. 本文件
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getKatexFontFace } from "@/utils/katexEmbeddedCss";
+import { getKatexFontFace, katexFontFaces } from "@/utils/katexEmbeddedCss";
 import { MathImageCache, renderMathImage } from "./MathImage";
 import { splitInlineMath } from "./InlineMath";
 import { layoutRichText } from "./RichTextLayout";
@@ -8,18 +8,50 @@ import { layoutRichText } from "./RichTextLayout";
 let serialized: SVGSVGElement;
 let autoLoad: boolean;
 let fontsReady: () => Promise<void>;
+let loadFont: (face: MockFontFace) => Promise<void>;
 let textBounds: () => DOMRect;
 let extraBounds: (element: Element) => DOMRect | undefined;
 const images: { onload: () => void; onerror: () => void }[] = [];
 const frames: HTMLIFrameElement[] = [];
 const measured: string[] = [];
+const fontLoads: MockFontFace[] = [];
+const globalFontFace = vi.fn();
+const geometryReads = vi.fn();
 const revoke = vi.fn();
+
+class MockFontFace {
+  status = "unloaded";
+  constructor(
+    readonly family: string,
+    readonly source: string,
+    readonly descriptors: FontFaceDescriptors,
+  ) {}
+  async load() {
+    fontLoads.push(this);
+    this.status = "loading";
+    await loadFont(this);
+    this.status = "loaded";
+    return this;
+  }
+}
 
 beforeEach(() => {
   autoLoad = true;
-  images.length = frames.length = measured.length = 0;
+  images.length = frames.length = measured.length = fontLoads.length = 0;
   revoke.mockClear();
+  globalFontFace.mockClear();
+  geometryReads.mockClear();
   fontsReady = () => Promise.resolve();
+  loadFont = () => Promise.resolve();
+  vi.stubGlobal(
+    "FontFace",
+    class {
+      constructor() {
+        globalFontFace();
+        throw new Error("FontFace must be created in the measurement iframe");
+      }
+    },
+  );
   textBounds = () => new DOMRect(12, 12, 20, 20);
   extraBounds = () => undefined;
   vi.stubGlobal(
@@ -51,8 +83,16 @@ beforeEach(() => {
     if (node instanceof HTMLIFrameElement) {
       frames.push(node);
       const doc = node.contentDocument!;
+      class FrameFontFace extends MockFontFace {}
+      Object.defineProperty(doc.defaultView!, "FontFace", { value: FrameFontFace });
+      const loaded = new Set<MockFontFace>();
       Object.defineProperty(doc, "fonts", {
         value: {
+          add: (face: MockFontFace) => {
+            expect(face).toBeInstanceOf(FrameFontFace);
+            expect(face.status).toBe("loaded");
+            loaded.add(face);
+          },
           get ready() {
             measured.push(doc.body.textContent!);
             return fontsReady();
@@ -73,9 +113,10 @@ beforeEach(() => {
       const createElement = doc.createElement.bind(doc);
       vi.spyOn(doc, "createElement").mockImplementation((tag) => {
         const element = createElement(tag);
-        vi.spyOn(element, "getBoundingClientRect").mockImplementation(() =>
-          tag === "div" ? new DOMRect(10, 10, 101.25, 32.5) : new DOMRect(10, 35, 0, 0),
-        );
+        vi.spyOn(element, "getBoundingClientRect").mockImplementation(() => {
+          geometryReads(loaded.size);
+          return tag === "div" ? new DOMRect(10, 10, 101.25, 32.5) : new DOMRect(10, 35, 0, 0);
+        });
         if (tag === "div") {
           const querySelector = element.querySelector.bind(element);
           vi.spyOn(element, "querySelector").mockImplementation((selector) => {
@@ -118,6 +159,15 @@ const request = (source: string) => ({ source, mode: "display" as const, color: 
 const imageCss = () => serialized.querySelector("style")!.textContent!;
 
 describe("shared math measurement", () => {
+  it("constructs fonts in the iframe window instead of the main window", async () => {
+    expect(await renderMathImage(request("x"))).not.toBeNull();
+    expect(globalFontFace).not.toHaveBeenCalled();
+    expect(fontLoads).toHaveLength(20);
+    for (const face of fontLoads) {
+      expect(face).toBeInstanceOf(frames[0].contentDocument!.defaultView!.FontFace);
+    }
+  });
+
   it("creates one iframe and stylesheet, and serializes concurrent requests in submission order", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {
@@ -129,7 +179,8 @@ describe("shared math measurement", () => {
     expect(frames).toHaveLength(1);
     const doc = frames[0].contentDocument!;
     const style = doc.head.querySelector("style")!;
-    expect(style.textContent!.match(/@font-face/g)).toHaveLength(20);
+    expect(style.textContent).not.toContain("@font-face");
+    expect(fontLoads).toHaveLength(20);
     expect(doc.body.children).toHaveLength(1);
     expect(images).toHaveLength(0);
     release();
@@ -139,6 +190,82 @@ describe("shared math measurement", () => {
     expect(doc.head.querySelectorAll("style")).toHaveLength(1);
     expect(doc.head.querySelector("style")).toBe(style);
     expect(doc.body.children).toHaveLength(0);
+    expect(fontLoads).toHaveLength(20);
+  });
+
+  it("waits for every explicit font load before the first measurement even when fonts.ready is already resolved", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    loadFont = (face) =>
+      face.family === "KaTeX_Main" && face.descriptors.style === "normal" && face.descriptors.weight === "400"
+        ? blocked
+        : Promise.resolve();
+    const result = renderMathImage(request("x"));
+    await vi.waitFor(() => expect(fontLoads).toHaveLength(20));
+    await frames[0].contentDocument!.fonts.ready;
+    expect(geometryReads).not.toHaveBeenCalled();
+    expect(images).toHaveLength(0);
+    release();
+    await result;
+    expect(geometryReads).toHaveBeenCalled();
+    expect(geometryReads.mock.calls.every(([count]) => count === 20)).toBe(true);
+    for (const face of katexFontFaces) {
+      expect(fontLoads).toContainEqual(
+        expect.objectContaining({
+          family: face.family,
+          source: face.source,
+          descriptors: { weight: face.weight, style: face.style },
+          status: "loaded",
+        }),
+      );
+    }
+    await renderMathImage(request("y"));
+    expect(fontLoads).toHaveLength(20);
+  });
+
+  it("fails instead of measuring fallback fonts when an embedded font cannot load", async () => {
+    const error = new Error("bad font");
+    loadFont = () => Promise.reject(error);
+    expect(await new MathImageCache().load(request("x"))).toEqual({ status: "failed", error });
+    expect(geometryReads).not.toHaveBeenCalled();
+    expect(images).toHaveLength(0);
+    expect(frames[0].isConnected).toBe(false);
+    expect(document.querySelectorAll("iframe")).toHaveLength(0);
+  });
+
+  it("rebuilds after a font load failure so the next queued formula succeeds without retrying the failed formula", async () => {
+    const error = new Error("first font load failed");
+    loadFont = () => (frames.length === 1 ? Promise.reject(error) : Promise.resolve());
+    const cache = new MathImageCache();
+    const first = cache.load(request("x"));
+    const second = cache.load(request("y"));
+    expect(await first).toEqual({ status: "failed", error });
+    expect((await second).status).toBe("ready");
+    expect(frames).toHaveLength(2);
+    expect(frames[0].isConnected).toBe(false);
+    expect(frames[1].isConnected).toBe(true);
+    expect(document.querySelectorAll("iframe")).toHaveLength(1);
+    expect(fontLoads).toHaveLength(40);
+    expect(measured).toEqual(["y"]);
+    expect(images).toHaveLength(1);
+    expect(await cache.load(request("x"))).toEqual({ status: "failed", error });
+    expect(frames).toHaveLength(2);
+    expect(fontLoads).toHaveLength(40);
+    expect(images).toHaveLength(1);
+  });
+
+  it("uses a large offscreen viewport without making it visible or interactive", async () => {
+    await renderMathImage(request("x"));
+    const frame = frames[0];
+    expect(parseFloat(frame.style.width)).toBeGreaterThanOrEqual(4096);
+    expect(parseFloat(frame.style.height)).toBeGreaterThanOrEqual(4096);
+    expect(parseFloat(frame.style.left) + parseFloat(frame.style.width)).toBeLessThan(0);
+    expect(frame.style.visibility).toBe("hidden");
+    expect(frame.style.pointerEvents).toBe("none");
+    expect(frame.tabIndex).toBe(-1);
+    expect(frame.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("recreates a removed iframe or replaced measurement document", async () => {
@@ -146,9 +273,11 @@ describe("shared math measurement", () => {
     frames[0].remove();
     await renderMathImage(request("y"));
     expect(frames).toHaveLength(2);
+    expect(fontLoads).toHaveLength(40);
     Object.defineProperty(frames[1], "contentDocument", { value: document.implementation.createHTMLDocument() });
     await renderMathImage(request("z"));
     expect(frames).toHaveLength(3);
+    expect(fontLoads).toHaveLength(60);
     expect(document.querySelectorAll("iframe")).toHaveLength(1);
     expect(frames[2].contentDocument!.head.querySelectorAll("style")).toHaveLength(1);
   });
@@ -180,6 +309,31 @@ describe("shared math measurement", () => {
 });
 
 describe("math image font subset", () => {
+  it.each([
+    [String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}`, "display", ["KaTeX_Main", "KaTeX_Size3"]],
+    [String.raw`\int_0^1 f(x)\,dx`, "display", ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size2"]],
+    [String.raw`\sum_{i=1}^{n} i`, "display", ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size2"]],
+    [String.raw`\int_0^1 f(x)\,dx`, "inline", ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size1"]],
+    [String.raw`\sum_{i=1}^{n} i`, "inline", ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size1"]],
+    [String.raw`\Biggl(x\Biggr)`, "display", ["KaTeX_Math", "KaTeX_Size4"]],
+  ] as const)("includes every glyph font used by %s (%s)", async (source, mode, families) => {
+    await renderMathImage({ ...request(source), mode });
+    const embedded = katexFontFaces.filter((face) => imageCss().includes(face.css));
+    expect(embedded.map((face) => face.family).sort()).toEqual([...families].sort());
+    for (const face of embedded) {
+      expect(fontLoads).toContainEqual(expect.objectContaining({ source: face.source, status: "loaded" }));
+    }
+    expect(imageCss()).not.toMatch(/@font-face\{font-family:KaTeX_(AMS|Fraktur)/);
+  });
+
+  it("keeps the radical's SVG path and embeds the fonts used by its radicand", async () => {
+    await renderMathImage(request(String.raw`\sqrt{x^2+1}`));
+    expect(serialized.querySelector(".sqrt svg path")?.getAttribute("d")).toBeTruthy();
+    expect(imageCss()).toContain(getKatexFontFace("KaTeX_Main", "400", "normal")!.css);
+    expect(imageCss()).toContain(getKatexFontFace("KaTeX_Math", "400", "italic")!.css);
+    expect(imageCss()).not.toMatch(/url\((?!"data:)/);
+  });
+
   it.each([
     ["123", "KaTeX_Main", "400", "normal"],
     ["x", "KaTeX_Math", "400", "italic"],
@@ -223,11 +377,18 @@ describe("math image geometry", () => {
     expect(result!.layoutOffset.x).toBe(8.375);
     expect(result!.layoutOffset.y + result!.layout.height - result!.layout.descent).toBeCloseTo(33.25);
     const object = serialized.querySelector("foreignObject")!;
-    expect(object.getAttribute("x")).toBe("8.375");
-    expect(object.getAttribute("y")).toBe("8.25");
-    expect(object.getAttribute("overflow")).toBe("visible");
-    const root = object.firstElementChild as HTMLElement;
-    expect(root.style.display).toBe("inline-block");
+    expect(object.getAttribute("x")).toBe("0");
+    expect(object.getAttribute("y")).toBe("0");
+    expect(object.getAttribute("width")).toBe(String(result!.width));
+    expect(object.getAttribute("height")).toBe(String(result!.height));
+    expect(object.hasAttribute("overflow")).toBe(false);
+    const content = object.firstElementChild as HTMLElement;
+    expect(content.style.paddingLeft).toBe("8.375px");
+    expect(content.style.paddingTop).toBe("8.25px");
+    const root = content.firstElementChild as HTMLElement;
+    expect(root.style.display).toBe("block");
+    expect(root.style.width).toBe("101.25px");
+    expect(root.style.height).toBe("32.5px");
     expect(root.style.lineHeight).toBe("1.2");
     expect(root.style.color).toBe("rgb(18, 52, 86)");
     expect(imageCss()).toContain(".katex-display{margin:0}");
@@ -245,8 +406,13 @@ describe("math image geometry", () => {
     });
     expect(result!.layoutOffset.y + result!.layout.height - result!.layout.descent).toBeCloseTo(63.25);
     const object = serialized.querySelector("foreignObject")!;
-    expect(Number(object.getAttribute("x"))).toBe(28.375);
-    expect(Number(object.getAttribute("y"))).toBe(38.25);
+    expect(object.getAttribute("x")).toBe("0");
+    expect(object.getAttribute("y")).toBe("0");
+    expect(object.getAttribute("width")).toBe("148");
+    expect(object.getAttribute("height")).toBe("109");
+    const content = object.firstElementChild as HTMLElement;
+    expect(content.style.paddingLeft).toBe("28.375px");
+    expect(content.style.paddingTop).toBe("38.25px");
   });
 
   it("measures fraction rules outside the line box", async () => {

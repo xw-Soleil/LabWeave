@@ -47,6 +47,7 @@ export interface KatexFontFace {
   family: string;
   weight: string;
   style: string;
+  source: string;
   css: string;
 }
 
@@ -55,24 +56,22 @@ const normalizeWeight = (weight: string) => (weight === "bold" || Number(weight)
 
 export const katexFontFaces: KatexFontFace[] = Array.from(css.matchAll(/@font-face\s*\{[^}]+\}/g), ([face]) => {
   const property = (name: string) => new RegExp(`${name}:\\s*([^;}]+)`).exec(face)?.[1].trim() ?? "normal";
-  const embedded = face.replace(/src:[^;}]+/, (source) => {
-    const name = source.match(/KaTeX_([\w-]+)\.woff2/)?.[1].replaceAll("-", "");
-    const font = name && fonts[name];
-    if (!font) throw new Error(`Missing embedded KaTeX font: ${name}`);
-    return `src:url("${font}") format("woff2")`;
-  });
+  const name = property("src")
+    .match(/KaTeX_([\w-]+)\.woff2/)?.[1]
+    .replaceAll("-", "");
+  const font = name && fonts[name];
+  if (!font) throw new Error(`Missing embedded KaTeX font: ${name}`);
+  const source = `url("${font}") format("woff2")`;
   return {
     family: normalizeFamily(property("font-family")),
     weight: normalizeWeight(property("font-weight")),
     style: property("font-style"),
-    css: embedded,
+    source,
+    css: face.replace(/src:[^;}]+/, `src:${source}`),
   };
 });
 
 export const katexStyleCss = css.replace(/@font-face\s*\{[^}]+\}/g, "");
-
-// 测量文档保留所有字体，单张 SVG 只带实际文字使用的字体文件。
-export const katexEmbeddedCss = katexFontFaces.map((face) => face.css).join("") + katexStyleCss;
 
 export function getKatexFontFace(fontFamily: string, fontWeight: string, fontStyle: string): KatexFontFace | undefined {
   for (const family of fontFamily.split(",").map(normalizeFamily)) {

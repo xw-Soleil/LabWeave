@@ -1,4 +1,4 @@
-import type { getKatexFontFace as FindKatexFontFace } from "@/utils/katexEmbeddedCss";
+import type { getKatexFontFace as FindKatexFontFace, KatexFontFace } from "@/utils/katexEmbeddedCss";
 
 export const MATH_REFERENCE_FONT_SIZE = 32;
 
@@ -31,21 +31,23 @@ export type MathImageResult =
 export type MathImageState = MathImageResult | { status: "pending"; finished: Promise<MathImageResult> };
 
 const mathLayoutCss = ".katex-display{margin:0}";
-let measurement: { frame: HTMLIFrameElement; document: Document } | undefined;
+let measurement: { frame: HTMLIFrameElement; document: Document; fontsLoaded: Promise<void> } | undefined;
 let renderQueue: Promise<void> = Promise.resolve();
 
-function getMeasurementDocument(owner: Document, css: string): Document {
+async function getMeasurementDocument(owner: Document, css: string, fonts: KatexFontFace[]): Promise<Document> {
   if (
     measurement?.frame.ownerDocument === owner &&
     measurement.frame.isConnected &&
     measurement.frame.contentDocument === measurement.document &&
     measurement.document.body?.isConnected
   ) {
+    await measurement.fontsLoaded;
     return measurement.document;
   }
   measurement?.frame.remove();
   const frame = owner.createElement("iframe");
-  frame.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;border:0;visibility:hidden;pointer-events:none;";
+  frame.style.cssText =
+    "position:fixed;left:-100000px;top:0;width:4096px;height:4096px;border:0;visibility:hidden;pointer-events:none;";
   frame.setAttribute("aria-hidden", "true");
   frame.tabIndex = -1;
   owner.body.appendChild(frame);
@@ -53,7 +55,23 @@ function getMeasurementDocument(owner: Document, css: string): Document {
   const style = doc.createElement("style");
   style.textContent = css + mathLayoutCss;
   doc.head.appendChild(style);
-  measurement = { frame, document: doc };
+  // 显式加载不依赖隐藏文档先触发布局；所有字体解码成功并加入该文档后才能开始测量。
+  const fontsLoaded = Promise.all(
+    fonts.map(async ({ family, source, weight, style }) => {
+      const face = await new doc.defaultView!.FontFace(family, source, { weight, style }).load();
+      doc.fonts.add(face);
+    }),
+  ).then(
+    () => undefined,
+    (error) => {
+      // 失败公式仍由图片缓存记账，但下一条公式需要一份可重新加载字体的测量文档。
+      frame.remove();
+      if (measurement?.frame === frame) measurement = undefined;
+      throw error;
+    },
+  );
+  measurement = { frame, document: doc, fontsLoaded };
+  await fontsLoaded;
   return doc;
 }
 
@@ -161,17 +179,17 @@ async function renderQueuedMathImage(
 ): Promise<MathImage | null> {
   if (owner !== document || !owner.body?.isConnected) return null;
   // Node/CLI 不加载 Vite 的 CSS、字体资源，也不创建任何 DOM。
-  const [{ default: katex }, { katexEmbeddedCss, katexStyleCss, getKatexFontFace }] = await Promise.all([
+  const [{ default: katex }, { katexFontFaces, katexStyleCss, getKatexFontFace }] = await Promise.all([
     import("katex"),
     import("@/utils/katexEmbeddedCss"),
   ]);
   const html = katex.renderToString(source, { throwOnError: true, displayMode: mode === "display", output: "html" });
-  const measurementDocument = getMeasurementDocument(owner, katexEmbeddedCss);
+  const measurementDocument = await getMeasurementDocument(owner, katexStyleCss, katexFontFaces);
   const root = measurementDocument.createElement("div");
   let url: string | undefined;
   try {
     // 页面全局样式和块公式的 margin 折叠都不能参与测量，SVG 内也只保留同一套样式。
-    root.style.cssText = `display:inline-block;box-sizing:border-box;font-size:${MATH_REFERENCE_FONT_SIZE}px;line-height:1.2;white-space:nowrap;counter-reset:katexEqnNo mmlEqnNo;`;
+    root.style.cssText = `display:block;width:max-content;box-sizing:border-box;font-size:${MATH_REFERENCE_FONT_SIZE}px;line-height:1.2;white-space:nowrap;counter-reset:katexEqnNo mmlEqnNo;`;
     root.style.color = color;
     root.innerHTML = html;
     measurementDocument.body.appendChild(root);
@@ -180,8 +198,7 @@ async function renderQueuedMathImage(
     baseline.style.cssText = "display:inline-block;width:0;height:0;padding:0;border:0;vertical-align:baseline;";
     mathHtml.appendChild(baseline);
 
-    // 先触发布局，确保 fonts.ready 等待的是本次公式实际用到的内嵌字体。
-    root.getBoundingClientRect();
+    // 字体已显式加载；ready 只作为插入内容后的布局屏障，不负责启动字体加载。
     await measurementDocument.fonts.ready;
     for (const tag of root.querySelectorAll<HTMLElement>(".tag")) {
       if (tag.parentElement) {
@@ -206,12 +223,17 @@ async function renderQueuedMathImage(
     svg.setAttribute("width", String(width));
     svg.setAttribute("height", String(height));
     const foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-    foreignObject.setAttribute("x", String(x));
-    foreignObject.setAttribute("y", String(y));
-    foreignObject.setAttribute("width", String(Math.max(1, layout.width)));
-    foreignObject.setAttribute("height", String(Math.max(1, layout.height)));
-    foreignObject.setAttribute("overflow", "visible");
-    foreignObject.appendChild(root);
+    foreignObject.setAttribute("x", "0");
+    foreignObject.setAttribute("y", "0");
+    foreignObject.setAttribute("width", String(width));
+    foreignObject.setAttribute("height", String(height));
+    // 防裁切余量必须在 foreignObject 内；用内边距定位，避免依赖 WebKit 的 SVG 溢出绘制。
+    const content = measurementDocument.createElement("div");
+    content.style.cssText = `box-sizing:border-box;width:${width}px;height:${height}px;padding-left:${x}px;padding-top:${y}px;`;
+    root.style.width = `${layout.width}px`;
+    root.style.height = `${layout.height}px`;
+    content.appendChild(root);
+    foreignObject.appendChild(content);
     svg.appendChild(foreignObject);
     const style = measurementDocument.createElement("style");
     style.textContent = [...fontFaces].join("") + katexStyleCss + mathLayoutCss;
