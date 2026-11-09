@@ -191,7 +191,9 @@ export const ProjectTabs = memo(function ProjectTabs({
         {tabs.map((tab) => {
           const active = activeTab === tab;
           const project = tab instanceof Project ? tab : undefined;
-          const unsaved = project !== undefined && (project.isSaving || project.projectState !== ProjectState.Saved);
+          const unsaved =
+            tab.hasUnsavedChanges ||
+            (project !== undefined && (project.isSaving || project.projectState !== ProjectState.Saved));
           const temporary = project !== undefined && isTemporaryWorkspace(project);
           const label = tabLabel(tab);
           return (
@@ -211,8 +213,8 @@ export const ProjectTabs = memo(function ProjectTabs({
                   <span
                     role="img"
                     aria-label={t("tabs.unsaved")}
-                    title={project.isSaving ? t("tabs.saving") : t("tabs.unsaved")}
-                    className={cn("size-1.5 shrink-0 rounded-full bg-current", project.isSaving && "animate-pulse")}
+                    title={project?.isSaving ? t("tabs.saving") : t("tabs.unsaved")}
+                    className={cn("size-1.5 shrink-0 rounded-full bg-current", project?.isSaving && "animate-pulse")}
                   />
                 )}
                 {!project && tab.icon && <tab.icon className="size-3.5 shrink-0" />}

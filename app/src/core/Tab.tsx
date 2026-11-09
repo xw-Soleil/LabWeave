@@ -22,6 +22,11 @@ export abstract class Tab extends React.Component<Record<string, never>, Record<
   closeWhenClickOutside = false;
   closeWhenClickInside = false;
   titleBarOverlay = false;
+  beforeClose?: () => Promise<boolean>;
+
+  get hasUnsavedChanges(): boolean {
+    return false;
+  }
 
   protected eventEmitter = new EventEmitter();
 

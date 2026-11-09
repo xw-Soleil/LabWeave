@@ -14,6 +14,7 @@ import { Renderer } from "@/core/render/canvas2d/renderer";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { cardText } from "@/core/research/FileCardContent";
 import { refreshFileCardMissing, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { openDocumentFile } from "@/core/research/DocumentTab";
 import { toast } from "sonner";
 /**
  * 包含编辑节点文字，编辑详细信息等功能的控制器
@@ -88,14 +89,14 @@ export class ControllerNodeEditClass extends ControllerClass {
     }
   };
 
-  /** 双击文件卡片：用系统默认程序打开原文件 */
+  /** Markdown / PDF 在编辑区打开，其他文件交给系统。 */
   private async openFileCardSource(card: FileCardNode) {
     const absPath = resolveFileCardPath(this.project, card);
     if (await refreshFileCardMissing(this.project, card)) {
       toast.error(cardText("missingToast", { path: absPath }));
       return;
     }
-    await open(absPath);
+    await openDocumentFile(absPath);
   }
 
   mouseup = (event: MouseEvent) => {

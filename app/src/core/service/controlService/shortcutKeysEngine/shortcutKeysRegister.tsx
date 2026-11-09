@@ -1,5 +1,6 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
+import { activeDocumentTab } from "@/core/research/DocumentTab";
 import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
@@ -1601,9 +1602,14 @@ export const allKeyBinds: KeyBindItem[] = [
     id: "saveFile",
     defaultKey: "C-s",
     icon: Save,
-    when: whenHasProject,
+    when: (project) => activeDocumentTab()?.kind === "markdown" || !!project,
     // 用传进来的工程：菜单传的是最近激活的白板，侧边面板有焦点时 activeTabAtom 不是工程
     onPress: async (project) => {
+      const document = activeDocumentTab();
+      if (document) {
+        await document.save();
+        return;
+      }
       if (!project) return;
       project.camera.clearMoveCommander();
       try {

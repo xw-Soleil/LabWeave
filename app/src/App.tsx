@@ -411,7 +411,7 @@ export default function App() {
         }
       }
     }
-    await TabWorkspace.close(tab.id);
+    if ((await TabWorkspace.close(tab.id)) === false) throw new Error("取消操作");
   };
 
   const handleTabClick = useCallback((tab: Tab) => {

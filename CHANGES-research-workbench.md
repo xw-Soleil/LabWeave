@@ -371,6 +371,13 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/sub/AIWindow.tsx`：点上下文小圆圈、在命令菜单里选、或发出 `/context`（Codex 是 `/status`）都打开弹层，不进对话。顺手修了复制按钮的提示文字取错了文案命名空间。文案 `ai.composer.contextOpen`、`ai.contextDialog.*`，`zh_TW.yml` 重新生成。
 - `LocalAgent.test.ts`：副本、复制不了时新开、原会话直接跑三种情况，以及两种输出格式的解析。
 
-### 29. 本文件
+### 29. Markdown 编辑与 PDF 阅读标签页（2026-11-10）
+
+- 文件卡片、文件面板双击 Markdown / PDF 时，在编辑区打开可复用的文档标签；图片等其他文件保持系统打开。两个右键菜单增加「用系统程序打开」。
+- Markdown 使用源码编辑和实时预览，复用 shadcn、remark、KaTeX：支持公式、表格和按文档目录解析的本地图片；图片走原有文件访问权限，不自动请求远程图片。不改原始 BOM、换行和未编辑的文本；保存前比较磁盘内容与修改时间，冲突时保留编辑、提示重新读取；标签标记未保存，Cmd+S 和菜单保存当前文档，关闭标签及退出应用时提示。
+- PDF 复用 pdf.js 的 legacy 阅读器组件，支持按需页面渲染、文字选择、缩放和跳页。通过原有 scoped fs 文件句柄按范围读取，底层单次读取不超过 64 KiB；禁用自动预取和完整数据流。独立 worker、读取/打开期限及强制终止处理 WKWebView 卡住和释放不返回的问题。
+- 新增路径、原文保真、保存冲突、并发读写、范围读取、worker 生命周期、标签去重/关闭、键盘路由、预览和菜单测试；六份示例笔记只在临时目录的副本上验证。新文案进中英文，繁体由同步命令生成。
+
+### 30. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

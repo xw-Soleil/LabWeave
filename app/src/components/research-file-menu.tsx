@@ -10,7 +10,7 @@ import { promptResearchRename } from "@/core/research/ResearchRename";
 import { promptTrashResearchFile } from "@/core/research/ResearchTrash";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-shell";
-import { Copy, FolderOpen, Pencil, Trash2, File } from "lucide-react";
+import { Copy, ExternalLink, FolderOpen, Pencil, Trash2, File } from "lucide-react";
 import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -36,6 +36,10 @@ export default function ResearchFileMenu({
         <ContextMenuItem onSelect={onOpen}>
           <File />
           {t("fileMenu.open")}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => run(() => open(entry.absPath))}>
+          <ExternalLink />
+          {t("document.openSystem")}
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => run(() => open(Utils.dirname(URI.file(entry.absPath)).fsPath))}>
           <FolderOpen />

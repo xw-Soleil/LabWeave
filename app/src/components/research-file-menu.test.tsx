@@ -66,6 +66,7 @@ describe("file list context menu", () => {
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent);
     expect(labels).toEqual([
       "fileMenu.open",
+      "document.openSystem",
       "fileMenu.reveal",
       "fileMenu.copyPath",
       "fileMenu.copyRelativePath",
@@ -102,5 +103,10 @@ describe("file list context menu", () => {
     await openMenu();
     await select("fileMenu.reveal");
     expect(mocks.open).toHaveBeenCalledWith("/research/papers");
+  });
+  it("explicitly opens the source with the system app", async () => {
+    await openMenu();
+    await select("document.openSystem");
+    expect(mocks.open).toHaveBeenCalledWith("/research/papers/a.pdf");
   });
 });

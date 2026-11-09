@@ -8,7 +8,9 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
-import { promptImageCaption } from "@/core/research/FileCardFactory";
+import { promptImageCaption, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { open } from "@tauri-apps/plugin-shell";
+import { toast } from "sonner";
 import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
@@ -436,6 +438,7 @@ export default function MyContextMenuContent() {
 
   // 只选中一张图片卡片时，最上面多一项「图片标题…」：图片卡片不显示文件名，想要标题就在这里填
   const selected = p.stageManager.getSelectedEntities();
+  const fileCard = selected.length === 1 && selected[0] instanceof FileCardNode ? selected[0] : undefined;
   const imageCard =
     selected.length === 1 && selected[0] instanceof FileCardNode && selected[0].fileKind === "image"
       ? selected[0]
@@ -443,6 +446,12 @@ export default function MyContextMenuContent() {
 
   return (
     <Content>
+      {fileCard && (
+        <Item onClick={() => void open(resolveFileCardPath(p, fileCard)).catch((error) => toast.error(String(error)))}>
+          <LucideIcons.ExternalLink />
+          {tResearch("document.openSystem")}
+        </Item>
+      )}
       {imageCard && (
         <>
           <Item onClick={() => void promptImageCaption(p, imageCard)}>

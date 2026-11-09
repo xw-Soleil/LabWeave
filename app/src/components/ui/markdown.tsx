@@ -1,23 +1,34 @@
 import { cn } from "@/utils/cn";
 import { open } from "@tauri-apps/plugin-shell";
-import { useEffect, useState } from "react";
+import { useMemo, type ComponentType } from "react";
 import production from "react/jsx-runtime";
 import rehypeReact from "rehype-react";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { unified } from "unified";
 
-export default function Markdown({ source, className = "" }: { source: string; className?: string }) {
-  const [content, setContent] = useState(<>loading</>);
-
-  useEffect(() => {
+export default function Markdown({
+  source,
+  className = "",
+  components,
+}: {
+  source: string;
+  className?: string;
+  components?: Record<string, ComponentType<any>>;
+}) {
+  const content = useMemo(() => {
     const processor = unified()
       .use(remarkParse)
       .use(remarkGfm)
       .use(remarkBreaks)
+      .use(remarkMath)
       .use(remarkRehype)
+      .use(rehypeKatex)
       .use(rehypeReact, {
         ...production,
         components: {
@@ -30,12 +41,11 @@ export default function Markdown({ source, className = "" }: { source: string; c
               }}
             />
           ),
+          ...components,
         },
       });
-    processor.process(source).then((data: any) => {
-      setContent(data.result);
-    });
-  }, [source]);
+    return processor.processSync(source).result;
+  }, [source, components]);
 
   return (
     <div

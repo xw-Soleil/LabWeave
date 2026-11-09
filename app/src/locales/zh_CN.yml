@@ -2880,6 +2880,36 @@ projectOwnership:
 
 # 科研工作台。每个工作单元只往自己的小节里加键
 research:
+  document:
+    loading: 正在读取…
+    source: Markdown 源码
+    preview: 实时预览
+    save: 保存
+    saving: 正在保存…
+    cancel: 取消
+    discard: 不保存
+    closeTitle: 是否保存 Markdown 的更改？
+    reload: 重新读取
+    reloadTitle: 放弃编辑并重新读取？
+    reloadDescription: 当前未保存的编辑会被磁盘上的内容替换。可先复制需要保留的内容。
+    retry: 重试
+    retryHint: 读取失败，可重新读取或用系统程序打开。
+    openSystem: 用系统程序打开
+    imageFailed: 图片无法显示
+    previousPage: 上一页
+    nextPage: 下一页
+    page: 跳到页码（按回车确认）
+    zoomIn: 放大
+    zoomOut: 缩小
+    fitWidth: 适合宽度
+    errors:
+      fileChanged: 文件已被其他程序修改，未覆盖磁盘内容。请复制需要保留的编辑，再重新读取文件。
+      pdfTimeout: PDF 读取或渲染超时，已停止处理。可以重试或用系统程序打开。
+      pdfWorkerFailed: PDF 解析程序无法启动或已停止。请重试或用系统程序打开。
+      pdfLocked: 此 PDF 需要密码，请用系统程序打开。
+      imageNotLocal: 预览仅加载有权读取的本地相对路径图片。
+      fileClosed: 文件已经关闭，请重新打开。
+      failed: "文件操作失败：{{error}}"
   fileMenu:
     open: 打开
     reveal: 打开所在文件夹

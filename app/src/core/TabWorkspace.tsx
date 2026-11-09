@@ -34,6 +34,7 @@ import {
 const outsideListeners = new Map<string, (event: PointerEvent) => void>();
 const closeTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
 const closeTasks = new Map<string, Promise<void>>();
+const closeChecks = new Map<string, Promise<boolean>>();
 
 function maxZIndex() {
   return store.get(tabsAtom).reduce((maximum, tab) => Math.max(maximum, tab.zIndex), 0);
@@ -313,6 +314,17 @@ export namespace TabWorkspace {
     if (existingClose) return existingClose;
     const tab = get(id);
     if (!tab || tab.closing) return;
+    if (tab.beforeClose) {
+      let check = closeChecks.get(id);
+      if (!check) {
+        check = tab.beforeClose().finally(() => closeChecks.delete(id));
+        closeChecks.set(id, check);
+      }
+      if (!(await check)) return false;
+      const closing = closeTasks.get(id);
+      if (closing) return closing;
+      if (tab.closing) return;
+    }
     const listener = outsideListeners.get(id);
     if (listener) {
       document.removeEventListener("pointerdown", listener);

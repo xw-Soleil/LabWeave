@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { openDocumentFile } from "@/core/research/DocumentTab";
 import ResearchFileMenu from "@/components/research-file-menu";
 import { promptResearchRename } from "@/core/research/ResearchRename";
 import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
@@ -248,7 +249,7 @@ export default function FileManagerWindow() {
 
   const onRowDoubleClick = (entry: ResearchFileEntry) => {
     if (entry.kind === "workspace") return;
-    shellOpen(entry.absPath).catch(showError);
+    openDocumentFile(entry.absPath).catch(showError);
   };
 
   // 用指针事件而不是 HTML5 拖放：Windows 上自定义的系统拖放目标会吞掉网页里的 drag 事件
