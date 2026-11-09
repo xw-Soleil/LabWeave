@@ -90,6 +90,7 @@ import { ConnectableEntity } from "@/core/stage/stageObject/abstract/Connectable
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { AIProjectReferenceStore } from "@/core/service/dataManageService/aiEngine/AIProjectReferenceStore";
 import { Project, ProjectState } from "@/core/Project";
+import { Settings } from "@/core/service/Settings";
 import { ProjectOwnershipLease } from "@/core/ProjectOwnership";
 import { activeTabAtom, store, tabsAtom } from "@/state";
 import { Rectangle } from "@graphif/shapes";
@@ -265,12 +266,32 @@ async function startDesktopRuntimeBridge(projectPath: string, host: OpenProjectR
 
 describe("Open Project Runtime Host", () => {
   beforeEach(() => {
+    Settings.researchFolderPath = "";
     vi.mocked(invoke).mockReset().mockResolvedValue(true);
     vi.mocked(isTauri).mockReturnValue(false);
     vi.mocked(save).mockReset();
     vi.mocked(AIProjectReferenceStore.load).mockReset().mockResolvedValue(null);
     vi.mocked(AIProjectReferenceStore.save).mockReset().mockResolvedValue(undefined);
     openverseImageSearch.findDownloadableOpenverseImage.mockReset();
+  });
+
+  it("refuses every external live-board tool before loading references and rechecks the current folder", async () => {
+    Settings.researchFolderPath = "/research";
+    const fixture = createLiveProject("/outside/a.prg");
+    const prepare = vi.spyOn(fixture.project.aiEngine, "prepareProjectReferences");
+    const host = new OpenProjectRuntimeHost(fixture.project);
+    for (const name of ["get_all_nodes", "get_selected_nodes", "delete_nodes"]) {
+      expect(await host.invoke(name, {})).toMatchObject({
+        ok: false,
+        error: { code: "TEMPORARY_WORKSPACE_FORBIDDEN" },
+      });
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(AIProjectReferenceStore.save).not.toHaveBeenCalled();
+    expect(fixture.project.historyManager.recordStep).not.toHaveBeenCalled();
+    Settings.researchFolderPath = "/outside";
+    expect(await host.invoke("get_all_nodes", {})).toMatchObject({ ok: true });
+    await host.dispose();
   });
 
   it("serves the live unsaved graph with stable Project Object References until the Project closes", async () => {

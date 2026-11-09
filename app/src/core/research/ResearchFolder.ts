@@ -48,7 +48,7 @@ export function notifyResearchFilesChanged() {
 }
 
 function t(key: string, options?: Record<string, unknown>) {
-  return i18next.t(key, { ns: "research", ...options });
+  return i18next.t(key, { ns: "research", ...options, interpolation: { escapeValue: false } });
 }
 
 function toPosix(path: string): string {
@@ -354,7 +354,7 @@ export const ResearchFolder = {
   },
 };
 
-/** 选过研究文件夹时，文件夹外的本地文件一律不打开 */
+/** 没选研究文件夹时不限制路径；打开权限由入口另外判断。 */
 export function isOutsideResearchFolder(absPath: string): boolean {
   return ResearchFolder.getRoot() !== "" && !ResearchFolder.isInside(absPath);
 }

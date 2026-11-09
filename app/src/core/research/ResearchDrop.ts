@@ -8,6 +8,7 @@ import {
 } from "@/core/research/FileCardFactory";
 import { notifyResearchFilesChanged, ResearchFolder } from "@/core/research/ResearchFolder";
 import { fileKindOf } from "@/core/research/ResearchShell";
+import type { WorkspaceOpenOrigin } from "./TemporaryWorkspace";
 import { onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
@@ -310,7 +311,7 @@ async function dropCards(paths: string[], target: DropTarget | null) {
  */
 export async function dropFilesAtClientPoint(absPaths: string[], clientX: number, clientY: number): Promise<void> {
   // 先定下目标白板：后面的对话框不会切换标签页，但打开 .prg 会
-  await placeFiles(absPaths, resolveDropTarget(clientX, clientY));
+  await placeFiles(absPaths, resolveDropTarget(clientX, clientY), "file-drop");
 }
 
 /**
@@ -320,11 +321,11 @@ export async function dropFilesAtClientPoint(absPaths: string[], clientX: number
 export async function pasteClipboardFiles(project: Project, worldPos: Vector): Promise<boolean> {
   const paths = await invoke<string[]>("read_clipboard_file_paths");
   if (paths.length === 0) return false;
-  await placeFiles(paths, { project, worldPos });
+  await placeFiles(paths, { project, worldPos }, "file-paste");
   return true;
 }
 
-async function placeFiles(absPaths: string[], target: DropTarget | null): Promise<void> {
+async function placeFiles(absPaths: string[], target: DropTarget | null, origin: WorkspaceOpenOrigin): Promise<void> {
   const { workspaces, cards, unsupported } = splitDroppedPaths(absPaths);
   if (unsupported.length > 0) toast.warning(t("drop.unsupported", { names: listFileNames(unsupported) }));
   let cardFailure: { error: unknown } | null = null;
@@ -336,7 +337,7 @@ async function placeFiles(absPaths: string[], target: DropTarget | null): Promis
     }
   }
   for (const path of workspaces) {
-    await onOpenFile(URI.file(path), "拖拽prg文件到舞台");
+    await onOpenFile(URI.file(path), "拖拽或粘贴prg文件到舞台", origin);
   }
   // 卡片出错不挡住同一次拖进来的 .prg；错误照样抛给调用方提示用户
   if (cardFailure) throw cardFailure.error;

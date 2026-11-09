@@ -2906,6 +2906,8 @@ research:
     unpinSidePanel: 收起面板，鼠標移到窗口邊上再彈出
     showSidePanel: 展開面板
   statusBar:
+    outsideFolder: 研究文件夾外
+    outsideFolderHint: 這塊白板不在研究文件夾裡，是臨時打開的。照常保存，但不生成 AI 文字版，不進最近文件，下次啟動不會自動打開，外部 AI 也改不了它。想變成正式的工作區，用「另存為」存進研究文件夾。
     nodes: "{{count}} 個節點"
     edges: "{{count}} 條連線"
     selected: "已選 {{count}} 個"
@@ -3108,6 +3110,7 @@ research:
     saving: 正在保存
     savingWait: 正在保存，請稍候再關閉
     close: 關閉
+    outsideFolder: "研究文件夾外，臨時打開：{{path}}"
   welcome:
     title: 歡迎使用科研工作臺
     subtitle: 把論文、圖片和筆記擺到白板上，理清思路，再請 AI 幫你看看還缺什麼

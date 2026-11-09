@@ -1,4 +1,5 @@
 import { Vector } from "@graphif/data-structures";
+import { URI } from "vscode-uri";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -113,6 +114,15 @@ beforeEach(() => {
   store.set(activeTabAtom, undefined);
   store.set(activeResourceTabAtom, undefined);
   mocks.getDropTarget.mockReturnValue(null);
+});
+
+it("declares distinct user origins for window drops and clipboard workspace opens", async () => {
+  const path = "/outside/a.prg";
+  await dropFilesAtClientPoint([path], 0, 0);
+  expect(mocks.onOpenFile).toHaveBeenLastCalledWith(URI.file(path), expect.any(String), "file-drop");
+  mocks.invoke.mockResolvedValueOnce([path]);
+  await pasteClipboardFiles(makeBoard("target"), Vector.getZero());
+  expect(mocks.onOpenFile).toHaveBeenLastCalledWith(URI.file(path), expect.any(String), "file-paste");
 });
 
 describe("pure helpers", () => {

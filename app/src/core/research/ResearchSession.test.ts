@@ -29,16 +29,17 @@ vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 vi.mock("@/sub/FileManagerWindow", () => ({ default: { open: mocks.openFiles } }));
 vi.mock("@/sub/AIWindow", () => ({ default: { open: mocks.openAI, toggle: vi.fn() } }));
-vi.mock("@/core/research/ResearchFolder", () => ({
-  RESEARCH_FILES_CHANGED_EVENT: "research:files-changed",
-  ResearchFolder: {
-    ensureRootRegistered: mocks.ensureRootRegistered,
-    getRoot: () => mocks.settings.researchFolderPath,
-    toRelative: (path: string) => path.slice(mocks.settings.researchFolderPath.length + 1),
-    toAbsolute: (path: string) => (path.startsWith("/") ? path : `${mocks.settings.researchFolderPath}/${path}`),
-    listFiles: vi.fn(async () => []),
-  },
-}));
+vi.mock("@/core/research/ResearchFolder", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./ResearchFolder")>();
+  return {
+    ...actual,
+    ResearchFolder: {
+      ...actual.ResearchFolder,
+      ensureRootRegistered: mocks.ensureRootRegistered,
+      listFiles: vi.fn(async () => []),
+    },
+  };
+});
 vi.mock("@/core/Project", () => {
   class Project {
     readonly id = crypto.randomUUID();
@@ -60,6 +61,7 @@ import { Project } from "@/core/Project";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import {
   isTabVisibleInWorkspace,
+  listResearchWorkspaces,
   persistResearchSession,
   setResearchSessionTracking,
   startResearchSession,
@@ -118,6 +120,45 @@ describe("ResearchSession", () => {
     });
   });
 
+  it("omits temporary boards from session records and workspace lists, including the active board", async () => {
+    setResearchSessionTracking(true);
+    addProject(URI.file("/research/a.prg"));
+    const temporary = addProject(URI.file("/outside/b.prg"));
+    TabWorkspace.focus(temporary.id);
+    persistResearchSession();
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("");
+    expect((await listResearchWorkspaces()).map((item) => item.absPath)).toEqual(["/research/a.prg"]);
+
+    mocks.settings.researchFolderPath = "/outside";
+    persistResearchSession();
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["b.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("b.prg");
+  });
+
+  it("discards old outside-session paths before touching disk, even when the root is unavailable", async () => {
+    mocks.ensureRootRegistered.mockRejectedValue(new Error("unplugged"));
+    mocks.exists.mockResolvedValue(false);
+    mocks.settings.researchSession = {
+      openWorkspaces: ["/outside/a.prg", "../outside/b.prg", "inside.prg"],
+      active: "/outside/a.prg",
+      panels: { files: false, ai: false },
+    };
+    await startResearchSession();
+    expect(mocks.exists).toHaveBeenCalledExactlyOnceWith("/research/inside.prg");
+    expect(mocks.onOpenFile).not.toHaveBeenCalled();
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["inside.prg"]);
+    expect(mocks.settings.researchSession.active).toBe("");
+  });
+
+  it("keeps an OS-preopened temporary board active without recording it for next startup", async () => {
+    const temporary = addProject(URI.file("/outside/a.prg"));
+    expect(await startResearchSession()).toBe(true);
+    expect(store.get(activeResourceTabAtom)).toBe(temporary);
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual([]);
+    expect(mocks.settings.researchSession.active).toBe("");
+  });
+
   it("reopens existing workspaces before opening panels and focuses the active one", async () => {
     mocks.settings.researchSession = {
       openWorkspaces: ["a.prg", "missing.prg", "b.prg"],
@@ -153,6 +194,7 @@ describe("ResearchSession", () => {
   });
 
   it("keeps the saved workspaces when none of them can be found", async () => {
+    mocks.settings.researchFolderPath = "";
     mocks.exists.mockResolvedValue(false);
     mocks.settings.researchSession = {
       openWorkspaces: ["/Volumes/usb/a.prg"],

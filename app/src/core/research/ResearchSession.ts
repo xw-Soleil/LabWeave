@@ -2,6 +2,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Project } from "@/core/Project";
 import { RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
+import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import {
   decidePanelToggle,
   enterSidePeekTrigger,
@@ -50,7 +51,7 @@ export const workspacePopoverOpenAtom = atom(false);
 export const researchFilesVersionAtom = atom(0);
 
 function t(key: string, options?: Record<string, unknown>) {
-  return i18next.t(key, { ns: "research", ...options });
+  return i18next.t(key, { ns: "research", ...options, interpolation: { escapeValue: false } });
 }
 
 function reportError(error: unknown) {
@@ -136,10 +137,12 @@ export function focusMainWorkspace() {
   if (project) TabWorkspace.focus(project.id);
 }
 
-/** 研究文件夹里的 .prg 加上已经打开的工作区（可能在文件夹外面） */
+/** 研究文件夹里的 .prg 加上已打开的非临时工作区 */
 export async function listResearchWorkspaces(): Promise<ResearchWorkspaceItem[]> {
   const items: ResearchWorkspaceItem[] = [];
-  const openPaths = openFileProjects().map((project) => project.uri.fsPath);
+  const openPaths = openFileProjects()
+    .filter((project) => !isTemporaryWorkspace(project))
+    .map((project) => project.uri.fsPath);
   if (ResearchFolder.getRoot()) {
     for (const entry of await ResearchFolder.listFiles()) {
       if (entry.kind !== "workspace") continue;
@@ -277,13 +280,19 @@ export function renameSessionWorkspace(oldPath: string, newPath: string) {
 export function persistResearchSession() {
   if (!sessionTracking) return;
   const active = store.get(activeResourceTabAtom);
-  const openWorkspaces = openFileProjects().map((project) => toStoredPath(project.uri.fsPath));
-  unreachableWorkspaces = unreachableWorkspaces.filter((path) => !openWorkspaces.some((open) => samePath(open, path)));
+  const openWorkspaces = openFileProjects()
+    .filter((project) => !isTemporaryWorkspace(project))
+    .map((project) => toStoredPath(project.uri.fsPath));
+  unreachableWorkspaces = unreachableWorkspaces.filter(
+    (path) =>
+      !isTemporaryWorkspace({ uri: URI.file(ResearchFolder.toAbsolute(path)) }) &&
+      !openWorkspaces.some((open) => samePath(open, path)),
+  );
   if (!unreachableWorkspaces.some((path) => samePath(path, unreachableActive))) unreachableActive = "";
   const next = {
     openWorkspaces: [...openWorkspaces, ...unreachableWorkspaces],
     active:
-      active instanceof Project && !active.closing && active.uri.scheme === "file"
+      active instanceof Project && !active.closing && active.uri.scheme === "file" && !isTemporaryWorkspace(active)
         ? toStoredPath(active.uri.fsPath)
         : unreachableActive,
     panels: { files: !!findResearchPanelTab("files"), ai: !!findResearchPanelTab("ai") },
@@ -317,6 +326,7 @@ export async function startResearchSession(): Promise<boolean> {
   let reachable = 0;
   for (const storedPath of session.openWorkspaces) {
     const absPath = ResearchFolder.toAbsolute(storedPath);
+    if (isTemporaryWorkspace({ uri: URI.file(absPath) })) continue;
     try {
       if (!(await exists(absPath))) {
         missing.push(storedPath);

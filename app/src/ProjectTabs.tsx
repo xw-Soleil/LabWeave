@@ -1,7 +1,7 @@
 import { Vector } from "@graphif/data-structures";
 import { cn } from "@udecode/cn";
 import { useAtomValue } from "jotai";
-import { X } from "lucide-react";
+import { FolderOutput, X } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import TabContextMenu from "./components/tab-context-menu";
 import { displayWorkspaceName, FileName } from "./components/ui/file-name";
 import { Project, ProjectState } from "./core/Project";
 import { findResearchPanelTab } from "./core/research/ResearchSession";
+import { isTemporaryWorkspace } from "./core/research/TemporaryWorkspace";
 import { SoundService } from "./core/service/feedbackService/SoundService";
 import { Settings } from "./core/service/Settings";
 import { ComponentTab, Tab } from "./core/Tab";
@@ -35,6 +36,8 @@ export const ProjectTabs = memo(function ProjectTabs({
   const tabsContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionRef = useRef(0);
   const [protectingPrivacy, setProtectingPrivacy] = useState(Settings.protectingPrivacy);
+  // 换了研究文件夹，哪些白板算「文件夹外」也跟着变
+  const [, setResearchRoot] = useState(Settings.researchFolderPath);
   const activeResourceTab = useAtomValue(activeResourceTabAtom);
   const { t } = useTranslation("research");
   const overflow = useOverflowEdges(tabsContainerRef, tabs.map((tab) => tab.id).join("\n"));
@@ -43,6 +46,7 @@ export const ProjectTabs = memo(function ProjectTabs({
     const unwatch = Settings.watch("protectingPrivacy", setProtectingPrivacy);
     return unwatch;
   }, []);
+  useEffect(() => Settings.watch("researchFolderPath", setResearchRoot), []);
 
   // 保存滚动位置
   const saveScrollPosition = useCallback(() => {
@@ -144,7 +148,12 @@ export const ProjectTabs = memo(function ProjectTabs({
     project.isDraft
       ? { name: t("tabs.untitled", { n: project.uri.path }), title: t("tabs.untitled", { n: project.uri.path }) }
       : project.uri.scheme === "file"
-        ? { name: displayWorkspaceName(project.title), title: project.uri.fsPath }
+        ? {
+            name: displayWorkspaceName(project.title),
+            title: isTemporaryWorkspace(project)
+              ? t("tabs.outsideFolder", { path: project.uri.fsPath, interpolation: { escapeValue: false } })
+              : project.uri.fsPath,
+          }
         : { name: project.title, title: project.title };
   const tabLabel = (tab: Tab): { name: string; title: string; context?: string } => {
     if (tab instanceof Project) return projectLabel(tab);
@@ -183,6 +192,7 @@ export const ProjectTabs = memo(function ProjectTabs({
           const active = activeTab === tab;
           const project = tab instanceof Project ? tab : undefined;
           const unsaved = project !== undefined && (project.isSaving || project.projectState !== ProjectState.Saved);
+          const temporary = project !== undefined && isTemporaryWorkspace(project);
           const label = tabLabel(tab);
           return (
             <TabContextMenu key={tab.id} tab={tab} onClose={onTabClose}>
@@ -206,7 +216,8 @@ export const ProjectTabs = memo(function ProjectTabs({
                   />
                 )}
                 {!project && tab.icon && <tab.icon className="size-3.5 shrink-0" />}
-                <FileName name={shown(label.name)} title={shown(label.title)} />
+                {temporary && <FolderOutput aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
+                <FileName name={shown(label.name)} title={shown(label.title)} className={cn(temporary && "italic")} />
                 {label.context && (
                   <span className="text-muted-foreground flex min-w-0 items-center gap-1">
                     <span className="shrink-0">·</span>
