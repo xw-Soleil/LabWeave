@@ -1,7 +1,8 @@
 import { Project, service } from "@/core/Project";
 import type { Service } from "@/core/interfaces/Service";
 import { Vector } from "@graphif/data-structures";
-import { deserialize, serialize } from "@graphif/serializer";
+import { serialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { toast } from "sonner";
 import { uploadCollabAttachment } from "./CollabApi";
 import type { CollabMember, CollabPresence, CollabRole } from "./CollabProtocol";
@@ -219,7 +220,7 @@ export class CollaborationService implements Service {
     this.applyingRemote = true;
     try {
       const array = stageMapToArray(doc);
-      this.project.stage = deserialize(structuredClone(array), this.project);
+      this.project.stage = deserializeStageObjects(structuredClone(array), this.project);
       if (tags) this.project.tags = tags;
       if (references) this.project.references = references;
       this.project.stageManager.updateReferences();

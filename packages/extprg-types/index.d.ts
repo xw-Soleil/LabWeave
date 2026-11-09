@@ -207,7 +207,6 @@ declare interface Project {
   verticalPolyEdgeRenderer: VerticalPolyEdgeRenderer;
   sectionRenderer: SectionRenderer;
   svgNodeRenderer: SvgNodeRenderer;
-  latexNodeRenderer: LatexNodeRenderer;
   mediaNodeRenderer: MediaNodeRenderer;
   textNodeRenderer: TextNodeRenderer;
   urlNodeRenderer: UrlNodeRenderer;
@@ -1096,20 +1095,6 @@ declare interface ExtensionEntityRenderer {
   drawCollisionBox(ctx: CanvasRenderingContext2D | SerializedObject<"CanvasRenderingContext2D">, entity: ExtensionEntity | SerializedObject<"ExtensionEntity">, scale: number): void;
   renderSelectionOutline(ctx: CanvasRenderingContext2D | SerializedObject<"CanvasRenderingContext2D">, entity: ExtensionEntity | SerializedObject<"ExtensionEntity">, scale: number): void;
   triggerWorkerRender(entity: ExtensionEntity | SerializedObject<"ExtensionEntity">, pixelRatio: number): Promise<void>;
-}
-/**
-* 渲染 LaTeX 公式节点
-*/
-declare interface LatexNodeRenderer {
-  readonly project: Project;
-  /**
-  * 计算节点当前应显示的公式颜色：
-  *  - node.color 透明（alpha === 0）→ 跟随主题边框色（StageObjectBorder）
-  *  - 否则 → 使用用户自定义的 node.color
-  * 返回 CSS color 字符串（如 rgba(...)），与 currentRenderedColorCss 格式一致。
-  */
-  getTargetColorCss(node: LatexNode | SerializedObject<"LatexNode">): string;
-  render(node: LatexNode | SerializedObject<"LatexNode">): void;
 }
 declare interface MediaNodeRenderer {
   readonly project: Project;
@@ -2533,11 +2518,6 @@ declare interface ControllerNodeEditClass {
   mouseup(event: MouseEvent | SerializedObject<"MouseEvent">): void;
   mousemove(event: MouseEvent | SerializedObject<"MouseEvent">): void;
   editUrlNodeTitle(clickedUrlNode: UrlNode | SerializedObject<"UrlNode">): void;
-  /**
-  * 编辑 LaTeX 公式节点（双击时调用）
-  * 弹出编辑小窗口
-  */
-  editLatexNode(node: LatexNode | SerializedObject<"LatexNode">): void;
   readonly bindEventsTimeout: Timeout;
   lastMoveLocation: Vector;
   lastClickTime: number;
@@ -4893,7 +4873,6 @@ declare interface DeleteManager {
   deleteEntities(deleteNodes: Array<Entity | SerializedObject<"Entity">>): void;
   findDeleteHandler(object: StageObject | SerializedObject<"StageObject">): DeleteHandler<StageObject> | undefined;
   deleteSvgNode(entity: SvgNode | SerializedObject<"SvgNode">): void;
-  deleteLatexNode(entity: LatexNode | SerializedObject<"LatexNode">): void;
   deleteReferenceBlockNode(entity: ReferenceBlockNode | SerializedObject<"ReferenceBlockNode">): void;
   deleteExtensionEntity(entity: ExtensionEntity | SerializedObject<"ExtensionEntity">): void;
   deletePenStroke(penStroke: PenStroke | SerializedObject<"PenStroke">): void;
@@ -5526,7 +5505,6 @@ declare interface StageManager {
   getUrlNodes(): UrlNode[];
   getPenStrokes(): PenStroke[];
   getSvgNodes(): SvgNode[];
-  getLatexNodes(): LatexNode[];
   getStageObjects(): StageObject[];
   /**
   * 获取场上所有的实体
@@ -6905,146 +6883,6 @@ declare type ImageNodeOptions = {
     scale?: number;
     isBackground?: boolean;
 };
-/**
-* LaTeX 公式节点
-*
-* 将 LaTeX 字符串渲染为公式图片显示在舞台上。
-* 持久化只存储 LaTeX 字符串，SVG 渲染结果在运行时动态生成。
-* 缩放方式与文本节点一致，使用 fontScaleLevel 指数缩放。
-*/
-declare interface LatexNode {
-  uuid: string;
-  /**
-  * LaTeX 源代码字符串（不含 $ 符号），如 "E=mc^2"
-  */
-  latexSource: string;
-  collisionBox: CollisionBox;
-  color: Color;
-  /**
-  * 字体缩放级别，与 TextNode 一致
-  * 公式大小缩放公式：scale = 2^(fontScaleLevel / 2)
-  */
-  fontScaleLevel: number;
-  isHiddenBySectionCollapse: boolean;
-  /** 渲染结果图片 */
-  image: HTMLImageElement;
-  /** 渲染后 SVG 的原始像素尺寸 */
-  svgOriginalSize: Vector;
-  /** 渲染状态 */
-  state: "loading" | "error" | "success";
-  /**
-  * 当前图片实际渲染时使用的颜色（CSS color 字符串，如 rgba(...) / #rrggbb）。
-  * LatexNodeRenderer 在每帧对比"应显示颜色"与此值，不一致时触发重新渲染。
-  */
-  currentRenderedColorCss: string;
-  /** 节点是否被选中 */
-  _isSelected: boolean;
-  isSelected: boolean;
-  rectangle: Rectangle;
-  geometryCenter: Vector;
-  readonly project: Project;
-  /**
-  * 获取当前缩放倍数
-  * 公式：2^(fontScaleLevel / 2)
-  */
-  getScale(): number;
-  /**
-  * 放大字体（增加 fontScaleLevel）
-  */
-  increaseFontSize(anchorRate: undefined | Vector | SerializedObject<"Vector">): void;
-  /**
-  * 缩小字体（减少 fontScaleLevel）
-  */
-  decreaseFontSize(anchorRate: undefined | Vector | SerializedObject<"Vector">): void;
-  /**
-  * 根据当前 fontScaleLevel 更新碰撞箱大小
-  */
-  updateCollisionBoxByScale(anchorRate: undefined | Vector | SerializedObject<"Vector">): void;
-  _adjustLocationToKeepAnchor(oldRect: Rectangle | SerializedObject<"Rectangle">, anchorRate: Vector | SerializedObject<"Vector">): void;
-  /**
-  * 更新 LaTeX 源码并重新渲染
-  * @param newLatex 新的 LaTeX 字符串
-  * @param colorCss 渲染颜色（CSS color 字符串，如 "rgba(255,0,0,0.5)" / "#ffffff"），不传则沿用当前已记录的颜色
-  */
-  updateLatex(newLatex: string, colorCss: undefined | string): Promise<void>;
-  /**
-  * 以指定颜色重新渲染当前 LaTeX（颜色变化时由 LatexNodeRenderer 调用）
-  */
-  reRenderWithColor(colorCss: string): Promise<void>;
-  /**
-  * 将 LaTeX 字符串渲染为 HTMLImageElement
-  * 流程：katex.renderToString → SVG foreignObject → Blob URL → Image
-  * @param latex LaTeX 源码
-  * @param colorCss 公式颜色（CSS color 字符串，如 "rgba(255,0,0,0.5)" / "#ffffff"）
-  */
-  renderLatexToImage(latex: string, colorCss: string): Promise<void>;
-  move(delta: Vector | SerializedObject<"Vector">): void;
-  moveTo(location: Vector | SerializedObject<"Vector">): void;
-  unknown: boolean;
-  /**
-  * 是否忽略自动对齐功能
-  * 例如涂鸦就不吸附对齐
-  */
-  isAlignExcluded: boolean;
-  /**
-  * [
-  *  { type: 'p', children: [{ text: 'Serialize just this paragraph.' }] },
-  *  { type: 'h1', children: [{ text: 'And this heading.' }] }
-  * ]
-  */
-  details: Value;
-  /**
-  * 运行时直接父级 Section。
-  * 不参与序列化，打开文件后由 `StageManager.updateReferences()` 重建。
-  */
-  parentSection: Section | null;
-  /**
-  * 运行时层级深度。
-  * 顶层实体和根 Section 都为 0，嵌套越深数值越大。
-  */
-  sectionDepth: number;
-  /**
-  * 运行时最近的锁定祖先 Section。
-  * 用于后续把锁定判断从全局扫描收敛到沿父链查询。
-  */
-  nearestLockedAncestorSection: Section | null;
-  /** 用于交互使用，比如鼠标悬浮显示details */
-  isMouseHover: boolean;
-  detailsButtonRectangle(): Rectangle;
-  isMouseInDetailsButton(mouseWorldLocation: Vector | SerializedObject<"Vector">): boolean;
-  referenceButtonCircle(): Circle;
-  isMouseInReferenceButton(mouseWorldLocation: Vector | SerializedObject<"Vector">): boolean;
-  /**
-  * 由于自身位置的移动，递归的更新所有父级Section的位置和大小。
-  * 每次父框 adjustLocationAndSize 后，调用碰撞求解器推开与其重叠的同级分支。
-  */
-  updateFatherSectionByMove(): void;
-  /**
-  * 由于自身位置的更新，排开所有同级节点的位置
-  * 此函数在move函数中被调用，更新
-  */
-  updateOtherEntityLocationByMove(): void;
-  /**
-  * 与其他实体碰撞，调整位置；能够递归传递
-  * @param other 其他实体
-  */
-  collideWithOtherEntity(other: Entity | SerializedObject<"Entity">): void;
-  detailsManager: DetailsManager;
-  /**
-  * 是否是"物理存在"的对象（占据画布空间）
-  * false 的对象会被排除在框选、劈砍、F键视野重置等交互之外
-  * 默认为 true，SyncAssociation 等纯数据关系对象应覆盖为 false
-  */
-  isPhysical: boolean;
-  dispose?: (() => void | Promise<void>) | undefined;
-  /**
-  * 防止孪生同步循环触发的标志
-  * 当此对象正在被 StageSyncAssociationManager 写入同步内容时为 true，
-  * 检测到该标志时跳过向外同步，避免循环同步。
-  * 所有舞台对象在未来都有可能被加上同步关系，因此放在基类中。
-  */
-  _isSyncing: boolean;
-}
 declare type MediaKind = "audio" | "video";
 declare interface MediaNode {
   isHiddenBySectionCollapse: boolean;

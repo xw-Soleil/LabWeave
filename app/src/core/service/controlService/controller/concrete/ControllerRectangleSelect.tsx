@@ -1,3 +1,4 @@
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { Settings } from "@/core/service/Settings";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { Vector } from "@graphif/data-structures";
@@ -53,6 +54,10 @@ export class ControllerRectangleSelectClass extends ControllerClass {
       return;
     }
     if (this.project.controllerUtils.isClickedResizeRect(pressWorldLocation)) {
+      return;
+    }
+    // 端点圆点有一半伸出图片边框，按在那一半上也不能开始框选
+    if (findEndpointHandle(this.project, pressWorldLocation)) {
       return;
     }
 

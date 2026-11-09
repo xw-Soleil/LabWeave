@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Vector } from "@graphif/data-structures";
+import { Rectangle } from "@graphif/shapes";
 import type { Project } from "@/core/Project";
+import { setViewInsetsProvider } from "@/core/research/ViewInsets";
 
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
 vi.mock("@/core/service/Settings", () => ({
@@ -10,6 +12,7 @@ vi.mock("@/core/service/Settings", () => ({
     scaleExponent: 0.2,
     scaleCameraByMouseLocation: true,
     cameraResetViewPaddingRate: 1,
+    cameraResetMaxScale: 1,
   },
 }));
 vi.mock("../service/feedbackService/SoundService", () => ({
@@ -79,5 +82,40 @@ describe("camera after direct gestures", () => {
     expect(camera.currentScale).toBe(0.07422735362687596);
     expect(camera.targetScale).toBe(camera.currentScale);
     expect(camera.location).toEqual(location);
+  });
+});
+
+describe("camera with floating side panels over the canvas", () => {
+  const makeCamera = () =>
+    new Camera({
+      renderer: { w: 1000, h: 500, transformWorld2View: () => Vector.getZero() },
+      stageManager: { getCenter: () => new Vector(0, 0), getSize: () => new Vector(2000, 1000) },
+    } as unknown as Project);
+
+  afterEach(() => setViewInsetsProvider(null));
+
+  it("fits all content into the part the panels don't cover", () => {
+    setViewInsetsProvider(() => ({ left: 0, right: 200 }));
+    const camera = makeCamera();
+    camera.reset();
+    // 可用宽度 800：缩放取 800/2000，内容中心落在左边 800 像素的正中
+    expect(camera.currentScale).toBe(0.4);
+    expect(camera.location).toEqual(new Vector(250, 0));
+  });
+
+  it("centers a rectangle in the uncovered part", () => {
+    setViewInsetsProvider(() => ({ left: 300, right: 100 }));
+    const camera = makeCamera();
+    camera.resetByRectangle(new Rectangle(new Vector(-150, -50), new Vector(300, 100)));
+    expect(camera.currentScale).toBe(1);
+    expect(camera.location).toEqual(new Vector(-100, 0));
+  });
+
+  it("doesn't dodge when the panels would cover most of a narrow canvas", () => {
+    setViewInsetsProvider(() => ({ left: 400, right: 400 }));
+    const camera = makeCamera();
+    camera.reset();
+    expect(camera.currentScale).toBe(0.5);
+    expect(camera.location).toEqual(new Vector(0, 0));
   });
 });

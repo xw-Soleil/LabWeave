@@ -6,6 +6,7 @@ import { Settings } from "@/core/service/Settings";
 import i18next from "i18next";
 import { toast } from "sonner";
 import { PathString } from "@/utils/pathString";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 
 /** 最后一次编辑之后多久自动保存 */
 export const SAVE_AFTER_EDIT_DELAY_MS = 5000;
@@ -163,8 +164,10 @@ export class AutoSaveBackupService {
     }
 
     // 备份不写进研究文件夹，也不看备份策略：先试自定义路径，都不行就放应用缓存目录
-    const primaryCustomPath = Settings.autoBackupCustomPath?.trim() ?? "";
-    const secondaryCustomPath = Settings.autoBackupCustomPath2?.trim() ?? "";
+    // 临时白板只备份到应用缓存，避免自定义备份路径恰好在它所在的文件夹里。
+    const temporary = isTemporaryWorkspace(this.project);
+    const primaryCustomPath = temporary ? "" : (Settings.autoBackupCustomPath?.trim() ?? "");
+    const secondaryCustomPath = temporary ? "" : (Settings.autoBackupCustomPath2?.trim() ?? "");
 
     const candidates: Array<{ kind: "custom"; path: string } | { kind: "default" }> = [];
     if (primaryCustomPath) {

@@ -111,6 +111,21 @@ fn normalize_drive_path(path: &str) -> String {
     format!(r"{}\{}", drive.to_ascii_uppercase(), parts.join(r"\"))
 }
 
+/// 在访达 / 资源管理器里复制的文件。剪贴板里没有文件时返回空列表。
+/// 只读出路径，不碰文件本身：之后和拖进来的文件走同一套流程。
+#[tauri::command]
+pub fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
+    match clipboard.get().file_list() {
+        Ok(paths) => Ok(paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect()),
+        Err(arboard::Error::ContentNotAvailable) => Ok(Vec::new()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// 外部 AI（Claude Code、Codex 等）接入 MCP 时要运行的命令：node、命令行入口、程序用的 HOME。
 /// 设置页据此拼出能直接复制的配置命令。
 #[derive(serde::Serialize)]

@@ -27,6 +27,7 @@ type RuntimeResponse =
       error: {
         code:
           | "RUNTIME_HOST_UNAVAILABLE"
+          | "TEMPORARY_WORKSPACE_FORBIDDEN"
           | "TOOL_EXECUTION_FAILED"
           | "PROJECT_REFERENCE_SAVE_FAILED"
           | "RUNTIME_CLEANUP_FAILED"
@@ -104,6 +105,13 @@ export class OpenProjectRuntimeHost {
     let response: RuntimeResponse;
     try {
       if (abortSignal.aborted) return cancelledResponse();
+      const { isTemporaryWorkspace } = await import("@/core/research/TemporaryWorkspace");
+      if (isTemporaryWorkspace(this.project)) {
+        return {
+          ok: false,
+          error: { code: "TEMPORARY_WORKSPACE_FORBIDDEN", message: "TEMPORARY_WORKSPACE_FORBIDDEN" },
+        };
+      }
       const references = await this.project.aiEngine.prepareProjectReferences(this.project);
       if (abortSignal.aborted) return cancelledResponse();
       const host = createLiveProjectBuiltInToolRuntimeHost(this.project, references);

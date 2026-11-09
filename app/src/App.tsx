@@ -1,4 +1,4 @@
-import ActivityRail, { ACTIVITY_RAIL_WIDTH, RESEARCH_TITLE_BAR_HEIGHT } from "@/components/activity-rail";
+import ActivityRail from "@/components/activity-rail";
 import MyContextMenuContent from "@/components/context-menu-content";
 import FloatingTabs from "@/components/floating-tabs";
 import PieMenu from "@/components/pie-menu";
@@ -6,7 +6,7 @@ import ThemeModeSwitch from "@/components/theme-mode-switch";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
-import { displayWorkspaceName, FileName } from "@/components/ui/file-name";
+import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import {
   persistResearchSession,
@@ -33,9 +33,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { arch, platform, version } from "@tauri-apps/plugin-os";
 import { restoreStateCurrent, saveWindowState, StateFlags } from "@tauri-apps/plugin-window-state";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom } from "jotai";
 import { Copy, Minus, Square, X } from "lucide-react";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { cpuInfo } from "tauri-plugin-system-info-api";
@@ -46,7 +46,6 @@ import RenderOverlays from "./components/overlay-host";
 import { KeyBindsUI } from "./core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { checkAndFixShortcutStorage } from "./core/service/controlService/shortcutKeysEngine/ShortcutKeyFixer";
 import { cn } from "./utils/cn";
-import { replaceTextWhenProtect } from "./utils/font";
 import { isLinux, isMac, isWindows } from "./utils/platform";
 
 /** 关标签页失败时提示用户；取消、没选路径不算失败，拒绝存到研究文件夹外面时 Project 已经提示过 */
@@ -63,62 +62,55 @@ function researchWorkspaceName(project: Project, untitled: (n: string) => string
   return project.title;
 }
 
-/** 点在这些元素上时是在操作控件，不拖动窗口 */
-const TITLE_BAR_INTERACTIVE_SELECTOR =
-  "button, a, input, select, textarea, [role=switch], [role=menubar], [role=menuitem], [contenteditable=true]";
+/** 红绿灯占的宽度（不随 UI 缩放）；左上角的菜单和标签从它右边开始 */
+const MAC_TRAFFIC_LIGHTS_WIDTH = 78;
 
 /**
- * 标题栏：一整行 36px，左边给红绿灯（或窗口内菜单）留位置，中间是当前工作区名，右边是浅/深色切换。
- * 除了控件，整行都能拖动窗口、双击缩放。
+ * 没有标题栏：画布铺满窗口，左上角放窗口内菜单（macOS 上是原生菜单，这里通常是空的），
+ * 右上角放浅/深色切换和 Windows 的窗口按钮。两块的宽度写进 CSS 变量，
+ * 挨着窗口上边的白板标签据此让位（见 DockedArea）。
+ * 变量写在共同的上级元素上；父组件的 ref 这时还没挂上，所以直接取 parentElement。
  */
-function ResearchTitleBar({
-  isClassroomMode,
-  onDragStart,
-}: {
-  isClassroomMode: boolean;
-  onDragStart: (event: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  const { t } = useTranslation("research");
-  const resource = useAtomValue(activeResourceTabAtom);
-  const [protectingPrivacy] = Settings.use("protectingPrivacy");
-  const project = resource instanceof Project && !resource.closing ? resource : undefined;
-  const rawName = project ? researchWorkspaceName(project, (n) => t("tabs.untitled", { n })) : "";
-  // 和标签栏一样，隐私保护打开时不露出真实名字和路径
-  const name = protectingPrivacy ? replaceTextWhenProtect(rawName) : rawName;
-  const fullName = project?.uri.scheme === "file" && !protectingPrivacy ? project.uri.fsPath : name;
+function FloatingCorners() {
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const left = leftRef.current;
+    const right = rightRef.current;
+    const root = left?.parentElement;
+    if (!root || !left || !right) return;
+    const gap = 6;
+    const update = () => {
+      const start = isMac ? MAC_TRAFFIC_LIGHTS_WIDTH : 8;
+      const menuWidth = left.offsetWidth;
+      root.style.setProperty("--pg-top-left-inset", `${start + (menuWidth > 0 ? menuWidth + gap : 0)}px`);
+      root.style.setProperty("--pg-top-right-inset", `${8 + right.offsetWidth + gap}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(left);
+    observer.observe(right);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div
-      data-pg-titlebar
-      className={cn(
-        "bg-background border-border pointer-events-auto relative z-10 flex h-9 shrink-0 items-center gap-2 border-b pr-2 transition-opacity hover:opacity-100",
-        !isMac && "pl-2",
-        isClassroomMode && "opacity-0",
-      )}
-      // 红绿灯不跟着 UI 缩放，留出的宽度要抵消缩放
-      style={isMac ? { paddingLeft: "calc(78px / var(--pg-ui-scale, 1))" } : undefined}
-      onMouseDown={(event) => {
-        if ((event.target as Element).closest(TITLE_BAR_INTERACTIVE_SELECTOR)) return;
-        onDragStart(event);
-      }}
-    >
-      <div className="flex min-w-0 flex-1 basis-0 items-center">
+    <>
+      <div
+        ref={leftRef}
+        className="absolute top-1 z-30 flex h-7 items-center empty:hidden"
+        style={{ left: isMac ? MAC_TRAFFIC_LIGHTS_WIDTH : 8 }}
+      >
         <GlobalMenu />
       </div>
-      <div className="text-muted-foreground flex max-w-[60%] min-w-0 items-center text-[13px]">
-        <span className="shrink-0">{t("shell.title")}</span>
-        {name && (
-          <>
-            <span className="mx-1 shrink-0">·</span>
-            <FileName name={name} title={fullName} tailChars={2} />
-          </>
-        )}
-      </div>
-      <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-2">
+      <div
+        ref={rightRef}
+        className="bg-background/95 border-border/60 absolute top-1 right-2 z-30 flex h-7 items-center gap-1 rounded-full border px-1 shadow-xs"
+      >
         <ThemeModeSwitch />
         {!isMac && <WindowButtons />}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -456,14 +448,11 @@ export default function App() {
         }}
       >
         {/* Canvas content - NOT zoomed */}
-        <DockedArea
-          onTabClick={handleTabClick}
-          onTabClose={handleTabClose}
-          isClassroomMode={isClassroomMode}
-          leftInset={ACTIVITY_RAIL_WIDTH}
-          topInset={RESEARCH_TITLE_BAR_HEIGHT}
-        />
-        {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放；从标题栏下方开始 */}
+        <DockedArea onTabClick={handleTabClick} onTabClose={handleTabClose} isClassroomMode={isClassroomMode} />
+        {/* 窗口最上面一条看不见的拖动区：拖动窗口、双击缩放（标签、按钮盖在它上面照常能点） */}
+        <div aria-hidden="true" className="absolute inset-x-0 top-0 z-20 h-3" onMouseDown={handleTitleBarMouseDown} />
+        <FloatingCorners />
+        {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放 */}
         <ActivityRail isClassroomMode={isClassroomMode} />
 
         {/* Zoomed UI layer - 缩放所有 DOM UI 元素，不缩放 Canvas 画布 */}
@@ -474,8 +463,6 @@ export default function App() {
             !isMac && "*:pointer-events-auto",
           )}
         >
-          <ResearchTitleBar isClassroomMode={isClassroomMode} onDragStart={handleTitleBarMouseDown} />
-
           {/* 右键菜单 */}
           <ContextMenu modal={false}>
             <ContextMenuTrigger>

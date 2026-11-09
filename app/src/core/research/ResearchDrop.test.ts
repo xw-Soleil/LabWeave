@@ -1,4 +1,5 @@
 import { Vector } from "@graphif/data-structures";
+import { URI } from "vscode-uri";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(async () => undefined),
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn() },
   dispatchEvent: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
@@ -42,6 +44,7 @@ vi.mock("@/state", async () => {
   };
 });
 vi.mock("@tauri-apps/plugin-fs", () => ({ copyFile: mocks.copyFile, exists: mocks.exists, mkdir: mocks.mkdir }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 vi.mock("i18next", () => ({
   default: {
@@ -63,6 +66,7 @@ import {
   dropFilesAtClientPoint,
   findFreeFileName,
   numberedFileName,
+  pasteClipboardFiles,
   resolveDropTarget,
   screenToClientPoint,
   splitDroppedPaths,
@@ -110,6 +114,15 @@ beforeEach(() => {
   store.set(activeTabAtom, undefined);
   store.set(activeResourceTabAtom, undefined);
   mocks.getDropTarget.mockReturnValue(null);
+});
+
+it("declares distinct user origins for window drops and clipboard workspace opens", async () => {
+  const path = "/outside/a.prg";
+  await dropFilesAtClientPoint([path], 0, 0);
+  expect(mocks.onOpenFile).toHaveBeenLastCalledWith(URI.file(path), expect.any(String), "file-drop");
+  mocks.invoke.mockResolvedValueOnce([path]);
+  await pasteClipboardFiles(makeBoard("target"), Vector.getZero());
+  expect(mocks.onOpenFile).toHaveBeenLastCalledWith(URI.file(path), expect.any(String), "file-paste");
 });
 
 describe("pure helpers", () => {
@@ -176,6 +189,41 @@ describe("resolveDropTarget", () => {
 
   it("returns null when no board is open", () => {
     expect(resolveDropTarget(10, 10)).toBeNull();
+  });
+});
+
+describe("pasteClipboardFiles", () => {
+  it("leaves the paste to text and images when no files were copied", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.invoke.mockResolvedValue([]);
+    await expect(pasteClipboardFiles(board, new Vector(0, 0))).resolves.toBe(false);
+    expect(mocks.invoke).toHaveBeenCalledWith("read_clipboard_file_paths");
+    expect(mocks.createFileCards).not.toHaveBeenCalled();
+  });
+
+  it("places files copied in Finder at the paste position, the same way as a drop", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.invoke.mockResolvedValue(["/Users/me/Research/papers/a.pdf", "/Users/me/Research/x.docx"]);
+    await expect(pasteClipboardFiles(board, new Vector(40, 50))).resolves.toBe(true);
+    expect(mocks.createFileCards).toHaveBeenCalledWith(
+      board,
+      ["/Users/me/Research/papers/a.pdf"],
+      new Vector(40, 50),
+      expect.objectContaining({ retarget: expect.any(Function) }),
+    );
+    expect(mocks.toast.warning).toHaveBeenCalledWith("drop.unsupported:x.docx");
+  });
+
+  it("asks before copying files from outside the research folder", async () => {
+    const board = makeBoard("b1");
+    showBoard(board);
+    mocks.invoke.mockResolvedValue(["/Users/me/Downloads/invoice.pdf"]);
+    mocks.buttons.mockResolvedValue("cancel");
+    await pasteClipboardFiles(board, new Vector(0, 0));
+    expect(mocks.buttons).toHaveBeenCalledOnce();
+    expect(mocks.createFileCards).not.toHaveBeenCalled();
   });
 });
 

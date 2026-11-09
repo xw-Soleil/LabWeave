@@ -1,3 +1,4 @@
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { Settings } from "@/core/service/Settings";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
@@ -53,6 +54,8 @@ export class ControllerAssociationReshapeClass extends ControllerClass {
       return;
     }
     const pressWorldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    // 按在图片连线的端点圆点上是拖端点，不是拖整条线
+    if (findEndpointHandle(this.project, pressWorldLocation)) return;
     // 点击
     const clickedAssociation = this.project.stageManager.findAssociationByLocation(pressWorldLocation);
     if (clickedAssociation === null) {
@@ -108,6 +111,10 @@ export class ControllerAssociationReshapeClass extends ControllerClass {
       return;
     }
     if (this.project.controller.rectangleSelect.isUsing || this.project.controller.cutting.isUsing) {
+      return;
+    }
+    // 正在拖图片连线的端点：这条线是选中的，不能顺手把整条线也拖走
+    if (this.project.controller.imageEdgeEndpoint.isDragging) {
       return;
     }
     const worldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));

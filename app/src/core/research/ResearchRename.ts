@@ -6,6 +6,7 @@ import { FileSystemProviderFile } from "@/core/fileSystemProvider/FileSystemProv
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
 import { resolveSourcePath, rewriteSerializedFileCardPaths, toStoredSourcePath } from "@/core/research/FileCardFactory";
 import { notifyResearchFilesChanged, ResearchFolder } from "@/core/research/ResearchFolder";
+import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { Settings } from "@/core/service/Settings";
 import { store, tabsAtom } from "@/state";
@@ -22,6 +23,7 @@ const text = (key: string) => i18next.t(`research:rename.${key}`);
 
 export function renamedPath(path: string, name: string): string {
   name = name.trim();
+  // eslint-disable-next-line no-control-regex -- 文件名必须拒绝控制字符。
   if (!name || name === "." || name === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(name) || /[. ]$/.test(name)) {
     throw new Error(text("invalid"));
   }
@@ -40,7 +42,9 @@ export async function renameResearchFile(oldPath: string, name: string): Promise
   if (newPath === oldPath) return oldPath;
   if (!ResearchFolder.isInside(oldPath) || !ResearchFolder.isInside(newPath)) throw new Error(text("outside"));
   busy = true;
-  const projects = store.get(tabsAtom).filter((tab): tab is Project => tab instanceof Project && !tab.closing);
+  const projects = store
+    .get(tabsAtom)
+    .filter((tab): tab is Project => tab instanceof Project && !tab.closing && !isTemporaryWorkspace(tab));
   const locked: Project[] = [];
   const leases: ProjectOwnershipLease[] = [];
   const plans: WritePlan[] = [];
@@ -169,7 +173,7 @@ export async function renameResearchFile(oldPath: string, name: string): Promise
   } catch (error) {
     if (committed) {
       notifyResearchFilesChanged();
-      throw new Error(`${text("followupFailed")}: ${String(error)}`);
+      throw new Error(`${text("followupFailed")}: ${String(error)}`, { cause: error });
     }
     const errors: unknown[] = [error];
     for (const plan of written.reverse()) {

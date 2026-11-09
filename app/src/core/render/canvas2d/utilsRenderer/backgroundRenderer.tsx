@@ -1,40 +1,49 @@
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { Project, service } from "@/core/Project";
+import { dotGridLevels, gridIndexRange, isCoarseDot } from "@/core/research/CanvasBackground";
 
 @service("backgroundRenderer")
 export class BackgroundRenderer {
   constructor(private readonly project: Project) {}
 
   /**
-   * 画洞洞板式的背景
-   * @param ctx
-   * @param width
-   * @param height
+   * 点阵背景：粗细两层，细的一层随缩放淡入淡出（见 CanvasBackground.ts）。坐标轴上的点不再加粗。
+   * @param viewRect 当前视野覆盖的世界坐标矩形
    */
   renderDotBackground(viewRect: Rectangle) {
-    const currentGap = this.getCurrentGap();
-    const gridColor = this.project.stageStyleManager.currentStyle.GridNormal;
-    const axisColor = this.project.stageStyleManager.currentStyle.GridHeavy;
-    const dots = new Path2D();
-    const axisDots = new Path2D();
+    const levels = dotGridLevels(this.project.camera.currentScale);
+    if (!levels) return;
+    const { fineGap, fineAlpha } = levels;
+    // 世界坐标到视图坐标只是平移加等比缩放：算出原点的位置，每个点直接乘加，不用每个点都新建 Vector
+    const origin = this.project.renderer.transformWorld2View(Vector.getZero());
+    const step = fineGap * this.project.camera.currentScale;
+    const [firstI, lastI] = gridIndexRange(viewRect.left, viewRect.right, fineGap);
+    const [firstJ, lastJ] = gridIndexRange(viewRect.top, viewRect.bottom, fineGap);
+    const radius = 1;
+    const coarse = new Path2D();
+    const fine = new Path2D();
 
-    for (const y of this.getLocationYIterator(viewRect, currentGap)) {
-      for (const x of this.getLocationXIterator(viewRect, currentGap)) {
-        const location = this.project.renderer.transformWorld2View(new Vector(x, y));
-        const onAxis = x === 0 || y === 0;
-        const radius = onAxis ? 1.5 : 1;
-        const path = onAxis ? axisDots : dots;
-        path.moveTo(location.x + radius, location.y);
-        path.arc(location.x, location.y, radius, 0, 2 * Math.PI);
+    for (let j = firstJ; j <= lastJ; j++) {
+      const y = origin.y + j * step;
+      for (let i = firstI; i <= lastI; i++) {
+        const onCoarse = isCoarseDot(i, j);
+        if (!onCoarse && fineAlpha === 0) continue;
+        const x = origin.x + i * step;
+        const path = onCoarse ? coarse : fine;
+        path.moveTo(x + radius, y);
+        path.arc(x, y, radius, 0, 2 * Math.PI);
       }
     }
 
     const ctx = this.project.canvas.ctx;
-    ctx.fillStyle = gridColor.toString();
-    ctx.fill(dots);
-    ctx.fillStyle = axisColor.toString();
-    ctx.fill(axisDots);
+    ctx.fillStyle = this.project.stageStyleManager.currentStyle.GridNormal.toString();
+    ctx.fill(coarse);
+    if (fineAlpha > 0) {
+      ctx.globalAlpha = fineAlpha;
+      ctx.fill(fine);
+      ctx.globalAlpha = 1;
+    }
   }
 
   /**

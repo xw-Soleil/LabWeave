@@ -244,7 +244,7 @@ async function loadStartFile() {
       try {
         const isExists = await exists(argPath);
         if (isExists) {
-          await onOpenFile(URI.file(argPath), "CLI或双击文件");
+          await onOpenFile(URI.file(argPath), "CLI或双击文件", "os-file");
         } else {
           toast.error("文件不存在");
         }
@@ -259,7 +259,7 @@ async function loadStartFile() {
     const path = event.payload;
     const isExists = await exists(path);
     if (isExists) {
-      await onOpenFile(URI.file(path), "macOS双击文件");
+      await onOpenFile(URI.file(path), "macOS双击文件", "os-file");
     } else {
       toast.error("文件不存在");
     }
@@ -270,7 +270,7 @@ async function loadStartFile() {
     if (!path.toLowerCase().endsWith(".prg")) continue;
     const isExists = await exists(path);
     if (isExists) {
-      await onOpenFile(URI.file(path), "macOS双击文件(启动)");
+      await onOpenFile(URI.file(path), "macOS双击文件(启动)", "os-file");
     } else {
       toast.error("文件不存在");
     }

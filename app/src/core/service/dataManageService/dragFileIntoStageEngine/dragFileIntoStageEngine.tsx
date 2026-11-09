@@ -81,7 +81,7 @@ export namespace DragFileIntoStageEngine {
           handleDropSvg(project, filePath);
         } else if (extName === "prg") {
           const uri = URI.file(filePath);
-          onOpenFile(uri, "拖拽prg文件到舞台");
+          onOpenFile(uri, "拖拽prg文件到舞台", "file-drop");
         } else if (extName && extName in MEDIA_TYPE_INFO) {
           const typeInfo = MEDIA_TYPE_INFO[extName];
           await handleDropMedia(project, filePath, typeInfo.mime, typeInfo.kind, mediaIndex);

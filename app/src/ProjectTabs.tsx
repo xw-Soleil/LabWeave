@@ -1,7 +1,7 @@
 import { Vector } from "@graphif/data-structures";
 import { cn } from "@udecode/cn";
 import { useAtomValue } from "jotai";
-import { X } from "lucide-react";
+import { FolderOutput, X } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import TabContextMenu from "./components/tab-context-menu";
 import { displayWorkspaceName, FileName } from "./components/ui/file-name";
 import { Project, ProjectState } from "./core/Project";
 import { findResearchPanelTab } from "./core/research/ResearchSession";
+import { isTemporaryWorkspace } from "./core/research/TemporaryWorkspace";
 import { SoundService } from "./core/service/feedbackService/SoundService";
 import { Settings } from "./core/service/Settings";
 import { ComponentTab, Tab } from "./core/Tab";
@@ -35,6 +36,8 @@ export const ProjectTabs = memo(function ProjectTabs({
   const tabsContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionRef = useRef(0);
   const [protectingPrivacy, setProtectingPrivacy] = useState(Settings.protectingPrivacy);
+  // 换了研究文件夹，哪些白板算「文件夹外」也跟着变
+  const [, setResearchRoot] = useState(Settings.researchFolderPath);
   const activeResourceTab = useAtomValue(activeResourceTabAtom);
   const { t } = useTranslation("research");
   const overflow = useOverflowEdges(tabsContainerRef, tabs.map((tab) => tab.id).join("\n"));
@@ -43,6 +46,7 @@ export const ProjectTabs = memo(function ProjectTabs({
     const unwatch = Settings.watch("protectingPrivacy", setProtectingPrivacy);
     return unwatch;
   }, []);
+  useEffect(() => Settings.watch("researchFolderPath", setResearchRoot), []);
 
   // 保存滚动位置
   const saveScrollPosition = useCallback(() => {
@@ -144,7 +148,12 @@ export const ProjectTabs = memo(function ProjectTabs({
     project.isDraft
       ? { name: t("tabs.untitled", { n: project.uri.path }), title: t("tabs.untitled", { n: project.uri.path }) }
       : project.uri.scheme === "file"
-        ? { name: displayWorkspaceName(project.title), title: project.uri.fsPath }
+        ? {
+            name: displayWorkspaceName(project.title),
+            title: isTemporaryWorkspace(project)
+              ? t("tabs.outsideFolder", { path: project.uri.fsPath, interpolation: { escapeValue: false } })
+              : project.uri.fsPath,
+          }
         : { name: project.title, title: project.title };
   const tabLabel = (tab: Tab): { name: string; title: string; context?: string } => {
     if (tab instanceof Project) return projectLabel(tab);
@@ -157,11 +166,12 @@ export const ProjectTabs = memo(function ProjectTabs({
   };
 
   return (
+    // 标签浮在白板上：一组圆角小药丸，宽度按内容，不再横贯整行
     <div
       data-pg-tab-bar
       data-pg-tab-group-bar-id={groupId}
       className={cn(
-        "border-border bg-muted/60 z-10 flex h-8 border-b transition-opacity hover:opacity-100",
+        "bg-background/95 border-border/60 pointer-events-auto z-10 flex h-7 max-w-full min-w-0 rounded-full border p-0.5 shadow-xs transition-opacity hover:opacity-100",
         isClassroomMode && "opacity-0",
       )}
     >
@@ -169,7 +179,7 @@ export const ProjectTabs = memo(function ProjectTabs({
       <div
         ref={tabsContainerRef}
         role="tablist"
-        className="scrollbar-hide relative flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+        className="scrollbar-hide relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto overflow-y-hidden rounded-full"
         style={edgeFadeMask(overflow)}
         onScroll={handleScroll}
         onWheel={(e) => {
@@ -182,6 +192,7 @@ export const ProjectTabs = memo(function ProjectTabs({
           const active = activeTab === tab;
           const project = tab instanceof Project ? tab : undefined;
           const unsaved = project !== undefined && (project.isSaving || project.projectState !== ProjectState.Saved);
+          const temporary = project !== undefined && isTemporaryWorkspace(project);
           const label = tabLabel(tab);
           return (
             <TabContextMenu key={tab.id} tab={tab} onClose={onTabClose}>
@@ -190,10 +201,8 @@ export const ProjectTabs = memo(function ProjectTabs({
                 aria-selected={active}
                 data-pg-docked-tab-id={tab.id}
                 className={cn(
-                  "group/tab border-border relative flex h-full max-w-[220px] min-w-24 cursor-pointer items-center gap-1.5 border-r px-3 text-[12px] font-medium whitespace-nowrap select-none",
-                  active
-                    ? "bg-background text-foreground after:bg-primary after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  "group/tab relative flex h-full max-w-[220px] min-w-24 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium whitespace-nowrap select-none",
+                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 onMouseDown={(e) => handleTabMouseDown(tab, e)}
                 onMouseEnter={() => SoundService.play.mouseEnterButton()}
@@ -207,7 +216,8 @@ export const ProjectTabs = memo(function ProjectTabs({
                   />
                 )}
                 {!project && tab.icon && <tab.icon className="size-3.5 shrink-0" />}
-                <FileName name={shown(label.name)} title={shown(label.title)} />
+                {temporary && <FolderOutput aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
+                <FileName name={shown(label.name)} title={shown(label.title)} className={cn(temporary && "italic")} />
                 {label.context && (
                   <span className="text-muted-foreground flex min-w-0 items-center gap-1">
                     <span className="shrink-0">·</span>
@@ -220,7 +230,7 @@ export const ProjectTabs = memo(function ProjectTabs({
                     aria-label={t("tabs.close")}
                     title={t("tabs.close")}
                     className={cn(
-                      "hover:bg-foreground/10 focus-visible:ring-primary/50 -mr-1.5 ml-auto flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] opacity-0 outline-none group-hover/tab:opacity-100 focus-visible:opacity-100 focus-visible:ring-2",
+                      "hover:bg-foreground/10 focus-visible:ring-primary/50 -mr-1 ml-auto flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full opacity-0 outline-none group-hover/tab:opacity-100 focus-visible:opacity-100 focus-visible:ring-2",
                       active && "opacity-100",
                     )}
                     // 点 × 只关闭，不先切过去；中键照常冒泡给标签处理
@@ -238,7 +248,7 @@ export const ProjectTabs = memo(function ProjectTabs({
                       void handleTabClose(tab, e);
                     }}
                   >
-                    <X className="size-4" />
+                    <X className="size-3.5" />
                   </button>
                 )}
               </div>

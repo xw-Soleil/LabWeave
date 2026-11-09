@@ -573,17 +573,6 @@ settings:
     description: |
       長或寬超過此尺寸的圖片，其長或寬的最大值將會被限制為此大小
       同時保持長寬比不變，僅在開啟“圖片尺寸壓縮”時生效
-  clipboardPasteMode:
-    title: 系統剪貼板粘貼模式
-    description: |
-      選擇從系統剪貼板粘貼內容時使用的技術方案。
-      「自動」模式會根據操作系統自動選擇最佳方式（macOS 使用 Web Clipboard API，其他系統使用 Tauri 原生 API）。
-      「WebView」模式始終使用 Web Clipboard API。
-      「Tauri」模式始終使用 Tauri 原生 API。
-    options:
-      auto: 自動
-      webview: WebView
-      tauri: Tauri
   isPauseRenderWhenManipulateOvertime:
     title: 超過一定時間未操作舞臺，暫停渲染
     description: |
@@ -2940,7 +2929,12 @@ research:
     autoSaveFailed: "關閉前自動保存「{{name}}」失敗：{{message}}"
     extensionsDisabled: 科研工作臺不運行擴展，數據只留在本機
     resizeSidePanel: 拖動調整面板寬度
+    pinSidePanel: 固定面板
+    unpinSidePanel: 收起面板，鼠標移到窗口邊上再彈出
+    showSidePanel: 展開面板
   statusBar:
+    outsideFolder: 研究文件夾外
+    outsideFolderHint: 這塊白板不在研究文件夾裡，是臨時打開的。照常保存，但不生成 AI 文字版，不進最近文件，下次啟動不會自動打開，外部 AI 也改不了它。想變成正式的工作區，用「另存為」存進研究文件夾。
     nodes: "{{count}} 個節點"
     edges: "{{count}} 條連線"
     selected: "已選 {{count}} 個"
@@ -3067,6 +3061,12 @@ research:
     pdfNoText: 這個 PDF 裡沒有能複製的文字，可能是掃描件
     thumbnailFailed: "縮略圖沒做出來：{{error}}"
     targetClosed: 要放卡片的白板已經關掉了，{{count}} 張卡片沒有放上去，請重新拖一次
+    caption:
+      menu: 加圖片標題…
+      editMenu: 改圖片標題…
+      title: 圖片標題
+      description: 顯示在圖片左下角。清空就不顯示。不會改文件名。
+      placeholder: 比如：B 模型在新數據上的準確率
   drop:
     title: 放到白板上
     hint: 鬆開鼠標，把文件放到白板上
@@ -3093,6 +3093,8 @@ research:
       description: "選一個研究文件夾後，這些文件會先複製到它的「導入」子文件夾，再放上白板。\n也可以先不復制，直接引用文件原來的位置。"
       choose: 選擇研究文件夾
       useOriginal: 直接引用原文件
+  clipboard:
+    nothingToPaste: 剪貼板裡沒有能貼到白板上的文字或圖片
   workspace:
     title: 工作區
     noFolder: 還沒有選擇研究文件夾
@@ -3159,6 +3161,7 @@ research:
     saving: 正在保存
     savingWait: 正在保存，請稍候再關閉
     close: 關閉
+    outsideFolder: "研究文件夾外，臨時打開：{{path}}"
   welcome:
     title: 歡迎使用科研工作臺
     subtitle: 把論文、圖片和筆記擺到白板上，理清思路，再請 AI 幫你看看還缺什麼

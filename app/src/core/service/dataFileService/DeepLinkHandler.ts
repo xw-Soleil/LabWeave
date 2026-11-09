@@ -119,7 +119,13 @@ async function normalizeFilePath(rawPath: string): Promise<string | null> {
     const insideRoot = ResearchFolder.toAbsolute(fileName);
     if (ResearchFolder.isInside(insideRoot)) {
       await ResearchFolder.ensureRootRegistered().catch((error) =>
-        toast.error(i18next.t("files.setRootFailed", { ns: "research", error: String(error) })),
+        toast.error(
+          i18next.t("files.setRootFailed", {
+            ns: "research",
+            error: String(error),
+            interpolation: { escapeValue: false },
+          }),
+        ),
       );
       if (await exists(insideRoot)) return insideRoot;
     }
@@ -227,7 +233,9 @@ export async function handleDeepLink(urls: string[]) {
       continue;
     }
     if (isOutsideResearchFolder(resolvedPath)) {
-      toast.error(i18next.t("files.outsideFolder", { ns: "research", path: resolvedPath }));
+      toast.error(
+        i18next.t("files.outsideFolder", { ns: "research", path: resolvedPath, interpolation: { escapeValue: false } }),
+      );
       continue;
     }
 

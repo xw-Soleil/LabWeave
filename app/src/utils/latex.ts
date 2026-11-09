@@ -1,4 +1,4 @@
-/** 只识别整个节点都是公式的情况，避免把普通说明文字转成公式节点。 */
+/** 编辑浮层只把完整公式交给 KaTeX，避免把普通说明文字当成公式。 */
 export function extractLatexSource(value: string): string | null {
   const text = value.trim();
   for (const [open, close] of [

@@ -17,6 +17,15 @@ import { ProgressNumber, Vector } from "@graphif/data-structures";
 import { Line } from "@graphif/shapes";
 
 /**
+ * 连到引用块上时，端点落在鼠标按下 / 松手的那一点。
+ * 图片原来也这样，但按在哪儿往往是随手的；现在图片上的线默认停在边框上，
+ * 要指图里某一处时选中连线拖端点（research/ImageEdgeEndpoints）。
+ */
+function aimsAtPointerLocation(entity: ConnectableEntity): boolean {
+  return entity.constructor.name === "ReferenceBlockNode";
+}
+
+/**
  * 连线控制器
  * 目前的连接方式：
  * 拖连（可多重）、
@@ -197,11 +206,8 @@ export class ControllerNodeConnectionClass extends ControllerClass {
       return;
     }
 
-    // 记录起始点在图片或引用块上的精确位置
-    if (
-      clickedConnectableEntity instanceof ImageNode ||
-      clickedConnectableEntity.constructor.name === "ReferenceBlockNode"
-    ) {
+    // 记录起始点在引用块上的精确位置
+    if (aimsAtPointerLocation(clickedConnectableEntity)) {
       const rect = clickedConnectableEntity.collisionBox.getRectangle();
       // 计算鼠标在内部的相对位置 (0-1之间)
       const relativeX = (pressWorldLocation.x - rect.location.x) / rect.size.x;
@@ -307,7 +313,7 @@ export class ControllerNodeConnectionClass extends ControllerClass {
         this.connectToEntity = entity;
         isFindConnectToNode = true;
         this._hoverImageLocation = null;
-        if (entity instanceof ImageNode || entity.constructor.name === "ReferenceBlockNode") {
+        if (aimsAtPointerLocation(entity)) {
           const rect = entity.collisionBox.getRectangle();
           const relativeX = (worldLocation.x - rect.location.x) / rect.size.x;
           const relativeY = (worldLocation.y - rect.location.y) / rect.size.y;
@@ -363,12 +369,9 @@ export class ControllerNodeConnectionClass extends ControllerClass {
       return;
     }
 
-    // 记录结束点在图片或引用块上的精确位置
+    // 记录结束点在引用块上的精确位置
     this._endImageLocation = null;
-    if (
-      releaseTargetEntity &&
-      (releaseTargetEntity instanceof ImageNode || releaseTargetEntity.constructor.name === "ReferenceBlockNode")
-    ) {
+    if (releaseTargetEntity && aimsAtPointerLocation(releaseTargetEntity)) {
       const rect = releaseTargetEntity.collisionBox.getRectangle();
       // 计算鼠标在内部的相对位置 (0-1之间)
       const relativeX = (releaseWorldLocation.x - rect.location.x) / rect.size.x;
@@ -418,9 +421,7 @@ export class ControllerNodeConnectionClass extends ControllerClass {
       // 额外复制一个数组，因为回调函数执行前，这个数组已经被清空了
       const newConnectFromEntities = this.connectFromEntities;
       const isSingleImageOrReferenceSource =
-        newConnectFromEntities.length === 1 &&
-        (newConnectFromEntities[0] instanceof ImageNode ||
-          newConnectFromEntities[0].constructor.name === "ReferenceBlockNode");
+        newConnectFromEntities.length === 1 && aimsAtPointerLocation(newConnectFromEntities[0]);
       const sourceImageLocation = isSingleImageOrReferenceSource
         ? this._startImageLocation.get(newConnectFromEntities[0].uuid)?.clone()
         : undefined;
@@ -647,9 +648,7 @@ export class ControllerNodeConnectionClass extends ControllerClass {
 
   public getPreviewSourceRectangleRate(): Vector {
     const isSingleImageOrReferenceSource =
-      this.connectFromEntities.length === 1 &&
-      (this.connectFromEntities[0] instanceof ImageNode ||
-        this.connectFromEntities[0].constructor.name === "ReferenceBlockNode");
+      this.connectFromEntities.length === 1 && aimsAtPointerLocation(this.connectFromEntities[0]);
 
     if (isSingleImageOrReferenceSource) {
       const fromEntity = this.connectFromEntities[0];
@@ -666,10 +665,7 @@ export class ControllerNodeConnectionClass extends ControllerClass {
     if (!this.connectToEntity) {
       return Vector.same(0.5);
     }
-    if (
-      (this.connectToEntity instanceof ImageNode || this.connectToEntity.constructor.name === "ReferenceBlockNode") &&
-      this._hoverImageLocation
-    ) {
+    if (aimsAtPointerLocation(this.connectToEntity) && this._hoverImageLocation) {
       return this._hoverImageLocation.clone();
     }
     return this.directionToRate(this._previewTargetDirection);
@@ -686,11 +682,9 @@ export class ControllerNodeConnectionClass extends ControllerClass {
     const isPressC = this.project.controller.pressingKeySet.has("c");
     let sourceRectRate: [number, number] = [0.5, 0.5];
 
-    // 如果是从图片或引用块节点发出，使用精确位置
+    // 如果是从引用块节点发出，使用精确位置
     const isSingleImageOrReferenceSource =
-      this.connectFromEntities.length === 1 &&
-      (this.connectFromEntities[0] instanceof ImageNode ||
-        this.connectFromEntities[0].constructor.name === "ReferenceBlockNode");
+      this.connectFromEntities.length === 1 && aimsAtPointerLocation(this.connectFromEntities[0]);
 
     if (isSingleImageOrReferenceSource) {
       const fromEntity = this.connectFromEntities[0];
@@ -718,11 +712,8 @@ export class ControllerNodeConnectionClass extends ControllerClass {
 
     // 计算目标位置
     let targetRectRate: [number, number] = [0.5, 0.5];
-    // 如果是连接到图片或引用块节点，使用精确位置
-    if (
-      (connectToEntity instanceof ImageNode || connectToEntity.constructor.name === "ReferenceBlockNode") &&
-      this._endImageLocation
-    ) {
+    // 如果是连接到引用块节点，使用精确位置
+    if (aimsAtPointerLocation(connectToEntity) && this._endImageLocation) {
       targetRectRate = [this._endImageLocation.x, this._endImageLocation.y];
     } else {
       // 否则使用方向计算

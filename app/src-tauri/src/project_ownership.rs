@@ -948,12 +948,13 @@ mod tests {
             drop(inspector_lock);
         });
 
+        // 余量要比 CI 机器忙时线程晚醒的时间大得多，否则测的是机器快慢
         let ownership = acquire_project_ownership_with_retry_delay(
             &project,
             ProjectOwner::Connectable {
                 endpoint: "ipc://runtime-host".to_owned(),
             },
-            Duration::from_millis(20),
+            Duration::from_millis(500),
         );
 
         inspector.join().unwrap();
@@ -975,22 +976,24 @@ mod tests {
             drop(ownership_lock);
         });
         let owner_record_inspector = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(1500));
             drop(owner_record_lock);
         });
 
+        let retry_delay = Duration::from_millis(500);
         let started = Instant::now();
         let error = acquire_project_ownership_with_retry_delay(
             &project,
             ProjectOwner::Connectable {
                 endpoint: "ipc://runtime-host".to_owned(),
             },
-            Duration::from_millis(20),
+            retry_delay,
         )
         .unwrap_err();
 
+        // 共用一次重试只等一个 retry_delay；两把锁各自重试会等两个，阻塞等锁会等到 1.5 秒
         assert_eq!(error.code(), "PROJECT_BUSY");
-        assert!(started.elapsed() < Duration::from_millis(80));
+        assert!(started.elapsed() < retry_delay * 8 / 5);
         ownership_holder.join().unwrap();
         owner_record_inspector.join().unwrap();
     }
@@ -1230,14 +1233,15 @@ mod tests {
         let acquiring_manager = Arc::clone(&manager);
         let acquisition = thread::spawn(move || {
             acquiring_manager
-                .acquire_with_retry_delay(&contended_project, Duration::from_millis(100))
+                .acquire_with_retry_delay(&contended_project, Duration::from_millis(1000))
         });
         thread::sleep(Duration::from_millis(10));
 
         let started = Instant::now();
         manager.release(&ownership_id).unwrap();
 
-        assert!(started.elapsed() < Duration::from_millis(50));
+        // 被另一条重试卡住时要等近 1 秒；留大余量，免得机器忙时误报
+        assert!(started.elapsed() < Duration::from_millis(500));
         assert_eq!(
             acquisition.join().unwrap().unwrap_err().code(),
             "PROJECT_BUSY"
@@ -1258,14 +1262,15 @@ mod tests {
         .unwrap();
         let first_manager = Arc::clone(&manager);
         let first_project = project.clone();
+        // 外部占用在 20 毫秒左右放开，第一次重试要远在它之后，机器忙时线程晚醒也不误报
         let first = thread::spawn(move || {
-            first_manager.acquire_with_retry_delay(&first_project, Duration::from_millis(50))
+            first_manager.acquire_with_retry_delay(&first_project, Duration::from_millis(1000))
         });
         thread::sleep(Duration::from_millis(10));
         let second_manager = Arc::clone(&manager);
         let second_project = project.clone();
         let second = thread::spawn(move || {
-            second_manager.acquire_with_retry_delay(&second_project, Duration::from_millis(50))
+            second_manager.acquire_with_retry_delay(&second_project, Duration::from_millis(1000))
         });
         thread::sleep(Duration::from_millis(10));
         drop(external_owner);

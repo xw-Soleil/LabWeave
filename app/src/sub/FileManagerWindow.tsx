@@ -20,7 +20,8 @@ import {
   type ResearchFileEntry,
   type ResearchFolderScan,
 } from "@/core/research/ResearchFolder";
-import { emitResearchEvent, onResearchEvent } from "@/core/research/ResearchShell";
+import { emitResearchEvent } from "@/core/research/ResearchShell";
+import { hidePeekForDrag } from "@/core/research/SidePanels";
 import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { createSubWindow } from "@/core/subWindowOpen";
@@ -266,6 +267,8 @@ export default function FileManagerWindow() {
         dragging = true;
         // 捕获指针，拖过白板时画布不会收到这些移动和松开事件
         row.setPointerCapture(pointerId);
+        // 从临时弹出的文件面板往画布上拖：面板先收起，不挡住落点
+        hidePeekForDrag("left");
       }
       setDrag({ entry, x: moveEvent.clientX, y: moveEvent.clientY });
     };
@@ -282,7 +285,8 @@ export default function FileManagerWindow() {
         suppressClickRef.current = false;
       }, 0);
       if (!dropEvent) return;
-      const panel = rootRef.current?.closest<HTMLElement>("[data-pg-tab-group-id]") ?? rootRef.current;
+      const panel =
+        rootRef.current?.closest<HTMLElement>("[data-pg-side-panel], [data-pg-tab-group-id]") ?? rootRef.current;
       const rect = panel?.getBoundingClientRect();
       const insidePanel =
         rect &&
@@ -593,8 +597,10 @@ FileManagerWindow.open = () => {
 };
 
 /**
+ * 面板不在左右侧栏里时（定制设置改成了浮动、停靠在编辑区）用的开关：
  * 没打开就打开；打开了但被同一组里别的标签页挡住就切到前台；看得见就关掉。
- * 按可见性判断而不是按键盘焦点：面板看得见时焦点一般在白板上，按焦点判断的话第一下只会把焦点抢走
+ * 按可见性判断而不是按键盘焦点：面板看得见时焦点一般在白板上，按焦点判断的话第一下只会把焦点抢走。
+ * 竖栏按钮和快捷键走 ResearchSession.toggleResearchPanel，侧栏里的面板只固定/收起，不关掉。
  */
 FileManagerWindow.toggle = async () => {
   const existing = findOpenTab();
@@ -612,9 +618,3 @@ FileManagerWindow.toggle = async () => {
   }
   TabWorkspace.focus(existing.id);
 };
-
-// 这个模块需要被常驻模块静态 import，监听才会生效。chooseFolder / newWorkspace 由 ResearchSession 处理
-const unsubscribe = onResearchEvent("toggleFiles", () => {
-  FileManagerWindow.toggle().catch(showError);
-});
-import.meta.hot?.dispose(unsubscribe);

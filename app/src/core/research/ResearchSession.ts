@@ -2,10 +2,27 @@ import { Dialog } from "@/components/ui/dialog";
 import { Project } from "@/core/Project";
 import { RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
+import { isTemporaryWorkspace } from "./TemporaryWorkspace";
+import {
+  decidePanelToggle,
+  enterSidePeekTrigger,
+  getSidePanelStates,
+  registerSidePanels,
+  setSidePanelPinned,
+  sideEdgeOfGroup,
+  withoutAutoPin,
+} from "@/core/research/SidePanels";
 import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { ComponentTab, Tab } from "@/core/Tab";
-import { findTabGroupByTabId, getTabGroups, isFixedSideGroupId } from "@/core/TabGroup";
+import {
+  findTabGroup,
+  findTabGroupByTabId,
+  FIXED_SIDE_GROUP_IDS,
+  getTabGroups,
+  isFixedSideGroupId,
+  type FixedSideEdge,
+} from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabGroupRootAtom, tabsAtom } from "@/state";
 // 静态 import 让文件面板模块常驻，它在模块加载时注册 toggleFiles 监听
@@ -34,7 +51,7 @@ export const workspacePopoverOpenAtom = atom(false);
 export const researchFilesVersionAtom = atom(0);
 
 function t(key: string, options?: Record<string, unknown>) {
-  return i18next.t(key, { ns: "research", ...options });
+  return i18next.t(key, { ns: "research", ...options, interpolation: { escapeValue: false } });
 }
 
 function reportError(error: unknown) {
@@ -120,10 +137,12 @@ export function focusMainWorkspace() {
   if (project) TabWorkspace.focus(project.id);
 }
 
-/** 研究文件夹里的 .prg 加上已经打开的工作区（可能在文件夹外面） */
+/** 研究文件夹里的 .prg 加上已打开的非临时工作区 */
 export async function listResearchWorkspaces(): Promise<ResearchWorkspaceItem[]> {
   const items: ResearchWorkspaceItem[] = [];
-  const openPaths = openFileProjects().map((project) => project.uri.fsPath);
+  const openPaths = openFileProjects()
+    .filter((project) => !isTemporaryWorkspace(project))
+    .map((project) => project.uri.fsPath);
   if (ResearchFolder.getRoot()) {
     for (const entry of await ResearchFolder.listFiles()) {
       if (entry.kind !== "workspace") continue;
@@ -180,6 +199,57 @@ export async function openResearchPanel(panel: ResearchPanel) {
   }
 }
 
+const PANEL_EDGE: Record<ResearchPanel, FixedSideEdge> = { files: "left", ai: "right" };
+
+/**
+ * 竖栏按钮、快捷键切换面板。面板在左右侧栏里时（默认）只切换固定/收起，不关掉，
+ * 收起后对话和文件列表都还在；用户在定制设置里改成别的打开方式时，照旧打开/关闭。
+ */
+export async function toggleResearchPanel(panel: ResearchPanel) {
+  const tab = findResearchPanelTab(panel);
+  const group = tab ? findTabGroupByTabId(store.get(tabGroupRootAtom), tab.id) : undefined;
+  const edge = sideEdgeOfGroup(group?.id);
+  if (tab && !edge) {
+    if (panel === "files") await FileManagerWindow.toggle();
+    else (await import("@/sub/AIWindow")).default.toggle();
+    return;
+  }
+  const decision = decidePanelToggle({
+    open: !!tab,
+    pinned: getSidePanelStates()[edge ?? PANEL_EDGE[panel]].pinned,
+    frontmost: !!tab && group?.activeTabId === tab.id,
+  });
+  if (decision === "open" || !tab || !edge) {
+    // 打开后焦点落在收着的侧栏上，SidePanels 会把它固定下来
+    await openResearchPanel(panel);
+    return;
+  }
+  if (decision === "collapse") {
+    setSidePanelPinned(edge, false);
+    return;
+  }
+  setSidePanelPinned(edge, true);
+  TabWorkspace.focus(tab.id);
+}
+
+/** 鼠标停在竖栏「文件」按钮上：弹出文件面板，没打开过就先打开，同一侧显示着别的面板就切过来 */
+export function peekFilesPanel() {
+  enterSidePeekTrigger("left", () => {
+    const tab = findResearchPanelTab("files");
+    if (!tab) FileManagerWindow.open();
+    else if (findTabGroupByTabId(store.get(tabGroupRootAtom), tab.id)?.activeTabId !== tab.id) {
+      TabWorkspace.focus(tab.id);
+    }
+  });
+}
+
+/** 鼠标贴住窗口左边缘：弹出左侧栏；左侧一个面板都没有时打开文件面板 */
+export function peekLeftSide() {
+  enterSidePeekTrigger("left", () => {
+    if (!findTabGroup(store.get(tabGroupRootAtom), FIXED_SIDE_GROUP_IDS.left)) FileManagerWindow.open();
+  });
+}
+
 // 启动恢复完成前、关闭窗口逐个关标签页时都不能写会话，否则会把上次的记录冲掉
 let sessionTracking = false;
 
@@ -210,13 +280,19 @@ export function renameSessionWorkspace(oldPath: string, newPath: string) {
 export function persistResearchSession() {
   if (!sessionTracking) return;
   const active = store.get(activeResourceTabAtom);
-  const openWorkspaces = openFileProjects().map((project) => toStoredPath(project.uri.fsPath));
-  unreachableWorkspaces = unreachableWorkspaces.filter((path) => !openWorkspaces.some((open) => samePath(open, path)));
+  const openWorkspaces = openFileProjects()
+    .filter((project) => !isTemporaryWorkspace(project))
+    .map((project) => toStoredPath(project.uri.fsPath));
+  unreachableWorkspaces = unreachableWorkspaces.filter(
+    (path) =>
+      !isTemporaryWorkspace({ uri: URI.file(ResearchFolder.toAbsolute(path)) }) &&
+      !openWorkspaces.some((open) => samePath(open, path)),
+  );
   if (!unreachableWorkspaces.some((path) => samePath(path, unreachableActive))) unreachableActive = "";
   const next = {
     openWorkspaces: [...openWorkspaces, ...unreachableWorkspaces],
     active:
-      active instanceof Project && !active.closing && active.uri.scheme === "file"
+      active instanceof Project && !active.closing && active.uri.scheme === "file" && !isTemporaryWorkspace(active)
         ? toStoredPath(active.uri.fsPath)
         : unreachableActive,
     panels: { files: !!findResearchPanelTab("files"), ai: !!findResearchPanelTab("ai") },
@@ -250,6 +326,7 @@ export async function startResearchSession(): Promise<boolean> {
   let reachable = 0;
   for (const storedPath of session.openWorkspaces) {
     const absPath = ResearchFolder.toAbsolute(storedPath);
+    if (isTemporaryWorkspace({ uri: URI.file(absPath) })) continue;
     try {
       if (!(await exists(absPath))) {
         missing.push(storedPath);
@@ -266,14 +343,17 @@ export async function startResearchSession(): Promise<boolean> {
   unreachableWorkspaces = rootUnavailable || reachable === 0 ? missing : [];
   unreachableActive = unreachableWorkspaces.some((path) => samePath(path, session.active)) ? session.active : "";
 
-  for (const panel of ["files", "ai"] as const) {
-    if (!session.panels[panel]) continue;
-    try {
-      await openResearchPanel(panel);
-    } catch (error) {
-      toast.error(t("shell.panelFailed", { message: String(error) }));
+  // 面板按上次固定没固定显示：恢复时打开面板不算「要用它」，不自动固定
+  await withoutAutoPin(async () => {
+    for (const panel of ["files", "ai"] as const) {
+      if (!session.panels[panel]) continue;
+      try {
+        await openResearchPanel(panel);
+      } catch (error) {
+        toast.error(t("shell.panelFailed", { message: String(error) }));
+      }
     }
-  }
+  });
 
   const activePath = session.active ? ResearchFolder.toAbsolute(session.active) : "";
   const focusTarget =
@@ -302,11 +382,16 @@ export function registerResearchSession() {
     }),
     onResearchEvent("newWorkspace", handle(promptNewWorkspace)),
     onResearchEvent("chooseFolder", handle(chooseResearchFolder)),
+    onResearchEvent(
+      "toggleFiles",
+      handle(() => toggleResearchPanel("files")),
+    ),
     // AIWindow 只会被动态 import，它自己的模块级监听在第一次打开前不存在，所以在这里转发
     onResearchEvent(
       "toggleAI",
-      handle(async () => (await import("@/sub/AIWindow")).default.toggle()),
+      handle(() => toggleResearchPanel("ai")),
     ),
+    registerSidePanels(),
   ];
   window.addEventListener(RESEARCH_FILES_CHANGED_EVENT, bumpFilesVersion);
   return () => {

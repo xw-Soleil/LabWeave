@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { createConnection } from "node:net";
+import { externalWorkspaceAccessError } from "../core/research/ExternalWorkspaceAccess";
+import { readAppSettings, researchFolderOf } from "./ExternalAiWorkspace";
 import { prepareBuiltInToolInvocation } from "../core/service/dataManageService/aiEngine/BuiltInToolRegistry";
 import {
   canClosedProjectProvideCapabilities,
@@ -24,6 +26,8 @@ type RuntimeResult =
         | {
             code:
               | "PROJECT_NOT_FOUND"
+              | "TEMPORARY_WORKSPACE_FORBIDDEN"
+              | "RESEARCH_FOLDER_UNAVAILABLE"
               | "PROJECT_BUSY"
               | "PROJECT_MUST_BE_OPEN"
               | "RUNTIME_CLEANUP_FAILED"
@@ -333,6 +337,11 @@ async function runPathRoutedInvocation(
 
   const projectPathResult = canonicalizeProjectPath(options.projectPath);
   if (!projectPathResult.ok) return projectPathResult;
+  const accessError = externalWorkspaceAccessError(
+    researchFolderOf(readAppSettings()),
+    projectPathResult.canonicalPath,
+  );
+  if (accessError) return { ok: false, error: accessError };
 
   if (process.env.PROJECT_GRAPH_CLI_OWNERSHIP_ACQUIRED === "1") {
     return invokeClosedProjectTool({ ...options, canonicalPath: projectPathResult.canonicalPath });

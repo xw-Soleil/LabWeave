@@ -128,13 +128,123 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
 }
 
 /**
- * 文件卡片：上面是类型标签和标题（标题不是文件名时下面再写一行文件名），下面是缩略图和开头文字。
- * 原文件不见了时整张卡片描红，右上角显示「文件不见了」。
+ * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
+ * 上面是类型标签和标题（标题不是文件名时下面再写一行文件名），下面是缩略图和开头文字。
+ * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
  */
 export function renderFileCard(project: Project, card: FileCardNode): void {
   card.ensureThumbnail();
   scheduleFileCardMissingCheck(project, card);
 
+  if (card.fileKind === "image" && card.bitmap && !Settings.protectingPrivacy) {
+    renderImageCard(project, card, card.bitmap);
+  } else {
+    renderDocumentCard(project, card);
+  }
+  renderHoverState(project, card);
+}
+
+// 图片卡片上浮着的小块（外部文件、文件不见了、用户填的标题），尺寸是世界坐标
+const IMAGE_CORNER_RADIUS = 8;
+const CHIP_MARGIN = 8;
+const CHIP_HEIGHT = 20;
+const CHIP_PADDING_X = 7;
+const CHIP_RADIUS = 6;
+const CHIP_FONT_SIZE = 12;
+
+/** 浮在图片上的小块：不透明底色保证在什么图上都看得清；放不下时文字省略 */
+function renderImageChip(
+  project: Project,
+  text: string,
+  rect: Rectangle,
+  corner: "topRight" | "bottomLeft",
+  textColor: Color,
+) {
+  const cameraScale = project.camera.currentScale;
+  const style = project.stageStyleManager.currentStyle;
+  const maxWidth = rect.size.x - CHIP_MARGIN * 2;
+  if (maxWidth <= CHIP_PADDING_X * 2) return;
+  const width = Math.min(getTextSize(text, CHIP_FONT_SIZE).x + CHIP_PADDING_X * 2, maxWidth);
+  const location =
+    corner === "topRight"
+      ? new Vector(rect.right - CHIP_MARGIN - width, rect.top + CHIP_MARGIN)
+      : new Vector(rect.left + CHIP_MARGIN, rect.bottom - CHIP_MARGIN - CHIP_HEIGHT);
+  project.shapeRenderer.renderRect(
+    project.renderer.transformWorld2View(new Rectangle(location, new Vector(width, CHIP_HEIGHT))),
+    style.Background.toNewAlpha(0.9),
+    Color.Transparent,
+    0,
+    CHIP_RADIUS * cameraScale,
+  );
+  project.textRenderer.renderFittedText(
+    text,
+    project.renderer.transformWorld2View(location.add(new Vector(CHIP_PADDING_X, (CHIP_HEIGHT - CHIP_FONT_SIZE) / 2))),
+    CHIP_FONT_SIZE * cameraScale,
+    (width - CHIP_PADDING_X * 2) * cameraScale,
+    textColor,
+  );
+}
+
+/**
+ * 图片卡片：整张图铺满卡片（卡片和图片比例不一致时居中、不裁切），不写类型和文件名。
+ * 用户填了标题才在左下角浮一小块；外部文件、文件不见了在右上角浮一小块。
+ */
+function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitmap) {
+  const style = project.stageStyleManager.currentStyle;
+  const cameraScale = project.camera.currentScale;
+  const rect = card.rectangle;
+  const viewRect = project.renderer.transformWorld2View(rect);
+  const radius = IMAGE_CORNER_RADIUS * cameraScale;
+
+  if (card.isSelected) {
+    project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxSelected);
+  }
+
+  const ctx = project.canvas.ctx;
+  ctx.save();
+  try {
+    ctx.beginPath();
+    superellipseRect(ctx, viewRect.location.x, viewRect.location.y, viewRect.size.x, viewRect.size.y, radius);
+    ctx.clip();
+    // 透明底的 PNG 下面垫一层卡片底色，和白板的点阵分开
+    ctx.fillStyle = (card.color.a > 0 ? card.color : style.Background).toString();
+    ctx.fill();
+    // 预览图通常比画出来的大，缩小时用高质量插值，图表里的细线和小字不发毛
+    ctx.imageSmoothingQuality = "high";
+    const scale = Math.min(rect.size.x / bitmap.width, rect.size.y / bitmap.height);
+    const size = new Vector(bitmap.width * scale, bitmap.height * scale);
+    project.imageRenderer.renderImageElement(
+      bitmap,
+      project.renderer.transformWorld2View(rect.center.subtract(size.multiply(0.5))),
+      scale,
+    );
+
+    if (CHIP_FONT_SIZE * cameraScale > Settings.ignoreTextNodeTextRenderLessThanFontSize) {
+      const textColor = style.StageObjectBorder;
+      if (card.missing) {
+        renderImageChip(project, cardText("missing"), rect, "topRight", MISSING_COLOR);
+      } else if (isExternalFileCard(project, card)) {
+        renderImageChip(project, cardText("external"), rect, "topRight", textColor.toNewAlpha(0.75));
+      }
+      if (card.caption) {
+        renderImageChip(project, card.caption, rect, "bottomLeft", textColor);
+      }
+    }
+  } finally {
+    ctx.restore();
+  }
+
+  // 图本身就是内容，只描一圈很淡的线，免得白底的图和白板糊在一起
+  project.shapeRenderer.renderRect(
+    viewRect,
+    Color.Transparent,
+    card.missing ? MISSING_COLOR : style.StageObjectBorder.toNewAlpha(0.16),
+    (card.missing ? 3 : 1) * cameraScale,
+    radius,
+  );
+}
+
+function renderDocumentCard(project: Project, card: FileCardNode) {
   const style = project.stageStyleManager.currentStyle;
   const cameraScale = project.camera.currentScale;
   const rect = card.rectangle;
@@ -171,7 +281,6 @@ export function renderFileCard(project: Project, card: FileCardNode): void {
   } finally {
     ctx.restore();
   }
-  renderHoverState(project, card);
 }
 
 function renderCardContent(project: Project, card: FileCardNode, textColor: Color) {

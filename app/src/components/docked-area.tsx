@@ -1,26 +1,36 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
-import { findResearchPanelTab } from "@/core/research/ResearchSession";
+import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
+import {
+  enterSidePanel,
+  enterSidePeekTrigger,
+  isSidePanelShown,
+  leaveSidePeekArea,
+  setSidePanelPinned,
+  SIDE_PANEL_GAP,
+  useSidePanelStates,
+  type SidePanelState,
+} from "@/core/research/SidePanels";
 import { Tab } from "@/core/Tab";
 import {
   clampSidePanelWidth,
-  findFixedSideChild,
-  isFixedSideGroupId,
+  getTabGroups,
   parseSidePanelWidth,
-  welcomeLayout,
-  WELCOME_GROUP_ID,
+  separateFixedSideGroups,
   type FixedSideEdge,
   type TabGroup,
   type TabGroupNode,
+  type TabSplit,
 } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
 import { useAtomValue } from "jotai";
-import { Minus, Plus } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { FolderOutput, MessageSquareText, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useShortcutText, withShortcut } from "./activity-rail";
+import { RESEARCH_FLOAT_TOP, RESEARCH_SIDE_PANEL_LEFT, useShortcutText, withShortcut } from "./activity-rail";
 import ResearchWelcome from "./research-welcome";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -32,6 +42,7 @@ interface ProjectStatusInfo {
   state: "saved" | "stashed" | "unsaved";
   scalePercent: number;
   noVisibleNodes: boolean;
+  temporary: boolean;
 }
 
 function readProjectStatus(project: Project): ProjectStatusInfo {
@@ -56,6 +67,8 @@ function readProjectStatus(project: Project): ProjectStatusInfo {
     )[project.projectState],
     scalePercent: Math.round(project.camera.currentScale * 100),
     noVisibleNodes: entities.length > 0 && !hasVisibleNode,
+    // 另存为进研究文件夹、换研究文件夹以后，下一次读取就跟着变
+    temporary: isTemporaryWorkspace(project),
   };
 }
 
@@ -99,7 +112,7 @@ function StatusBarButton({
           variant="ghost"
           aria-label={label}
           className={cn(
-            "text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent h-6 min-w-6 rounded-[6px] px-1 text-[11px] font-medium [&_svg:not([class*='size-'])]:size-3.5",
+            "text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent h-6 min-w-6 rounded-full px-1 text-[11px] font-medium [&_svg:not([class*='size-'])]:size-3.5",
             className,
           )}
           onClick={onClick}
@@ -112,8 +125,17 @@ function StatusBarButton({
   );
 }
 
-/** 编辑区底部固定的一行状态栏 */
-function ResearchStatusBar({ project, isClassroomMode }: { project: Project; isClassroomMode: boolean }) {
+/** 白板左下角浮着的状态条：节点数、保存状态、缩放 */
+function ResearchStatusBar({
+  project,
+  isClassroomMode,
+  left,
+}: {
+  project: Project;
+  isClassroomMode: boolean;
+  /** 左侧栏固定显示时要让开它 */
+  left: string;
+}) {
   const { t } = useTranslation("research");
   const status = useProjectStatus(project);
   // 白板可能因为打开设置等原因暂停了渲染，按钮改了视野要让它马上重画
@@ -134,15 +156,25 @@ function ResearchStatusBar({ project, isClassroomMode }: { project: Project; isC
   return (
     <div
       className={cn(
-        "border-border text-muted-foreground flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px] tabular-nums transition-opacity hover:opacity-100",
+        "bg-background/95 border-border/60 text-muted-foreground absolute bottom-2 z-10 flex h-7 max-w-[calc(100%-1rem)] items-center gap-2 rounded-full border pr-1 pl-3 text-[11px] tabular-nums shadow-xs transition-opacity hover:opacity-100",
         isClassroomMode && "opacity-0",
       )}
+      style={{ left }}
     >
+      {status?.temporary && (
+        <span
+          className="flex shrink-0 cursor-default items-center gap-1 font-medium text-amber-700 dark:text-amber-400"
+          title={t("statusBar.outsideFolderHint")}
+        >
+          <FolderOutput aria-hidden="true" className="size-3.5" />
+          {t("statusBar.outsideFolder")}
+        </span>
+      )}
       <span className="min-w-0 truncate" title={summary}>
         {summary}
       </span>
       <TooltipProvider>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           <StatusBarButton
             label={t("statusBar.zoomOut")}
             keyBindId="CameraScaleZoomOut"
@@ -194,35 +226,31 @@ function readSidePanelWidths(): SidePanelWidths {
   };
 }
 
-/**
- * 分栏：分隔线只画 1px，鼠标可按的范围左右各多 4px，悬停或拖动时显示 2px 强调色线。
- * 直接挂在左右分栏上的固定侧栏（文件面板、AI 对话）按像素定宽，拖宽后记住；其余分栏照旧按比例。
- */
+/** 分组挨着窗口的哪几条边：挨着上边和左右边时要给红绿灯、菜单、右上角按钮让位置 */
+interface GroupEdges {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+}
+
+const WINDOW_EDGES: GroupEdges = { top: true, right: true, bottom: true, left: true };
+
+function childEdges(edges: GroupEdges, split: TabSplit, index: 0 | 1): GroupEdges {
+  if (split.direction === "horizontal") return index === 0 ? { ...edges, right: false } : { ...edges, left: false };
+  return index === 0 ? { ...edges, bottom: false } : { ...edges, top: false };
+}
+
+/** 白板之间的分屏：分隔线只画 1px，鼠标可按的范围左右各多 4px，悬停或拖动时显示 2px 强调色线 */
 function ResearchSplitView({
   node,
-  renderNode,
-  sideWidths,
-  onSideWidthChange,
-  onSideWidthCommit,
+  renderChild,
 }: {
-  node: Extract<TabGroupNode, { type: "split" }>;
-  renderNode: (node: TabGroupNode) => React.ReactNode;
-  sideWidths: SidePanelWidths;
-  onSideWidthChange: (edge: FixedSideEdge, width: number) => void;
-  onSideWidthCommit: (edge: FixedSideEdge, width: number) => void;
+  node: TabSplit;
+  renderChild: (child: TabGroupNode, index: 0 | 1) => React.ReactNode;
 }) {
-  const { t } = useTranslation("research");
   const [dragging, setDragging] = useState(false);
   const horizontal = node.direction === "horizontal";
-  const side = findFixedSideChild(node);
-  const childStyle = (index: 0 | 1): React.CSSProperties => {
-    if (side) {
-      return index === side.index
-        ? { flex: "0 0 auto", width: sideWidths[side.edge], maxWidth: "50%" }
-        : { flex: "1 1 0%" };
-    }
-    return index === 0 ? { flexBasis: `${node.sizes[0]}%`, flexGrow: 0, flexShrink: 1 } : { flex: "1 1 0%" };
-  };
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -231,25 +259,17 @@ function ResearchSplitView({
     const parent = event.currentTarget.parentElement?.parentElement;
     if (!parent) return;
     const rect = parent.getBoundingClientRect();
-    let sideWidth = side ? sideWidths[side.edge] : 0;
-    const update = (clientX: number, clientY: number) => {
-      if (side) {
-        sideWidth = clampSidePanelWidth(side.index === 0 ? clientX - rect.left : rect.right - clientX, rect.width);
-        onSideWidthChange(side.edge, sideWidth);
-        return;
-      }
+    const onMove = (moveEvent: PointerEvent) => {
       const total = horizontal ? rect.width : rect.height;
-      const position = horizontal ? clientX - rect.left : clientY - rect.top;
+      const position = horizontal ? moveEvent.clientX - rect.left : moveEvent.clientY - rect.top;
       const first = Math.max(10, Math.min(90, (position / total) * 100));
       TabWorkspace.resizeSplit(node.id, [first, 100 - first]);
     };
-    const onMove = (moveEvent: PointerEvent) => update(moveEvent.clientX, moveEvent.clientY);
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
       setDragging(false);
-      if (side) onSideWidthCommit(side.edge, sideWidth);
     };
     setDragging(true);
     window.addEventListener("pointermove", onMove);
@@ -259,13 +279,12 @@ function ResearchSplitView({
 
   return (
     <div className={cn("flex size-full min-h-0 min-w-0", horizontal ? "flex-row" : "flex-col")}>
-      <div className="min-h-0 min-w-0" style={childStyle(0)}>
-        {renderNode(node.children[0])}
+      <div className="relative min-h-0 min-w-0" style={{ flexBasis: `${node.sizes[0]}%`, flexGrow: 0, flexShrink: 1 }}>
+        {renderChild(node.children[0], 0)}
       </div>
       <div
         role="separator"
         aria-orientation={horizontal ? "vertical" : "horizontal"}
-        aria-label={side ? t("shell.resizeSidePanel") : undefined}
         className={cn("bg-border relative z-20 shrink-0", horizontal ? "w-px" : "h-px")}
       >
         <div
@@ -285,8 +304,8 @@ function ResearchSplitView({
           />
         </div>
       </div>
-      <div className="min-h-0 min-w-0" style={childStyle(1)}>
-        {renderNode(node.children[1])}
+      <div className="relative min-h-0 min-w-0" style={{ flex: "1 1 0%" }}>
+        {renderChild(node.children[1], 1)}
       </div>
     </div>
   );
@@ -310,7 +329,6 @@ function DropPreview({ groupId }: { groupId: string }) {
   );
   if (!group) return null;
   const tabBar = group.querySelector<HTMLElement>("[data-pg-tab-bar]");
-  // 侧栏只有一页时不显示标签行，拖进来就整块高亮，松手后标签放进这一组
   if (!tabBar) {
     return <div className="bg-primary/10 border-primary pointer-events-none absolute inset-0 z-30 border-2" />;
   }
@@ -327,58 +345,112 @@ function DropPreview({ groupId }: { groupId: string }) {
 
   return (
     <div
-      className="bg-primary pointer-events-none absolute z-30 w-0.5"
+      className="bg-primary pointer-events-none absolute z-40 w-0.5"
       style={{ left, top: tabBarRect.top - groupRect.top, height: tabBarRect.height }}
     />
   );
 }
 
-export default function DockedArea({
+/**
+ * 左右侧栏：浮在画布上面的圆角卡片，画布不因为它变窄。
+ * 收起时移到窗口外面、变透明，但不卸载：对话、文件列表、正在进行的拖动都还在。
+ * 不标 data-pg-tab-group-id，白板标签拖不进来；侧栏里的标签可以拖出去放进编辑区。
+ */
+function SidePanelOverlay({
+  edge,
+  group,
+  tabs,
+  activeTab,
+  state,
+  width,
+  onWidthChange,
+  onWidthCommit,
   onTabClick,
   onTabClose,
   isClassroomMode,
-  leftInset,
-  topInset,
 }: {
+  edge: FixedSideEdge;
+  group: TabGroup;
+  tabs: Tab[];
+  activeTab: Tab | undefined;
+  state: SidePanelState;
+  width: number;
+  onWidthChange: (edge: FixedSideEdge, width: number) => void;
+  onWidthCommit: (edge: FixedSideEdge, width: number) => void;
   onTabClick: (tab: Tab) => void;
   onTabClose: (tab: Tab) => void;
   isClassroomMode: boolean;
-  /** CSS length reserved on the left edge (e.g. for the research activity rail). */
-  leftInset?: string;
-  /** CSS length reserved on the top edge (e.g. for the research title bar). */
-  topInset?: string;
 }) {
-  const root = useAtomValue(tabGroupRootAtom);
-  const tabs = useAtomValue(tabsAtom);
-  const empty = !tabs.some((tab) => tab instanceof Project && !tab.closing);
-  const aiTab = empty ? findResearchPanelTab("ai", tabs) : undefined;
-  const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
-  const changeSideWidth = (edge: FixedSideEdge, width: number) =>
-    setSideWidths((current) => (current[edge] === width ? current : { ...current, [edge]: width }));
-  const commitSideWidth = (edge: FixedSideEdge, width: number) =>
-    localStorage.setItem(SIDE_PANEL_WIDTH_STORAGE_KEY[edge], String(width));
+  const { t } = useTranslation("research");
+  const ref = useRef<HTMLDivElement>(null);
+  const [resizing, setResizing] = useState(false);
+  const shown = isSidePanelShown(state);
 
-  const focusGroupTab = (activeTab: Tab | undefined) => {
-    if (activeTab && store.get(activeTabAtom) !== activeTab) TabWorkspace.focus(activeTab.id);
+  // 收起时把焦点从面板里拿走，免得接着打的字进了看不见的输入框
+  useEffect(() => {
+    if (shown) return;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && ref.current?.contains(focused)) focused.blur();
+  }, [shown]);
+
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !ref.current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = ref.current.getBoundingClientRect();
+    let next = width;
+    const onMove = (moveEvent: PointerEvent) => {
+      const raw = edge === "left" ? moveEvent.clientX - rect.left : rect.right - moveEvent.clientX;
+      next = clampSidePanelWidth(raw, window.innerWidth);
+      onWidthChange(edge, next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      setResizing(false);
+      onWidthCommit(edge, next);
+    };
+    setResizing(true);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
 
-  // 分组之间只有 1px 分隔线，不画边框和焦点框；标签行 → 内容 → 状态栏自上而下排，内容不被压住
-  const renderResearchGroup = (node: TabGroup, groupTabs: Tab[], activeTab: Tab | undefined) => {
-    // 侧栏只有面板自己这一页时不要标签行；放进了工作区或多页时照常显示，才能切换、关闭和拖走
-    const showTabBar =
-      !isFixedSideGroupId(node.id) || groupTabs.length > 1 || groupTabs.some((tab) => tab instanceof Project);
-    return (
-      <section
-        key={node.id}
-        data-pg-tab-group-id={node.id}
-        className="relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden"
-        onPointerDownCapture={() => focusGroupTab(activeTab)}
-      >
-        {showTabBar && (
-          <div className="relative z-10 shrink-0">
+  const pinLabel = state.pinned ? t("shell.unpinSidePanel") : t("shell.pinSidePanel");
+
+  return (
+    <div
+      ref={ref}
+      data-pg-side-panel={edge}
+      data-pg-side-shown={shown}
+      aria-hidden={!shown}
+      className={cn(
+        "group/side absolute z-30 transition-[translate,opacity] duration-200 ease-out",
+        !shown && "pointer-events-none opacity-0",
+        !shown && (edge === "left" ? "-translate-x-[calc(100%+5rem)]" : "translate-x-[calc(100%+1rem)]"),
+        isClassroomMode && "opacity-0",
+      )}
+      style={{
+        top: RESEARCH_FLOAT_TOP,
+        bottom: SIDE_PANEL_GAP,
+        width,
+        maxWidth: "calc(100% - 6rem)",
+        ...(edge === "left" ? { left: RESEARCH_SIDE_PANEL_LEFT } : { right: SIDE_PANEL_GAP }),
+      }}
+      onPointerEnter={() => enterSidePanel(edge)}
+      onPointerLeave={() => leaveSidePeekArea(edge)}
+      onPointerDownCapture={() => {
+        if (activeTab && store.get(activeTabAtom) !== activeTab) TabWorkspace.focus(activeTab.id);
+      }}
+    >
+      <section className="bg-background border-border/70 flex size-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[12px] border shadow-lg">
+        {/* 只有面板自己这一页时不要标签行；放进了多页时才显示，能切换、关闭，也能拖到编辑区 */}
+        {tabs.length > 1 && (
+          <div className="flex shrink-0 px-1.5 pt-1.5">
             <ProjectTabs
-              groupId={node.id}
-              tabs={groupTabs}
+              groupId={group.id}
+              tabs={tabs}
               activeTab={activeTab}
               onTabClick={onTabClick}
               onTabClose={onTabClose}
@@ -389,43 +461,211 @@ export default function DockedArea({
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {activeTab && React.createElement(activeTab.getComponent())}
         </div>
-        {activeTab instanceof Project && (
-          <ResearchStatusBar key={activeTab.id} project={activeTab} isClassroomMode={isClassroomMode} />
+      </section>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("shell.resizeSidePanel")}
+        className={cn(
+          "group/resize absolute inset-y-3 w-2 cursor-col-resize touch-none",
+          edge === "left" ? "-right-1" : "-left-1",
         )}
-        <DropPreview groupId={node.id} />
+        onPointerDown={startResize}
+      >
+        <div
+          className={cn(
+            "bg-primary pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full opacity-0 transition-opacity group-hover/resize:opacity-100",
+            resizing && "opacity-100",
+          )}
+        />
+      </div>
+      {/* 图钉在卡片外侧，不和面板自己的标题栏按钮挤在一起；临时弹出时一直显示，固定以后悬停才显示 */}
+      <button
+        type="button"
+        aria-label={pinLabel}
+        title={pinLabel}
+        className={cn(
+          "bg-background border-border/70 text-muted-foreground hover:text-foreground absolute top-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full border shadow-xs transition-opacity",
+          edge === "left" ? "left-[calc(100%+0.375rem)]" : "right-[calc(100%+0.375rem)]",
+          state.pinned && "opacity-0 group-hover/side:opacity-100 focus-visible:opacity-100",
+        )}
+        onClick={() => setSidePanelPinned(edge, !state.pinned)}
+      >
+        {state.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 贴住窗口左右边缘的一条细感应区：鼠标停一会儿弹出收着的侧栏。拖着东西经过时不算。
+ * 宽 10px：Windows 上最外面 6px 是调窗口大小的把手（WindowResizeHandles），里面还剩 4px 能感应
+ */
+function SideEdgeTrigger({ edge, onPeek }: { edge: FixedSideEdge; onPeek: () => void }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-pg-side-trigger={edge}
+      className={cn("absolute bottom-0 z-20 w-2.5", edge === "left" ? "left-0" : "right-0")}
+      style={{ top: RESEARCH_FLOAT_TOP }}
+      onPointerEnter={(event) => event.buttons === 0 && onPeek()}
+      onPointerLeave={() => leaveSidePeekArea(edge)}
+    />
+  );
+}
+
+/** 右侧栏收起后留在右下角的圆按钮，点一下展开并固定 */
+function SideBubble({ isAI }: { isAI: boolean }) {
+  const { t } = useTranslation("research");
+  const label = t("shell.showSidePanel");
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="bg-background border-border/60 text-muted-foreground hover:text-foreground absolute right-3 bottom-3 z-30 flex size-10 cursor-pointer items-center justify-center rounded-full border shadow-md transition-colors"
+      onClick={() => setSidePanelPinned("right", true)}
+    >
+      {isAI ? <MessageSquareText className="size-4.5" /> : <PanelRight className="size-4.5" />}
+    </button>
+  );
+}
+
+export default function DockedArea({
+  onTabClick,
+  onTabClose,
+  isClassroomMode,
+}: {
+  onTabClick: (tab: Tab) => void;
+  onTabClose: (tab: Tab) => void;
+  isClassroomMode: boolean;
+}) {
+  const root = useAtomValue(tabGroupRootAtom);
+  const tabs = useAtomValue(tabsAtom);
+  const sideStates = useSidePanelStates();
+  const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
+  const changeSideWidth = (edge: FixedSideEdge, width: number) =>
+    setSideWidths((current) => (current[edge] === width ? current : { ...current, [edge]: width }));
+  const commitSideWidth = (edge: FixedSideEdge, width: number) =>
+    localStorage.setItem(SIDE_PANEL_WIDTH_STORAGE_KEY[edge], String(width));
+
+  // 没有工作区时 AI 对话用不上，先藏起来
+  const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
+  const aiTab = findResearchPanelTab("ai", tabs);
+  const hiddenTabId = hasWorkspace ? undefined : aiTab?.id;
+  const { main, sides } = separateFixedSideGroups(root);
+
+  const groupTabsOf = (group: TabGroup) =>
+    group.tabIds.flatMap((id) => {
+      const tab = tabs.find((candidate) => candidate.id === id && candidate.layout === "docked");
+      return tab && tab.id !== hiddenTabId ? [tab] : [];
+    });
+  const shownTabOf = (group: TabGroup, groupTabs: Tab[]) =>
+    groupTabs.find((tab) => tab.id === group.activeTabId) ?? groupTabs.at(-1);
+
+  const focusGroupTab = (activeTab: Tab | undefined) => {
+    if (activeTab && store.get(activeTabAtom) !== activeTab) TabWorkspace.focus(activeTab.id);
+  };
+
+  const leftTabs = sides.left ? groupTabsOf(sides.left) : [];
+  const rightTabs = sides.right ? groupTabsOf(sides.right) : [];
+  // 左侧栏固定显示时，挨着左边的白板把状态条挪到它右边
+  const statusLeftBesidePanel =
+    leftTabs.length > 0 && sideStates.left.pinned
+      ? `calc(${RESEARCH_SIDE_PANEL_LEFT} + ${sideWidths.left + SIDE_PANEL_GAP}px)`
+      : `${SIDE_PANEL_GAP}px`;
+
+  // 标签和状态条都浮在白板上；白板铺满分组，其他页（设置等）从标签下面开始
+  const renderGroup = (group: TabGroup, edges: GroupEdges) => {
+    const groupTabs = groupTabsOf(group);
+    const activeTab = shownTabOf(group, groupTabs);
+    const project = activeTab instanceof Project ? activeTab : undefined;
+    return (
+      <section
+        key={group.id}
+        data-pg-tab-group-id={group.id}
+        className="relative size-full min-h-0 min-w-0 overflow-hidden"
+        onPointerDownCapture={() => focusGroupTab(activeTab)}
+      >
+        <div className={cn("absolute inset-x-0 bottom-0", project ? "top-0" : "top-10")}>
+          {activeTab && React.createElement(activeTab.getComponent())}
+        </div>
+        <div
+          className="pointer-events-none absolute inset-x-0 top-1 z-30 flex"
+          style={{
+            paddingLeft: edges.top && edges.left ? "var(--pg-top-left-inset, 8px)" : `${SIDE_PANEL_GAP}px`,
+            paddingRight: edges.top && edges.right ? "var(--pg-top-right-inset, 8px)" : `${SIDE_PANEL_GAP}px`,
+          }}
+        >
+          <ProjectTabs
+            groupId={group.id}
+            tabs={groupTabs}
+            activeTab={activeTab}
+            onTabClick={onTabClick}
+            onTabClose={onTabClose}
+            isClassroomMode={isClassroomMode}
+          />
+        </div>
+        {project && (
+          <ResearchStatusBar
+            key={project.id}
+            project={project}
+            isClassroomMode={isClassroomMode}
+            left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
+          />
+        )}
+        <DropPreview groupId={group.id} />
       </section>
     );
   };
 
-  const renderNode = (node: TabGroupNode): React.ReactNode => {
-    if (node.type === "split") {
-      return (
-        <ResearchSplitView
-          key={node.id}
-          node={node}
-          renderNode={renderNode}
-          sideWidths={sideWidths}
-          onSideWidthChange={changeSideWidth}
-          onSideWidthCommit={commitSideWidth}
-        />
-      );
-    }
-    if (node.id === WELCOME_GROUP_ID) return <ResearchWelcome key={node.id} />;
-    const groupTabs = node.tabIds.flatMap((id) => {
-      const tab = tabs.find((candidate) => candidate.id === id && candidate.layout === "docked");
-      return tab ? [tab] : [];
-    });
-    const activeTab = groupTabs.find((tab) => tab.id === node.activeTabId) ?? groupTabs.at(-1);
-    return renderResearchGroup(node, groupTabs, activeTab);
-  };
+  const renderNode = (node: TabGroupNode, edges: GroupEdges): React.ReactNode =>
+    node.type === "split" ? (
+      <ResearchSplitView
+        key={node.id}
+        node={node}
+        renderChild={(child, index) => renderNode(child, childEdges(edges, node, index))}
+      />
+    ) : (
+      renderGroup(node, edges)
+    );
+
+  const mainHasTabs = getTabGroups(main).some((group) => groupTabsOf(group).length > 0);
+  const rightActive = sides.right ? shownTabOf(sides.right, rightTabs) : undefined;
 
   return (
-    <div
-      className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
-      style={{ ...(leftInset ? { left: leftInset } : {}), ...(topInset ? { top: topInset } : {}) }}
-    >
-      {/* 没有工作区时 AI 对话用不上，先收起；侧栏照常停靠、能拖，编辑区的位置放欢迎页 */}
-      {empty ? renderNode(welcomeLayout(root, aiTab ? [aiTab.id] : [])) : root && renderNode(root)}
+    <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+      {main && mainHasTabs ? renderNode(main, WINDOW_EDGES) : <ResearchWelcome />}
+      {(
+        [
+          ["left", sides.left, leftTabs],
+          ["right", sides.right, rightTabs],
+        ] as const
+      ).map(([edge, group, groupTabs]) =>
+        group && groupTabs.length > 0 ? (
+          <SidePanelOverlay
+            key={edge}
+            edge={edge}
+            group={group}
+            tabs={groupTabs}
+            activeTab={shownTabOf(group, groupTabs)}
+            state={sideStates[edge]}
+            width={sideWidths[edge]}
+            onWidthChange={changeSideWidth}
+            onWidthCommit={commitSideWidth}
+            onTabClick={onTabClick}
+            onTabClose={onTabClose}
+            isClassroomMode={isClassroomMode}
+          />
+        ) : null,
+      )}
+      {!sideStates.left.pinned && <SideEdgeTrigger edge="left" onPeek={peekLeftSide} />}
+      {rightTabs.length > 0 && !sideStates.right.pinned && (
+        <SideEdgeTrigger edge="right" onPeek={() => enterSidePeekTrigger("right")} />
+      )}
+      {rightTabs.length > 0 && !isSidePanelShown(sideStates.right) && (
+        <SideBubble isAI={rightActive !== undefined && rightActive === aiTab} />
+      )}
     </div>
   );
 }

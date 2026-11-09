@@ -1,5 +1,5 @@
 import { activeResourceTabAtom, store } from "@/state";
-import { deserialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import * as Comlink from "comlink";
 import { icons, LucideProps } from "lucide-react";
 import { ForwardRefExoticComponent, RefAttributes } from "react";
@@ -63,7 +63,7 @@ export function setupComlink(): void {
     canHandle: (_v: unknown): _v is unknown => false,
     serialize: (v) => [v, []],
     deserialize: (v: { $rpc?: { deserializeWithProject?: boolean }; _: string }) =>
-      deserialize(v, v.$rpc?.deserializeWithProject ? store.get(activeResourceTabAtom) : undefined),
+      deserializeStageObjects(v, v.$rpc?.deserializeWithProject ? store.get(activeResourceTabAtom) : undefined),
   });
 
   Comlink.transferHandlers.set("LUCIDE_ICON", {

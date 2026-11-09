@@ -1,6 +1,7 @@
 import { Project, ProjectState, service } from "@/core/Project";
 import { Settings } from "@/core/service/Settings";
-import { deserialize, serialize } from "@graphif/serializer";
+import { serialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { cn } from "@udecode/cn";
 import { Delta, diff, patch } from "jsondiffpatch";
 import _ from "lodash";
@@ -172,12 +173,12 @@ class HistoryManagerTimeEfficient extends HistoryManagerAbs {
   get(index: number) {
     // 处理边界情况：如果索引为负数，直接返回初始状态
     if (index < 0) {
-      return deserialize(_.cloneDeep(this.initialStage), this.project);
+      return deserializeStageObjects(_.cloneDeep(this.initialStage), this.project);
     }
 
     // 直接返回对应索引的历史记录，无需应用diff
     const historyData = _.cloneDeep(this.history[index]);
-    return deserialize(historyData, this.project);
+    return deserializeStageObjects(historyData, this.project);
   }
 
   /**
@@ -364,7 +365,7 @@ class HistorymanagerMemoryEfficient extends HistoryManagerAbs {
   get(index: number) {
     // 处理边界情况：如果索引为负数，直接返回初始状态
     if (index < 0) {
-      return deserialize(_.cloneDeep(this.initialStage), this.project);
+      return deserializeStageObjects(_.cloneDeep(this.initialStage), this.project);
     }
 
     // 先获取从0到index（包含index）的所有patch
@@ -378,7 +379,7 @@ class HistorymanagerMemoryEfficient extends HistoryManagerAbs {
       data = patch(data, _.cloneDeep(delta)) as any;
     }
     // 反序列化得到舞台对象
-    const stage = deserialize(data, this.project);
+    const stage = deserializeStageObjects(data, this.project);
     return stage;
   }
 

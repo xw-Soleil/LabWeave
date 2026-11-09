@@ -175,6 +175,7 @@ pub fn run() {
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
             cmd::research::external_ai_mcp_launch,
+            cmd::research::read_clipboard_file_paths,
             local_agent::local_agent_catalog,
             local_agent::local_agent_start,
             local_agent::local_agent_write,

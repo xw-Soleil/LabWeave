@@ -2,15 +2,14 @@ import { Project } from "@/core/Project";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { MouseLocation } from "../../controlService/MouseLocation";
 import { Settings } from "@/core/service/Settings";
-import { applyBlackAndWhite, prepareImageBlobForImport } from "../imageUtils";
+import { applyBlackAndWhite } from "../imageUtils";
 import { toast } from "sonner";
 import { createImageNodeFromBlob } from "../imageNodeFactory";
 
 export class CopyEngineImage {
   constructor(private project: Project) {}
 
-  public async pasteImageFromTauriClipboard() {
-    // 从系统粘贴板里读取图片
+  public async pasteImageFromSystemClipboard() {
     const image = await readImage();
     const { width: origW, height: origH } = await image.size();
 
@@ -88,23 +87,5 @@ export class CopyEngineImage {
     await createImageNodeFromBlob(this.project, blob, {
       location,
     });
-  }
-
-  public async pasteImageFromWebClipboard() {
-    const clipboard = navigator.clipboard as any;
-    if (!clipboard || typeof clipboard.read !== "function") return false;
-
-    const items = (await clipboard.read()) as Array<{
-      types: readonly string[];
-      getType: (type: string) => Promise<Blob>;
-    }>;
-
-    for (const item of items) {
-      const imageType = item.types.find((t) => t.startsWith("image/"));
-      if (!imageType) continue;
-      const blob = await item.getType(imageType);
-      const prepared = await prepareImageBlobForImport(blob);
-      await this.pasteImageBlob(prepared.blob);
-    }
   }
 }

@@ -60,7 +60,7 @@ Project Graph 不要求你的想法只有一个中心、一个方向或一种层
 2. 新建工程，创建节点、连接内容，或拖入已有材料。
 3. 阅读 [使用文档](https://graphif.dev/docs/prg)，了解移动缩放、节点树与快捷键。
 
-**版本说明**：当前正在开发 **v4.2.6**。正式版以 Releases 为准；开发中改动与待验收问题记录在 [更新日志](/CHANGELOG.md)，不代表已经发布。
+**版本说明**：当前正在开发 **v4.2.6**。正式版以 Releases 为准；开发中改动与待验收问题记录在 [更新日志](https://github.com/graphif/project-graph/blob/5524363cc06d15214364ff5628206726ae94cbb5/CHANGELOG.md)，不代表已经发布。
 
 ## 参与开发
 
@@ -109,7 +109,7 @@ pnpm dev
 
 </details>
 
-[开发指南](https://graphif.dev/docs/contribute) · [贡献说明](/CONTRIBUTING.md) · [行为准则](/CODE_OF_CONDUCT.md)
+[开发指南](https://graphif.dev/docs/contribute) · [贡献说明](https://github.com/graphif/project-graph/blob/5524363cc06d15214364ff5628206726ae94cbb5/CONTRIBUTING.md) · [行为准则](https://github.com/graphif/project-graph/blob/5524363cc06d15214364ff5628206726ae94cbb5/CODE_OF_CONDUCT.md)
 
 ## 反馈与贡献
 

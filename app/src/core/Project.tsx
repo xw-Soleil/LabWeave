@@ -12,7 +12,6 @@ import type { VerticalPolyEdgeRenderer } from "@/core/render/canvas2d/entityRend
 import type { EdgeRenderer } from "@/core/render/canvas2d/entityRenderer/edge/EdgeRenderer";
 import type { EntityDetailsButtonRenderer } from "@/core/render/canvas2d/entityRenderer/EntityDetailsButtonRenderer";
 import type { EntityRenderer } from "@/core/render/canvas2d/entityRenderer/EntityRenderer";
-import type { LatexNodeRenderer } from "@/core/render/canvas2d/entityRenderer/latexNode/LatexNodeRenderer";
 import type { MediaNodeRenderer } from "@/core/render/canvas2d/entityRenderer/mediaNode/MediaNodeRenderer";
 import type { MultiTargetUndirectedEdgeRenderer } from "@/core/render/canvas2d/entityRenderer/multiTargetUndirectedEdge/MultiTargetUndirectedEdgeRenderer";
 import type { ReferenceBlockRenderer } from "@/core/render/canvas2d/entityRenderer/ReferenceBlockRenderer";
@@ -80,7 +79,8 @@ import { Settings } from "@/core/service/Settings";
 import { nextProjectIdAtom, store, tabsAtom } from "@/state";
 import { createDefaultMetadata, PrgMetadata, readWorkbenchMetadata, WorkbenchMetadata } from "@/types/metadata";
 import { Vector } from "@graphif/data-structures";
-import { deserialize, serialize } from "@graphif/serializer";
+import { serialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Decoder, Encoder } from "@msgpack/msgpack";
 import { BlobReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
@@ -313,9 +313,7 @@ export class Project extends Tab {
       );
 
       // 应用升级后的数据
-      this.stage = deserialize(upgradedStageObjects, this);
-      const { convertLatexNodes } = await import("@/core/stage/stageObject/tools/convertLatexNodes");
-      convertLatexNodes(this);
+      this.stage = deserializeStageObjects(upgradedStageObjects, this);
       this.tags = tags;
       this.references = references;
       this.metadata = upgradedMetadata;
@@ -401,7 +399,7 @@ export class Project extends Tab {
   async save(options: { includeThumbnail?: boolean } = {}) {
     if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (this.isDraft || this.isCollab) {
-      // 草稿默认存进研究文件夹；程序只在研究文件夹里读写，所以存到外面会被拒绝
+      // 草稿默认存进研究文件夹，另存为目标在外面会被拒绝
       const researchRoot = (await loadResearchFolder()).getRoot();
       const path = await saveDialog({
         title: this.isDraft ? "保存草稿" : "保存协作工程",
@@ -453,7 +451,7 @@ export class Project extends Tab {
   }
 
   /**
-   * 另存为（草稿保存也走这里）：程序只在研究文件夹里读写，目标在外面就拒绝；
+   * 另存为（草稿保存也走这里）：目标在研究文件夹外面就拒绝；
    * 文件卡片存的是相对 .prg 所在文件夹的路径，换了文件夹要重新算。
    */
   private async prepareResearchSaveAs(targetUri: URI): Promise<SaveAsTarget> {
@@ -554,6 +552,8 @@ export class Project extends Tab {
    */
   private async writeAiSidecar(targetUri: URI, content: Uint8Array) {
     if (targetUri.scheme !== "file" || !Settings.writeAiSidecarOnSave) return;
+    const { isTemporaryWorkspace } = await import("@/core/research/TemporaryWorkspace");
+    if (isTemporaryWorkspace({ uri: targetUri })) return;
     const serializedStage = this.serializedStageByContent.get(content);
     const fileSystemProvider = this.fileSystemProviders.get("file");
     if (!serializedStage || !fileSystemProvider) return;
@@ -821,7 +821,6 @@ declare module "./Project" {
     verticalPolyEdgeRenderer: VerticalPolyEdgeRenderer;
     sectionRenderer: SectionRenderer;
     svgNodeRenderer: SvgNodeRenderer;
-    latexNodeRenderer: LatexNodeRenderer;
     mediaNodeRenderer: MediaNodeRenderer;
     textNodeRenderer: TextNodeRenderer;
     urlNodeRenderer: UrlNodeRenderer;

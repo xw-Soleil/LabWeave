@@ -235,7 +235,6 @@ export const settingsSchema = z.object({
   textNodePasteSizeAdjustMode: z
     .union([z.literal("auto"), z.literal("manual"), z.literal("autoByLength")])
     .default("autoByLength"),
-  clipboardPasteMode: z.union([z.literal("auto"), z.literal("webview"), z.literal("tauri")]).default("auto"),
   resizePastedImages: z.boolean().default(true),
   maxPastedImageSize: projectToolSettingSchemas.maxPastedImageSize,
   compressImageToWebp: z.boolean().default(true),
@@ -1037,6 +1036,18 @@ if (rawSettings.researchInteractionDefaultsV3 !== true) {
   await store.set("mouseRightDragBackground", "cut");
   await store.set("autoLayoutWhenTreeGenerate", false);
   await store.set("researchInteractionDefaultsV3", true);
+  await store.save();
+}
+
+// 2026-11-08 换成新的点阵背景：以前打开过的横线、竖线、坐标轴背景关掉一次，想要的话还能在设置里再打开
+if (rawSettings.researchCanvasBackgroundV1 !== true) {
+  savedSettings.showBackgroundHorizontalLines = false;
+  savedSettings.showBackgroundVerticalLines = false;
+  savedSettings.showBackgroundCartesian = false;
+  await store.set("showBackgroundHorizontalLines", false);
+  await store.set("showBackgroundVerticalLines", false);
+  await store.set("showBackgroundCartesian", false);
+  await store.set("researchCanvasBackgroundV1", true);
   await store.save();
 }
 

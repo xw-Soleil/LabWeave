@@ -1069,17 +1069,6 @@ settings:
       width or height is limited to this size.\nMeanwhile, it keeps the aspect ratio,
       but only takes effect when “Resize Pasted Images” is enabled.\n"
     title: Max Pasted Image Size (In Pixels)
-  clipboardPasteMode:
-    title: Clipboard Paste Mode
-    description: |
-      Select the technology used when pasting content from the system clipboard.
-      "Auto" mode automatically selects the best method based on the OS (macOS uses Web Clipboard API, others use Tauri native API).
-      "WebView" mode always uses the Web Clipboard API.
-      "Tauri" mode always uses the Tauri native API.
-    options:
-      auto: Auto
-      webview: WebView
-      tauri: Tauri
   autoBackupLimitCount:
     title: Max Auto Backup Count
     description: "The maximum number of auto-backups, beyond which old backup files
@@ -2821,7 +2810,12 @@ research:
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
     resizeSidePanel: Drag to resize the panel
+    pinSidePanel: Pin the panel
+    unpinSidePanel: Hide the panel; it slides out when you move the mouse to the window edge
+    showSidePanel: Show the panel
   statusBar:
+    outsideFolder: Outside research folder
+    outsideFolderHint: This board is not in the research folder and was opened temporarily. It saves as usual, but gets no AI text copy, stays out of recent files, is not reopened on the next launch, and external AI cannot change it. To make it a regular workspace, use Save As to store it in the research folder.
     nodes: "{{count}} nodes"
     edges: "{{count}} edges"
     selected: "{{count}} selected"
@@ -2948,6 +2942,12 @@ research:
     pdfNoText: This PDF has no selectable text. It may be a scan
     thumbnailFailed: "Could not make a thumbnail: {{error}}"
     targetClosed: "The board was closed before the cards were ready, so {{count}} card(s) were not placed. Please drop the files again"
+    caption:
+      menu: Add image caption…
+      editMenu: Edit image caption…
+      title: Image caption
+      description: Shown at the bottom-left of the image. Leave it empty to hide it. The file name doesn't change.
+      placeholder: "e.g. Accuracy of model B on the new data"
   drop:
     title: Place on the board
     hint: Release to place the files on the board
@@ -2974,6 +2974,8 @@ research:
       description: "Choose a research folder and these files will be copied into its \"导入\" (import) subfolder, then placed on the board.\nOr skip copying and link to the files where they are now."
       choose: Choose research folder
       useOriginal: Link original files
+  clipboard:
+    nothingToPaste: The clipboard has no text or image that can be pasted onto the board
   workspace:
     title: Workspace
     noFolder: No research folder chosen yet
@@ -3040,6 +3042,7 @@ research:
     saving: Saving
     savingWait: Still saving, close it when this finishes
     close: Close
+    outsideFolder: "Outside the research folder, opened temporarily: {{path}}"
   welcome:
     title: Welcome to Research Workbench
     subtitle: Lay out papers, images and notes on a board, sort out your ideas, then ask the AI what is still missing

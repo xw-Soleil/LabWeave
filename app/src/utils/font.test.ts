@@ -6,7 +6,11 @@ vi.mock("@/core/service/ProjectToolSettingsSchema", () => ({
   MAC_DEFAULT_FONT_FAMILY: "sans-serif",
 }));
 vi.hoisted(() => {
-  vi.stubGlobal("document", { createElement: () => ({ getContext: () => null }) });
+  vi.stubGlobal("document", {
+    createElement: () => ({
+      getContext: () => ({ font: "", measureText: (text: string) => ({ width: Array.from(text).length * 100 }) }),
+    }),
+  });
 });
 
 import {
@@ -18,6 +22,7 @@ import {
   type MeasureText,
   resolveFont,
   setCanvasFont,
+  textToTextArray,
   wrapTextByWords,
 } from "./font";
 
@@ -133,6 +138,14 @@ describe("wrapTextByWords", () => {
     });
     expect(wrapTextByWords("one two", 7, measure, 1)).toEqual({ lines: ["one two"], truncated: false });
   });
+});
+
+it("preserves TextNode wrapping after extracting the DOM-free implementation", () => {
+  expect(textToTextArray("你好，world😀", 10, 30)).toEqual(["你好，", "wor", "ld😀"]);
+  expect(textToTextArray("a  b_c-d", 10, 30)).toEqual(["a  ", "b_c", "-d"]);
+  expect(textToTextArray("\na\n\n", 10, 30)).toEqual(["", "a", ""]);
+  expect(textToTextArray("😀a", 10, 1)).toEqual(["", "😀", "a"]);
+  expect(textToTextArray("", 10, 30)).toEqual([]);
 });
 
 describe("ellipsizeEnd", () => {

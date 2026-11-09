@@ -5,13 +5,14 @@ import { loadAllServicesAfterInit, loadAllServicesBeforeInit } from "@/core/load
 import { Project, ProjectState } from "@/core/Project";
 import { loadWithProjectOwnership, ProjectOwnershipError, type ProjectOwnershipLease } from "@/core/ProjectOwnership";
 import { isOutsideResearchFolder, ResearchFolder } from "@/core/research/ResearchFolder";
+import { canOpenWorkspace, isTemporaryWorkspace, type WorkspaceOpenOrigin } from "@/core/research/TemporaryWorkspace";
 import { TabFactory } from "@/core/TabFactory";
 import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
 import { PathString } from "@/utils/pathString";
 import { isMac } from "@/utils/platform";
 import { ensurePrgThumbnailCached } from "@/utils/readPrgThumbnail";
 import { Vector } from "@graphif/data-structures";
-import { deserialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Rectangle } from "@graphif/shapes";
 import { Decoder } from "@msgpack/msgpack";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -193,7 +194,11 @@ async function focusExistingTab(tab: Project | Extension) {
   }
 }
 
-export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise<Project | undefined> {
+export async function onOpenFile(
+  uri?: URI,
+  source: string = "unknown",
+  origin?: WorkspaceOpenOrigin,
+): Promise<Project | undefined> {
   if (!uri) {
     const path = await open({
       directory: false,
@@ -203,6 +208,18 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
     });
     if (!path) return;
     uri = URI.file(path);
+    origin = "file-dialog";
+  }
+
+  // 已经打开的标签也要先检查，不能通过复用标签绕过入口限制。
+  if (!canOpenWorkspace(uri, origin)) {
+    toast.error(
+      i18next.t("files.outsideFolder", { ns: "research", path: uri.fsPath, interpolation: { escapeValue: false } }),
+      {
+        id: "research-outside-folder",
+      },
+    );
+    return undefined;
   }
 
   const textuallyMatchingTab = store
@@ -216,18 +233,18 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
     return textuallyMatchingTab as any;
   }
 
-  if (uri.scheme === "file" && isOutsideResearchFolder(uri.fsPath)) {
-    toast.error(i18next.t("files.outsideFolder", { ns: "research", path: uri.fsPath }), {
-      id: "research-outside-folder",
-    });
-    return undefined;
-  }
   if (uri.scheme === "file") {
     try {
       await ResearchFolder.ensureRootRegistered();
     } catch (error) {
       // 登记失败时照样尝试打开：真读不了的话下面会给出读取错误
-      toast.error(i18next.t("files.setRootFailed", { ns: "research", error: String(error) }));
+      toast.error(
+        i18next.t("files.setRootFailed", {
+          ns: "research",
+          error: String(error),
+          interpolation: { escapeValue: false },
+        }),
+      );
     }
   }
 
@@ -355,11 +372,13 @@ export async function onOpenFile(uri?: URI, source: string = "unknown"): Promise
             // 处理同名TXT文件内容（仅在用户直接打开文件且设置项开启时执行，生成双链时跳过）
             if (
               project &&
+              !isTemporaryWorkspace(project) &&
               Settings.autoImportTxtFileWhenOpenPrg &&
               source !== "ReferenceBlockNode跳转打开-prg文件" &&
               source !== "ReferencesWindow跳转打开-prg文件"
             ) {
               setTimeout(async () => {
+                if (isTemporaryWorkspace(project)) return;
                 try {
                   // 构建TXT文件路径
                   const prgPath = uri.fsPath;
@@ -460,7 +479,7 @@ export async function onUpgradeOldJson() {
   if (!path) return;
   // 升级结果会写在原文件旁边，文件夹外的就不处理
   if (isOutsideResearchFolder(path)) {
-    toast.error(i18next.t("files.outsideFolder", { ns: "research", path }));
+    toast.error(i18next.t("files.outsideFolder", { ns: "research", path, interpolation: { escapeValue: false } }));
     return;
   }
 
@@ -524,7 +543,7 @@ export async function onUpgradeOldJson() {
   loadAllServicesBeforeInit(tempProject);
   await tempProject.init();
   loadAllServicesAfterInit(tempProject);
-  tempProject.stage = deserialize(upgraded.data, tempProject);
+  tempProject.stage = deserializeStageObjects(upgraded.data, tempProject);
   tempProject.attachments = upgraded.attachments;
   tempProject.stageManager.updateReferences();
   await tempProject.save();

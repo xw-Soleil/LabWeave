@@ -94,7 +94,6 @@ const TYPE_LABELS: Record<string, string> = {
   FileCardNode: "文件",
   UrlNode: "链接",
   ImageNode: "图片",
-  LatexNode: "公式",
   ReferenceBlockNode: "引用",
   MediaNode: "音视频",
   SvgNode: "SVG",
@@ -416,7 +415,8 @@ export function buildAiSidecar(input: {
       case "FileCardNode": {
         const path = shareablePath(asString(object.sourcePath), scope);
         const kind = isFileKind(object.fileKind) ? object.fileKind : (fileKindOf(path) ?? "pdf");
-        card.title = asString(object.title) || baseName(path);
+        // 用户给图片填的标题比文件名更能说明内容
+        card.title = asString(object.caption) || asString(object.title) || baseName(path);
         card.text = asString(object.excerpt);
         card.file = { path, kind, pages: asNumber(object.pageCount) };
         break;
@@ -427,10 +427,6 @@ export function buildAiSidecar(input: {
         break;
       case "ImageNode":
         // 图片只留说明（备注），不放图片内容
-        break;
-      case "LatexNode":
-        card.text = asString(object.latexSource);
-        card.title = firstLine(card.text);
         break;
       case "ReferenceBlockNode":
         card.text = [baseName(asString(object.fileName)), asString(object.sectionName)].filter(Boolean).join(" / ");

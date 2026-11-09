@@ -31,7 +31,6 @@ import { writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import EditUrlNodeLinkWindow from "@/sub/EditUrlNodeLinkWindow";
 import FindWindow from "@/sub/FindWindow";
 // import KeyboardRecentFilesWindow from "@/sub/KeyboardRecentFilesWindow";
-import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import AIToolsWindow from "@/sub/AIToolsWindow";
 import AttachmentsWindow from "@/sub/AttachmentsWindow";
 import LogicNodePanel from "@/sub/AutoComputeWindow";
@@ -3246,14 +3245,10 @@ export const allKeyBinds: KeyBindItem[] = [
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
       const selectedNodes = project!.stageManager.getSelectedEntities();
       const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      const latexNodes = selectedNodes.filter((node) => node instanceof LatexNode) as LatexNode[];
-      if (textNodes.length === 0 && latexNodes.length === 0) return;
+      if (textNodes.length === 0) return;
       project!.historyManager.recordStep();
       for (const node of textNodes) {
         node.decreaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
-      for (const node of latexNodes) {
-        node.decreaseFontSize();
       }
     },
   },
@@ -3266,14 +3261,10 @@ export const allKeyBinds: KeyBindItem[] = [
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
       const selectedNodes = project!.stageManager.getSelectedEntities();
       const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      const latexNodes = selectedNodes.filter((node) => node instanceof LatexNode) as LatexNode[];
-      if (textNodes.length === 0 && latexNodes.length === 0) return;
+      if (textNodes.length === 0) return;
       project!.historyManager.recordStep();
       for (const node of textNodes) {
         node.increaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
-      for (const node of latexNodes) {
-        node.increaseFontSize();
       }
     },
   },

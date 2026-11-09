@@ -16,8 +16,14 @@ vi.mock("@/core/stage/ProjectUpgrader", () => ({
     }
   },
 }));
-vi.mock("@/core/service/Settings", () => ({ Settings: { writeAiSidecarOnSave: true } }));
-vi.mock("@/core/stage/stageObject/tools/convertLatexNodes", () => ({ convertLatexNodes: () => {} }));
+vi.mock("@/core/service/Settings", () => ({ Settings: { writeAiSidecarOnSave: true, watch: vi.fn() } }));
+vi.mock("@/utils/font", async () => {
+  const { Vector } = await import("@graphif/data-structures");
+  return { getMultiLineTextSize: () => new Vector(80, 36), getTextSize: () => new Vector(80, 24) };
+});
+vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsManager: class {} }));
+vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {} }));
+vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24, NODE_PADDING: 10 } }));
 vi.mock("@/core/research/ResearchFolder", async () => {
   const { posix } = await import("node:path");
   return {
@@ -53,8 +59,13 @@ vi.mock("@/core/Tab", () => ({
 }));
 
 import { Project, ProjectState } from "@/core/Project";
+import { StageManager } from "@/core/stage/stageManager/StageManager";
+import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
+import { Section } from "@/core/stage/stageObject/entity/Section";
+import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { parseProjectFile } from "@/core/ProjectFile";
 import { Settings } from "@/core/service/Settings";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import { Decoder, encode } from "@msgpack/msgpack";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
@@ -112,6 +123,94 @@ afterEach(() => {
 });
 
 describe("saving a workspace", () => {
+  it.each(["2.0.0", "2.7.0"])(
+    "opens legacy formula cards from %s with stable references and saves only text cards",
+    async (version) => {
+      const path = "/research/legacy-math.prg";
+      const original = {
+        _: "LatexNode",
+        uuid: "math",
+        latexSource: String.raw`\TeX`,
+        fontScaleLevel: 2,
+        color: { _: "Color", r: 20, g: 60, b: 100, a: 1 },
+        details: [{ type: "p", children: [{ text: "note" }] }],
+        collisionBox: {
+          _: "CollisionBox",
+          shapes: [{ _: "Rectangle", location: { _: "Vector", x: 120, y: 90 }, size: { _: "Vector", x: 400, y: 200 } }],
+        },
+      };
+      const output = new Uint8ArrayWriter();
+      const writer = new ZipWriter(output);
+      await writer.add(
+        "stage.msgpack",
+        new Uint8ArrayReader(
+          encode([
+            original,
+            { _: "TextNode", uuid: "text", text: String.raw`$\TeX$` },
+            { _: "LineEdge", uuid: "edge", associationList: [{ $: "/0" }, { $: "/1" }] },
+            { _: "Section", uuid: "group", children: [{ $: "/0" }] },
+          ]),
+        ),
+      );
+      await writer.add("metadata.msgpack", new Uint8ArrayReader(encode({ version })));
+      await writer.close();
+      files.set(path, await output.getData());
+      const open = async () => {
+        const project = makeProject(path);
+        const stageManager = new StageManager(project);
+        Object.assign(project, { stageManager });
+        (project as unknown as { services: Map<string, unknown> }).services.set("stageManager", stageManager);
+        vi.spyOn(
+          project as unknown as { checkAndConfirmUpgrade: () => Promise<boolean> },
+          "checkAndConfirmUpgrade",
+        ).mockResolvedValue(true);
+        await project.init();
+        return project;
+      };
+      const check = (project: Project) => {
+        const [math, text, edge, section] = project.stage as [TextNode, TextNode, LineEdge, Section];
+        expect(math).toBeInstanceOf(TextNode);
+        expect(math).toMatchObject({
+          uuid: "math",
+          text: String.raw`$$\TeX$$`,
+          fontScaleLevel: 2,
+          borderStyle: "none",
+          sizeAdjust: "auto",
+          fontFamily: "",
+          fontWeight: "",
+          details: original.details,
+        });
+        expect(math.color).toMatchObject({ r: 20, g: 60, b: 100, a: 1 });
+        expect(math.rectangle.location.toArray()).toEqual([120, 90]);
+        expect(text).toBeInstanceOf(TextNode);
+        expect(text.text).toBe(String.raw`$\TeX$`);
+        expect(edge.source).toBe(math);
+        expect(edge.target).toBe(text);
+        expect(section.children).toEqual([math]);
+        expect(math.parentSection).toBe(section);
+        return math.rectangle;
+      };
+      const project = await open();
+      const rectangle = check(project).clone();
+      await project.save({ includeThumbnail: false });
+      const saved = await parseProjectFile(files.get(path)!, new Decoder(), new Map());
+      expect(saved.serializedStageObjects[0]).not.toHaveProperty("latexSource");
+      expect(saved.serializedStageObjects[0]._).toBe("TextNode");
+      const sidecar = JSON.parse(readText("/research/.workbench/legacy-math.ai.json"));
+      expect(sidecar.cards[0]).toMatchObject({ id: "math", type: "TextNode", text: String.raw`$$\TeX$$` });
+      expect(check(await open())).toEqual(rectangle);
+    },
+  );
+
+  it("saves a temporary workspace to itself without any sidecar or directory", async () => {
+    const project = makeProject("/outside/a.prg");
+    await project.save({ includeThumbnail: false });
+    expect([...files.keys()]).toEqual(["/outside/a.prg"]);
+    expect(directories.size).toBe(0);
+    expect(project.projectState).toBe(ProjectState.Saved);
+    expect(project.metadata.workbench?.workspacePath).toBeUndefined();
+  });
+
   it("writes the AI sidecar into .workbench next to the .prg", async () => {
     const project = makeProject("/research/topic/综述.prg");
     project.readme = "为什么注意力有效？";
@@ -270,6 +369,31 @@ describe("workbench id", () => {
 });
 
 describe("Save As", () => {
+  it("adopts a temporary workspace, keeping absolute cards and rebasing legacy relative cards", async () => {
+    const { FileCardNode } = await import("@/core/stage/stageObject/entity/FileCardNode");
+    const { resolveSourcePath, toStoredSourcePath } = await import("@/core/research/FileCardFactory");
+    const project = makeProject("/outside/a.prg");
+    const cards = ["/research/papers/a.pdf", "/outside/b.pdf", "papers/old.pdf"].map(
+      (sourcePath) => new FileCardNode(project, { sourcePath }),
+    );
+    project.stage = cards;
+    expect(isTemporaryWorkspace(project)).toBe(true);
+    const targets = cards.map((card) => resolveSourcePath(project, card.sourcePath));
+
+    await project.saveAs(URI.file("/research/topic/adopted.prg"), { includeThumbnail: false });
+
+    expect(isTemporaryWorkspace(project)).toBe(false);
+    expect(cards.map((card) => card.sourcePath)).toEqual([
+      "/research/papers/a.pdf",
+      "/outside/b.pdf",
+      "../../outside/papers/old.pdf",
+    ]);
+    expect(cards.map((card) => resolveSourcePath(project, card.sourcePath))).toEqual(targets);
+    expect(await storedSourcePaths("/research/topic/adopted.prg")).toEqual(cards.map((card) => card.sourcePath));
+    expect(toStoredSourcePath(project, "/research/topic/new.pdf")).toBe("new.pdf");
+    expect(files.has("/research/topic/.workbench/adopted.ai.md")).toBe(true);
+    expect([...files.keys()].some((path) => path.startsWith("/outside/"))).toBe(false);
+  });
   async function workspaceWithCards() {
     const { FileCardNode } = await import("@/core/stage/stageObject/entity/FileCardNode");
     const project = makeProject("/research/topic/a.prg");

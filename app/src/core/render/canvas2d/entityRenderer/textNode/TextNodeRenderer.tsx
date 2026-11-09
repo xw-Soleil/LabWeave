@@ -640,6 +640,7 @@ export class TextNodeRenderer {
         );
       }
     } else {
+      if (this.project.inlineMath?.render(node)) return;
       this.project.textRenderer.renderMultiLineText(
         node.text,
         this.project.renderer.transformWorld2View(

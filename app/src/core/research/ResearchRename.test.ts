@@ -121,6 +121,24 @@ beforeEach(() => {
 });
 
 describe("research rename transaction", () => {
+  it("does not lock, rewrite or save open temporary workspaces when a referenced file is renamed", async () => {
+    mocks.files.set("/research/old.pdf", new Uint8Array([1]));
+    const card = { sourcePath: "/research/old.pdf" };
+    const project = Object.assign(new Project(URI.file("/outside/a.prg")), {
+      uri: URI.file("/outside/a.prg"),
+      isSaving: true,
+      stageManager: { getFileCardNodes: vi.fn(() => [card]) },
+      historyManager: { rewriteSnapshots: vi.fn() },
+      getFileContent: vi.fn(),
+    });
+    mocks.tabs.push(project);
+    await renameResearchFile("/research/old.pdf", "new");
+    expect(card.sourcePath).toBe("/research/old.pdf");
+    expect(project.isSaving).toBe(true);
+    expect(project.stageManager.getFileCardNodes).not.toHaveBeenCalled();
+    expect(project.historyManager.rewriteSnapshots).not.toHaveBeenCalled();
+    expect(project.getFileContent).not.toHaveBeenCalled();
+  });
   it("preserves extensions and rejects path traversal", () => {
     expect(renamedPath("/research/a.pdf", "新名称")).toBe("/research/新名称.pdf");
     expect(() => renamedPath("/research/a.pdf", "../oops")).toThrow();

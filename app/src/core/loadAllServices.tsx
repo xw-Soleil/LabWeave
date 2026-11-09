@@ -2,6 +2,7 @@ import { FileSystemProviderCollab } from "@/core/fileSystemProvider/FileSystemPr
 import { FileSystemProviderDraft } from "@/core/fileSystemProvider/FileSystemProviderDraft";
 import { FileSystemProviderFile } from "@/core/fileSystemProvider/FileSystemProviderFile";
 import { Project } from "@/core/Project";
+import { InlineMathService } from "@/core/research/InlineMathService";
 import { CollaborationService } from "@/core/service/collaboration/CollaborationService";
 import { CurveRenderer } from "@/core/render/canvas2d/basicRenderer/curveRenderer";
 import { ImageRenderer } from "@/core/render/canvas2d/basicRenderer/ImageRenderer";
@@ -16,7 +17,6 @@ import { VerticalPolyEdgeRenderer } from "@/core/render/canvas2d/entityRenderer/
 import { EdgeRenderer } from "@/core/render/canvas2d/entityRenderer/edge/EdgeRenderer";
 import { EntityDetailsButtonRenderer } from "@/core/render/canvas2d/entityRenderer/EntityDetailsButtonRenderer";
 import { EntityRenderer } from "@/core/render/canvas2d/entityRenderer/EntityRenderer";
-import { LatexNodeRenderer } from "@/core/render/canvas2d/entityRenderer/latexNode/LatexNodeRenderer";
 import { MediaNodeRenderer } from "@/core/render/canvas2d/entityRenderer/mediaNode/MediaNodeRenderer";
 import { MultiTargetUndirectedEdgeRenderer } from "@/core/render/canvas2d/entityRenderer/multiTargetUndirectedEdge/MultiTargetUndirectedEdgeRenderer";
 import { ReferenceBlockRenderer } from "@/core/render/canvas2d/entityRenderer/ReferenceBlockRenderer";
@@ -144,6 +144,7 @@ export function loadAllServicesBeforeInit(project: Project): void {
 
   // 渲染服务
   project.loadService(TextRenderer);
+  project.loadService(InlineMathService);
   project.loadService(ImageRenderer);
   project.loadService(ShapeRenderer);
   project.loadService(EntityRenderer);
@@ -159,7 +160,6 @@ export function loadAllServicesBeforeInit(project: Project): void {
   project.loadService(EdgeRenderer);
   project.loadService(SectionRenderer);
   project.loadService(SvgNodeRenderer);
-  project.loadService(LatexNodeRenderer);
   project.loadService(MediaNodeRenderer);
   project.loadService(TextNodeRenderer);
   project.loadService(UrlNodeRenderer);

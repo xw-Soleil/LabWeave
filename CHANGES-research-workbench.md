@@ -17,7 +17,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **不再有「原版模式」**：最初新功能都挂在一个开关 `isResearchShell()` 后面，关掉时行为与上游一致；Rust 端对应 cargo feature `research-shell`。2026-11-05 去掉了这个开关和这个 feature：现在的行为是唯一行为，只在关掉开关时才用到的上游代码已删除，Rust 端原先被 feature 排除的命令（`run_command`、`mcp_stdio_*`、几条不受 fs 权限范围约束的原始文件命令）和全局快捷键、自动更新插件的代码也一并删除。本程序不再跟进上游的新版本。
 - **产品身份**：identifier 改为 `com.ai4know.researchworkbench`，产品名 Research Workbench，主窗口标题「科研工作台」，深链接协议从 `prg` 改为 `rwb`，文件扩展名仍是 `.prg`。设置、快捷键等数据目录因此和已安装的 Project Graph 分开，不会互相读取。
 - **数据只留在本机**：关闭遥测、账号、支持者名单、素材下载、多人协作、扩展加载；不再注册自动更新和系统全局快捷键插件，不再打包更新文件；`run_command`、`mcp_stdio_*` 和不受 fs 权限范围约束的原始文件命令不再暴露给前端；AI 对话不加载 MCP 和 Skills，回答里的远程图片不自动加载。
-- **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区。
+- **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区（2026-11-09 起，研究文件夹外的白板可以临时打开，见下）。
 - **外壳界面**：左侧竖栏（工作区 / AI 对话 / 文件 / 设置）、精简的菜单和 macOS 原生菜单（含编辑菜单）、新快捷键 Cmd+1/2/3/N、没打开工作区时编辑区显示欢迎页（侧栏照常停靠、能拖，AI 对话收起）、启动时恢复上次的工作区和面板、命令面板白名单；设置弹窗改为「设置 / 快捷键 / 菜单 / 关于」四页，设置按用途分 10 页，原版的「个性化」拆进「外观」和「菜单」。
 - **滚轮**：鼠标和触控板分开判断（只认 `wheelDelta` 这类确定的证据），默认滚轮移动、Ctrl / Cmd + 滚轮和双指捏合缩放。触控板按像素立刻移动；鼠标滚轮按格数走固定距离、每格固定缩放倍数，分几帧平滑走完（2026-11-05），每格多远、缩放多少可以在设置里调。
 - **文件卡片**：新实体 `FileCardNode`，用 pdf.js 抽 PDF 的标题、页数、首页缩略图和前几页文字，也支持图片和 Markdown；双击用系统默认程序打开原文件，原文件不见了会标红。
@@ -26,7 +26,16 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **AI 对话**：支持 OpenAI 兼容和 Anthropic 两种接口格式；系统提示改为中文研究助手，并附上当前白板和研究文件夹的文件清单；应用内对话只开放只读工具；新增 `dump_workspace`、`create_file_card` 两个工具（命令行也能用）。
 - **macOS**：在访达里双击 `.prg` 会转给前端打开（包括程序还没启动的情况）；补充了外置磁盘和网络磁盘的访问说明文字。
 - **外部 AI（MCP）**（2026-11-05）：命令行新增 `mcp` 子命令，在标准输入输出上提供 MCP 服务，Claude Code、Codex 等外部 AI 可以列出研究文件夹里的工作区、读和改白板。工具就是命令行那套内置工具，每个多一个 `workspace` 参数；新增 `list_workspaces`，以及 `create_text_node_at`（按坐标放文本卡片）、`create_section`（把卡片放进新分组）两个工具，工作区没打开时也能用。设置 → AI →「外部 AI」里有三个开关（允许修改、允许删除、允许联网），默认都开，MCP 每次调用都重新读；同一页给出能直接复制的配置命令。命令行和程序之间的本机通道（TCP）加了口令：程序启动时随机生成，随地址写进只有本账户能读的归属记录，不带口令的请求一律拒绝。
-- **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令）。
+- **去掉原项目自己的文档和发版流程**（2026-11-08）：删除 `PRD.md`、`TODO.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`docs-pg/`、`docs/superpowers/`、`.trae/documents/`；删除 `.github/` 下的赞助按钮配置、禁止提 issue 的模板、发版用的脚本和工作流（nightly、publish、release、render-docs-svg），只留 LabWeave 自己的 `check.yml`。`app/README.md` 和 `stageObject/README.md` 里指向这些文件的链接改指原项目仓库（提交 `5524363`）。许可证文件和版权声明都没动。
+- **画布铺满窗口，其他都浮在上面**（2026-11-08）：去掉 36px 的标题栏，窗口最上面留一条看不见的拖动区；竖栏缩成左边一根浮着的圆角小条；标签改成左上角的圆角小药丸（macOS 上让开红绿灯）；状态栏缩成左下角一小块；浅/深色切换（Windows 上加窗口按钮）放在右上角。左右固定侧栏不再和画布并排挤占宽度，改成浮在画布上的圆角卡片：固定时一直显示，取消固定后平时收起，鼠标停在竖栏「文件」按钮上或贴住窗口左右边缘约 0.3 秒就弹出、离开约 0.5 秒收回（正在面板里打字、鼠标在面板弹出的菜单上时不收回；从弹出的文件面板往画布拖文件时先收起）。卡片外侧有图钉按钮，右侧栏收起后在右下角留一个圆按钮。文件面板默认收起、AI 对话默认固定，各侧固定与否记在本机。竖栏按钮和快捷键对侧栏里的面板只切换固定/收起，不再关掉它。白板标签不能再拖进侧栏。镜头移到某个对象、适应视野时，把目标放在没被面板挡住的区域正中。
+- **新的点阵背景**（2026-11-08）：点阵分粗细两层，细的一层间距是粗的一半，缩放时按屏幕上的间距淡入淡出，不再到某个缩放比例一下子变疏或变密；坐标轴上的点不再加粗。启动时把以前打开过的横线、竖线、坐标轴背景关掉一次（设置项 `researchCanvasBackgroundV1` 记下已做过），想要的话还能在设置里再打开。
+- **图片卡片整张显示图片**（2026-11-08）：图片卡片不再画类型标签和标题，整张卡片就是图片（比例不一致时居中、不裁切），只描一圈很淡的边。新建的图片卡片按图片比例定大小（长边 300，短边至少 60），图片预览图最长边从 480 提到 1024 像素；以前建的 280×200 图片卡片在原来的框里按图片比例收小、居中。文件名只在鼠标移上去时显示在卡片上方。新增可选的图片标题（`FileCardNode.caption`，旧文件没有这个字段时为空）：右键「加图片标题…」填写，显示在图片左下角的小块里，清空就不显示，不改文件名；给 AI 的白板文字版里优先用它当标题。外部文件、文件不见了改成图片右上角的小块。
+- **粘贴不再弹「Paste」确认**（2026-11-08）：原版在 macOS 上从系统剪贴板粘贴时用网页剪贴板接口，WebKit 读别的程序复制的内容前会先弹一个「Paste」按钮，要再点一下才贴上。现在各系统都走原生剪贴板读取（先读文字，没有文字再读图片），Cmd+V 直接贴上。删掉了设置页里本来就不显示的 `clipboardPasteMode` 设置项和网页读取代码；剪贴板里没有能贴的东西时，提示一句翻译过的话，原生报错放在下面一行。
+- **粘贴在访达里复制的文件**（2026-11-08）：原来在访达 / 资源管理器里复制一个文件再 Cmd+V，只会贴出一个写着文件名的文本节点。现在粘贴时先看剪贴板里有没有复制的文件，有就和把文件拖进来一样处理：PDF、图片、Markdown 做成文件卡片（放在鼠标处），研究文件夹外的文件照样先问复制还是直接引用，.prg 作为工作区打开，其他类型提示暂不支持。Rust 端只读出路径，不碰文件本身。
+- **图片上的连线端点可以拖**（2026-11-08）：原版从图片节点上拉线时，端点落在鼠标按下 / 松手的那一点，按在哪儿往往是随手的，线常常从图片中间出来。现在新拉的线在图片上也停在边框上（引用块照旧）。选中一条连线时，连在图片（粘贴的图片节点、图片文件卡片）上的那头画一个小圆点，拖它可以让箭头指着图里任意一处；离边框近会贴到边框上，拖回默认位置附近就恢复默认。端点只能在它连着的那张图里和边框上移动，不会换到别的卡片上；拖完可以撤销。停在边框上时圆点是空心的，指着图里时是实心的。文字、PDF 卡片的端点照旧。
+- **文字和公式混排，公式卡片并进文字卡片**（2026-11-09）：文字卡片里 `$…$`、`\(…\)` 是跟着文字排的行内公式，`$$…$$`、`\[…\]` 是单独一行、居中的块公式；钱数（`$5`）、转义的 `\$` 和写错的公式按原文显示。公式按 KaTeX 的排版盒和文字对齐，编辑时显示源码。原版单独的公式卡片（`LatexNode`）和它的编辑弹窗删除；整段都是公式的文字卡片不再被自动换成公式卡片，前后可以直接加字；旧文件里的公式卡片读入时变成无边框的文字卡片，内容是 `$$源码$$`，连线、分组、颜色、字号不变。同时修了原来公式卡片里公式偏上的问题，在 macOS 上公式按替代字体测量、右边被裁掉的问题，以及比一行字矮的公式（`\hat{x}`、`\frac{a}{b}` 等）比旁边文字低约四分之一字高的问题。细节见第 20～22 节。
+- **临时打开研究文件夹外的白板**（2026-11-09）：原来研究文件夹外的白板一律拒绝打开。现在像 VS Code 打开单个文件那样，用户自己用选文件对话框、拖进窗口、粘贴从访达复制的白板文件、在访达里双击，都能临时打开它；`rwb://` 链接仍然只能打开研究文件夹里的白板。临时白板的标签名字是斜体、前面有一个小图标，悬停显示完整路径，状态条最前面写「研究文件夹外」。它照常编辑和保存（只写它自己），但不生成 AI 文字版、不进最近文件和启动恢复、文件改名时不跟着改，外部 AI（MCP、命令行）也改不了它；上面新放的文件卡片存完整路径。用「另存为」存进研究文件夹后就是普通工作区。命令行原来没有检查研究文件夹，这次补上。顺带修了提示里路径的 `/` 显示成 `&#x2F;` 的问题。细节见第 23 节。
+- **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令），并直接依赖 `arboard`（MIT / Apache-2.0，原来就随剪贴板插件带进来，用来读剪贴板里的文件列表）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
 
@@ -235,6 +244,104 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/locales/{zh_CN,en,zh_TW}.yml`
 - `app/package.json`、`pnpm-lock.yaml`：`@modelcontextprotocol/sdk`
 
-### 14. 本文件
+### 14. 画布铺满窗口、侧栏浮在画布上（2026-11-08）
+
+- `app/src/App.tsx`：去掉标题栏，加顶部拖动区和左上、右上两块浮动按钮区（宽度写进 CSS 变量给标签让位）
+- `app/src/components/docked-area.tsx`：编辑区铺满；标签、状态条浮在白板上；左右侧栏改成浮动卡片（弹出/收起、图钉、拖宽、右下角圆按钮、贴边感应区）
+- `app/src/components/activity-rail.tsx`：浮动圆角小条；「文件」按钮悬停弹出文件面板
+- `app/src/ProjectTabs.tsx`：圆角小药丸样式
+- `app/src/core/research/SidePanels.ts`（新增）、`SidePanels.test.ts`（新增）：侧栏固定/弹出状态、悬停计时、焦点切到收着的侧栏时自动固定、被挡住区域的计算
+- `app/src/core/research/ViewInsets.ts`（新增）：镜头查询「画布左右被挡住多少」的接口
+- `app/src/core/stage/Camera.tsx`、`Camera.test.ts`：移到对象、适应视野时避开被挡住的区域；翻页不避让
+- `app/src/core/TabGroup.ts`、`TabGroup.test.ts`：`separateFixedSideGroups` 取代 `welcomeLayout` 和 `findFixedSideChild`
+- `app/src/core/research/ResearchSession.ts`：面板开关改为固定/收起；恢复会话时不自动固定；注册侧栏状态跟踪
+- `app/src/sub/FileManagerWindow.tsx`：开关监听挪到 `ResearchSession`；开始拖文件时收起弹出的面板
+- `app/src/locales/{zh_CN,en,zh_TW}.yml`
+
+### 15. 点阵背景（2026-11-08）
+
+- `app/src/core/research/CanvasBackground.ts`（新增）、`CanvasBackground.test.ts`（新增）：两层点阵的间距和淡入淡出
+- `app/src/core/render/canvas2d/utilsRenderer/backgroundRenderer.tsx`：`renderDotBackground` 改用两层点阵，去掉坐标轴加粗
+- `app/src/core/service/Settings.tsx`：启动时关掉一次横线、竖线、坐标轴背景
+
+### 16. 图片卡片整张显示图片（2026-11-08）
+
+- `app/src/core/render/canvas2d/entityRenderer/FileCardRenderer.tsx`：图片卡片单独的画法（整张图、右上角和左下角的小块、淡边框）
+- `app/src/core/stage/stageObject/entity/FileCardNode.tsx`、`FileCardNode.test.ts`：`caption` 字段；按图片比例算卡片大小；旧的 280×200 图片卡片解码出预览图后按比例收小
+- `app/src/core/research/FileCardContent.ts`：图片预览图最长边 1024，返回图片原始宽高
+- `app/src/core/research/FileCardFactory.ts`：图片卡片按比例建，一批卡片按最大的那张排格子；`promptImageCaption`
+- `app/src/components/context-menu-content.tsx`：只选中一张图片卡片时多一项「加图片标题…/改图片标题…」
+- `app/src/core/research/AiSidecarBuilder.ts`：有图片标题时用它当卡片标题
+- `app/src/locales/{zh_CN,en,zh_TW}.yml`
+
+### 17. 粘贴走原生剪贴板（2026-11-08）
+
+- `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`copyEngine.test.ts`：三种粘贴模式合成一个 `pasteFromSystemClipboard`（原生读取，先文字后图片）；去掉写死的中文提示
+- `app/src/core/service/dataManageService/copyEngine/copyEngineImage.tsx`：去掉网页剪贴板读图片；`pasteImageFromTauriClipboard` 改名 `pasteImageFromSystemClipboard`
+- `app/src/core/service/Settings.tsx`、`SettingsIcons.tsx`：删掉 `clipboardPasteMode`（旧设置文件里留着的这一项读取时会被忽略）
+- `app/src/locales/{zh_CN,en,zh_TW,zh_TWC,id}.yml`：删掉 `clipboardPasteMode`；新增 `research.clipboard.nothingToPaste`
+
+### 18. 粘贴复制的文件（2026-11-08）
+
+- `app/src-tauri/src/cmd/research.rs`、`lib.rs`：新命令 `read_clipboard_file_paths`，读出剪贴板里复制的文件路径，没有时返回空列表
+- `app/src-tauri/Cargo.toml`、`Cargo.lock`：直接依赖 `arboard`（剪贴板插件不提供读文件列表）
+- `app/src/core/research/ResearchDrop.ts`、`ResearchDrop.test.ts`：拖入的处理抽成 `placeFiles`；新增 `pasteClipboardFiles`，粘贴的文件走同一套流程
+- `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`copyEngine.test.ts`：粘贴时先看有没有复制的文件，再读文字、图片
+
+### 19. 图片上的连线端点（2026-11-08）
+
+- `app/src/core/research/ImageEdgeEndpoints.ts`（新增）、`ImageEdgeEndpoints.test.ts`（新增）：哪些端点能拖、点中圆点、拖到哪里存什么比例（吸回默认、贴边框、夹在图里）、画圆点
+- `app/src/core/service/controlService/controller/concrete/ControllerImageEdgeEndpoint.tsx`（新增）：拖端点，松手时记一步撤销
+- `app/src/core/service/controlService/controller/Controller.tsx`：登记新控制器
+- `ControllerAssociationReshape.tsx`、`ControllerEntityClickSelectAndMove.tsx`、`ControllerRectangleSelect.tsx`：按在端点圆点上时让开；拖端点时不拖整条线
+- `ControllerNodeConnection.tsx`：只有引用块还记鼠标按下 / 松手的位置，图片上的新线停在边框上
+- `app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`：选中连线时，连在图片上的那头画端点圆点
+
+### 20. 公式混排基础与公式卡片尺寸修复（2026-11-08，2026-11-09 修订）
+
+- `app/src/core/research/InlineMath.ts`（新增）、`InlineMath.test.ts`（新增）：识别行内和块公式，保留源码，区分钱数、转义和未闭合定界符。
+- `app/src/core/research/RichTextLayout.ts`（新增）、`RichTextLayout.test.ts`（新增）：独立计算混排换行、公式整块移动、块公式居中和基线；图片未就绪时按原文排版。
+- `app/src/utils/textWrapping.ts`（新增）、`font.tsx`、`font.test.ts`：抽出原有文字卡片的按码点断行，供纯排版复用，原有调用结果不变。
+- `app/src/core/research/MathImage.ts`（新增）、`MathImage.test.ts`（新增）、`MathImageDom.test.ts`（新增）：共用 KaTeX 出图、基线测量、有上限的异步缓存与通知；无 DOM 或生成失败时提供明确退路。
+- `app/src/core/stage/stageObject/entity/LatexNode.tsx`、`LatexNode.test.ts`（新增）：改用共用出图，保留显示模式、颜色、编号留白及缩放；测量与 SVG 使用同一隔离样式，去掉块公式外边距并统一四周留白，碰撞箱随图片尺寸更新。本步不接入文字卡片的绘制或尺寸计算。
+- `MathImage.ts`、`MathImageDom.test.ts`、`app/src/utils/katexEmbeddedCss.ts`、`katexEmbeddedCss.test.ts`：测量 iframe 全局复用、样式只装一次、出图串行；按文字的计算样式挑选 SVG 字体，保留正常行高并测量可见外伸、预留字形余量。旧公式卡片左上角不动，尺寸更新时同步重算祖先分组框。
+
+### 21. 文字卡片公式混排接入（2026-11-09）
+
+- `app/src/core/research/MathImage.ts`、`MathImageDom.test.ts`、`MathImage.test.ts`、`LatexNode.test.ts`：分开 KaTeX 排版盒与完整图片尺寸，提供排版盒在图片中的偏移；文字排版不计入图片安全留白，公式卡片仍使用整张图片定大小。
+- `app/src/core/research/InlineMathService.ts`、`InlineMathService.test.ts`（新增）：按白板管理混排尺寸与绘制，按源码和模式共享公式尺寸，排版缓存与颜色无关；换色期间保留旧图，新图完成后替换，卡片不跳动。图片仍按源码、模式、颜色分别缓存；图片首次提供尺寸时只重算相关卡片，绘制不修改卡片或分组框。默认字体变更及字体加载完成时主动重算，关闭白板时退订图片、设置和字体事件。保留隐私遮罩、字体与缩放支持。
+- `app/src/core/loadAllServices.tsx`、`app/src/core/stage/stageManager/StageManager.tsx`：注册白板服务，并在删除、撤销和舞台引用重建时维护公式使用索引。
+- `app/src/core/stage/stageObject/entity/TextNode.tsx`、`app/src/core/render/canvas2d/entityRenderer/textNode/TextNodeRenderer.tsx`：文字卡片有公式时使用同一混排结果计算尺寸和绘制，无公式时沿用原路径。
+- `app/src/core/service/controlService/controller/concrete/utilsControl.tsx`：先进入编辑并按源码重算卡片，再读取输入框初始矩形；编辑期间按源码定大小，退出后恢复混排尺寸。
+
+### 22. 公式卡片并进文字卡片（2026-11-09）
+
+- `app/src/core/research/LegacyMathCards.ts`、`LegacyMathCards.test.ts`（新增）：旧 `LatexNode` 在序列化数据中原地转为无边框的 `TextNode`，保持 UUID、位置、颜色、字号和引用路径；按解析结果选择可无损还原源码的块公式定界符，无法包裹时保留原文。
+- `ProjectFile.ts`、`Project.tsx`、`ClosedProjectInvocation.ts`、`GlobalMenu.tsx`、`copyEngine.tsx`、`StageHistoryManager.tsx`、`CollaborationService.tsx`、扩展 RPC 的 `host.tsx`：读文件、粘贴、历史恢复和舞台替换共用反序列化前转换，不依赖文件版本。引用块、跨文件查询和打开备份文件沿用 `Project.init`。
+- 删除 `LatexNode`、`LatexNodeRenderer`、`LatexEditWindow`、`convertLatexNodes` 及旧专用测试；清理注册、编辑、删除、改色、字号快捷键和类型声明中的专用分支。打开文件和编辑结束不再把文字卡片转换成公式卡片。实时编辑预览和 `extractLatexSource` 保留。
+- `AiSidecarBuilder.ts`：公式沿文字卡片的规则输出类型与含定界符的源码。`ProjectSidecar.test.ts`、`ProjectGraphCli.test.ts`、`copyEngine.test.ts` 覆盖旧文件读写、连线分组引用、命令行修改和旧剪贴板粘贴。
+- `InlineMathService.test.ts`、`MathImageDom.test.ts`：锁住整张卡片仅有一个块公式时排版盒的四周居中，以及公式文字卡片编辑后仍能添加前后文字；沿用已有对称行高留白和图片偏移计算。
+- WebKit 右侧裁切修复：`MathImage.ts` 的共享测量 iframe 改为屏外 4096×4096 视口；初始化时显式等待所有内嵌字体的 `FontFace.load()` 并加入测量文档，避免仅靠 `fonts.ready` 测到后备字体。公式根元素按内容自然宽度测量，SVG 中保留实测宽高；`foreignObject` 覆盖整张图片，用内部留白定位内容，不再依赖溢出绘制。
+- `katexEmbeddedCss.ts` 导出字体加载源，与 SVG 字体子集使用同一份资源；移除不再使用的全量字体 CSS 拼接。`MathImageDom.test.ts`、`katexEmbeddedCss.test.ts` 覆盖字体加载顺序、共享与重建、加载失败、非零视口、完整图片范围，以及矩阵、积分、求和、大号括号和根号的字体或 SVG 路径。
+- 字体由测量 iframe 自己窗口的 `FontFace` 构造函数创建；加载失败时移除该 iframe 并清空测量缓存，让下一条公式重新初始化。测试锁住窗口归属，以及前一条失败、后一条成功且失败公式不自动重试的行为。
+- 矮公式基线修复：测量 iframe 原是没有文档类型声明的空白文档，按怪异模式排版，不含文字的行内盒不撑行高；SVG 图片里的 XHTML 按标准模式排版，会给 `.katex` 留出一行文字的上半部分。比这个高度矮的公式在图里因此比量出的基线低约 0.2 个 KaTeX 字高。`MathImage.ts` 建好 iframe 后写入 `<!DOCTYPE html>`，两边同用标准模式；`MathImageDom.test.ts` 锁住测量文档为标准模式。
+
+### 23. 临时打开研究文件夹外的白板（2026-11-09）
+
+- `app/src/core/research/TemporaryWorkspace.ts`（新增）：`isTemporaryWorkspace(project)` 按当前路径和研究文件夹实时判断（本地文件、设了研究文件夹、文件不在里面）；`canOpenWorkspace(uri, origin)` 只给 `file-dialog`、`file-drop`、`file-paste`、`os-file` 四种用户来源放行。
+- `app/src/core/service/GlobalMenu.tsx`：`onOpenFile` 新增 `origin` 参数，没声明来源时研究文件夹外的白板照旧拒绝（复用已打开的标签之前就检查）；临时白板不导入并清空旁边的同名 TXT。`main.tsx`（启动参数、访达打开事件、启动队列）、`ResearchDrop.ts`（拖入、粘贴）、`dragFileIntoStageEngine.tsx` 传各自的来源；`DeepLinkHandler.ts` 不传，链接仍只能打开研究文件夹里的白板。
+- `app/src/core/Project.tsx`：临时白板保存时不写 `.workbench/` 里的 AI 文字版。`AutoSaveBackupService.tsx`：临时白板的自动备份只放应用缓存，不用自定义备份路径。
+- `app/src/core/research/ResearchSession.ts`：启动会话不记录、不恢复临时白板，工作区列表不列它。`RecentFileManager.tsx`：不把临时白板加进最近文件（读取不过滤，换研究文件夹不会丢掉别的文件夹的记录）；`KeyboardRecentFilesWindow.tsx` 显示时过滤。`ResearchRename.ts`：文件改名时不改写临时白板。
+- `app/src/core/research/FileCardFactory.ts`：临时白板上新放的文件卡片存完整路径；旧的相对路径照旧按白板所在文件夹解析。
+- `app/src/core/research/ExternalWorkspaceAccess.ts`（新增）、`app/src/cli/ProjectGraphCliRuntime.ts`、`ProjectGraphCli.ts`：命令行按研究文件夹（解析符号链接后）检查路径，文件夹外的返回 `TEMPORARY_WORKSPACE_FORBIDDEN`，研究文件夹读不了时返回 `RESEARCH_FOLDER_UNAVAILABLE`。`app/src/core/OpenProjectRuntimeHost.ts`：外部 AI 通过已打开的白板调用工具时，临时白板一律拒绝。
+- 带路径的提示（`ResearchFolder.ts`、`ResearchSession.ts`、`GlobalMenu.tsx`、`DeepLinkHandler.ts`）关闭 i18next 的 HTML 转义，`/`、`&` 不再显示成实体。
+- `app/src/ProjectTabs.tsx`：临时白板的标签名字用斜体，前面加 `FolderOutput` 小图标，悬停提示「研究文件夹外，临时打开：<完整路径>」；换研究文件夹时跟着更新。`app/src/components/docked-area.tsx`：状态条最前面显示琥珀色的「研究文件夹外」，悬停说明它享受不到哪些功能、怎么变成正式工作区。新文案在 `zh_CN.yml`、`en.yml`（`research.tabs.outsideFolder`、`research.statusBar.outsideFolder`、`outsideFolderHint`），`zh_TW.yml` 重新生成。
+- 测试：`TemporaryWorkspace.test.ts`、`TemporaryWorkspaceOpen.test.ts`、`ExternalWorkspaceAccess.test.ts`（新增），以及保存、会话、拖放、卡片、改名、自动备份、运行时、`ProjectTabs.test.tsx` 里的回归测试。
+
+### 24. 项目占用测试的等待余量（2026-11-09）
+
+- `app/src-tauri/src/project_ownership.rs`：原版的 4 条测试只给线程留 10～80 毫秒余量，GitHub 的 macOS 机器忙时超时失败。`connectable_owner_waits_for_in_flight_owner_inspection` 的重试间隔改为 500 毫秒；`ownership_and_owner_record_share_one_retry_budget` 的重试间隔改为 500 毫秒，另一把锁占 1.5 秒，上限改为 1.6 倍重试间隔，现在能分辨两把锁共用一次重试和各自重试，原来分辨不出；`contended_acquisition_does_not_block_unrelated_desktop_release` 的重试间隔改为 1 秒，上限 500 毫秒；`concurrent_same_project_acquisition_reuses_the_first_desktop_owner` 的重试间隔改为 1 秒。只改测试，程序逻辑不变。
+
+### 25. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

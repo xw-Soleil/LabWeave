@@ -21,7 +21,7 @@ import { canClosedProjectProvideCapabilities } from "@/core/service/dataManageSe
 // The serializer registers decorated classes when their modules load.
 import "@/core/stage/stageObject/association/LineEdge";
 import { StageManager } from "@/core/stage/stageManager/StageManager";
-import { deserialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Decoder } from "@msgpack/msgpack";
 import { URI } from "vscode-uri";
 import {
@@ -200,7 +200,7 @@ function createClosedProject(
   project.readme = parsed.readme;
   // 和桌面端一样先有 StageManager 再读舞台：分组在读出来时就要量自己的大小，会问 StageManager 要连线
   project.loadService(StageManager);
-  project.stage = deserialize(parsed.serializedStageObjects, project);
+  project.stage = deserializeStageObjects(parsed.serializedStageObjects, project);
   project.stageManager.updateReferences();
   project.projectState = ProjectState.Saved;
   return {

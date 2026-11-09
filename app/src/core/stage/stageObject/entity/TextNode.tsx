@@ -108,6 +108,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
 
   public set isEditing(value: boolean) {
     this._isEditing = value;
+    this.project.inlineMath?.editingChanged(this);
     this.project.textNodeRenderer.renderTextNode(this);
     // 再主动渲染一次，确保即使渲染引擎停止，文字也能显示出来
   }
@@ -279,6 +280,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
    * 调整后的矩形是当前文字加了一圈padding之后的大小
    */
   private adjustSizeByText() {
+    if (this.project.inlineMath?.resize(this, Infinity)) return;
     this.collisionBox.shapes[0] = new Rectangle(
       this.rectangle.location.clone(),
       getMultiLineTextSize(this.text, this.getFontSize(), 1.5, undefined, this.fontFamily, this.fontWeight).add(
@@ -288,6 +290,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
   }
   private adjustHeightByText() {
     const wrapWidth = this.rectangle.size.x - this.getPadding() * 2;
+    if (this.project.inlineMath?.resize(this, wrapWidth)) return;
     const newTextSize = this.project.textRenderer.measureMultiLineTextSize(
       this.text,
       this.getFontSize(),
@@ -346,6 +349,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
     // todo：宽度能自定义控制，但是高度不能
     const newSize = newRectangle.size.add(delta);
     newSize.x = Math.max(75, newSize.x);
+    if (this.project.inlineMath?.resize(this, newSize.x - this.getPadding() * 2)) return;
     const newTextSize = this.project.textRenderer.measureMultiLineTextSize(
       this.text,
       this.getFontSize(),
