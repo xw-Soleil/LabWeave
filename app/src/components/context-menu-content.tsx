@@ -8,7 +8,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
-import { promptImageCaption, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { promptImageCaption, refreshFileCard, resolveFileCardPath } from "@/core/research/FileCardFactory";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
 import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
@@ -450,6 +450,12 @@ export default function MyContextMenuContent() {
         <Item onClick={() => void open(resolveFileCardPath(p, fileCard)).catch((error) => toast.error(String(error)))}>
           <LucideIcons.ExternalLink />
           {tResearch("document.openSystem")}
+        </Item>
+      )}
+      {fileCard?.fileKind === "pdf" && (
+        <Item onClick={() => void refreshFileCard(p, fileCard)}>
+          <LucideIcons.RefreshCw />
+          {tResearch("card.refresh")}
         </Item>
       )}
       {imageCard && (

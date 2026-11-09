@@ -380,6 +380,32 @@ async function createCancellableOpenProjectHost(projectPath: string) {
 
 // Closed-project calls start a fresh Node worker and Vite runtime on every invocation.
 describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
+  it("keeps PDF excerpt and source paths in a closed workspace dump without opening the PDF", async () => {
+    const projectPath = await createProjectFixture("2.7.0", [
+      {
+        _: "FileCardNode",
+        uuid: "pdf-card",
+        title: "Saved PDF",
+        fileKind: "pdf",
+        sourcePath: "papers/not-on-disk.pdf",
+        pageCount: 12,
+        excerpt: "Cached text for the research assistant",
+      },
+    ]);
+    const before = readFileSync(projectPath);
+    const result = runCli("tool", "invoke", "dump_workspace", "--project", projectPath, "--input", "{}");
+    expect(result).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(result.stdout).cards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Saved PDF",
+          text: "Cached text for the research assistant",
+          file: { path: "papers/not-on-disk.pdf", kind: "pdf", pages: 12 },
+        }),
+      ]),
+    );
+    expect(readFileSync(projectPath)).toEqual(before);
+  });
   it("prints standard help without protocol output noise", () => {
     const result = runCli("--help");
 

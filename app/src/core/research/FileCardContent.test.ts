@@ -64,7 +64,7 @@ describe("pickPdfTitle", () => {
 describe("extractFileCardContent", () => {
   it("reads markdown without a thumbnail or page count", async () => {
     const bytes = new TextEncoder().encode("# 标题\n正文") as Uint8Array<ArrayBuffer>;
-    await expect(extractFileCardContent("markdown", bytes, "a.md", 3)).resolves.toEqual({
+    await expect(extractFileCardContent("markdown", bytes, "a.md")).resolves.toEqual({
       title: "标题",
       excerpt: "# 标题\n正文",
       pageCount: 0,

@@ -19,10 +19,8 @@ const BADGE_TOP = 11;
 const BADGE_HEIGHT = 18;
 const BADGE_RADIUS = 4;
 const BADGE_PADDING_X = 6;
-const BADGE_GAP = 8;
 const BADGE_FONT_SIZE = 12;
 const BADGE_FONT_WEIGHT = "500";
-const META_FONT_SIZE = 11;
 const TITLE_TOP = 38;
 const TITLE_FONT_SIZE = 15;
 const TITLE_LINE_HEIGHT = 1.25;
@@ -36,8 +34,6 @@ const BODY_GAP = 6;
 const EXCERPT_FONT_SIZE = 11;
 const EXCERPT_LINE_HEIGHT = 1.3;
 const EXCERPT_PREVIEW_LENGTH = 600;
-/** PDF 缩略图宽度，按 A4 纵向比例配 BODY 高度 */
-const PDF_THUMBNAIL_WIDTH = 74;
 const HINT_FONT_SIZE = 11;
 const HINT_GAP = 8;
 /** 悬停提示文案里文件名的占位，用来把文件名单独拿出来做中间省略 */
@@ -112,6 +108,15 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
   const size = new Vector(bitmap.width * scale, bitmap.height * scale);
   const location = box.center.subtract(size.multiply(0.5));
   const cameraScale = project.camera.currentScale;
+  if (card.fileKind === "pdf") {
+    project.shapeRenderer.renderRect(
+      project.renderer.transformWorld2View(new Rectangle(location, size)),
+      new Color(255, 255, 255),
+      Color.Transparent,
+      0,
+      4 * cameraScale,
+    );
+  }
   project.imageRenderer.renderImageElement(
     bitmap,
     project.renderer.transformWorld2View(location),
@@ -129,7 +134,7 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
 
 /**
  * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
- * 上面是类型标签和标题（标题不是文件名时下面再写一行文件名），下面是缩略图和开头文字。
+ * PDF 只画标题和完整首页；Markdown 画标题和开头文字。
  * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
  */
 export function renderFileCard(project: Project, card: FileCardNode): void {
@@ -293,7 +298,7 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
   const hideContent = Settings.protectingPrivacy;
   const innerWidth = rect.size.x - PADDING * 2;
   const fileName = fileNameOf(card.sourcePath);
-  const showFileName = !hideContent && titleDiffersFromFileName(card.title, fileName);
+  const showFileName = card.fileKind !== "pdf" && !hideContent && titleDiffersFromFileName(card.title, fileName);
   // 版面按世界坐标排，和缩放无关：放大缩小时缩略图不会跳
   const titleLineCount = hideContent
     ? 0
@@ -305,41 +310,29 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
   const bodyHeight = rect.size.y - bodyTop - PADDING;
 
   if (showText) {
-    let badgeRowLeft = PADDING;
-    let badgeRowRight = rect.size.x - PADDING;
-    badgeRowLeft +=
+    const badgeRowLeft = PADDING;
+    const badgeRowRight = rect.size.x - PADDING;
+    renderBadge(
+      project,
+      cardText(`kind.${card.fileKind}`),
+      new Vector(origin.x + badgeRowLeft, origin.y + BADGE_TOP),
+      tintedBadge(KIND_HUES[card.fileKind] ?? KIND_HUES.pdf, textColor),
+    );
+    if (card.missing) {
       renderBadge(
         project,
-        cardText(`kind.${card.fileKind}`),
-        new Vector(origin.x + badgeRowLeft, origin.y + BADGE_TOP),
-        tintedBadge(KIND_HUES[card.fileKind] ?? KIND_HUES.pdf, textColor),
-      ) + BADGE_GAP;
-    if (card.missing) {
-      badgeRowRight -=
-        renderBadge(
-          project,
-          cardText("missing"),
-          new Vector(origin.x + badgeRowRight, origin.y + BADGE_TOP),
-          tintedBadge(MISSING_COLOR, textColor),
-          true,
-        ) + BADGE_GAP;
+        cardText("missing"),
+        new Vector(origin.x + badgeRowRight, origin.y + BADGE_TOP),
+        tintedBadge(MISSING_COLOR, textColor),
+        true,
+      );
     } else if (isExternalFileCard(project, card)) {
-      badgeRowRight -=
-        renderBadge(
-          project,
-          cardText("external"),
-          new Vector(origin.x + badgeRowRight, origin.y + BADGE_TOP),
-          neutralBadge(textColor),
-          true,
-        ) + BADGE_GAP;
-    }
-    if (card.fileKind === "pdf" && card.pageCount > 0 && badgeRowRight > badgeRowLeft) {
-      project.textRenderer.renderFittedText(
-        cardText("pages", { count: card.pageCount }),
-        toView(new Vector(badgeRowLeft, BADGE_TOP + (BADGE_HEIGHT - META_FONT_SIZE) / 2)),
-        META_FONT_SIZE * cameraScale,
-        (badgeRowRight - badgeRowLeft) * cameraScale,
-        textColor.toNewAlpha(0.6),
+      renderBadge(
+        project,
+        cardText("external"),
+        new Vector(origin.x + badgeRowRight, origin.y + BADGE_TOP),
+        neutralBadge(textColor),
+        true,
       );
     }
     if (!hideContent) {
@@ -369,22 +362,14 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
 
   let excerptLeft = PADDING;
   if (card.bitmap) {
-    if (card.fileKind === "pdf") {
-      renderThumbnail(
-        project,
-        card,
-        new Rectangle(origin.add(new Vector(PADDING, bodyTop)), new Vector(PDF_THUMBNAIL_WIDTH, bodyHeight)),
-      );
-      excerptLeft = PADDING + PDF_THUMBNAIL_WIDTH + 10;
-    } else {
-      renderThumbnail(
-        project,
-        card,
-        new Rectangle(origin.add(new Vector(PADDING, bodyTop)), new Vector(innerWidth, bodyHeight)),
-      );
-      excerptLeft = rect.size.x;
-    }
+    renderThumbnail(
+      project,
+      card,
+      new Rectangle(origin.add(new Vector(PADDING, bodyTop)), new Vector(innerWidth, bodyHeight)),
+    );
+    excerptLeft = rect.size.x;
   }
+  if (card.fileKind === "pdf") return;
   const excerptWidth = rect.size.x - PADDING - excerptLeft;
   if (showText && card.excerpt && excerptWidth > 40) {
     project.textRenderer.renderClampedMultiLineText(

@@ -36,6 +36,23 @@ export async function pdfWithTimeout<T>(promise: Promise<T>, ms = 20000): Promis
   }
 }
 
+export async function createPdfRangeTransport(
+  pdfjs: PdfJs,
+  reader: DocumentRangeReader,
+  onError: (error: unknown) => void,
+  isClosed: () => boolean = () => false,
+) {
+  const initial =
+    reader.size > 0 ? await pdfWithTimeout(reader.read(0, Math.min(PDF_RANGE_CHUNK_SIZE, reader.size))) : null;
+  const range = new pdfjs.PDFDataRangeTransport(reader.size, initial, true);
+  range.requestDataRange = (begin, end) => {
+    void pdfWithTimeout(reader.read(begin, end)).then((bytes) => {
+      if (!isClosed()) range.onDataRange(begin, bytes);
+    }, onError);
+  };
+  return range;
+}
+
 export async function openPdfDocument(path: string, onError: (error: unknown) => void, signal?: AbortSignal) {
   const reader = await DocumentRangeReader.open(path);
   let nativeWorker: Worker | undefined;
@@ -62,9 +79,16 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
         // Forced termination below also handles WKWebView workers that never acknowledge destruction.
         if (!(error instanceof Error && error.message === "pdfTimeout")) onError(error);
       } finally {
-        worker?.destroy();
-        nativeWorker?.terminate();
-        await reader.close();
+        try {
+          worker?.destroy();
+        } finally {
+          nativeWorker?.terminate();
+          try {
+            await pdfWithTimeout(reader.close(), 1000);
+          } catch (error) {
+            onError(error);
+          }
+        }
       }
     })();
     return closing;
@@ -86,13 +110,7 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
     nativeWorker.addEventListener("error", () => fail(new Error("pdfWorkerFailed")));
     nativeWorker.addEventListener("messageerror", () => fail(new Error("pdfWorkerFailed")));
     worker = pdfjs.PDFWorker.create({ port: nativeWorker });
-    const initial = reader.size > 0 ? await run(reader.read(0, Math.min(PDF_RANGE_CHUNK_SIZE, reader.size))) : null;
-    const range = new pdfjs.PDFDataRangeTransport(reader.size, initial, true);
-    range.requestDataRange = (begin, end) => {
-      void run(reader.read(begin, end)).then((bytes) => {
-        if (!stopped) range.onDataRange(begin, bytes);
-      }, fail);
-    };
+    const range = await run(createPdfRangeTransport(pdfjs, reader, fail, () => stopped));
     loadingTask = pdfjs.getDocument({
       range,
       worker,

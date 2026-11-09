@@ -3063,6 +3063,11 @@ research:
       hidden: 名字不能以「.」或「~$」開頭，也不能包含「_backup」，否則文件面板裡看不到它
       exists: "「{{name}}.prg」已經有了，換個名字吧"
   card:
+    refresh: 刷新 PDF 卡片
+    refreshing: 正在刷新卡片…
+    pdfTimeout: PDF 處理超時，解析程序已停止，可用系統程序打開。
+    pdfTextTimeout: PDF 文字讀取超時，已停止提取；保留已讀到的文字和首頁預覽。
+    pdfWorkerFailed: PDF 解析程序無法啟動或已停止，請重試。
     title: 文件卡片
     kind:
       pdf: PDF

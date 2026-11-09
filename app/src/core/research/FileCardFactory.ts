@@ -1,6 +1,6 @@
 import { Dialog } from "@/components/ui/dialog";
 import type { Project } from "@/core/Project";
-import { cardText, extractFileCardContent } from "@/core/research/FileCardContent";
+import { cardText, extractFileCardContent, extractPdfCardContent } from "@/core/research/FileCardContent";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import { fileKindOf } from "@/core/research/ResearchShell";
@@ -153,20 +153,51 @@ interface ParsedFile {
 async function parseFile(absPath: string): Promise<ParsedFile> {
   const fileKind = fileKindOf(absPath)!;
   const fileName = fileNameOf(absPath);
-  const bytes = await readFile(absPath);
-  const content = await extractFileCardContent(fileKind, bytes, fileName, Settings.aiPdfTextPages);
+  const content =
+    fileKind === "pdf"
+      ? await extractPdfCardContent(absPath, fileName, Settings.aiPdfTextPages)
+      : await extractFileCardContent(fileKind, await readFile(absPath), fileName);
   if (content.problem) {
     toast.warning(cardText("readProblem", { name: fileName, problem: content.problem }));
   }
   return { absPath, fileKind, content };
 }
 
-/** 图片卡片按图片比例，其他卡片固定 280×200 */
+/** PDF 为纵向封面留出空间，旧卡片保持原位置和尺寸。 */
 function fileCardSize({ fileKind, content }: ParsedFile): Vector {
   if (fileKind === "image" && content.imageSize) {
     return FileCardNode.imageCardSize(content.imageSize.width, content.imageSize.height);
   }
+  if (fileKind === "pdf") return new Vector(FileCardNode.pdfWidth, FileCardNode.pdfHeight);
   return new Vector(FileCardNode.width, FileCardNode.height);
+}
+
+const refreshingCards = new Set<FileCardNode>();
+
+export async function refreshFileCard(project: Project, card: FileCardNode): Promise<void> {
+  if (refreshingCards.has(card)) return;
+  refreshingCards.add(card);
+  const release = markFileCardsPending(project);
+  const loading = toast.loading(cardText("refreshing"));
+  try {
+    const { content } = await parseFile(resolveFileCardPath(project, card));
+    if (project.closing || !project.stageManager.getFileCardNodes().includes(card)) return;
+    // Preserve the old preview if a damaged/missing source could not be parsed.
+    if (card.fileKind === "pdf" && content.pageCount === 0) return;
+    card.title = content.title;
+    card.pageCount = content.pageCount;
+    if (content.thumbnail) card.attachmentId = project.addAttachment(content.thumbnail);
+    if (content.excerpt) card.excerpt = content.excerpt;
+    card.missing = false;
+    card.missingCheckedAt = performance.now();
+    project.historyManager.recordStep();
+  } catch (error) {
+    toast.error(cardText("readFailed", { details: String(error) }));
+  } finally {
+    toast.dismiss(loading);
+    refreshingCards.delete(card);
+    release();
+  }
 }
 
 function buildFileCard(project: Project, file: ParsedFile, location: Vector): FileCardNode {

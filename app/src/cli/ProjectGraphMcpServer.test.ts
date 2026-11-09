@@ -58,6 +58,14 @@ function parse(result: Awaited<ReturnType<Client["callTool"]>>) {
 }
 
 describe("external AI MCP server", () => {
+  it("forwards cached PDF text and paths for a closed workspace", async () => {
+    const card = { title: "Paper", text: "Saved PDF excerpt", file: { path: "papers/a.pdf", kind: "pdf", pages: 10 } };
+    nextResult = { ok: true, value: { cards: [card] } };
+    const client = await connect({ isWorkspaceOpen: async () => false });
+    const result = parse(await client.callTool({ name: "dump_workspace", arguments: { workspace: "sub/b.prg" } }));
+    expect(result).toEqual({ isError: false, value: { cards: [card] } });
+    expect(calls[0].projectPath).toBe(join(root, "sub", "b.prg"));
+  });
   it("introduces itself and lists every tool with a required workspace parameter", async () => {
     const client = await connect();
     expect(client.getServerVersion()).toMatchObject({ name: "research-workbench", version: "test" });

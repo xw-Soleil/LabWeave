@@ -46,6 +46,8 @@ export class FileCardNode extends ConnectableEntity {
 
   static width: number = 280;
   static height: number = 200;
+  static readonly pdfWidth = 240;
+  static readonly pdfHeight = 340;
   static readonly maxExcerptLength = 4000;
   /** 图片卡片按图片比例定大小：长边这么长，短边至少 imageMinSide */
   static readonly imageLongSide = 300;

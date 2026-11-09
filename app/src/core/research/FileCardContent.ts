@@ -1,5 +1,6 @@
 import type { FileKind } from "@/core/research/ResearchShell";
 import i18next from "i18next";
+import type { PdfDocument } from "./PdfDocument";
 
 /** PDF 首页缩略图最长边（像素），存进 .prg 的附件不需要更大 */
 export const THUMBNAIL_MAX_SIZE = 480;
@@ -9,7 +10,7 @@ export const MAX_EXCERPT_LENGTH = 4000;
 
 export interface FileCardContent {
   title: string;
-  /** 给卡片预览和 AI 看的文字；读不出内容时是一句说明 */
+  /** Markdown 卡片预览和 AI 用的文字；PDF 摘录只给 AI，不画在卡片上 */
   excerpt: string;
   pageCount: number;
   thumbnail: Blob | null;
@@ -111,52 +112,10 @@ async function makeImageThumbnail(blob: Blob): Promise<{ thumbnail: Blob; width:
   }
 }
 
-type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
-type PdfDocument = Awaited<ReturnType<PdfJs["getDocument"]>["promise"]>;
-
-let pdfJsPromise: Promise<PdfJs> | null = null;
-
-/**
- * pdf.js 只在这里动态加载，命令行版和 FileCardNode 都不会把它打包进去。
- * 用 legacy 版本：最低支持的 macOS 11 自带的 WebKit 太旧，跑不了 pdf.js 的现代版本。
- */
-function loadPdfJs(): Promise<PdfJs> {
-  pdfJsPromise ??= Promise.all([
-    import("pdfjs-dist/legacy/build/pdf.mjs"),
-    import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
-  ]).then(
-    ([pdfjs, worker]) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    },
-    (error) => {
-      pdfJsPromise = null;
-      throw error;
-    },
-  );
-  return pdfJsPromise;
-}
-
-/**
- * pdf.js 的数据文件由 vite-plugins/pdfjs-assets.ts 放在 <BASE_URL>pdfjs/ 下。
- * 没有它们时，没嵌字体的中文 PDF 抽不出字，JPX 图片也画不出缩略图。
- */
-function pdfJsAssetUrls() {
-  const base = new URL(`${import.meta.env.BASE_URL}pdfjs/`, window.location.href).href;
-  return {
-    cMapUrl: `${base}cmaps/`,
-    cMapPacked: true,
-    standardFontDataUrl: `${base}standard_fonts/`,
-    wasmUrl: `${base}wasm/`,
-    iccUrl: `${base}iccs/`,
-  };
-}
-
-// 不在这里调 page.cleanup(),整个文档最后由 loadingTask.destroy() 统一释放。
 async function renderPdfFirstPage(document: PdfDocument): Promise<Blob> {
   const page = await document.getPage(1);
   const baseViewport = page.getViewport({ scale: 1 });
-  const scale = Math.min(THUMBNAIL_MAX_SIZE / baseViewport.width, (THUMBNAIL_MAX_SIZE * 2) / baseViewport.height);
+  const scale = THUMBNAIL_MAX_SIZE / Math.max(baseViewport.width, baseViewport.height);
   const viewport = page.getViewport({ scale });
   const { canvas, context } = createCanvas(viewport.width, viewport.height);
   context.fillStyle = "#ffffff";
@@ -207,10 +166,17 @@ function readWithTimeout(reader: ReadableStreamDefaultReader<unknown>, ms: numbe
  * 但流的结束信号一直不来,getTextContent 会永远等下去。这里自己读流,
  * 收到结束信号、字数够了、或者一段时间没有新内容,就停下读下一页。
  */
-async function extractPdfText(document: PdfDocument, pageLimit: number): Promise<string> {
+export async function extractPdfText(
+  document: PdfDocument,
+  pageLimit: number,
+  onProblem: (error: unknown) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { pdfWithTimeout } = await import("./PdfDocument");
   let text = "";
   for (let pageNumber = 1; pageNumber <= pageLimit && text.length < MAX_EXCERPT_LENGTH; pageNumber++) {
-    const page = await document.getPage(pageNumber);
+    if (signal?.aborted) break;
+    const page = await pdfWithTimeout(document.getPage(pageNumber), 5000);
     const reader = page.streamTextContent().getReader();
     try {
       let gotChunk = false;
@@ -219,17 +185,25 @@ async function extractPdfText(document: PdfDocument, pageLimit: number): Promise
           reader,
           gotChunk ? NEXT_TEXT_CHUNK_TIMEOUT_MS : FIRST_TEXT_CHUNK_TIMEOUT_MS,
         );
+        if (!chunk && !gotChunk) {
+          onProblem(new Error("pdfTextTimeout"));
+          return normalizeExcerpt(text);
+        }
         gotChunk = true;
         if (!chunk || chunk.done || !chunk.value) break;
         for (const item of chunk.value.items) {
           if (typeof item.str !== "string") continue;
-          text += item.str;
+          text += item.str.slice(0, Math.max(0, MAX_EXCERPT_LENGTH - text.length));
           if (item.hasEOL) text += "\n";
+          if (text.length >= MAX_EXCERPT_LENGTH) break;
         }
       }
     } finally {
-      // 取消可能已经结束的流会被拒绝,这里只是释放读取器,结果不需要
-      reader.cancel().catch(() => undefined);
+      try {
+        await pdfWithTimeout(reader.cancel(), 1000);
+      } catch (error) {
+        onProblem(error);
+      }
     }
     text += "\n\n";
   }
@@ -237,11 +211,14 @@ async function extractPdfText(document: PdfDocument, pageLimit: number): Promise
 }
 
 function errorMessage(error: unknown): string {
+  if (error instanceof Error && ["pdfTimeout", "pdfTextTimeout", "pdfWorkerFailed"].includes(error.message)) {
+    return cardText(error.message);
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
-async function extractPdfContent(
-  bytes: Uint8Array<ArrayBuffer>,
+export async function extractPdfCardContent(
+  path: string,
   fileName: string,
   textPages: number,
 ): Promise<FileCardContent> {
@@ -252,80 +229,65 @@ async function extractPdfContent(
     thumbnail: null,
     problem: "",
   };
-  const pdfjs = await loadPdfJs();
-  const loadingTask = pdfjs.getDocument({
-    data: bytes,
-    ...pdfJsAssetUrls(),
-    // WKWebView 的 worker 里 ImageDecoder / OffscreenCanvas 不可靠:实测带 JPEG 插图的论文(如 ScienceDirect 导出的)
-    // 第一页一直画不完,卡片永远停在「正在读取」。关掉后 pdf.js 用自己的 JS 解码,慢一点但稳定。
-    isImageDecoderSupported: false,
-    isOffscreenCanvasSupported: false,
-  });
+  const { openPdfDocument, pdfWithTimeout } = await import("./PdfDocument");
+  const problems: string[] = [];
+  const report = (error: unknown) => problems.push(cardText("pdfBroken", { error: errorMessage(error) }));
+  const controller = new AbortController();
+  let session: Awaited<ReturnType<typeof openPdfDocument>> | undefined;
   try {
-    let document: PdfDocument;
-    try {
-      document = await loadingTask.promise;
-    } catch (error) {
-      const locked = error instanceof Error && error.name === "PasswordException";
-      result.problem = locked ? cardText("pdfLocked") : cardText("pdfBroken", { error: errorMessage(error) });
-      result.excerpt = `（${result.problem}）`;
-      return result;
-    }
+    session = await pdfWithTimeout(openPdfDocument(path, report, controller.signal));
+    const { document } = session;
     result.pageCount = document.numPages;
-    const problems: string[] = [];
-    try {
-      const { info } = await document.getMetadata();
-      result.title = pickPdfTitle((info as { Title?: unknown } | null)?.Title, fileName);
-    } catch (error) {
-      problems.push(cardText("pdfBroken", { error: errorMessage(error) }));
-    }
-    // 先抽文字再渲染缩略图:渲染失败不影响 AI 读到正文
-    if (textPages > 0) {
-      try {
-        result.excerpt = await extractPdfText(document, Math.min(textPages, document.numPages));
-        if (!result.excerpt) result.excerpt = `（${cardText("pdfNoText")}）`;
-      } catch (error) {
-        problems.push(cardText("pdfBroken", { error: errorMessage(error) }));
-      }
-    }
-    try {
-      result.thumbnail = await renderPdfFirstPage(document);
-    } catch (error) {
-      problems.push(cardText("thumbnailFailed", { error: errorMessage(error) }));
-    }
-    result.problem = problems.join("；");
-    return result;
+    await session.run(
+      (async () => {
+        try {
+          const { info } = await session!.run(document.getMetadata(), 5000);
+          result.title = pickPdfTitle((info as { Title?: unknown } | null)?.Title, fileName);
+        } catch (error) {
+          report(error);
+        }
+        if (controller.signal.aborted) return;
+        try {
+          result.thumbnail = await session!.run(renderPdfFirstPage(document), RENDER_TIMEOUT_MS);
+        } catch (error) {
+          problems.push(cardText("thumbnailFailed", { error: errorMessage(error) }));
+        }
+        if (controller.signal.aborted) return;
+        if (textPages > 0) {
+          try {
+            result.excerpt = await extractPdfText(
+              document,
+              Math.min(textPages, document.numPages),
+              report,
+              controller.signal,
+            );
+            if (!result.excerpt) result.excerpt = `（${cardText("pdfNoText")}）`;
+          } catch (error) {
+            report(error);
+          }
+        }
+      })(),
+      25000,
+    );
+  } catch (error) {
+    const locked = error instanceof Error && error.name === "PasswordException";
+    problems.push(locked ? cardText("pdfLocked") : cardText("pdfBroken", { error: errorMessage(error) }));
   } finally {
-    await releasePdf(loadingTask);
+    controller.abort();
+    await session?.destroy();
   }
-}
-
-/** 释放 pdf.js 文档最多等这么久 */
-const DESTROY_TIMEOUT_MS = 1000;
-
-/**
- * 实测在 WKWebView 里,内容都抽完以后 loadingTask.destroy() 有时永远不返回(worker 不回结束确认),
- * 直接 await 会让卡片一直停在「正在读取」。这里最多等 1 秒,超时就不等了;
- * 释放本身还在后台进行,出错只记到控制台(内容已经拿到,用户不需要处理)。
- */
-async function releasePdf(loadingTask: { destroy(): Promise<void> }): Promise<void> {
-  const destroying = loadingTask.destroy().catch((error: unknown) => {
-    console.warn("释放 PDF 文档失败", error);
-  });
-  await Promise.race([destroying, new Promise((resolve) => setTimeout(resolve, DESTROY_TIMEOUT_MS))]);
+  result.problem = [...new Set(problems)].join("；");
+  if (!result.excerpt && result.problem) result.excerpt = `（${result.problem}）`;
+  return result;
 }
 
 /**
- * 从文件内容抽出卡片要显示的东西。文件本身读不出内容（PDF 有密码、损坏等）不会抛错，
- * 而是返回只有标题和一句说明的结果，problem 里写原因。
- * @param bytes 文件内容；PDF 会把它交给 pdf.js 的 worker，调用后不要再用
- * @param pdfTextPages PDF 抽前几页的文字，0 表示不抽
+ * 图片和 Markdown 的卡片内容；PDF 单独从受限文件句柄按范围读取。
  */
 export async function extractFileCardContent(
-  kind: FileKind,
+  kind: Exclude<FileKind, "pdf">,
   bytes: Uint8Array<ArrayBuffer>,
   fileName: string,
-  pdfTextPages: number,
 ): Promise<FileCardContent> {
   if (kind === "markdown") {
     const { title, excerpt } = extractMarkdownContent(new TextDecoder().decode(bytes), fileName);
@@ -349,5 +311,5 @@ export async function extractFileCardContent(
     }
     return result;
   }
-  return extractPdfContent(bytes, fileName, pdfTextPages);
+  throw new Error("unsupportedFileKind");
 }

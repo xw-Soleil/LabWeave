@@ -135,4 +135,24 @@ describe("PDF worker and range lifecycle", () => {
     await expect(pdfWithTimeout(Promise.resolve(42))).resolves.toBe(42);
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("still terminates the native worker if pdf.js cleanup throws", async () => {
+    const session = await openPdfDocument("/a.pdf", vi.fn());
+    mocks.workerDestroy.mockImplementationOnce(() => {
+      throw new Error("cleanup failed");
+    });
+    await expect(session.destroy()).rejects.toThrow("cleanup failed");
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(file.close).toHaveBeenCalledOnce();
+  });
+  it("reports a stalled file close without blocking the caller or leaving the worker alive", async () => {
+    vi.useFakeTimers();
+    file.close.mockReturnValue(new Promise(() => {}));
+    const report = vi.fn();
+    const session = await openPdfDocument("/a.pdf", report);
+    const closing = session.destroy();
+    await vi.advanceTimersByTimeAsync(1001);
+    await closing;
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: "pdfTimeout" }));
+  });
 });

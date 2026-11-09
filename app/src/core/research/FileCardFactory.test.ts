@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
+  pdfContent: vi.fn(),
   exists: vi.fn(),
   toastWarning: vi.fn(),
   toastError: vi.fn(),
@@ -15,6 +16,10 @@ vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
 vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsManager: class DetailsManager {} }));
 vi.mock("@/utils/platform", () => ({ family: () => "unix" }));
 vi.mock("@tauri-apps/plugin-fs", () => ({ readFile: mocks.readFile, exists: mocks.exists }));
+vi.mock("./FileCardContent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./FileCardContent")>()),
+  extractPdfCardContent: mocks.pdfContent,
+}));
 vi.mock("sonner", () => ({
   toast: {
     warning: mocks.toastWarning,
@@ -45,6 +50,7 @@ import {
   listFileNames,
   markFileCardsPending,
   refreshFileCardMissing,
+  refreshFileCard,
   resolveFileCardPath,
   resolveSourcePath,
   rewriteSerializedFileCardPaths,
@@ -146,6 +152,7 @@ describe("pending file cards", () => {
 describe("createFileCards", () => {
   beforeEach(() => {
     mocks.readFile.mockReset();
+    mocks.pdfContent.mockReset();
     mocks.toastWarning.mockReset();
     mocks.toastError.mockReset();
   });
@@ -182,7 +189,7 @@ describe("createFileCards", () => {
 
   it("shows a loading toast for slow batches and always dismisses it", async () => {
     const project = savedProject();
-    mocks.readFile.mockRejectedValue(new Error("disk unplugged"));
+    mocks.pdfContent.mockRejectedValue(new Error("disk unplugged"));
 
     await createFileCards(project as never, ["/Users/me/Research/topic/paper.pdf"], Vector.getZero());
 
@@ -263,6 +270,63 @@ describe("createFileCards", () => {
     );
     expect(project.stageManager.updateReferences).not.toHaveBeenCalled();
     expect(project.historyManager.recordStep).not.toHaveBeenCalled();
+  });
+
+  it("creates a cover-sized PDF card from ranges while retaining its AI excerpt", async () => {
+    const project = savedProject();
+    const thumbnail = new Blob(["cover"]);
+    mocks.pdfContent.mockResolvedValue({ title: "Paper", excerpt: "AI text", pageCount: 20, thumbnail, problem: "" });
+    project.addAttachment.mockReturnValue("cover-id");
+    const [card] = await createFileCards(project as never, ["/Users/me/Research/topic/paper.pdf"], Vector.getZero());
+    expect(mocks.readFile).not.toHaveBeenCalled();
+    expect(mocks.pdfContent).toHaveBeenCalledWith("/Users/me/Research/topic/paper.pdf", "paper.pdf", 3);
+    expect(card).toMatchObject({ title: "Paper", excerpt: "AI text", pageCount: 20, attachmentId: "cover-id" });
+    expect(card.rectangle.size).toEqual(new Vector(240, 340));
+    expect(serialize([card])[0]).toMatchObject({ excerpt: "AI text", pageCount: 20, sourcePath: "paper.pdf" });
+  });
+
+  it("refreshes through the same range parser, keeps geometry and updates saved AI text", async () => {
+    const project = savedProject();
+    const card = new FileCardNode(project as never, { sourcePath: "paper.pdf", excerpt: "old" });
+    const geometry = card.rectangle.clone();
+    Object.assign(project.stageManager, { getFileCardNodes: () => [card] });
+    mocks.pdfContent.mockResolvedValue({
+      title: "Updated",
+      excerpt: "new AI text",
+      pageCount: 8,
+      thumbnail: new Blob(["new"]),
+      problem: "",
+    });
+    project.addAttachment.mockReturnValue("new-cover");
+    await refreshFileCard(project as never, card);
+    expect(mocks.readFile).not.toHaveBeenCalled();
+    expect(card.rectangle).toEqual(geometry);
+    expect(card).toMatchObject({ title: "Updated", excerpt: "new AI text", pageCount: 8, attachmentId: "new-cover" });
+    expect(project.historyManager.recordStep).toHaveBeenCalledOnce();
+    expect(hasPendingFileCards(project as never)).toBe(false);
+  });
+
+  it("keeps the previous card when refresh cannot parse the source", async () => {
+    const project = savedProject();
+    const card = new FileCardNode(project as never, {
+      sourcePath: "paper.pdf",
+      excerpt: "keep me",
+      attachmentId: "old-cover",
+      pageCount: 10,
+    });
+    Object.assign(project.stageManager, { getFileCardNodes: () => [card] });
+    mocks.pdfContent.mockResolvedValue({
+      title: "paper",
+      excerpt: "error",
+      pageCount: 0,
+      thumbnail: null,
+      problem: "broken",
+    });
+    await refreshFileCard(project as never, card);
+    expect(card).toMatchObject({ excerpt: "keep me", attachmentId: "old-cover", pageCount: 10 });
+    expect(project.historyManager.recordStep).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    expect(hasPendingFileCards(project as never)).toBe(false);
   });
 });
 
