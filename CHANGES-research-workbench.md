@@ -363,6 +363,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `BuiltInToolRegistry.ts`、`BuiltInToolExecutors.tsx`：新增白板工具 `move_nodes`，一次把一张或几张卡片挪到给定的世界坐标，引用不变；挪分组时里面的卡片一起走，先挪外层。工作区没打开时也能用（要用特效服务，因为分组里的卡片移动时会加残影）。`ProjectGraphMcpServer.ts` 的说明里加上：摆新卡片避开已有的，调位置用 `move_nodes`，不要删掉重建。
 - 测试：`LocalAgent.test.ts`（按实测数据去重、分段）、`LocalAgentTransport.test.ts`（命令单独发、说明留到下一条）、`mainTick.test.ts`（高卡片不重叠）、`ProjectGraphCli.test.ts`（关着的工作区里挪卡片和分组、重复引用报错），以及工具数量相关的测试。
 
-### 28. 本文件
+### 28. 上下文用量弹层（2026-11-10）
+
+- `LocalAgent.ts`：新增 `LOCAL_AGENT_CONTEXT_COMMANDS`（Claude Code 用 `/context`、在副本里跑；Codex 用 `/status`、在原会话里跑）、`LocalAgentConnection.runQuietCommand`（回复交给收集器，不送进聊天界面；副本用 unstable 入口的 `session/fork` 复制，复制不了时用 `session/new` 新开，换成和原会话一样的模型，跑完 `session/delete`）和 `parseLocalAgentContext`（解析「**名字:** 值」行和 Markdown 表格）。实测依据：Claude Code 的 `/context` 每跑一次约 2.3k token 记进对话；Codex 的 `/status` 不进对话记录；删掉副本后它的程序进程会退出。
+- `LocalAgentTransport.ts`：会话记下工作目录和 MCP 设置；新增 `inspectContext`，和发消息排在同一个队列里。
+- `app/src/sub/AIWindowLocalAgent.tsx`：新增盖在 AI 面板上的「上下文用量」弹层：模型、总量、分色进度条、分类表（按需加载的几项灰色、不计入）、记忆文件和其他明细（可折叠）；Codex 显示总量和 `/status` 的逐项内容；格式读不出时显示程序原文。
+- `app/src/sub/AIWindow.tsx`：点上下文小圆圈、在命令菜单里选、或发出 `/context`（Codex 是 `/status`）都打开弹层，不进对话。顺手修了复制按钮的提示文字取错了文案命名空间。文案 `ai.composer.contextOpen`、`ai.contextDialog.*`，`zh_TW.yml` 重新生成。
+- `LocalAgent.test.ts`：副本、复制不了时新开、原会话直接跑三种情况，以及两种输出格式的解析。
+
+### 29. 本文件
 
 - `CHANGES-research-workbench.md`（新增）
