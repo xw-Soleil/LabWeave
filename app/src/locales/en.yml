@@ -2787,6 +2787,8 @@ research:
     unpinSidePanel: Hide the panel; it slides out when you move the mouse to the window edge
     showSidePanel: Show the panel
   statusBar:
+    outsideFolder: Outside research folder
+    outsideFolderHint: This board is not in the research folder and was opened temporarily. It saves as usual, but gets no AI text copy, stays out of recent files, is not reopened on the next launch, and external AI cannot change it. To make it a regular workspace, use Save As to store it in the research folder.
     nodes: "{{count}} nodes"
     edges: "{{count}} edges"
     selected: "{{count}} selected"
@@ -2989,6 +2991,7 @@ research:
     saving: Saving
     savingWait: Still saving, close it when this finishes
     close: Close
+    outsideFolder: "Outside the research folder, opened temporarily: {{path}}"
   welcome:
     title: Welcome to Research Workbench
     subtitle: Lay out papers, images and notes on a board, sort out your ideas, then ask the AI what is still missing

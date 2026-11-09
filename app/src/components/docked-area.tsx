@@ -1,6 +1,7 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
+import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import {
   enterSidePanel,
   enterSidePeekTrigger,
@@ -26,7 +27,7 @@ import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
 import { useAtomValue } from "jotai";
-import { MessageSquareText, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import { FolderOutput, MessageSquareText, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RESEARCH_FLOAT_TOP, RESEARCH_SIDE_PANEL_LEFT, useShortcutText, withShortcut } from "./activity-rail";
@@ -41,6 +42,7 @@ interface ProjectStatusInfo {
   state: "saved" | "stashed" | "unsaved";
   scalePercent: number;
   noVisibleNodes: boolean;
+  temporary: boolean;
 }
 
 function readProjectStatus(project: Project): ProjectStatusInfo {
@@ -65,6 +67,8 @@ function readProjectStatus(project: Project): ProjectStatusInfo {
     )[project.projectState],
     scalePercent: Math.round(project.camera.currentScale * 100),
     noVisibleNodes: entities.length > 0 && !hasVisibleNode,
+    // 另存为进研究文件夹、换研究文件夹以后，下一次读取就跟着变
+    temporary: isTemporaryWorkspace(project),
   };
 }
 
@@ -157,6 +161,15 @@ function ResearchStatusBar({
       )}
       style={{ left }}
     >
+      {status?.temporary && (
+        <span
+          className="flex shrink-0 cursor-default items-center gap-1 font-medium text-amber-700 dark:text-amber-400"
+          title={t("statusBar.outsideFolderHint")}
+        >
+          <FolderOutput aria-hidden="true" className="size-3.5" />
+          {t("statusBar.outsideFolder")}
+        </span>
+      )}
       <span className="min-w-0 truncate" title={summary}>
         {summary}
       </span>

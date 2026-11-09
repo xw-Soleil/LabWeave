@@ -17,7 +17,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **不再有「原版模式」**：最初新功能都挂在一个开关 `isResearchShell()` 后面，关掉时行为与上游一致；Rust 端对应 cargo feature `research-shell`。2026-11-05 去掉了这个开关和这个 feature：现在的行为是唯一行为，只在关掉开关时才用到的上游代码已删除，Rust 端原先被 feature 排除的命令（`run_command`、`mcp_stdio_*`、几条不受 fs 权限范围约束的原始文件命令）和全局快捷键、自动更新插件的代码也一并删除。本程序不再跟进上游的新版本。
 - **产品身份**：identifier 改为 `com.ai4know.researchworkbench`，产品名 Research Workbench，主窗口标题「科研工作台」，深链接协议从 `prg` 改为 `rwb`，文件扩展名仍是 `.prg`。设置、快捷键等数据目录因此和已安装的 Project Graph 分开，不会互相读取。
 - **数据只留在本机**：关闭遥测、账号、支持者名单、素材下载、多人协作、扩展加载；不再注册自动更新和系统全局快捷键插件，不再打包更新文件；`run_command`、`mcp_stdio_*` 和不受 fs 权限范围约束的原始文件命令不再暴露给前端；AI 对话不加载 MCP 和 Skills，回答里的远程图片不自动加载。
-- **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区。
+- **研究文件夹**：新增 Rust 命令 `set_research_root`，把用户选的文件夹加入文件访问范围；新增左侧文件面板（按工作区 / 论文 / 图片 / 笔记分组）；只允许打开研究文件夹里的工作区（2026-11-09 起，研究文件夹外的白板可以临时打开，见下）。
 - **外壳界面**：左侧竖栏（工作区 / AI 对话 / 文件 / 设置）、精简的菜单和 macOS 原生菜单（含编辑菜单）、新快捷键 Cmd+1/2/3/N、没打开工作区时编辑区显示欢迎页（侧栏照常停靠、能拖，AI 对话收起）、启动时恢复上次的工作区和面板、命令面板白名单；设置弹窗改为「设置 / 快捷键 / 菜单 / 关于」四页，设置按用途分 10 页，原版的「个性化」拆进「外观」和「菜单」。
 - **滚轮**：鼠标和触控板分开判断（只认 `wheelDelta` 这类确定的证据），默认滚轮移动、Ctrl / Cmd + 滚轮和双指捏合缩放。触控板按像素立刻移动；鼠标滚轮按格数走固定距离、每格固定缩放倍数，分几帧平滑走完（2026-11-05），每格多远、缩放多少可以在设置里调。
 - **文件卡片**：新实体 `FileCardNode`，用 pdf.js 抽 PDF 的标题、页数、首页缩略图和前几页文字，也支持图片和 Markdown；双击用系统默认程序打开原文件，原文件不见了会标红。
@@ -33,6 +33,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - **粘贴不再弹「Paste」确认**（2026-11-08）：原版在 macOS 上从系统剪贴板粘贴时用网页剪贴板接口，WebKit 读别的程序复制的内容前会先弹一个「Paste」按钮，要再点一下才贴上。现在各系统都走原生剪贴板读取（先读文字，没有文字再读图片），Cmd+V 直接贴上。删掉了设置页里本来就不显示的 `clipboardPasteMode` 设置项和网页读取代码；剪贴板里没有能贴的东西时，提示一句翻译过的话，原生报错放在下面一行。
 - **粘贴在访达里复制的文件**（2026-11-08）：原来在访达 / 资源管理器里复制一个文件再 Cmd+V，只会贴出一个写着文件名的文本节点。现在粘贴时先看剪贴板里有没有复制的文件，有就和把文件拖进来一样处理：PDF、图片、Markdown 做成文件卡片（放在鼠标处），研究文件夹外的文件照样先问复制还是直接引用，.prg 作为工作区打开，其他类型提示暂不支持。Rust 端只读出路径，不碰文件本身。
 - **图片上的连线端点可以拖**（2026-11-08）：原版从图片节点上拉线时，端点落在鼠标按下 / 松手的那一点，按在哪儿往往是随手的，线常常从图片中间出来。现在新拉的线在图片上也停在边框上（引用块照旧）。选中一条连线时，连在图片（粘贴的图片节点、图片文件卡片）上的那头画一个小圆点，拖它可以让箭头指着图里任意一处；离边框近会贴到边框上，拖回默认位置附近就恢复默认。端点只能在它连着的那张图里和边框上移动，不会换到别的卡片上；拖完可以撤销。停在边框上时圆点是空心的，指着图里时是实心的。文字、PDF 卡片的端点照旧。
+- **临时打开研究文件夹外的白板**（2026-11-09）：原来研究文件夹外的白板一律拒绝打开。现在像 VS Code 打开单个文件那样，用户自己用选文件对话框、拖进窗口、粘贴从访达复制的白板文件、在访达里双击，都能临时打开它；`rwb://` 链接仍然只能打开研究文件夹里的白板。临时白板的标签名字是斜体、前面有一个小图标，悬停显示完整路径，状态条最前面写「研究文件夹外」。它照常编辑和保存（只写它自己），但不生成 AI 文字版、不进最近文件和启动恢复、文件改名时不跟着改，外部 AI（MCP、命令行）也改不了它；上面新放的文件卡片存完整路径。用「另存为」存进研究文件夹后就是普通工作区。命令行原来没有检查研究文件夹，这次补上。顺带修了提示里路径的 `/` 显示成 `&#x2F;` 的问题。
 - **依赖**：新增 `pdfjs-dist`（Apache-2.0，可与 GPL-3.0 一起分发）、`@ai-sdk/anthropic`（Apache-2.0）、`@modelcontextprotocol/sdk`（MIT）；Rust 端新增 `getrandom`（MIT / Apache-2.0，生成本机通道口令），并直接依赖 `arboard`（MIT / Apache-2.0，原来就随剪贴板插件带进来，用来读剪贴板里的文件列表）。
 
 对上游通用代码的修正（去掉开关之前就对两种模式都生效，属于修 bug 或兼容性需要）：
@@ -44,17 +45,6 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 打开含文件卡片的 `.prg` 时，卡片的渲染、删除、双击、搜索、复制粘贴、改颜色、标签照常工作（否则关掉开关打开这类文件，卡片会消失）。
 - Rust：`read_folder_recursive` 遇到非 UTF-8 路径不再崩溃；`take_pending_open_files` 锁中毒时不再崩溃。
 - 命令行处理没打开的工作区时，先加载 StageManager 再读舞台（和桌面端同一顺序）。原来顺序反了，工作区里只要有分组，命令行就读不了它（2026-11-05）。
-
-## 2026-11-09：临时打开研究文件夹外的白板
-
-- 文件选择对话框、窗口拖入、从访达复制文件后粘贴和已有的系统文件打开入口可以临时打开研究文件夹外的白板；没有声明用户来源的调用、`rwb://` / `prg://` 链接和旧 JSON 升级仍拒绝文件夹外的路径。粘贴使用独立的 `file-paste` 来源。
-- `core/research/TemporaryWorkspace.ts` 提供按当前 URI 和研究文件夹实时计算的 `isTemporaryWorkspace(project)`，供标签、悬停提示和状态条后续接入；本次不修改这些界面。
-- 临时白板正常编辑、保存和自动保存，不生成 AI 文字版，不导入并清空旁边的同名 TXT。自动备份仅放到应用缓存，不用自定义备份位置。文件本身仍沿用安全的原子写入。
-- 临时白板不记录或恢复到启动会话，不进入工作区列表和最近文件，文件面板改名时不改写它的卡片或撤销历史。
-- 新建、拖入、粘贴到临时白板的文件卡片一律保存完整路径；旧相对路径继续按原白板所在目录解析。另存为仍只能进入研究文件夹，完整路径保持不变，旧相对路径按新位置重算。
-- MCP 保留研究文件夹限制；补齐普通 CLI 和桌面已打开白板运行时的检查，拒绝时返回 `TEMPORARY_WORKSPACE_FORBIDDEN`。CLI 在研究文件夹不可用时返回 `RESEARCH_FOLDER_UNAVAILABLE`。
-- 打开拒绝、研究文件夹登记和启动恢复等路径提示关闭 HTML 转义，避免 `/`、`&` 等显示成 HTML 实体；增加打开来源、路径、保存、会话、卡片、改名和外部工具的回归测试。
-- 审查修正：最近文件只在新增时跳过临时白板，读取时保留完整历史，显示时再过滤。切换研究文件夹后新增、批量新增或排序不会删掉之前研究文件夹的记录；旧的键盘最近文件窗口也接入显示过滤。补充研究文件夹切换保留历史和粘贴外部白板的回归测试。
 
 ## 修改和新增的文件
 
@@ -306,6 +296,18 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `ControllerNodeConnection.tsx`：只有引用块还记鼠标按下 / 松手的位置，图片上的新线停在边框上
 - `app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`：选中连线时，连在图片上的那头画端点圆点
 
-### 20. 本文件
+### 20. 临时打开研究文件夹外的白板（2026-11-09）
+
+- `app/src/core/research/TemporaryWorkspace.ts`（新增）：`isTemporaryWorkspace(project)` 按当前路径和研究文件夹实时判断（本地文件、设了研究文件夹、文件不在里面）；`canOpenWorkspace(uri, origin)` 只给 `file-dialog`、`file-drop`、`file-paste`、`os-file` 四种用户来源放行。
+- `app/src/core/service/GlobalMenu.tsx`：`onOpenFile` 新增 `origin` 参数，没声明来源时研究文件夹外的白板照旧拒绝（复用已打开的标签之前就检查）；临时白板不导入并清空旁边的同名 TXT。`main.tsx`（启动参数、访达打开事件、启动队列）、`ResearchDrop.ts`（拖入、粘贴）、`dragFileIntoStageEngine.tsx` 传各自的来源；`DeepLinkHandler.ts` 不传，链接仍只能打开研究文件夹里的白板。
+- `app/src/core/Project.tsx`：临时白板保存时不写 `.workbench/` 里的 AI 文字版。`AutoSaveBackupService.tsx`：临时白板的自动备份只放应用缓存，不用自定义备份路径。
+- `app/src/core/research/ResearchSession.ts`：启动会话不记录、不恢复临时白板，工作区列表不列它。`RecentFileManager.tsx`：不把临时白板加进最近文件（读取不过滤，换研究文件夹不会丢掉别的文件夹的记录）；`KeyboardRecentFilesWindow.tsx` 显示时过滤。`ResearchRename.ts`：文件改名时不改写临时白板。
+- `app/src/core/research/FileCardFactory.ts`：临时白板上新放的文件卡片存完整路径；旧的相对路径照旧按白板所在文件夹解析。
+- `app/src/core/research/ExternalWorkspaceAccess.ts`（新增）、`app/src/cli/ProjectGraphCliRuntime.ts`、`ProjectGraphCli.ts`：命令行按研究文件夹（解析符号链接后）检查路径，文件夹外的返回 `TEMPORARY_WORKSPACE_FORBIDDEN`，研究文件夹读不了时返回 `RESEARCH_FOLDER_UNAVAILABLE`。`app/src/core/OpenProjectRuntimeHost.ts`：外部 AI 通过已打开的白板调用工具时，临时白板一律拒绝。
+- 带路径的提示（`ResearchFolder.ts`、`ResearchSession.ts`、`GlobalMenu.tsx`、`DeepLinkHandler.ts`）关闭 i18next 的 HTML 转义，`/`、`&` 不再显示成实体。
+- `app/src/ProjectTabs.tsx`：临时白板的标签名字用斜体，前面加 `FolderOutput` 小图标，悬停提示「研究文件夹外，临时打开：<完整路径>」；换研究文件夹时跟着更新。`app/src/components/docked-area.tsx`：状态条最前面显示琥珀色的「研究文件夹外」，悬停说明它享受不到哪些功能、怎么变成正式工作区。新文案在 `zh_CN.yml`、`en.yml`（`research.tabs.outsideFolder`、`research.statusBar.outsideFolder`、`outsideFolderHint`），`zh_TW.yml` 重新生成。
+- 测试：`TemporaryWorkspace.test.ts`、`TemporaryWorkspaceOpen.test.ts`、`ExternalWorkspaceAccess.test.ts`（新增），以及保存、会话、拖放、卡片、改名、自动备份、运行时、`ProjectTabs.test.tsx` 里的回归测试。
+
+### 21. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

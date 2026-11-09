@@ -7,9 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   aiPanelTab: undefined as unknown,
   toastWarning: vi.fn(),
+  outsideRoot: "/elsewhere/",
 }));
 
 vi.mock("./core/research/ResearchSession", () => ({ findResearchPanelTab: () => mocks.aiPanelTab }));
+vi.mock("./core/research/TemporaryWorkspace", () => ({
+  isTemporaryWorkspace: (project: { uri: URI }) => project.uri.path.startsWith(mocks.outsideRoot),
+}));
 vi.mock("./core/service/Settings", () => ({ Settings: { protectingPrivacy: false, watch: () => () => {} } }));
 vi.mock("./core/service/feedbackService/SoundService", () => ({
   SoundService: { play: new Proxy({}, { get: () => () => {} }) },
@@ -155,6 +159,22 @@ describe("ProjectTabs", () => {
     expect(tabElement(draft).textContent).toBe("tabs.untitled:3");
     expect(tabElement(file).getAttribute("aria-selected")).toBe("true");
     expect(tabElement(draft).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("marks boards outside the research folder with an icon, italics and an explaining tooltip", () => {
+    const outside = newProject(URI.file("/elsewhere/借来的.prg"));
+    const inside = newProject(URI.file("/research/综述.prg"));
+    render([outside, inside]);
+
+    const outsideName = tabElement(outside).querySelector("[title]")!;
+    expect(tabElement(outside).textContent).toBe("借来的");
+    expect(tabElement(outside).querySelector(".lucide-folder-output")).not.toBeNull();
+    expect(outsideName.className).toContain("italic");
+    expect(outsideName.getAttribute("title")).toBe("tabs.outsideFolder");
+    const insideName = tabElement(inside).querySelector("[title]")!;
+    expect(tabElement(inside).querySelector(".lucide-folder-output")).toBeNull();
+    expect(insideName.className).not.toContain("italic");
+    expect(insideName.getAttribute("title")).toBe("/research/综述.prg");
   });
 
   it("labels the AI panel tab as AI chat instead of the workspace it points to", () => {
