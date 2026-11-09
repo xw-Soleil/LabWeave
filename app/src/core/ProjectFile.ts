@@ -1,4 +1,5 @@
 import type { PrgMetadata } from "@/types/metadata";
+import { migrateLegacyMathCards } from "@/core/research/LegacyMathCards";
 import { createDefaultMetadata, isValidMetadata } from "@/types/metadata";
 import { decode, encode, type Decoder } from "@msgpack/msgpack";
 import { BlobWriter, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
@@ -85,7 +86,7 @@ export async function parseProjectFile(
     if (entry.directory) continue;
     if (entry.filename === "stage.msgpack") {
       const stageRawData = await entry.getData!(new Uint8ArrayWriter());
-      serializedStageObjects = decoder.decode(stageRawData) as any[];
+      serializedStageObjects = migrateLegacyMathCards(decoder.decode(stageRawData) as any[]);
     } else if (entry.filename === "tags.msgpack") {
       const tagsRawData = await entry.getData!(new Uint8ArrayWriter());
       tags = decoder.decode(tagsRawData) as string[];

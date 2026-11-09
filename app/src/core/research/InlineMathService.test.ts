@@ -4,6 +4,14 @@ import { Color, colorInvert, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 
 vi.mock("@/core/Project", () => ({ Project: class {}, service: () => (value: unknown) => value }));
+vi.mock("@/core/TabWorkspace", () => ({ TabWorkspace: { close: vi.fn() } }));
+vi.mock("@/core/service/controlService/controller/concrete/utilsControlTools", () => ({
+  autoChangeTextNodeToReferenceBlock: vi.fn(),
+  AutoCompleteManager: class {},
+  LatexPreviewManager: class {
+    dismiss() {}
+  },
+}));
 const fontSettings = vi.hoisted(() => ({ listeners: new Set<(value: string) => void>() }));
 vi.mock("@/core/service/Settings", () => {
   let defaultFont = "sans-serif";
@@ -31,6 +39,7 @@ vi.mock("@/core/service/Settings", () => {
 vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24, NODE_PADDING: 10 } }));
 vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsManager: class {} }));
 vi.mock("@/core/stage/stageObject/entity/Section", () => ({ Section: class {} }));
+vi.mock("@/core/stage/stageObject/entity/ReferenceBlockNode", () => ({ ReferenceBlockNode: class {} }));
 vi.mock("@/core/render/canvas2d/utilsRenderer/SyncAssociationRenderer", () => ({ SyncAssociationRenderer: class {} }));
 vi.mock("@/core/service/controlService/shortcutKeysEngine/KeyBindsUI", () => ({ KeyBindsUI: class {} }));
 vi.mock("@/utils/keyDisplay", () => ({ formatKeyBindSequenceToString: () => "" }));
@@ -87,6 +96,7 @@ import { TextNodeRenderer } from "@/core/render/canvas2d/entityRenderer/textNode
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { InlineMathService } from "./InlineMathService";
+import { ControllerUtils } from "@/core/service/controlService/controller/concrete/utilsControl";
 import { MathImageCache, renderMathImage, type MathImage, type MathImageRequest } from "./MathImage";
 import * as parsing from "./InlineMath";
 import * as layout from "./RichTextLayout";
@@ -166,6 +176,75 @@ function setup(
 }
 
 describe("inline math on text cards", () => {
+  it("exits the real text editor without replacing a whole-formula card", async () => {
+    const { add, project } = setup();
+    const node = add(String.raw`$\TeX$`);
+    let exit!: () => void;
+    const editing = new Promise<void>((resolve) => {
+      exit = resolve;
+    });
+    Object.assign(project, {
+      inputElement: { textarea: vi.fn(() => editing) },
+      entityMoveManager: { stopImmediately: vi.fn() },
+      historyManager: { recordStep: vi.fn() },
+    });
+    Object.assign(project.canvas, { viewToClientScale: () => Vector.same(1), viewToClient: (value: Vector) => value });
+    Object.assign(project.stageManager, { clearSelectAll: vi.fn() });
+    Object.assign(project.camera, { stopImmediately: vi.fn(), isDefaultZoom: () => false });
+    Object.assign(project.renderer, { transformWorld2View: (value: unknown) => value });
+    new ControllerUtils(project as unknown as Project).editTextNode(node);
+    expect(node.isEditing).toBe(true);
+    exit();
+    await editing;
+    await Promise.resolve();
+    expect(node.isEditing).toBe(false);
+    expect(project.stage).toEqual([node]);
+    expect(node).toBeInstanceOf(TextNode);
+    node.rename(String.raw`前文 $\TeX$ 后文`);
+    expect(node.text).toBe(String.raw`前文 $\TeX$ 后文`);
+  });
+
+  it.each([String.raw`$\TeX$`, String.raw`$$\frac{a}{b}$$`])("keeps %s editable as a text card", async (text) => {
+    const { add, finish, project } = setup();
+    const node = add(text);
+    const segment = parsing.splitInlineMath(text)[0] as parsing.FormulaSegment;
+    await finish(segment.source, segment.type);
+    node.isEditing = true;
+    node.rename(`前文 ${text} 后文`);
+    node.isEditing = false;
+    expect(project.stage).toEqual([node]);
+    expect(node).toBeInstanceOf(TextNode);
+    expect(node.text).toBe(`前文 ${text} 后文`);
+  });
+
+  it.each([
+    [String.raw`\TeX`, 27, 7],
+    [String.raw`\int_0^1 f(x)\,dx`, 82, 31],
+    [String.raw`\frac{a}{b}`, 65, 24],
+  ] as const)("centers the layout box of a sole display %s in the card", async (source, height, descent) => {
+    const value = {
+      ...formula(source),
+      layout: { width: 80, height, descent },
+      width: 100,
+      height: height + 24,
+      layoutOffset: { x: 8, y: 15 },
+    };
+    const { add, finish, draw, ctx } = setup(async () => value);
+    const node = add(`$$${source}$$`);
+    vi.spyOn(node, "getFontSize").mockReturnValue(32);
+    node.forceAdjustSizeByText();
+    await finish(source, "display");
+    for (const integer of [false, true]) {
+      Settings.textIntegerLocationAndSizeRender = integer;
+      draw(node);
+      const [, imageX, imageY] = ctx.drawImage.mock.lastCall!;
+      const left = imageX + value.layoutOffset.x - node.rectangle.left;
+      const top = imageY + value.layoutOffset.y - node.rectangle.top;
+      expect(Math.abs(left - (node.rectangle.width - left - value.layout.width))).toBeLessThanOrEqual(1);
+      expect(Math.abs(top - (node.rectangle.height - top - height))).toBeLessThanOrEqual(1);
+    }
+  });
+
   it.each(["auto", "manual"] as const)(
     "uses source dimensions on entering/editing and math dimensions on leaving (%s)",
     async (mode) => {

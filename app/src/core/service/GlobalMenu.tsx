@@ -11,7 +11,7 @@ import { PathString } from "@/utils/pathString";
 import { isMac } from "@/utils/platform";
 import { ensurePrgThumbnailCached } from "@/utils/readPrgThumbnail";
 import { Vector } from "@graphif/data-structures";
-import { deserialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Rectangle } from "@graphif/shapes";
 import { Decoder } from "@msgpack/msgpack";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -524,7 +524,7 @@ export async function onUpgradeOldJson() {
   loadAllServicesBeforeInit(tempProject);
   await tempProject.init();
   loadAllServicesAfterInit(tempProject);
-  tempProject.stage = deserialize(upgraded.data, tempProject);
+  tempProject.stage = deserializeStageObjects(upgraded.data, tempProject);
   tempProject.attachments = upgraded.attachments;
   tempProject.stageManager.updateReferences();
   await tempProject.save();

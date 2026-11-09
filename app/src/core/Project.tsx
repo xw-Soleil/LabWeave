@@ -12,7 +12,6 @@ import type { VerticalPolyEdgeRenderer } from "@/core/render/canvas2d/entityRend
 import type { EdgeRenderer } from "@/core/render/canvas2d/entityRenderer/edge/EdgeRenderer";
 import type { EntityDetailsButtonRenderer } from "@/core/render/canvas2d/entityRenderer/EntityDetailsButtonRenderer";
 import type { EntityRenderer } from "@/core/render/canvas2d/entityRenderer/EntityRenderer";
-import type { LatexNodeRenderer } from "@/core/render/canvas2d/entityRenderer/latexNode/LatexNodeRenderer";
 import type { MediaNodeRenderer } from "@/core/render/canvas2d/entityRenderer/mediaNode/MediaNodeRenderer";
 import type { MultiTargetUndirectedEdgeRenderer } from "@/core/render/canvas2d/entityRenderer/multiTargetUndirectedEdge/MultiTargetUndirectedEdgeRenderer";
 import type { ReferenceBlockRenderer } from "@/core/render/canvas2d/entityRenderer/ReferenceBlockRenderer";
@@ -80,7 +79,8 @@ import { Settings } from "@/core/service/Settings";
 import { nextProjectIdAtom, store, tabsAtom } from "@/state";
 import { createDefaultMetadata, PrgMetadata, readWorkbenchMetadata, WorkbenchMetadata } from "@/types/metadata";
 import { Vector } from "@graphif/data-structures";
-import { deserialize, serialize } from "@graphif/serializer";
+import { serialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Decoder, Encoder } from "@msgpack/msgpack";
 import { BlobReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
@@ -313,9 +313,7 @@ export class Project extends Tab {
       );
 
       // 应用升级后的数据
-      this.stage = deserialize(upgradedStageObjects, this);
-      const { convertLatexNodes } = await import("@/core/stage/stageObject/tools/convertLatexNodes");
-      convertLatexNodes(this);
+      this.stage = deserializeStageObjects(upgradedStageObjects, this);
       this.tags = tags;
       this.references = references;
       this.metadata = upgradedMetadata;
@@ -821,7 +819,6 @@ declare module "./Project" {
     verticalPolyEdgeRenderer: VerticalPolyEdgeRenderer;
     sectionRenderer: SectionRenderer;
     svgNodeRenderer: SvgNodeRenderer;
-    latexNodeRenderer: LatexNodeRenderer;
     mediaNodeRenderer: MediaNodeRenderer;
     textNodeRenderer: TextNodeRenderer;
     urlNodeRenderer: UrlNodeRenderer;

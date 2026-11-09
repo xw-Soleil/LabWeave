@@ -16,7 +16,6 @@ import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
 // 除了提供 getFileCardNodes，这个 import 还让桌面端和命令行在反序列化前都登记了 FileCardNode 类
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
-import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
@@ -144,10 +143,6 @@ export class StageManager {
   getSvgNodes(): SvgNode[] {
     return this.project.stage.filter((node) => node instanceof SvgNode);
   }
-  getLatexNodes(): LatexNode[] {
-    return this.project.stage.filter((node) => node instanceof LatexNode) as LatexNode[];
-  }
-
   getStageObjects(): StageObject[] {
     return this.project.stage;
   }

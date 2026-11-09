@@ -229,6 +229,33 @@ describe("VirtualClipboard outdated check", () => {
 });
 
 describe("paste", () => {
+  it.each([false, true])("pastes legacy formula data through the shared migration (envelope: %s)", (envelope) => {
+    const project = fakeProject();
+    const source = [
+      {
+        _: "LatexNode",
+        uuid: "old-math",
+        latexSource: String.raw`\TeX`,
+        fontScaleLevel: 2,
+        color: { _: "Color", r: 20, g: 30, b: 40, a: 1 },
+      },
+    ];
+    VirtualClipboard.copy(envelope ? { stageObjects: source } : source);
+    const engine = engineOf(project);
+    engine.virtualClipboardPaste("origin");
+    engine.virtualClipboardPaste("origin");
+    const nodes = stageTextNodes(project);
+    expect(nodes).toHaveLength(2);
+    for (const node of nodes) {
+      expect(node).toBeInstanceOf(TextNode);
+      expect(node).toMatchObject({ text: String.raw`$$\TeX$$`, fontScaleLevel: 2, borderStyle: "none" });
+      expect(node.color).toMatchObject({ r: 20, g: 30, b: 40, a: 1 });
+      expect(node.uuid).not.toBe("old-math");
+    }
+    expect(nodes[0].uuid).not.toBe(nodes[1].uuid);
+    expect(source[0]._).toBe("LatexNode");
+  });
+
   async function copyOneNode(project: FakeProject) {
     const original = textNode(project, "原节点", 0, 0);
     original.isSelected = true;

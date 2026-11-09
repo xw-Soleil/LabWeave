@@ -19,12 +19,7 @@ import type { Direction } from "@/types/directions";
 import { colorInvert, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { toast } from "sonner";
-import {
-  autoChangeTextNodeToLatexNode,
-  autoChangeTextNodeToReferenceBlock,
-  AutoCompleteManager,
-  LatexPreviewManager,
-} from "./utilsControlTools";
+import { autoChangeTextNodeToReferenceBlock, AutoCompleteManager, LatexPreviewManager } from "./utilsControlTools";
 
 /**
  * 这里是专门存放代码相同的地方
@@ -192,8 +187,6 @@ export class ControllerUtils {
         }
 
         await autoChangeTextNodeToReferenceBlock(this.project, clickedNode);
-        // 完整公式在退出编辑时转换，编辑期间保留源码。
-        await autoChangeTextNodeToLatexNode(this.project, clickedNode);
       });
   }
 

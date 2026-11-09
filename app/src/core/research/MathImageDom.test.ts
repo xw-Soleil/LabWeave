@@ -294,6 +294,28 @@ describe("math image geometry", () => {
     expect(image.width).toBeGreaterThan(image.layout.width);
   });
 
+  it.each([String.raw`\TeX`, String.raw`\int_0^1 f(x)\,dx`, String.raw`\frac{a}{b}`])(
+    "centers the actual KaTeX strut box of a sole display formula: %s",
+    async (source) => {
+      const image = (await renderMathImage(request(source)))!;
+      const layout = layoutRichText({
+        segments: splitInlineMath(`$$${source}$$`),
+        fontSize: 32,
+        lineHeight: 1.5,
+        maxWidth: Infinity,
+        measureText: () => 0,
+        getMathMetrics: () => image.layout,
+      });
+      expect(layout.lines).toHaveLength(1);
+      const line = layout.lines[0];
+      const top = line.baseline - image.layout.height + image.layout.descent;
+      const bottom = line.height - top - image.layout.height;
+      expect(Math.abs(top - bottom)).toBeLessThanOrEqual(1);
+      expect(line.fragments[0].x).toBe(0);
+      expect(layout.width).toBe(image.layout.width);
+    },
+  );
+
   it.each([String.raw`\displaystyle\int_0^1 f(x)\,dx`, String.raw`\displaystyle\sum_{i=1}^{n} i`])(
     "grows a tall formula line by its TeX box rather than its padded image: %s",
     async (source) => {

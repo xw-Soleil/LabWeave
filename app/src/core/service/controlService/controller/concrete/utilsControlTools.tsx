@@ -6,7 +6,6 @@ import { LogicNodeNameToRenderNameMap } from "@/core/service/dataGenerateService
 import { CrossFileContentQuery } from "@/core/service/dataGenerateService/crossFileContentQuery";
 import { TextNodeSmartTools } from "@/core/service/dataManageService/textNodeSmartTools";
 import { ReferenceManager } from "@/core/stage/stageManager/concreteMethods/StageReferenceManager";
-import { convertLatexNodes } from "@/core/stage/stageObject/tools/convertLatexNodes";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store, tabsAtom } from "@/state";
@@ -107,16 +106,6 @@ export async function autoChangeTextNodeToReferenceBlock(project: Project, textN
 
   // 在原项目中创建引用块
   await TextNodeSmartTools.changeTextNodeToReferenceBlock(project);
-}
-
-/**
- * 自动将文本节点转换为 LaTeX 公式节点
- * 识别完整公式，替换节点时保留连线、分组和 UUID。
- */
-export async function autoChangeTextNodeToLatexNode(project: Project, textNode: TextNode) {
-  if (convertLatexNodes(project, [textNode]) === 0) return;
-  project.stageManager.updateReferences();
-  project.historyManager.recordStep();
 }
 
 /**

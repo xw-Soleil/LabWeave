@@ -7,7 +7,6 @@ import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
 import { ExtensionEntity } from "@/core/stage/stageObject/entity/ExtensionEntity";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
-import { LatexNode } from "@/core/stage/stageObject/entity/LatexNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
 import { PenStroke } from "@/core/stage/stageObject/entity/PenStroke";
 import { ReferenceBlockNode } from "@/core/stage/stageObject/entity/ReferenceBlockNode";
@@ -211,8 +210,6 @@ export class EntityRenderer {
       this.renderPenStroke(entity);
     } else if (entity instanceof SvgNode) {
       this.project.svgNodeRenderer.render(entity);
-    } else if (entity instanceof LatexNode) {
-      this.project.latexNodeRenderer.render(entity);
     } else if (entity instanceof MediaNode) {
       this.project.mediaNodeRenderer.render(entity);
     } else if (entity instanceof ReferenceBlockNode) {

@@ -84,7 +84,7 @@ describe("splitInlineMath", () => {
     ]);
   });
 
-  it("recognizes whole-card delimiters without replacing whole-card conversion", () => {
+  it("recognizes whole-card delimiters also used by the edit preview", () => {
     for (const text of ["$x$", "$$x$$", String.raw`\(x\)`, String.raw`\[x\]`]) {
       expect(hasInlineMath(text)).toBe(true);
       expect(extractLatexSource(text)).toBe("x");

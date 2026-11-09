@@ -16,7 +16,8 @@ import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { Serialized } from "@/types/node";
 import { Color, ProgressNumber, Vector } from "@graphif/data-structures";
-import { deserialize, serialize } from "@graphif/serializer";
+import { serialize } from "@graphif/serializer";
+import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Rectangle } from "@graphif/shapes";
 import { Image as TauriImage } from "@tauri-apps/api/image";
 import { readText, writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -206,7 +207,7 @@ export class CopyEngine {
     }
 
     // deserialize 会就地把传进去的数据换成实例，不先拷贝的话，下一次粘贴会和这次共用碰撞箱等对象
-    const pasteData: StageObject[] = deserialize(_.cloneDeep(pastDataSerialized), this.project);
+    const pasteData: StageObject[] = deserializeStageObjects(_.cloneDeep(pastDataSerialized), this.project);
 
     // 处理附件：将附件添加到新项目中，并建立 oldAttachmentId -> newAttachmentId 的映射
     const attachmentIdMap = new Map<string, string>();

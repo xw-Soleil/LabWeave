@@ -312,6 +312,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/stage/stageObject/entity/TextNode.tsx`、`app/src/core/render/canvas2d/entityRenderer/textNode/TextNodeRenderer.tsx`：文字卡片有公式时使用同一混排结果计算尺寸和绘制，无公式时沿用原路径。
 - `app/src/core/service/controlService/controller/concrete/utilsControl.tsx`：先进入编辑并按源码重算卡片，再读取输入框初始矩形；编辑期间按源码定大小，退出后恢复混排尺寸。
 
-### 22. 本文件
+### 22. 公式卡片并进文字卡片（2026-11-09）
+
+- `app/src/core/research/LegacyMathCards.ts`、`LegacyMathCards.test.ts`（新增）：旧 `LatexNode` 在序列化数据中原地转为无边框的 `TextNode`，保持 UUID、位置、颜色、字号和引用路径；按解析结果选择可无损还原源码的块公式定界符，无法包裹时保留原文。
+- `ProjectFile.ts`、`Project.tsx`、`ClosedProjectInvocation.ts`、`GlobalMenu.tsx`、`copyEngine.tsx`、`StageHistoryManager.tsx`、`CollaborationService.tsx`、扩展 RPC 的 `host.tsx`：读文件、粘贴、历史恢复和舞台替换共用反序列化前转换，不依赖文件版本。引用块、跨文件查询和打开备份文件沿用 `Project.init`。
+- 删除 `LatexNode`、`LatexNodeRenderer`、`LatexEditWindow`、`convertLatexNodes` 及旧专用测试；清理注册、编辑、删除、改色、字号快捷键和类型声明中的专用分支。打开文件和编辑结束不再把文字卡片转换成公式卡片。实时编辑预览和 `extractLatexSource` 保留。
+- `AiSidecarBuilder.ts`：公式沿文字卡片的规则输出类型与含定界符的源码。`ProjectSidecar.test.ts`、`ProjectGraphCli.test.ts`、`copyEngine.test.ts` 覆盖旧文件读写、连线分组引用、命令行修改和旧剪贴板粘贴。
+- `InlineMathService.test.ts`、`MathImageDom.test.ts`：锁住整张卡片仅有一个块公式时排版盒的四周居中，以及公式文字卡片编辑后仍能添加前后文字；沿用已有对称行高留白和图片偏移计算。
+
+### 23. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

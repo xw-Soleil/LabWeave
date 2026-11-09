@@ -60,7 +60,6 @@ vi.mock("@/core/service/Settings", () => ({
 vi.mock("@/core/stage/ProjectUpgrader", () => ({ ProjectUpgrader: class ProjectUpgrader {} }));
 vi.mock("@/core/stage/stageObject/association/Edge", () => ({ Edge: class Edge {} }));
 vi.mock("@/core/stage/stageObject/entity/ImageNode", () => ({ ImageNode: class ImageNode {} }));
-vi.mock("@/core/stage/stageObject/entity/LatexNode", () => ({ LatexNode: class LatexNode {} }));
 vi.mock("@/core/stage/stageObject/entity/Section", () => ({ Section: class Section {} }));
 vi.mock("@/core/stage/stageObject/entity/TextNode", () => ({ TextNode: class TextNode {} }));
 vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({

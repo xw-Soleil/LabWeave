@@ -814,6 +814,48 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     expect(readFileSync(projectPath)).toEqual(before);
   }, 15_000);
 
+  it("reads and edits legacy formula cards as text cards in a closed project", async () => {
+    const stage = createMutationStage();
+    stage[0] = {
+      ...(stage[0] as object),
+      _: "LatexNode",
+      text: undefined,
+      latexSource: String.raw`\TeX`,
+      fontScaleLevel: 2,
+    };
+    const projectPath = await createProjectFixture("2.7.0", stage);
+    const read = runCli("tool", "invoke", "get_all_nodes", "--project", projectPath, "--input", "{}");
+    expect(read).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(read.stdout).objects[0]).toMatchObject({
+      ref: "n1",
+      type: "TextNode",
+      text: String.raw`$$\TeX$$`,
+    });
+    const text = String.raw`前文 $$\TeX$$ 后文`;
+    const edit = runCli(
+      "tool",
+      "invoke",
+      "edit_text_node",
+      "--project",
+      projectPath,
+      "--input",
+      JSON.stringify({ ref: "n1", data: { text } }),
+    );
+    expect(edit).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(edit.stdout)).toMatchObject({ success: true, text });
+    const reopened = runCli(
+      "tool",
+      "invoke",
+      "get_object_details",
+      "--project",
+      projectPath,
+      "--input",
+      '{"refs":["n1"]}',
+    );
+    expect(reopened).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(reopened.stdout)[0]).toMatchObject({ type: "TextNode", text });
+  }, 20_000);
+
   it.each([
     ["delete_selected_nodes", "{}"],
     ["create_text_node", '{"text":"fixture"}'],
