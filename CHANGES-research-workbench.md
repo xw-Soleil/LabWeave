@@ -338,6 +338,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/ProjectTabs.tsx`：临时白板的标签名字用斜体，前面加 `FolderOutput` 小图标，悬停提示「研究文件夹外，临时打开：<完整路径>」；换研究文件夹时跟着更新。`app/src/components/docked-area.tsx`：状态条最前面显示琥珀色的「研究文件夹外」，悬停说明它享受不到哪些功能、怎么变成正式工作区。新文案在 `zh_CN.yml`、`en.yml`（`research.tabs.outsideFolder`、`research.statusBar.outsideFolder`、`outsideFolderHint`），`zh_TW.yml` 重新生成。
 - 测试：`TemporaryWorkspace.test.ts`、`TemporaryWorkspaceOpen.test.ts`、`ExternalWorkspaceAccess.test.ts`（新增），以及保存、会话、拖放、卡片、改名、自动备份、运行时、`ProjectTabs.test.tsx` 里的回归测试。
 
-### 24. 本文件
+### 24. 项目占用测试的等待余量（2026-11-09）
+
+- `app/src-tauri/src/project_ownership.rs`：原版的 4 条测试只给线程留 10～80 毫秒余量，GitHub 的 macOS 机器忙时超时失败。`connectable_owner_waits_for_in_flight_owner_inspection` 的重试间隔改为 500 毫秒；`ownership_and_owner_record_share_one_retry_budget` 的重试间隔改为 500 毫秒，另一把锁占 1.5 秒，上限改为 1.6 倍重试间隔，现在能分辨两把锁共用一次重试和各自重试，原来分辨不出；`contended_acquisition_does_not_block_unrelated_desktop_release` 的重试间隔改为 1 秒，上限 500 毫秒；`concurrent_same_project_acquisition_reuses_the_first_desktop_owner` 的重试间隔改为 1 秒。只改测试，程序逻辑不变。
+
+### 25. 本文件
 
 - `CHANGES-research-workbench.md`（新增）
