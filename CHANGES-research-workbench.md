@@ -354,6 +354,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/sub/AIWindowLocalAgent.tsx`：新增模型下拉、权限模式下拉（列程序自带的全部模式，名字和说明照程序给的原样显示；不受限制的几档用红色盾牌和红字标出）和订阅控制项的钩子。权限卡片改成插件样式：写明要做什么，跑命令时单独摆出命令，程序给的选项竖排，允许在前、拒绝在后。
 - 删除设置项「本机 AI 程序的权限」（`aiLocalAgentPermission`）：`Settings.tsx` 的定义、设置页条目和中英文案，`zh_TW.yml` 重新生成。旧设置文件里残留的这个键读入时被跳过。`LocalAgentTransport.test.ts` 去掉对它的引用，并检查它已不在设置定义里。
 
-### 27. 本文件
+### 27. AI 面板的斜杠命令、复制和白板挪卡片（2026-11-10）
+
+- `LocalAgent.ts`：新增 `isLocalAgentCommand`（整段以 `/` 加非空白字符开头）。`mapSessionUpdate` 按 `messageId` 分段：同一轮里程序发来的不同消息各成一段；Claude Code 的本地命令（实测 `/context`）会换一个 `messageId` 把同一段结果再发一遍，内容一样的第二条不显示。
+- `LocalAgentTransport.ts`：斜杠命令单独作为整段提示词发出，前面不再拼研究助手说明、工作区路径、白板文字版和历史，否则程序把命令当普通文字交给模型。第一条就是命令时，这些说明留到下一条普通消息。
+- `app/src/sub/AIWindow.tsx`：全局样式给每个元素都设了不可选中，消息外框的 `select-text` 管不到里面的段落，改为连子元素一起放开，消息文字能选中、Cmd+C 复制；回答结束后，鼠标移上去出现复制按钮，复制这条回答的全部文字。新文案 `ai.composer.copy`、`ai.composer.copied`。
+- `app/src/core/service/controlService/autoLayoutEngine/mainTick.tsx`：DAG 布局里同一列的卡片原来按「序号 × 100」摆，200 高的卡片会叠在一起；改为从上一张的底边再往下留 50。
+- `BuiltInToolRegistry.ts`、`BuiltInToolExecutors.tsx`：新增白板工具 `move_nodes`，一次把一张或几张卡片挪到给定的世界坐标，引用不变；挪分组时里面的卡片一起走，先挪外层。工作区没打开时也能用（要用特效服务，因为分组里的卡片移动时会加残影）。`ProjectGraphMcpServer.ts` 的说明里加上：摆新卡片避开已有的，调位置用 `move_nodes`，不要删掉重建。
+- 测试：`LocalAgent.test.ts`（按实测数据去重、分段）、`LocalAgentTransport.test.ts`（命令单独发、说明留到下一条）、`mainTick.test.ts`（高卡片不重叠）、`ProjectGraphCli.test.ts`（关着的工作区里挪卡片和分组、重复引用报错），以及工具数量相关的测试。
+
+### 28. 本文件
 
 - `CHANGES-research-workbench.md`（新增）
