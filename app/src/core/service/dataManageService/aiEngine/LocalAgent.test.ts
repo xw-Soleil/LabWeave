@@ -399,19 +399,89 @@ const nonWhiteboardTools = [
   { _meta: { server: ["research-workbench"] } },
   { _meta: { "mcp__research-workbench__x": true } },
   { title: "shell", rawInput: { command: "ls" } },
+  // 只有标题或旧规则认的 _meta 结构，不再算数
+  { title: "mcp__research-workbench__add_nodes" },
+  { title: "mcp.research-workbench.list_workspaces" },
+  { _meta: { tool: "mcp__research-workbench__read_1" } },
+  { _meta: { server: "research-workbench" } },
+  { _meta: { serverName: "research-workbench" } },
+  { _meta: { mcpServer: "research-workbench" } },
+  { _meta: { nested: [{ tool: "mcp__research-workbench__x" }] } },
+  { _meta: { nested: { claudeCode: { toolName: "mcp__research-workbench__x" } } } },
+  // 真实 Codex：同名终端命令的标题和白板工具一字不差
+  {
+    title: "mcp.research-workbench.list_workspaces",
+    kind: "execute",
+    rawInput: { command: "mcp.research-workbench.list_workspaces", cwd: "/research" },
+    _meta: { terminal_info: { cwd: "/research", terminal_id: "exec-1" } },
+  },
+  { title: "mcp.research-workbench.x", _meta: { is_mcp_tool_call: "true" } },
+  { title: "mcp.research-workbench-evil.x", _meta: { is_mcp_tool_call: true } },
+  { title: "mcp.research-workbench.x\n", _meta: { is_mcp_tool_call: true } },
+  // Claude：普通工具的 toolName 是它自己的名字，标题再像也不算
+  { title: "mcp__research-workbench__x", _meta: { claudeCode: { toolName: "Bash" } } },
+  { title: "mcp.research-workbench.x", _meta: { claudeCode: { toolName: "Bash" }, is_mcp_tool_call: true } },
+  { _meta: { claudeCode: { toolName: "mcp__research-workbench-evil__x" } } },
+  { _meta: { claudeCode: { toolName: "mcp__research-workbench__x\n" } } },
+  { _meta: { claudeCode: null } },
 ] satisfies Partial<RequestPermissionRequest["toolCall"]>[];
 
 describe("LocalAgent permissions", () => {
   it.each([
-    { title: "mcp__research-workbench__add_nodes" },
-    { _meta: { tool: "mcp__research-workbench__read_1" } },
-    { _meta: { server: "research-workbench" } },
-    { _meta: { serverName: "research-workbench" } },
-    { _meta: { mcpServer: "research-workbench" } },
-    { _meta: { nested: [{ tool: "mcp__research-workbench__x" }] } },
-    { _meta: { nested: { serverName: "research-workbench" } } },
-  ])("从完整工具名或 _meta 的结构化标识识别白板工具 %j", (tool) => {
-    expect(isWhiteboardToolCall({ toolCallId: "t", ...tool })).toBe(true);
+    {
+      title: "mcp__research-workbench__list_workspaces",
+      kind: "other",
+      _meta: {
+        claudeCode: {
+          toolName: "mcp__research-workbench__list_workspaces",
+          mcpServer: { name: "research-workbench", source: "dynamic" },
+        },
+      },
+    },
+    { _meta: { claudeCode: { toolName: "mcp__research-workbench__add_nodes" } } },
+    {
+      title: "mcp.research-workbench.create_text_node_at",
+      kind: "execute",
+      rawInput: { server: "research-workbench", tool: "create_text_node_at", arguments: {} },
+      _meta: { is_mcp_tool_call: true },
+    },
+  ] satisfies Partial<RequestPermissionRequest["toolCall"]>[])(
+    "按转接器自己填的字段识别白板工具（真实 Claude、Codex 数据）%j",
+    (tool) => {
+      expect(isWhiteboardToolCall(tool)).toBe(true);
+    },
+  );
+
+  it("Codex 的权限请求不带 _meta，按 toolCallId 找回开头的 tool_call 认白板工具", async () => {
+    const f = fixture();
+    const connection = await f.start();
+    await connection.openSession(session);
+    const codexCall = (toolCallId: string, extra: Partial<RequestPermissionRequest["toolCall"]>) => ({
+      sessionUpdate: "tool_call" as const,
+      toolCallId,
+      title: "mcp.research-workbench.list_workspaces",
+      kind: "execute" as const,
+      ...extra,
+    });
+    await f.peer.client.notify(methods.client.session.update, {
+      sessionId: "s1",
+      update: codexCall("mcp", { _meta: { is_mcp_tool_call: true } }),
+    });
+    await f.peer.client.notify(methods.client.session.update, {
+      sessionId: "s1",
+      update: codexCall("shell", {
+        rawInput: { command: "mcp.research-workbench.list_workspaces" },
+        _meta: { terminal_info: {} },
+      }),
+    });
+    await vi.waitFor(() => expect(f.updates).toHaveLength(2));
+    const ask = (toolCallId: string) =>
+      f.peer.client.request(
+        methods.client.session.requestPermission,
+        request({ toolCall: { toolCallId, title: "Run command", kind: "execute" } }),
+      );
+    await expect(ask("mcp")).resolves.toEqual(outcome("once"));
+    await expect(ask("shell")).resolves.toEqual(outcome("reject"));
   });
 
   it.each(nonWhiteboardTools)("不把参数、普通命令或子串当作白板工具，受限档必须拒绝 %j", async (tool) => {
@@ -443,7 +513,12 @@ describe("LocalAgent permissions", () => {
           : [];
     const result = f.peer.client.request(
       methods.client.session.requestPermission,
-      request({ options, toolCall: { toolCallId: "t", title: whiteboard ? "mcp__research-workbench__x" : "shell" } }),
+      request({
+        options,
+        toolCall: whiteboard
+          ? { toolCallId: "t", _meta: { claudeCode: { toolName: "mcp__research-workbench__x" } } }
+          : { toolCallId: "t", title: "shell" },
+      }),
     );
     if (policy === "ask" && !whiteboard) {
       await vi.waitFor(() => expect(f.permissions).toHaveLength(1));

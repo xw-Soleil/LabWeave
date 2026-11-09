@@ -210,6 +210,7 @@ export class LocalAgentConnection {
   private disposed = false;
   private disposal?: Promise<void>;
   private failure?: LocalAgentError;
+  private readonly whiteboardToolCalls = new Set<string>();
   private readonly permissions = new Map<
     string,
     {
@@ -228,7 +229,9 @@ export class LocalAgentConnection {
     const instance = new LocalAgentConnection(options);
     instance.connection = client({ name: "research-workbench" })
       .onNotification(methods.client.session.update, ({ params }) => {
-        if (!instance.loading && params.sessionId === instance.sessionId) options.onSessionUpdate(params.update);
+        if (instance.loading || params.sessionId !== instance.sessionId) return;
+        instance.noteToolCall(params.update);
+        options.onSessionUpdate(params.update);
       })
       .onRequest(methods.client.session.requestPermission, ({ params, signal }) =>
         instance.requestPermission(params, signal),
@@ -314,7 +317,17 @@ export class LocalAgentConnection {
     } finally {
       signal?.removeEventListener("abort", abort);
       this.cancelPermissions();
+      this.whiteboardToolCalls.clear();
     }
+  }
+
+  // Codex 的权限请求不带 _meta，要按 toolCallId 找回这次调用开头的 tool_call 来认白板工具。
+  private noteToolCall(update: SessionUpdate): void {
+    if (
+      (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") &&
+      isWhiteboardToolCall(update)
+    )
+      this.whiteboardToolCalls.add(update.toolCallId);
   }
 
   async cancel(): Promise<void> {
@@ -335,9 +348,10 @@ export class LocalAgentConnection {
     const cancelled: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
     if (this.disposed || this.cancelling || signal.aborted || request.sessionId !== this.sessionId)
       return Promise.resolve(cancelled);
-    if (isWhiteboardToolCall(request.toolCall) || policy !== "ask") {
-      const kinds =
-        isWhiteboardToolCall(request.toolCall) || policy === "auto" ? ["allow_once", "allow_always"] : ["reject_once"];
+    const whiteboard =
+      isWhiteboardToolCall(request.toolCall) || this.whiteboardToolCalls.has(request.toolCall.toolCallId);
+    if (whiteboard || policy !== "ask") {
+      const kinds = whiteboard || policy === "auto" ? ["allow_once", "allow_always"] : ["reject_once"];
       const option = kinds.map((kind) => request.options.find((option) => option.kind === kind)).find(Boolean);
       return Promise.resolve(option ? { outcome: { outcome: "selected", optionId: option.optionId } } : cancelled);
     }
@@ -427,19 +441,22 @@ function isAuthRequired(error: unknown): boolean {
   );
 }
 
-export function isWhiteboardToolCall(toolCall: RequestPermissionRequest["toolCall"]): boolean {
-  const isToolName = (value: unknown) =>
-    typeof value === "string" && /^mcp__research-workbench__[A-Za-z0-9_]+$/.exec(value)?.[0] === value;
-  const isWhiteboardMetadata = (value: unknown): boolean => {
-    if (isToolName(value)) return true;
-    if (!value || typeof value !== "object") return false;
-    return Object.entries(value).some(
-      ([key, entry]) =>
-        (["server", "serverName", "mcpServer"].includes(key) && entry === RESEARCH_WORKBENCH_MCP_NAME) ||
-        isWhiteboardMetadata(entry),
-    );
-  };
-  return isToolName(toolCall.title) || isWhiteboardMetadata(toolCall._meta);
+const CLAUDE_WHITEBOARD_TOOL = /^mcp__research-workbench__[A-Za-z0-9_]+$/;
+const CODEX_WHITEBOARD_TOOL = /^mcp\.research-workbench\.[A-Za-z0-9_]+$/;
+
+// 只认转接器自己填的固定字段（2026-11-09 用真实 Codex、Claude Code 数据核对过）：
+// Claude 是 _meta.claudeCode.toolName；Codex 是 _meta.is_mcp_tool_call 加点分隔的标题。
+// 标题单独不能作数：Codex 跑一条同名终端命令，标题和白板工具一字不差。rawInput 由 AI 填，一律不看。
+export function isWhiteboardToolCall(toolCall: { title?: string | null; _meta?: { [key: string]: unknown } | null }) {
+  const meta = toolCall._meta;
+  if (!meta) return false;
+  if (meta.claudeCode !== undefined) {
+    const claudeCode = meta.claudeCode as { toolName?: unknown } | null;
+    return typeof claudeCode?.toolName === "string" && CLAUDE_WHITEBOARD_TOOL.test(claudeCode.toolName);
+  }
+  return (
+    meta.is_mcp_tool_call === true && typeof toolCall.title === "string" && CODEX_WHITEBOARD_TOOL.test(toolCall.title)
+  );
 }
 
 export type SessionUpdateState = {

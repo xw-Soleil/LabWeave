@@ -3022,7 +3022,7 @@ research:
       manage: Manage local AI apps…
       starting: "Starting {{name}}"
       notFound: "{{name}} was not found. Install it in Settings and you can use it here."
-      needsLogin: "{{name}} is not signed in. Sign in once in a terminal, then send your message again."
+      needsLogin: "{{name}} is not signed in, or its API settings did not take effect. With an official account, sign in once in a terminal and send again; with a third-party API, check its own settings file (~/.claude/settings.json for Claude Code, ~/.codex/config.toml for Codex)."
       noWhiteboardTools: "This build cannot let {{name}} read or edit the board directly yet; it only answers from the text version of the board."
       errors:
         spawn-failed: "{{name}} failed to start."

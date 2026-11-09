@@ -3141,7 +3141,7 @@ research:
       manage: 管理本機 AI 程序…
       starting: 正在啟動 {{name}}
       notFound: 沒找到 {{name}}。在設置裡裝好以後就能在這裡用。
-      needsLogin: "{{name}} 還沒登錄。在終端裡登錄一次，再發消息就行。"
+      needsLogin: "{{name}} 還沒登錄，或者接口設置沒生效。用官方賬號的，在終端裡登錄一次再發消息；用第三方接口的，檢查它自己的設置文件（Claude Code 是 ~/.claude/settings.json，Codex 是 ~/.codex/config.toml）。"
       noWhiteboardTools: 這個版本還不能讓 {{name}} 直接讀改白板，它只能根據白板的文字版回答。
       errors:
         spawn-failed: "{{name}} 啟動失敗。"
