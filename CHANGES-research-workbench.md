@@ -342,6 +342,13 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `app/src-tauri/src/project_ownership.rs`：原版的 4 条测试只给线程留 10～80 毫秒余量，GitHub 的 macOS 机器忙时超时失败。`connectable_owner_waits_for_in_flight_owner_inspection` 的重试间隔改为 500 毫秒；`ownership_and_owner_record_share_one_retry_budget` 的重试间隔改为 500 毫秒，另一把锁占 1.5 秒，上限改为 1.6 倍重试间隔，现在能分辨两把锁共用一次重试和各自重试，原来分辨不出；`contended_acquisition_does_not_block_unrelated_desktop_release` 的重试间隔改为 1 秒，上限 500 毫秒；`concurrent_same_project_acquisition_reuses_the_first_desktop_owner` 的重试间隔改为 1 秒。只改测试，程序逻辑不变。
 
-### 25. 本文件
+### 25. 本机 AI 会话的模式、模型与权限请求（2026-11-09）
+
+- `LocalAgent.ts`：优先读取 ACP `configOptions`，兼容旧模式和模型字段；过滤危险模式，按程序选择安全默认档或恢复记忆，提供切换方法和控制项回调。处理模式、配置通知，按会话保留控制项；停止读取三档权限，非白板请求统一等待界面选择，白板工具识别和自动允许规则保留。
+- `LocalAgentTransport.ts`：提供控制项订阅、发送前准备会话和模式／模型切换方法，切换成功后按程序记忆选择；恢复会话时传入记忆，关闭连接时清空控制项。
+- `Settings.tsx`：新增不在设置页显示的 `aiLocalAgentModes`、`aiLocalAgentModels`；旧 `aiLocalAgentPermission` 定义留待第 2 步与设置页一起删除。
+- `LocalAgent.test.ts`、`LocalAgentTransport.test.ts`：按 Codex、Claude 实测控制项构造测试数据，覆盖默认档退路、隐藏档、协议调用、通知、加载、多会话、设置写回与失败，以及权限卡片、白板识别和取消。
+
+### 26. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

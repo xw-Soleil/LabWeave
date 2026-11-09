@@ -10,6 +10,7 @@ import {
   type ClientConnection,
   type ContentBlock,
   type McpServer,
+  type NewSessionResponse,
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
@@ -20,12 +21,38 @@ import {
   type UsageUpdate,
 } from "@agentclientprotocol/sdk";
 import type { UIMessageChunk } from "ai";
+import z from "zod";
 import type { AIMessageMetadata } from "./AIEngine";
 
 export type LocalAgentId = Settings["aiLocalAgent"];
-export type LocalAgentPermissionPolicy = Settings["aiLocalAgentPermission"];
 export type LocalAgentTerminalAction = "login" | "install";
 export const RESEARCH_WORKBENCH_MCP_NAME = "research-workbench";
+
+export type LocalAgentChoice = { id: string; name: string; description?: string };
+export type LocalAgentSessionControls = {
+  modes: LocalAgentChoice[];
+  currentMode: string | null;
+  models: LocalAgentChoice[];
+  currentModel: string | null;
+};
+
+const MODE_POLICY: Partial<Record<LocalAgentId, { preferred: string[]; hidden: string[] }>> = {
+  codex: { preferred: ["read-only"], hidden: ["agent-full-access"] },
+  claude: { preferred: ["default"], hidden: ["bypassPermissions"] },
+};
+const GENERIC_HIDDEN_MODES = ["bypassPermissions", "agent-full-access", "full-access", "yolo"];
+// SDK 已移除旧 models 的类型和校验，但实测程序仍会返回，退回旧格式时需要自己校验。
+const legacyModelsSchema = z
+  .object({
+    currentModelId: z.string(),
+    availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), description: z.string().nullish() })),
+  })
+  .nullish();
+type SessionControlState = {
+  controls: LocalAgentSessionControls;
+  modeConfigId?: string;
+  modelConfigId?: string;
+};
 
 export type LocalAgentInfo = {
   id: LocalAgentId;
@@ -192,13 +219,19 @@ export function buildLocalAgentMcpServers(launch: ExternalAiMcpLaunch): McpServe
 
 export type LocalAgentConnectionOptions = {
   agent: LocalAgentInfo;
-  getPermissionPolicy: () => LocalAgentPermissionPolicy;
   onStatus: (status: LocalAgentStatus) => void;
+  onControls: (controls: LocalAgentSessionControls) => void;
   onPermissionRequest: (request: LocalAgentPermissionRequest | null) => void;
   onSessionUpdate: (update: SessionUpdate) => void;
 };
 
-export type LocalAgentSessionOptions = { cwd: string; mcpServers: McpServer[]; previousSessionId?: string };
+export type LocalAgentSessionOptions = {
+  cwd: string;
+  mcpServers: McpServer[];
+  previousSessionId?: string;
+  rememberedMode?: string;
+  rememberedModel?: string;
+};
 export type LocalAgentSession = { sessionId: string; loaded: boolean };
 
 export class LocalAgentConnection {
@@ -210,6 +243,7 @@ export class LocalAgentConnection {
   private disposed = false;
   private disposal?: Promise<void>;
   private failure?: LocalAgentError;
+  private readonly sessionControls = new Map<string, SessionControlState>();
   private readonly whiteboardToolCalls = new Set<string>();
   private readonly permissions = new Map<
     string,
@@ -229,7 +263,18 @@ export class LocalAgentConnection {
     const instance = new LocalAgentConnection(options);
     instance.connection = client({ name: "research-workbench" })
       .onNotification(methods.client.session.update, ({ params }) => {
-        if (instance.loading || params.sessionId !== instance.sessionId) return;
+        if (params.sessionId !== instance.sessionId || instance.disposed) return;
+        if (params.update.sessionUpdate === "config_option_update") {
+          instance.readControls(params.update);
+          return;
+        }
+        if (params.update.sessionUpdate === "current_mode_update") {
+          const state = instance.sessionControls.get(params.sessionId)!;
+          state.controls = { ...state.controls, currentMode: params.update.currentModeId };
+          options.onControls(state.controls);
+          return;
+        }
+        if (instance.loading) return;
         instance.noteToolCall(params.update);
         options.onSessionUpdate(params.update);
       })
@@ -268,37 +313,160 @@ export class LocalAgentConnection {
     }
   }
 
-  async openSession({ cwd, mcpServers, previousSessionId }: LocalAgentSessionOptions): Promise<LocalAgentSession> {
+  async openSession({
+    cwd,
+    mcpServers,
+    previousSessionId,
+    rememberedMode,
+    rememberedModel,
+  }: LocalAgentSessionOptions): Promise<LocalAgentSession> {
     try {
+      let loaded = false;
       if (previousSessionId && this.supportsLoad) {
+        this.activateSession(previousSessionId);
         this.loading = true;
+        let response: Partial<NewSessionResponse> | null | undefined;
         try {
-          await this.connection.agent.request(methods.agent.session.load, {
+          response = await this.connection.agent.request(methods.agent.session.load, {
             sessionId: previousSessionId,
             cwd,
             mcpServers,
           });
-          this.sessionId = previousSessionId;
-          return { sessionId: previousSessionId, loaded: true };
+          loaded = true;
         } catch (error) {
           // load 失败允许重建，但认证或断连错误不能伪装成可恢复的历史丢失。
           if (this.connection.signal.aborted || isAuthRequired(error)) throw error;
         } finally {
           this.loading = false;
         }
+        if (loaded) this.readControls(response ?? {});
       }
-      const response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
-      this.sessionId = response.sessionId;
-      return { sessionId: response.sessionId, loaded: false };
+      if (!loaded) {
+        const response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
+        this.activateSession(response.sessionId);
+        this.readControls(response);
+      }
+      const { controls } = this.sessionControls.get(this.sessionId!)!;
+      const policy = MODE_POLICY[this.options.agent.id];
+      const available = (id: string) => controls.modes.some((mode) => mode.id === id);
+      const mode =
+        (rememberedMode && available(rememberedMode) ? rememberedMode : undefined) ??
+        policy?.preferred.find(available) ??
+        (controls.currentMode && !this.hiddenModes.includes(controls.currentMode) ? controls.currentMode : undefined) ??
+        controls.modes[0]?.id;
+      if (mode && mode !== controls.currentMode) await this.setMode(mode);
+      const current = this.sessionControls.get(this.sessionId!)!;
+      if (
+        rememberedModel &&
+        current.modelConfigId &&
+        current.controls.models.some((model) => model.id === rememberedModel) &&
+        rememberedModel !== current.controls.currentModel
+      )
+        await this.setModel(rememberedModel);
+      return { sessionId: this.sessionId!, loaded };
     } catch (error) {
       throw this.reportError(error);
+    }
+  }
+
+  private get hiddenModes(): string[] {
+    return MODE_POLICY[this.options.agent.id]?.hidden ?? GENERIC_HIDDEN_MODES;
+  }
+
+  activateSession(sessionId: string): void {
+    this.sessionId = sessionId;
+    if (!this.sessionControls.has(sessionId))
+      this.sessionControls.set(sessionId, {
+        controls: { modes: [], currentMode: null, models: [], currentModel: null },
+      });
+    this.options.onControls(this.sessionControls.get(sessionId)!.controls);
+  }
+
+  private readControls(response: Partial<NewSessionResponse>, sessionId = this.sessionId!): void {
+    const state = this.sessionControls.get(sessionId)!;
+    if (response.configOptions != null) {
+      const mode = response.configOptions.find((option) => option.category === "mode" && option.type === "select");
+      const model = response.configOptions.find((option) => option.category === "model" && option.type === "select");
+      const choices = (option: typeof mode): LocalAgentChoice[] =>
+        option?.type === "select"
+          ? option.options
+              .flatMap((item) => ("group" in item ? item.options : [item]))
+              .map((item) => ({ id: item.value, name: item.name, description: item.description ?? undefined }))
+          : [];
+      state.modeConfigId = mode?.id;
+      state.modelConfigId = model?.id;
+      state.controls = {
+        modes: choices(mode).filter((choice) => !this.hiddenModes.includes(choice.id)),
+        currentMode: mode?.type === "select" ? mode.currentValue : null,
+        models: choices(model),
+        currentModel: model?.type === "select" ? model.currentValue : null,
+      };
+    } else {
+      if (response.modes != null) {
+        state.modeConfigId = undefined;
+        state.controls = {
+          ...state.controls,
+          modes: response.modes.availableModes
+            .filter((mode) => !this.hiddenModes.includes(mode.id))
+            .map((mode) => ({ id: mode.id, name: mode.name, description: mode.description ?? undefined })),
+          currentMode: response.modes.currentModeId,
+        };
+      }
+      // 可选字段格式不对就当没有，不能因此让整个会话起不来。
+      const models = legacyModelsSchema.safeParse("models" in response ? response.models : undefined).data;
+      if (models != null) {
+        state.modelConfigId = undefined;
+        state.controls = {
+          ...state.controls,
+          models: models.availableModels.map((model) => ({
+            id: model.modelId,
+            name: model.name,
+            description: model.description ?? undefined,
+          })),
+          currentModel: models.currentModelId,
+        };
+      }
+    }
+    if (sessionId === this.sessionId) this.options.onControls(state.controls);
+  }
+
+  async setMode(id: string): Promise<void> {
+    await this.setControl("mode", id);
+  }
+
+  async setModel(id: string): Promise<void> {
+    await this.setControl("model", id);
+  }
+
+  private async setControl(kind: "mode" | "model", id: string): Promise<void> {
+    const sessionId = this.sessionId;
+    const state = sessionId ? this.sessionControls.get(sessionId) : undefined;
+    if (!sessionId || !state || this.disposed) throw new LocalAgentError("protocol");
+    const configId = kind === "mode" ? state.modeConfigId : state.modelConfigId;
+    const choices = kind === "mode" ? state.controls.modes : state.controls.models;
+    if (!choices.some((choice) => choice.id === id) || (kind === "model" && !configId))
+      throw new LocalAgentError("protocol");
+    try {
+      const response: Partial<NewSessionResponse> | null = configId
+        ? await this.connection.agent.request(methods.agent.session.setConfigOption, { sessionId, configId, value: id })
+        : await this.connection.agent.request(methods.agent.session.setMode, { sessionId, modeId: id });
+      if (response?.configOptions != null) {
+        this.readControls(response, sessionId);
+      } else {
+        state.controls = { ...state.controls, [kind === "mode" ? "currentMode" : "currentModel"]: id };
+        if (sessionId === this.sessionId) this.options.onControls(state.controls);
+      }
+    } catch (error) {
+      // 切换失败不影响会话本身，交给调用方提示；打开会话时的失败由 openSession 统一报告。
+      if (this.connection.signal.aborted || isAuthRequired(error)) throw this.reportError(error);
+      throw error instanceof LocalAgentError ? error : new LocalAgentError("protocol", String(error));
     }
   }
 
   async prompt(blocks: ContentBlock[], signal?: AbortSignal, sessionId = this.sessionId): Promise<PromptResponse> {
     if (signal?.aborted) return { stopReason: "cancelled" };
     if (!sessionId || this.disposed) throw new LocalAgentError("protocol");
-    this.sessionId = sessionId;
+    this.activateSession(sessionId);
     this.cancelling = false;
     const abort = () => {
       void this.cancel().catch((error) => {
@@ -344,14 +512,13 @@ export class LocalAgentConnection {
     request: RequestPermissionRequest,
     signal: AbortSignal,
   ): Promise<RequestPermissionResponse> {
-    const policy = this.options.getPermissionPolicy();
     const cancelled: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
     if (this.disposed || this.cancelling || signal.aborted || request.sessionId !== this.sessionId)
       return Promise.resolve(cancelled);
     const whiteboard =
       isWhiteboardToolCall(request.toolCall) || this.whiteboardToolCalls.has(request.toolCall.toolCallId);
-    if (whiteboard || policy !== "ask") {
-      const kinds = whiteboard || policy === "auto" ? ["allow_once", "allow_always"] : ["reject_once"];
+    if (whiteboard) {
+      const kinds = ["allow_once", "allow_always"];
       const option = kinds.map((kind) => request.options.find((option) => option.kind === kind)).find(Boolean);
       return Promise.resolve(option ? { outcome: { outcome: "selected", optionId: option.optionId } } : cancelled);
     }

@@ -23,10 +23,16 @@ import {
   type LocalAgentId,
   type LocalAgentPermissionRequest,
   type LocalAgentSession,
+  type LocalAgentSessionControls,
   type LocalAgentStatus,
 } from "./LocalAgent";
 
-export type { LocalAgentPermissionRequest, LocalAgentStatus } from "./LocalAgent";
+export type {
+  LocalAgentChoice,
+  LocalAgentPermissionRequest,
+  LocalAgentSessionControls,
+  LocalAgentStatus,
+} from "./LocalAgent";
 
 export type LocalAgentTransportOptions = {
   project: Project;
@@ -97,6 +103,8 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
   private readonly lifetime = new AbortController();
   private readonly statusListeners = new Set<(status: LocalAgentStatus) => void>();
   private readonly permissionListeners = new Set<(request: LocalAgentPermissionRequest | null) => void>();
+  private readonly controlsListeners = new Set<(controls: LocalAgentSessionControls) => void>();
+  private controls: LocalAgentSessionControls = { modes: [], currentMode: null, models: [], currentModel: null };
   private status: LocalAgentStatus = { kind: "idle" };
   private permission: LocalAgentPermissionRequest | null = null;
   private connection?: LocalAgentConnection;
@@ -108,6 +116,19 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
   private update?: (update: SessionUpdate) => void;
 
   constructor(private readonly options: LocalAgentTransportOptions) {}
+
+  prepareSession(chatId: string): Promise<void> {
+    const ready = this.turn.then(async () => {
+      this.lifetime.signal.throwIfAborted();
+      const root = ResearchFolder.getRoot();
+      if (!root) throw new LocalAgentError("no-research-folder");
+      await this.ensureConnection(root, chatId);
+    });
+    this.turn = ready.catch((error) => {
+      this.reportError(error);
+    });
+    return ready;
+  }
 
   async sendMessages(options: SendOptions): Promise<ReadableStream<UIMessageChunk>> {
     const abort = new AbortController();
@@ -197,7 +218,10 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
   private async ensureConnection(cwd: string, chatId: string): Promise<ChatSession> {
     if (!this.connection || this.status.kind !== "ready") await this.closeConnection();
     const existing = this.sessions.get(chatId);
-    if (existing) return existing;
+    if (existing) {
+      this.connection!.activateSession(existing.sessionId);
+      return existing;
+    }
     const launch = await invoke<ExternalAiMcpLaunch>("external_ai_mcp_launch");
     const mcpServers = buildLocalAgentMcpServers(launch);
     this.lifetime.signal.throwIfAborted();
@@ -225,7 +249,6 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
         }),
         {
           agent,
-          getPermissionPolicy: () => Settings.aiLocalAgentPermission,
           onStatus: (status) => {
             // SDK 的断连错误属于同一次进程退出，保留退出码和 stderr。
             if (status.kind === "agent-error" && status.reason === "exited" && this.processExit)
@@ -233,6 +256,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
             else this.setStatus(status);
           },
           onPermissionRequest: (request) => this.setPermission(request),
+          onControls: (controls) => this.setControls(controls),
           onSessionUpdate: (update) => this.update?.(update),
         },
         this.lifetime.signal,
@@ -244,6 +268,8 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       cwd,
       mcpServers,
       previousSessionId: stored.localAgent?.agentId === this.options.agentId ? stored.localAgent.sessionId : undefined,
+      rememberedMode: Settings.aiLocalAgentModes[this.options.agentId],
+      rememberedModel: Settings.aiLocalAgentModels[this.options.agentId],
     });
     await AIChatSessionStore.setLocalAgentSession(getAIChatProjectKey(this.options.project), chatId, {
       agentId: this.options.agentId,
@@ -289,6 +315,31 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     };
   }
 
+  onControls(listener: (controls: LocalAgentSessionControls) => void): () => void {
+    this.controlsListeners.add(listener);
+    listener(this.controls);
+    return () => {
+      this.controlsListeners.delete(listener);
+    };
+  }
+
+  private setControls(controls: LocalAgentSessionControls): void {
+    this.controls = controls;
+    this.controlsListeners.forEach((listener) => listener(controls));
+  }
+
+  async setMode(id: string): Promise<void> {
+    if (!this.connection || this.lifetime.signal.aborted) throw new LocalAgentError("protocol");
+    await this.connection.setMode(id);
+    Settings.aiLocalAgentModes = { ...Settings.aiLocalAgentModes, [this.options.agentId]: id };
+  }
+
+  async setModel(id: string): Promise<void> {
+    if (!this.connection || this.lifetime.signal.aborted) throw new LocalAgentError("protocol");
+    await this.connection.setModel(id);
+    Settings.aiLocalAgentModels = { ...Settings.aiLocalAgentModels, [this.options.agentId]: id };
+  }
+
   private setStatus(status: LocalAgentStatus): void {
     this.status = status;
     this.statusListeners.forEach((listener) => listener(status));
@@ -308,6 +359,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     this.connection = undefined;
     this.sessions.clear();
     this.processExit = undefined;
+    this.setControls({ modes: [], currentMode: null, models: [], currentModel: null });
     try {
       await connection?.dispose();
     } finally {

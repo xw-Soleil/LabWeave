@@ -7,7 +7,9 @@ import {
   type AgentApp,
   type AgentConnection,
   type AnyMessage,
+  type NewSessionResponse,
   type RequestPermissionRequest,
+  type SetSessionConfigOptionRequest,
   type SessionUpdate,
   type Stream,
 } from "@agentclientprotocol/sdk";
@@ -26,8 +28,9 @@ import {
   stopLocalAgent,
   type LocalAgentEvent,
   type LocalAgentInfo,
-  type LocalAgentPermissionPolicy,
+  type LocalAgentId,
   type LocalAgentPermissionRequest,
+  type LocalAgentSessionControls,
   type LocalAgentStatus,
 } from "./LocalAgent";
 
@@ -100,12 +103,12 @@ function fixture(configure?: (app: AgentApp) => void) {
   const statuses: LocalAgentStatus[] = [];
   const permissions: (LocalAgentPermissionRequest | null)[] = [];
   const updates: SessionUpdate[] = [];
-  let policy: LocalAgentPermissionPolicy = "restricted";
-  const start = async () => {
+  const controls: LocalAgentSessionControls[] = [];
+  const start = async (agentId: LocalAgentId = "codex") => {
     const connection = await LocalAgentConnection.start(stream, {
-      agent: info,
-      getPermissionPolicy: () => policy,
+      agent: { ...info, id: agentId },
       onStatus: (s) => statuses.push(s),
+      onControls: (c) => controls.push(c),
       onPermissionRequest: (r) => permissions.push(r),
       onSessionUpdate: (u) => updates.push(u),
     });
@@ -129,11 +132,449 @@ function fixture(configure?: (app: AgentApp) => void) {
     statuses,
     permissions,
     updates,
-    setPolicy: (value: LocalAgentPermissionPolicy) => {
-      policy = value;
-    },
+    controls,
   };
 }
+
+const codexModes = [
+  { id: "read-only", name: "Read-only", description: "Requires approval to edit files and access the internet." },
+  {
+    id: "workspace-write",
+    name: "Workspace access",
+    description: "Edit workspace files; ask before writing outside the workspace or accessing the network.",
+  },
+  { id: "agent", name: "Auto review", description: "Only ask for actions detected as potentially unsafe" },
+  {
+    id: "agent-full-access",
+    name: "Full access",
+    description: "Unrestricted access to the internet and any file on your computer",
+  },
+];
+const claudeModes = [
+  { id: "default", name: "Manual", description: "Always ask before making changes" },
+  { id: "acceptEdits", name: "Accept edits", description: "Automatically accept all file edits" },
+  { id: "plan", name: "Plan", description: "Create a plan before making changes" },
+  { id: "auto", name: "Auto", description: "Claude handles permission decisions" },
+  { id: "bypassPermissions", name: "Bypass permissions", description: "Accepts all permissions" },
+];
+const codexSession = {
+  sessionId: "s1",
+  modes: { availableModes: codexModes, currentModeId: "agent" },
+  models: {
+    currentModelId: "gpt-6-astra[xhigh]",
+    availableModels: [
+      {
+        modelId: "gpt-6-astra[xhigh]",
+        name: "6 Astra (xhigh)",
+        description:
+          "Frontier intelligence for the most demanding work. Extra high reasoning depth for complex problems",
+      },
+      {
+        modelId: "gpt-6.1-sol[low]",
+        name: "6.1 Sol (low)",
+        description: "Latest workhorse model for coding and everyday work. Fast responses with lighter reasoning",
+      },
+    ],
+  },
+  configOptions: [
+    {
+      id: "mode",
+      name: "Mode",
+      description: "Approval and sandboxing preset for the session",
+      category: "mode",
+      type: "select",
+      currentValue: "agent",
+      options: codexModes.map(({ id, ...choice }) => ({ value: id, ...choice })),
+    },
+    {
+      id: "model",
+      name: "Model",
+      description: "Model Codex uses for the session",
+      category: "model",
+      type: "select",
+      currentValue: "gpt-6-astra",
+      options: [
+        { value: "gpt-6.1-sol", name: "6.1 Sol", description: "Latest workhorse model for coding and everyday work." },
+        { value: "gpt-6-astra", name: "6 Astra", description: "Frontier intelligence for the most demanding work." },
+        { value: "gpt-6.1-terra", name: "6.1 Terra", description: "GPT-6.1 Terra Codex model." },
+        { value: "gpt-6-sol", name: "6 Sol", description: "Previous generation workhorse model." },
+        { value: "gpt-6-luna", name: "6 Luna", description: "Fast and affordable model for easier tasks." },
+        { value: "gpt-5.6-sol", name: "5.6 Sol", description: "Older generation workhorse model." },
+        { value: "gpt-5.6-terra", name: "5.6 Terra", description: "Older balanced model for straightforward work." },
+        { value: "gpt-5.6-luna", name: "5.6 Luna", description: "Older fast and efficient model." },
+      ],
+    },
+  ],
+} satisfies NewSessionResponse & { models: unknown };
+const claudeSession: NewSessionResponse = {
+  sessionId: "s1",
+  modes: { availableModes: claudeModes, currentModeId: "default" },
+  configOptions: [
+    {
+      id: "mode",
+      name: "Mode",
+      description: "Session permission mode",
+      category: "mode",
+      type: "select",
+      currentValue: "default",
+      options: claudeModes.map(({ id, ...choice }) => ({ value: id, ...choice })),
+    },
+    {
+      id: "model",
+      name: "Model",
+      description: "AI model to use",
+      category: "model",
+      type: "select",
+      currentValue: "default",
+      options: [
+        { value: "default", name: "Default (recommended)", description: "Opus" },
+        {
+          value: "opus",
+          name: "Opus 5.5",
+          description: "Opus 5.5 · Best for everyday, complex tasks · $4/$20 per Mtok",
+        },
+        {
+          value: "fable",
+          name: "Fable 5.1",
+          description: "Fable 5.1 · Most capable for your hardest and longest-running tasks · $10/$50 per Mtok",
+        },
+        {
+          value: "sonnet",
+          name: "Sonnet 5.5",
+          description: "Sonnet 5.5 · Efficient for routine tasks · $2/$10 per Mtok",
+        },
+        {
+          value: "haiku",
+          name: "Haiku 5.5",
+          description:
+            "Haiku 5.5 · Fastest for quick answers · $0.10/$0.50 per Mtok ($0.50/$2.50 for prompts over 100k)",
+        },
+      ],
+    },
+  ],
+};
+
+function controlFixture(initial: NewSessionResponse) {
+  let response = structuredClone(initial);
+  const newSession = vi.fn(() => structuredClone(response));
+  const setConfig = vi.fn(({ params }: { params: SetSessionConfigOptionRequest }) => {
+    if (typeof params.value !== "string") throw RequestError.invalidParams();
+    const value = params.value;
+    response = {
+      ...response,
+      configOptions: response.configOptions?.map((option) =>
+        option.id === params.configId && option.type === "select" ? { ...option, currentValue: value } : option,
+      ),
+    };
+    return { configOptions: response.configOptions ?? [] };
+  });
+  const setMode = vi.fn(() => ({}));
+  const f = fixture((app) =>
+    app
+      .onRequest(methods.agent.session.new, newSession)
+      .onRequest(methods.agent.session.setConfigOption, setConfig)
+      .onRequest(methods.agent.session.setMode, setMode),
+  );
+  return { ...f, newSession, setConfig, setMode };
+}
+
+describe("LocalAgent session controls", () => {
+  it.each([
+    {
+      id: "codex" as const,
+      response: codexSession,
+      modes: codexModes.slice(0, 3),
+      current: "read-only",
+      model: "gpt-6-astra",
+      modelCount: 8,
+    },
+    {
+      id: "claude" as const,
+      response: claudeSession,
+      modes: claudeModes.slice(0, 4),
+      current: "default",
+      model: "default",
+      modelCount: 5,
+    },
+  ])(
+    "读取实测 $id 的模式和模型，优先 configOptions，隐藏危险档并选默认档",
+    async ({ id, response, modes, current, model, modelCount }) => {
+      const f = controlFixture(response);
+      const connection = await f.start(id);
+      await connection.openSession(session);
+      expect(f.controls.at(-1)).toMatchObject({ modes, currentMode: current, currentModel: model });
+      expect(f.controls.at(-1)?.models).toHaveLength(modelCount);
+      expect(f.controls.at(-1)?.models[0]).toEqual(
+        id === "codex"
+          ? { id: "gpt-6.1-sol", name: "6.1 Sol", description: "Latest workhorse model for coding and everyday work." }
+          : { id: "default", name: "Default (recommended)", description: "Opus" },
+      );
+    },
+  );
+
+  it.each([
+    {
+      name: "记住的优先",
+      rememberedMode: "workspace-write",
+      current: "agent",
+      available: codexModes,
+      target: "workspace-write",
+    },
+    { name: "preferred", rememberedMode: undefined, current: "agent", available: codexModes, target: "read-only" },
+    { name: "当前模式", rememberedMode: undefined, current: "agent", available: codexModes.slice(1), target: "agent" },
+    {
+      name: "第一个可选",
+      rememberedMode: undefined,
+      current: "agent-full-access",
+      available: codexModes.slice(1),
+      target: "workspace-write",
+    },
+    { name: "记住的已移除", rememberedMode: "removed", current: "agent", available: codexModes, target: "read-only" },
+    {
+      name: "记住的已隐藏",
+      rememberedMode: "agent-full-access",
+      current: "agent",
+      available: codexModes,
+      target: "read-only",
+    },
+  ])("目标模式退路：$name", async ({ rememberedMode, current, available, target }) => {
+    const f = controlFixture({ sessionId: "s1", modes: { currentModeId: current, availableModes: available } });
+    const connection = await f.start();
+    await connection.openSession({ ...session, rememberedMode });
+    expect(f.controls.at(-1)?.currentMode).toBe(target);
+    expect(f.setMode).toHaveBeenCalledTimes(target === current ? 0 : 1);
+    if (target !== current)
+      expect(f.sent).toContainEqual(
+        expect.objectContaining({ method: "session/set_mode", params: { sessionId: "s1", modeId: target } }),
+      );
+  });
+
+  it("未实测程序过滤通用危险档，没有 preferred 时保留当前模式", async () => {
+    const modes = ["safe", "custom", "bypassPermissions", "agent-full-access", "full-access", "yolo"];
+    const f = controlFixture({
+      sessionId: "s1",
+      modes: { currentModeId: "custom", availableModes: modes.map((id) => ({ id, name: id })) },
+    });
+    const connection = await f.start("gemini");
+    await connection.openSession(session);
+    expect(f.controls.at(-1)?.modes.map((mode) => mode.id)).toEqual(["safe", "custom"]);
+    expect(f.controls.at(-1)?.currentMode).toBe("custom");
+    expect(f.setMode).not.toHaveBeenCalled();
+  });
+
+  it("切换使用 config option 的实际 id，响应更新模式与模型", async () => {
+    const response = structuredClone(codexSession);
+    response.configOptions![0].id = "permission-preset";
+    response.configOptions![1].id = "model-picker";
+    const f = controlFixture(response);
+    const connection = await f.start();
+    await connection.openSession(session);
+    await connection.setMode("workspace-write");
+    await connection.setModel("gpt-6.1-sol");
+    expect(f.sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: "session/set_config_option",
+          params: { sessionId: "s1", configId: "permission-preset", value: "workspace-write" },
+        }),
+        expect.objectContaining({
+          method: "session/set_config_option",
+          params: { sessionId: "s1", configId: "model-picker", value: "gpt-6.1-sol" },
+        }),
+      ]),
+    );
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "workspace-write", currentModel: "gpt-6.1-sol" });
+    expect(f.setMode).not.toHaveBeenCalled();
+    await expect(connection.setMode("agent-full-access")).rejects.toMatchObject({ reason: "protocol" });
+    await expect(connection.setModel("missing")).rejects.toMatchObject({ reason: "protocol" });
+    f.setConfig.mockRejectedValueOnce(RequestError.internalError());
+    await expect(connection.setMode("agent")).rejects.toMatchObject({ reason: "protocol" });
+    expect(f.controls.at(-1)?.currentMode).toBe("workspace-write");
+    // 切换失败只交给调用方提示，不把整个会话标成出错
+    expect(f.statuses.some((status) => status.kind === "agent-error")).toBe(false);
+  });
+
+  it.each(["gpt-6.1-sol", "removed", undefined])("模型记忆 %s 只在可用且不同时切换", async (rememberedModel) => {
+    const f = controlFixture(codexSession);
+    const connection = await f.start();
+    await connection.openSession({ ...session, rememberedModel });
+    expect(f.controls.at(-1)?.currentModel).toBe(rememberedModel === "gpt-6.1-sol" ? rememberedModel : "gpt-6-astra");
+    expect(f.setConfig).toHaveBeenCalledTimes(rememberedModel === "gpt-6.1-sol" ? 2 : 1);
+  });
+
+  it("旧 models 可以读，但没有 config option 不能切换模型", async () => {
+    const f = controlFixture({ ...codexSession, configOptions: undefined });
+    const connection = await f.start();
+    await connection.openSession({ ...session, rememberedModel: "gpt-6.1-sol[low]" });
+    expect(f.controls.at(-1)?.currentModel).toBe("gpt-6-astra[xhigh]");
+    expect(f.controls.at(-1)?.models[0]).toMatchObject({ id: "gpt-6-astra[xhigh]", name: "6 Astra (xhigh)" });
+    await expect(connection.setModel("gpt-6.1-sol[low]")).rejects.toMatchObject({ reason: "protocol" });
+    expect(f.setConfig).not.toHaveBeenCalled();
+  });
+
+  it("控制项通知刷新完整列表、展平分组；当前隐藏档照实报告，不回切", async () => {
+    const f = controlFixture(codexSession);
+    const connection = await f.start();
+    await connection.openSession(session);
+    const calls = f.setConfig.mock.calls.length;
+    await f.peer.client.notify(methods.client.session.update, {
+      sessionId: "s1",
+      update: { sessionUpdate: "current_mode_update", currentModeId: "agent-full-access" },
+    });
+    await vi.waitFor(() => expect(f.controls.at(-1)?.currentMode).toBe("agent-full-access"));
+    await f.peer.client.notify(methods.client.session.update, {
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            id: "next-mode",
+            name: "Mode",
+            category: "mode",
+            type: "select",
+            currentValue: "agent-full-access",
+            options: [
+              { group: "all", name: "All", options: codexModes.map(({ id, ...mode }) => ({ value: id, ...mode })) },
+            ],
+          },
+          {
+            id: "next-model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "new-model",
+            options: [{ value: "new-model", name: "New model" }],
+          },
+        ],
+      },
+    });
+    await vi.waitFor(() => expect(f.controls.at(-1)?.currentModel).toBe("new-model"));
+    expect(f.controls.at(-1)?.modes).toEqual(codexModes.slice(0, 3));
+    expect(f.controls.at(-1)?.currentMode).toBe("agent-full-access");
+    expect(f.setConfig).toHaveBeenCalledTimes(calls);
+    expect(f.updates).toEqual([]);
+    await connection.setModel("new-model");
+    expect(f.setConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { sessionId: "s1", configId: "next-model", value: "new-model" } }),
+    );
+    await f.peer.client.notify(methods.client.session.update, {
+      sessionId: "s1",
+      update: { sessionUpdate: "config_option_update", configOptions: [] },
+    });
+    await vi.waitFor(() =>
+      expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null }),
+    );
+  });
+
+  it("load 没带控制项时保留该会话的列表和 config id；其他会话不继承它", async () => {
+    const f = controlFixture(codexSession);
+    const connection = await f.start();
+    await connection.openSession(session);
+    const previous = f.controls.at(-1);
+    await connection.openSession({ ...session, previousSessionId: "s1" });
+    expect(f.controls.at(-1)).toEqual(previous);
+    await connection.setMode("workspace-write");
+    expect(f.setConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { sessionId: "s1", configId: "mode", value: "workspace-write" } }),
+    );
+    await connection.openSession({ ...session, previousSessionId: "unknown" });
+    expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null });
+    connection.activateSession("s1");
+    expect(f.controls.at(-1)?.currentMode).toBe("workspace-write");
+  });
+
+  it("load 的模式切换失败向上传播，不能误当成 load 失败而新建会话", async () => {
+    const f = controlFixture(codexSession);
+    const connection = await f.start();
+    await connection.openSession(session);
+    f.setConfig.mockRejectedValueOnce(RequestError.internalError());
+    await expect(
+      connection.openSession({ ...session, previousSessionId: "s1", rememberedMode: "workspace-write" }),
+    ).rejects.toMatchObject({ reason: "protocol" });
+    expect(f.load).toHaveBeenCalledTimes(1);
+    expect(f.newSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("load 接收控制项与控制通知，继续忽略历史消息重放", async () => {
+    const f = fixture((app) =>
+      app.onRequest(methods.agent.session.load, async ({ client, params }) => {
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "config_option_update", configOptions: claudeSession.configOptions! },
+        });
+        await client.notify(methods.client.session.update, { sessionId: params.sessionId, update: textUpdate("old") });
+        return {};
+      }),
+    );
+    const connection = await f.start("claude");
+    await connection.openSession({ ...session, previousSessionId: "loaded" });
+    expect(f.controls.at(-1)?.modes).toEqual(claudeModes.slice(0, 4));
+    expect(f.controls.at(-1)?.currentModel).toBe("default");
+    expect(f.updates).toEqual([]);
+  });
+
+  it("未提供控制项时返回空状态", async () => {
+    const f = fixture();
+    const connection = await f.start();
+    await connection.openSession(session);
+    expect(f.controls.at(-1)).toEqual({ modes: [], currentMode: null, models: [], currentModel: null });
+  });
+
+  it.each(["config", "legacy"])("从 load 返回的 %s 读取控制项", async (format) => {
+    const f = fixture((app) =>
+      app.onRequest(methods.agent.session.load, () =>
+        format === "config"
+          ? { configOptions: claudeSession.configOptions }
+          : { modes: claudeSession.modes, models: codexSession.models },
+      ),
+    );
+    const connection = await f.start("claude");
+    await connection.openSession({ ...session, previousSessionId: "old" });
+    expect(f.controls.at(-1)?.modes).toEqual(claudeModes.slice(0, 4));
+    expect(f.controls.at(-1)?.currentMode).toBe("default");
+    expect(f.controls.at(-1)?.currentModel).toBe(format === "config" ? "default" : "gpt-6-astra[xhigh]");
+  });
+
+  it("Claude 的当前模式不是手动时应用 preferred", async () => {
+    const f = controlFixture({ sessionId: "s1", modes: { currentModeId: "auto", availableModes: claudeModes } });
+    const connection = await f.start("claude");
+    await connection.openSession(session);
+    expect(f.controls.at(-1)?.currentMode).toBe("default");
+    expect(f.setMode).toHaveBeenCalledWith(expect.objectContaining({ params: { sessionId: "s1", modeId: "default" } }));
+  });
+
+  it("有 configOptions 但没有对应 category 时不退回旧字段", async () => {
+    const f = controlFixture({ ...codexSession, configOptions: [] });
+    const connection = await f.start();
+    await connection.openSession(session);
+    expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null });
+    expect(f.setMode).not.toHaveBeenCalled();
+    expect(f.setConfig).not.toHaveBeenCalled();
+  });
+
+  it("旧 models 格式不对时当作没有，会话照常打开", async () => {
+    const f = fixture((app) =>
+      app.onRequest(methods.agent.session.new, () => ({
+        sessionId: "s1",
+        models: { currentModelId: 123, availableModels: [] },
+      })),
+    );
+    const connection = await f.start();
+    await expect(connection.openSession(session)).resolves.toEqual({ sessionId: "s1", loaded: false });
+    expect(f.controls.at(-1)).toEqual({ modes: [], currentMode: null, models: [], currentModel: null });
+    expect(f.statuses.some((status) => status.kind === "agent-error")).toBe(false);
+  });
+
+  it("load 成功但返回空结果时仍算恢复成功，不新建会话", async () => {
+    const f = fixture((app) => app.onRequest(methods.agent.session.load, () => null as never));
+    const connection = await f.start();
+    await expect(connection.openSession({ ...session, previousSessionId: "old" })).resolves.toEqual({
+      sessionId: "old",
+      loaded: true,
+    });
+    expect(f.newSession).not.toHaveBeenCalled();
+  });
+});
 
 describe("LocalAgent IPC stream", () => {
   it("使用 Rust 命令和 camelCase 参数，并在 start 返回前缓冲 Channel 输出", async () => {
@@ -481,28 +922,29 @@ describe("LocalAgent permissions", () => {
         request({ toolCall: { toolCallId, title: "Run command", kind: "execute" } }),
       );
     await expect(ask("mcp")).resolves.toEqual(outcome("once"));
-    await expect(ask("shell")).resolves.toEqual(outcome("reject"));
+    const shell = ask("shell");
+    await vi.waitFor(() => expect(f.permissions).toHaveLength(1));
+    connection.respondPermission(f.permissions[0]!.requestId, "reject");
+    await expect(shell).resolves.toEqual(outcome("reject"));
   });
 
-  it.each(nonWhiteboardTools)("不把参数、普通命令或子串当作白板工具，受限档必须拒绝 %j", async (tool) => {
+  it.each(nonWhiteboardTools)("不把参数、普通命令或子串当作白板工具，一律交给界面 %j", async (tool) => {
     const toolCall = { toolCallId: "t", ...tool };
     expect(isWhiteboardToolCall(toolCall)).toBe(false);
     const f = fixture();
     const connection = await f.start();
     await connection.openSession(session);
-    await expect(
-      f.peer.client.request(methods.client.session.requestPermission, request({ toolCall })),
-    ).resolves.toEqual(outcome("reject"));
+    const result = f.peer.client.request(methods.client.session.requestPermission, request({ toolCall }));
+    await vi.waitFor(() => expect(f.permissions).toHaveLength(1));
+    connection.respondPermission(f.permissions[0]!.requestId, "reject");
+    await expect(result).resolves.toEqual(outcome("reject"));
   });
 
-  const cases = (["restricted", "ask", "auto"] as const).flatMap((policy) =>
-    [false, true].flatMap((whiteboard) =>
-      ["all", "always", "none"].map((available) => ({ policy, whiteboard, available })),
-    ),
+  const cases = [false, true].flatMap((whiteboard) =>
+    ["all", "always", "reject", "none"].map((available) => ({ whiteboard, available })),
   );
-  it.each(cases)("$policy / whiteboard=$whiteboard / options=$available", async ({ policy, whiteboard, available }) => {
+  it.each(cases)("whiteboard=$whiteboard / options=$available", async ({ whiteboard, available }) => {
     const f = fixture();
-    f.setPolicy(policy);
     const connection = await f.start();
     await connection.openSession(session);
     const options =
@@ -510,7 +952,9 @@ describe("LocalAgent permissions", () => {
         ? permissionOptions
         : available === "always"
           ? permissionOptions.filter((o) => o.kind.endsWith("always"))
-          : [];
+          : available === "reject"
+            ? permissionOptions.filter((o) => o.kind.startsWith("reject"))
+            : [];
     const result = f.peer.client.request(
       methods.client.session.requestPermission,
       request({
@@ -520,31 +964,21 @@ describe("LocalAgent permissions", () => {
           : { toolCallId: "t", title: "shell" },
       }),
     );
-    if (policy === "ask" && !whiteboard) {
+    if (!whiteboard) {
       await vi.waitFor(() => expect(f.permissions).toHaveLength(1));
       expect(f.permissions[0]?.options).toEqual(options);
       connection.respondPermission(f.permissions[0]!.requestId, options[0]?.optionId ?? null);
       await expect(result).resolves.toEqual(outcome(options[0]?.optionId));
       expect(f.permissions.at(-1)).toBeNull();
     } else {
-      const selected =
-        whiteboard || policy === "auto"
-          ? available === "all"
-            ? "once"
-            : available === "always"
-              ? "always"
-              : undefined
-          : available === "all"
-            ? "reject"
-            : undefined;
+      const selected = available === "all" ? "once" : available === "always" ? "always" : undefined;
       await expect(result).resolves.toEqual(outcome(selected));
       expect(f.permissions).toEqual([]);
     }
   });
 
-  it("ask 保留参数并等待，拒绝伪造选项，排队处理并发请求，迟到回答无效，实时读取策略", async () => {
+  it("保留参数并等待，拒绝伪造选项，排队处理并发请求，迟到回答无效", async () => {
     const f = fixture();
-    f.setPolicy("ask");
     const connection = await f.start();
     await connection.openSession(session);
     const firstDone = vi.fn();
@@ -573,19 +1007,21 @@ describe("LocalAgent permissions", () => {
     connection.respondPermission(firstId, "once");
     connection.respondPermission(secondId, null);
     await expect(second).resolves.toEqual(outcome());
-    f.setPolicy("auto");
-    await expect(f.peer.client.request(methods.client.session.requestPermission, request())).resolves.toEqual(
-      outcome("once"),
-    );
-    f.setPolicy("restricted");
-    await expect(f.peer.client.request(methods.client.session.requestPermission, request())).resolves.toEqual(
-      outcome("reject"),
-    );
+  });
+
+  it("一轮结束时取消尚未选择的权限请求", async () => {
+    const f = fixture();
+    const connection = await f.start();
+    await connection.openSession(session);
+    const pending = f.peer.client.request(methods.client.session.requestPermission, request());
+    await vi.waitFor(() => expect(f.permissions).toHaveLength(1));
+    await connection.prompt([]);
+    await expect(pending).resolves.toEqual(outcome());
+    expect(f.permissions.at(-1)).toBeNull();
   });
 
   it.each(["cancel", "dispose", "disconnect"] as const)("%s 清除全部挂起权限请求", async (action) => {
     const f = fixture();
-    f.setPolicy("ask");
     const connection = await f.start();
     await connection.openSession(session);
     const results = [1, 2].map(() => f.peer.client.request(methods.client.session.requestPermission, request()));
@@ -671,6 +1107,7 @@ describe("mapSessionUpdate", () => {
     { sessionUpdate: "plan", entries: [] },
     { sessionUpdate: "user_message_chunk", content: { type: "text", text: "history" } },
     { sessionUpdate: "current_mode_update", currentModeId: "code" },
+    { sessionUpdate: "config_option_update", configOptions: [] },
     { sessionUpdate: "agent_message_chunk", content: { type: "image", data: "a", mimeType: "image/png" } },
     { sessionUpdate: "agent_thought_chunk", content: { type: "resource_link", uri: "file:///a", name: "a" } },
   ] satisfies SessionUpdate[])("忽略尚不显示的更新 %j", (update) => {

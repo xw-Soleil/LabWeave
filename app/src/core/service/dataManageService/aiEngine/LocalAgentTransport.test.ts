@@ -24,6 +24,7 @@ import {
   type LocalAgentEvent,
   type LocalAgentInfo,
   type LocalAgentPermissionRequest,
+  type LocalAgentSessionControls,
   type LocalAgentStatus,
 } from "./LocalAgent";
 
@@ -58,7 +59,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 vi.mock("@/core/service/Settings", () => ({
-  Settings: { aiBackend: "api", aiLocalAgent: "codex", aiLocalAgentPaths: {}, aiLocalAgentPermission: "restricted" },
+  Settings: {
+    aiBackend: "api",
+    aiLocalAgent: "codex",
+    aiLocalAgentPaths: {},
+    aiLocalAgentPermission: "restricted",
+    aiLocalAgentModes: {},
+    aiLocalAgentModels: {},
+  },
 }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { getRoot: vi.fn(() => "/research"), toRelative: vi.fn(() => "notes/board.prg") },
@@ -137,6 +145,8 @@ beforeEach(() => {
     aiLocalAgent: "codex",
     aiLocalAgentPaths: {},
     aiLocalAgentPermission: "restricted",
+    aiLocalAgentModes: {},
+    aiLocalAgentModels: {},
   });
 });
 afterEach(async () => {
@@ -242,8 +252,10 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
   cleanups.push(() => transport.dispose());
   const statuses: LocalAgentStatus[] = [];
   const permissions: (LocalAgentPermissionRequest | null)[] = [];
+  const controls: LocalAgentSessionControls[] = [];
   transport.onStatus((status) => statuses.push(status));
   transport.onPermissionRequest((permission) => permissions.push(permission));
+  transport.onControls((value) => controls.push(value));
   const send = (messages = [user()], signal?: AbortSignal, chatId = activeSession.id) =>
     transport.sendMessages({ trigger: "submit-message", chatId, messageId: undefined, messages, abortSignal: signal });
   return {
@@ -254,6 +266,7 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
     transport,
     statuses,
     permissions,
+    controls,
     prompts,
     newSession,
     load,
@@ -268,6 +281,105 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
 }
 
 describe("LocalAgentTransport with an in-memory SDK agent", () => {
+  it("控制项立即回放和退订；恢复每个程序的记忆，成功写回，失败不覆盖", async () => {
+    let configOptions = [
+      {
+        id: "permissions",
+        name: "Mode",
+        category: "mode",
+        type: "select" as const,
+        currentValue: "agent",
+        options: [
+          { value: "read-only", name: "Read-only" },
+          { value: "agent", name: "Auto review" },
+        ],
+      },
+      {
+        id: "models",
+        name: "Model",
+        category: "model",
+        type: "select" as const,
+        currentValue: "model-1",
+        options: [
+          { value: "model-1", name: "One" },
+          { value: "model-2", name: "Two" },
+        ],
+      },
+    ];
+    let fail = false;
+    const f = await setup((app) =>
+      app
+        .onRequest(methods.agent.session.new, () => ({ sessionId: "acp-new", configOptions }))
+        .onRequest(methods.agent.session.setConfigOption, ({ params }) => {
+          if (fail) throw RequestError.internalError();
+          if (typeof params.value !== "string") throw RequestError.invalidParams();
+          const value = params.value;
+          configOptions = configOptions.map((option) =>
+            option.id === params.configId ? { ...option, currentValue: value } : option,
+          );
+          return { configOptions };
+        }),
+    );
+    Settings.aiLocalAgentModes = { codex: "read-only", claude: "plan" };
+    Settings.aiLocalAgentModels = { codex: "model-2", claude: "opus" };
+    const listener = vi.fn();
+    const unsubscribe = f.transport.onControls(listener);
+    expect(listener).toHaveBeenCalledExactlyOnceWith({ modes: [], models: [], currentMode: null, currentModel: null });
+    await expect(f.transport.setMode("read-only")).rejects.toMatchObject({ reason: "protocol" });
+    await f.transport.prepareSession(f.chatId);
+    expect(f.prompts).toHaveLength(0);
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "read-only", currentModel: "model-2" });
+    const late = vi.fn();
+    f.transport.onControls(late)();
+    expect(late).toHaveBeenCalledExactlyOnceWith(f.controls.at(-1));
+    unsubscribe();
+    const count = listener.mock.calls.length;
+    await f.transport.setMode("agent");
+    await f.transport.setModel("model-1");
+    expect(Settings.aiLocalAgentModes).toEqual({ codex: "agent", claude: "plan" });
+    expect(Settings.aiLocalAgentModels).toEqual({ codex: "model-1", claude: "opus" });
+    expect(listener).toHaveBeenCalledTimes(count);
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "agent", currentModel: "model-1" });
+    fail = true;
+    await expect(f.transport.setMode("read-only")).rejects.toMatchObject({ reason: "protocol" });
+    await expect(f.transport.setModel("model-2")).rejects.toMatchObject({ reason: "protocol" });
+    expect(Settings.aiLocalAgentModes.codex).toBe("agent");
+    expect(Settings.aiLocalAgentModels.codex).toBe("model-1");
+    expect(f.statuses.at(-1)).toMatchObject({ kind: "ready" });
+    await f.transport.dispose();
+    expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null });
+  });
+
+  it("发送前准备与发送共用队列；切换会话时回放各自控制项", async () => {
+    let index = 0;
+    const f = await setup((app) =>
+      app.onRequest(methods.agent.session.new, () => ({
+        sessionId: `acp-${++index}`,
+        modes: { currentModeId: `mode-${index}`, availableModes: [{ id: `mode-${index}`, name: `Mode ${index}` }] },
+      })),
+    );
+    const { activeSession: second } = await actualStore.AIChatSessionStore.createSession(f.key);
+    const firstReady = f.transport.prepareSession(f.chatId);
+    const firstTurn = collect(await f.send());
+    await firstReady;
+    await firstTurn;
+    expect(index).toBe(1);
+    await f.transport.prepareSession(second.id);
+    expect(f.controls.at(-1)?.currentMode).toBe("mode-2");
+    await f.transport.prepareSession(f.chatId);
+    expect(f.controls.at(-1)?.currentMode).toBe("mode-1");
+    expect(index).toBe(2);
+  });
+
+  it("准备会话失败向调用者和状态订阅报告；重试仍可成功", async () => {
+    const f = await setup();
+    vi.mocked(ResearchFolder.getRoot).mockReturnValueOnce("");
+    await expect(f.transport.prepareSession(f.chatId)).rejects.toMatchObject({ reason: "no-research-folder" });
+    expect(f.statuses.at(-1)).toMatchObject({ kind: "agent-error", reason: "no-research-folder" });
+    await f.transport.prepareSession(f.chatId);
+    expect(f.statuses.at(-1)).toMatchObject({ kind: "ready" });
+  });
+
   it.each([false, true])("切换两个会话再切回来只启动一次，每个会话只 open 一次；首个会话已保存=%s", async (saved) => {
     const f = await setup();
     const openSession = vi.spyOn(LocalAgentConnection.prototype, "openSession");
@@ -472,7 +584,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     }
   });
 
-  it("订阅即回放当前状态，退订有效；权限事件/回答往返，设置变动影响复用连接", async () => {
+  it("订阅即回放当前状态，退订有效；旧三档都不影响权限事件/回答往返", async () => {
     const replies: unknown[] = [];
     const f = await setup((app) =>
       app.onRequest(methods.agent.session.prompt, async ({ client, params }) => {
@@ -506,9 +618,14 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(permissionListener).toHaveBeenLastCalledWith(null);
     unsubscribe();
     const count = permissionListener.mock.calls.length;
-    Settings.aiLocalAgentPermission = "restricted";
-    await collect(await f.send());
-    expect(replies[1]).toEqual({ outcome: { outcome: "selected", optionId: "deny" } });
+    for (const policy of ["restricted", "auto"] as const) {
+      Settings.aiLocalAgentPermission = policy;
+      const next = collect(await f.send());
+      await vi.waitFor(() => expect(f.permissions.at(-1)).not.toBeNull());
+      f.transport.respondPermission(f.permissions.at(-1)!.requestId, "deny");
+      await next;
+      expect(replies.at(-1)).toEqual({ outcome: { outcome: "selected", optionId: "deny" } });
+    }
     expect(permissionListener).toHaveBeenCalledTimes(count);
     expect(unsubscribed).toHaveBeenCalledExactlyOnceWith({ kind: "idle" });
     expect(f.statuses.slice(0, 3)).toEqual([
@@ -535,7 +652,6 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
           return { stopReason: "cancelled" };
         }),
     );
-    Settings.aiLocalAgentPermission = "ask";
     const abort = new AbortController();
     const completed = collect(await f.send([user()], abort.signal));
     await vi.waitFor(() => expect(f.permissions.at(-1)).not.toBeNull());
@@ -545,8 +661,10 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(replies).toEqual([{ outcome: { outcome: "cancelled" } }]);
     expect(cancelled).toHaveBeenCalled();
     if (action === "abort") {
-      Settings.aiLocalAgentPermission = "restricted";
-      await collect(await f.send());
+      const next = collect(await f.send());
+      await vi.waitFor(() => expect(f.permissions.at(-1)).not.toBeNull());
+      f.transport.respondPermission(f.permissions.at(-1)!.requestId, null);
+      await next;
     } else expect(f.processes.size).toBe(0);
     expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "local_agent_start")).toHaveLength(1);
   });
@@ -826,18 +944,24 @@ describe("AIEngine backend selection and settings", () => {
       aiBackend: true,
       aiLocalAgent: true,
       aiLocalAgentPaths: true,
+      aiLocalAgentModes: true,
+      aiLocalAgentModels: true,
       aiLocalAgentPermission: true,
     });
     expect(schema.parse({})).toEqual({
       aiBackend: "api",
       aiLocalAgent: "codex",
       aiLocalAgentPaths: {},
+      aiLocalAgentModes: {},
+      aiLocalAgentModels: {},
       aiLocalAgentPermission: "restricted",
     });
     const valid = {
       aiBackend: ["api", "localAgent"],
       aiLocalAgent: ["codex", "claude", "gemini", "kimi", "cursor", "opencode", "qodercn"],
       aiLocalAgentPaths: [{ codex: "/bin/codex-acp" }],
+      aiLocalAgentModes: [{ codex: "read-only", claude: "default" }],
+      aiLocalAgentModels: [{ codex: "gpt-6-astra", claude: "default" }],
       aiLocalAgentPermission: ["restricted", "ask", "auto"],
     };
     for (const [key, values] of Object.entries(valid))
@@ -850,6 +974,8 @@ describe("AIEngine backend selection and settings", () => {
       aiBackend: "other",
       aiLocalAgent: "shell",
       aiLocalAgentPaths: { codex: 1 },
+      aiLocalAgentModes: { codex: 1 },
+      aiLocalAgentModels: { claude: false },
       aiLocalAgentPermission: "yes",
     }))
       expect(schema.safeParse({ [key]: value }).success).toBe(false);
