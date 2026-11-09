@@ -142,7 +142,6 @@ export const settingsSchema = z.object({
   aiLocalAgentPaths: z.record(z.string(), z.string()).default({}),
   aiLocalAgentModes: z.record(z.string(), z.string()).default({}),
   aiLocalAgentModels: z.record(z.string(), z.string()).default({}),
-  aiLocalAgentPermission: z.union([z.literal("restricted"), z.literal("ask"), z.literal("auto")]).default("restricted"),
   aiApiBaseUrl: projectToolSettingSchemas.aiApiBaseUrl,
   aiApiKey: projectToolSettingSchemas.aiApiKey,
   aiModel: projectToolSettingSchemas.aiModel,

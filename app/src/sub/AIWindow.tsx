@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,11 +61,15 @@ import { useLocalAgentCatalog } from "@/sub/SettingsWindow/LocalAgentsPage";
 import {
   AISourceMenu,
   isLocalAgentReady,
+  LocalAgentModeMenu,
+  LocalAgentModelMenu,
   LocalAgentNotice,
   LocalAgentPermissionCard,
+  useLocalAgentControls,
   useLocalAgentPermission,
   useLocalAgentStatus,
 } from "@/sub/AIWindowLocalAgent";
+import { displayWorkspaceName } from "@/components/ui/file-name";
 import type { LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import { useChat } from "@ai-sdk/react";
 import { Color, Vector } from "@graphif/data-structures";
@@ -76,21 +79,21 @@ import { code } from "@streamdown/code";
 import { lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from "ai";
 import { useAtom } from "jotai";
 import {
+  ArrowUp,
   Bot,
   Check,
   ChevronRight,
   FolderOpen,
   History,
+  LayoutDashboard,
   MoreHorizontal,
-  Paperclip,
+  MousePointerClick,
   Pencil,
   Plus,
-  Send,
   Settings2,
   Sparkles,
   Square,
   Trash2,
-  User,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -245,7 +248,6 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
   const projectUri = getAIChatProjectKey(project);
   // 存储键换了但记录跟着搬过去时（草稿第一次存盘）viewKey 不变，不必重新载入
   const viewKey = getAIChatViewKey(project);
-  const [model] = Settings.use("aiModel");
   const [sessionState, setSessionState] = useState<AIChatSessionProjectState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -405,11 +407,8 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
         <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-xl">
           <Sparkles className="size-4" />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">
-            {sessionState?.activeSession.title ?? "Project Graph AI"}
-          </div>
-          <AISourceMenu catalog={catalog} onOpen={refreshCatalog} model={model} disabled={actionsDisabled} />
+        <div className="min-w-0 flex-1 truncate text-sm font-semibold">
+          {sessionState?.activeSession.title ?? "Project Graph AI"}
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -465,6 +464,8 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
           conversation={conversation.value}
           contextWindowTokenLimitRef={contextWindowTokenLimitRef}
           catalog={catalog}
+          onRefreshCatalog={refreshCatalog}
+          sourceDisabled={operationInProgress}
           onControllerChange={(controller) => {
             activeChatController.current = controller;
           }}
@@ -590,6 +591,8 @@ function AIChatPanel({
   conversation,
   contextWindowTokenLimitRef,
   catalog,
+  onRefreshCatalog,
+  sourceDisabled,
   onControllerChange,
   onRequestingChange,
   onSessionSaved,
@@ -600,6 +603,8 @@ function AIChatPanel({
   conversation: AIConversation;
   contextWindowTokenLimitRef: React.RefObject<number | undefined>;
   catalog: LocalAgentInfo[] | null;
+  onRefreshCatalog: () => void;
+  sourceDisabled: boolean;
   onControllerChange: (controller: ActiveChatController | null) => void;
   onRequestingChange: (requesting: boolean) => void;
   onSessionSaved: (state: AIChatSessionProjectState) => void;
@@ -617,6 +622,7 @@ function AIChatPanel({
   const localAgent = conversation.localAgent;
   const agentStatus = useLocalAgentStatus(localAgent);
   const permission = useLocalAgentPermission(localAgent);
+  const agentControls = useLocalAgentControls(localAgent);
   const [agentId] = Settings.use("aiLocalAgent");
   const [agentPaths] = Settings.use("aiLocalAgentPaths");
   const agentInfo = catalog?.find((agent) => agent.id === agentId);
@@ -629,7 +635,10 @@ function AIChatPanel({
         aiApiKey: apiKey,
         aiModel: model,
       });
-  const [selectedCount, setSelectedCount] = useState(0);
+  const [selection, setSelection] = useState({ count: 0, entityCount: 0, key: "" });
+  // 点了「已选」小标签上的 ×，这一组选中就不随消息发；换了选中内容自动恢复
+  const [excludedSelectionKey, setExcludedSelectionKey] = useState<string | null>(null);
+  const includeSelection = selection.count > 0 && selection.key !== excludedSelectionKey;
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [contextWindowState, setContextWindowState] = useState<ContextWindowState>({ status: "loading" });
   const projectUri = getAIChatProjectKey(project);
@@ -735,10 +744,36 @@ function AIChatPanel({
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setSelectedCount(project.stageManager.getSelectedEntities().length);
+      const entities = project.stageManager.getSelectedEntities();
+      const associations = project.stageManager.getSelectedAssociations();
+      const key = selectionKey(project);
+      setSelection((previous) =>
+        previous.key === key
+          ? previous
+          : { count: entities.length + associations.length, entityCount: entities.length, key },
+      );
     }, 300);
     return () => clearInterval(interval);
   }, [project]);
+
+  // 打开面板或换会话时就启动本机程序，底栏的模型、模式下拉不必等发了第一条消息才出现
+  useEffect(() => {
+    if (!localAgent || !sessionLoaded) return;
+    // 启动失败会经状态显示在输入框上方的提示里，这里不再重复弹
+    localAgent.prepareSession(session.id).catch(() => undefined);
+  }, [localAgent, session.id, sessionLoaded]);
+
+  function switchAgentControl(kind: "mode" | "model", id: string) {
+    if (!localAgent) return;
+    (kind === "mode" ? localAgent.setMode(id) : localAgent.setModel(id)).catch((error) =>
+      toast.error(
+        t("ai.composer.switchFailed", {
+          detail: error instanceof Error ? error.message : String(error),
+          interpolation: { escapeValue: false },
+        }),
+      ),
+    );
+  }
 
   useEffect(() => {
     const consume = () => {
@@ -759,11 +794,11 @@ function AIChatPanel({
   function sendText(rawText: string): boolean {
     const text = rawText.trim();
     if (!text || requesting || !sessionLoaded || configProblems.length > 0) return false;
-    const selectedEntities = project.stageManager.getSelectedEntities();
-    const selectedAssociations = project.stageManager.getSelectedAssociations();
-    const selectedRefs = [...selectedEntities, ...selectedAssociations].map((object) =>
-      references.getOrCreateRef(object),
-    );
+    const selectedObjects =
+      selectionKey(project) === excludedSelectionKey
+        ? []
+        : [...project.stageManager.getSelectedEntities(), ...project.stageManager.getSelectedAssociations()];
+    const selectedRefs = selectedObjects.map((object) => references.getOrCreateRef(object));
     const prefix = selectedRefs.length > 0 ? `[selected: ${selectedRefs.join(" ")}]\n` : "";
     const messageText = prefix + text;
     project.aiEngine.getRequestTraceBuffer().capturePendingInput(session.id, messageText);
@@ -836,6 +871,14 @@ function AIChatPanel({
   }
 
   const quickPrompts = [t("ai.quickPrompts.lineOfThought"), t("ai.quickPrompts.whatIsMissing")];
+  const boardName = project.uri.scheme === "file" ? displayWorkspaceName(project.title) : project.title;
+  const statusText = !sessionLoaded
+    ? t("ai.composer.loadingMemory")
+    : agentStatus?.kind === "starting"
+      ? t("ai.localAgent.starting", { name: agentInfo?.name ?? agentId })
+      : requesting
+        ? t("ai.composer.thinking")
+        : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -871,7 +914,7 @@ function AIChatPanel({
                 message={message as any}
                 components={markdownComponents}
                 project={project}
-                selectedCount={selectedCount}
+                selectedCount={selection.entityCount}
                 isLast={index === messages.length - 1}
                 requesting={requesting}
                 onToolApproval={async (id, approved) => {
@@ -890,7 +933,7 @@ function AIChatPanel({
         )}
       </div>
 
-      <div className="border-border/70 border-t p-3">
+      <div className="px-3 pt-1 pb-3">
         {localAgent && !requesting && (
           <LocalAgentNotice
             status={agentStatus}
@@ -900,73 +943,138 @@ function AIChatPanel({
             onRetry={() => void regenerate()}
           />
         )}
-        <div className="mb-2 flex items-center gap-2 text-xs">
-          {selectedCount > 0 && (
-            <>
-              <Paperclip className="size-3.5" />
-              <span>已选中 {selectedCount} 个节点</span>
-            </>
-          )}
-          {showTokenCount && !localAgent && (
-            <Tooltip>
-              <TooltipTrigger>
-                <div className="text-muted-foreground flex items-center gap-1.5">
-                  <User className="size-3.5" />
-                  <span>{formatTokenCount(tokenUsage.inputTokens)}</span>
-                  <span></span>
-                  <Bot className="size-3.5" />
-                  <span>{formatTokenCount(tokenUsage.outputTokens)}</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Token 数量仅供参考，请以服务商实际计费为准</TooltipContent>
-            </Tooltip>
-          )}
-          <div className="flex-1" />
-          <span className="text-muted-foreground">
-            {!sessionLoaded
-              ? "正在加载记忆"
-              : agentStatus?.kind === "starting"
-                ? t("ai.localAgent.starting", { name: agentInfo?.name ?? agentId })
-                : requesting
-                  ? "正在思考"
-                  : "准备就绪"}
-          </span>
-          {requesting ? (
-            <Button size="sm" variant="outline" className="h-8 cursor-pointer" onClick={stop}>
-              <Square className="size-4" />
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              className="h-8 cursor-pointer"
-              onClick={handleUserSend}
-              disabled={!sessionLoaded || !inputValue.trim()}
-            >
-              <Send className="size-4" />
-            </Button>
-          )}
-        </div>
-        <Textarea
-          placeholder={t("ai.inputPlaceholder")}
-          className="max-h-36 resize-none"
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          value={inputValue}
-          disabled={requesting || !sessionLoaded}
-        />
-        {!localAgent && (
-          <ContextWindowUsage
-            usage={contextUsage}
-            state={contextWindowState}
-            sessionTotalTokens={tokenUsage.totalTokens}
+        {/* 输入框照两个 VS Code 插件的样子：一个圆角框，从上到下是上下文小标签、打字区、底栏 */}
+        <div className="bg-background border-border focus-within:border-ring/60 flex flex-col rounded-xl border shadow-xs transition-colors">
+          <div className="flex flex-wrap items-center gap-1 px-2 pt-2">
+            <ContextChip
+              icon={<LayoutDashboard />}
+              label={boardName}
+              title={t("ai.composer.board", { name: boardName, interpolation: { escapeValue: false } })}
+            />
+            {includeSelection && (
+              <ContextChip
+                icon={<MousePointerClick />}
+                label={t("ai.composer.selected", { count: selection.count })}
+                title={t("ai.composer.selectedHint")}
+                removeLabel={t("ai.composer.removeSelected")}
+                onRemove={() => setExcludedSelectionKey(selection.key)}
+              />
+            )}
+          </div>
+          <Textarea
+            placeholder={t("ai.inputPlaceholder")}
+            className="max-h-40 min-h-14 resize-none border-0 bg-transparent px-3 py-1.5 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            value={inputValue}
+            disabled={requesting || !sessionLoaded}
           />
-        )}
+          <div className="flex min-w-0 items-center gap-0.5 px-1.5 pb-1.5">
+            <AISourceMenu
+              catalog={catalog}
+              onOpen={onRefreshCatalog}
+              model={model}
+              disabled={sourceDisabled || requesting}
+            />
+            {localAgent && (
+              <>
+                <LocalAgentModelMenu
+                  controls={agentControls}
+                  disabled={requesting || !sessionLoaded}
+                  onSelect={(id) => switchAgentControl("model", id)}
+                />
+                <LocalAgentModeMenu
+                  agentId={agentId}
+                  controls={agentControls}
+                  disabled={requesting || !sessionLoaded}
+                  onSelect={(id) => switchAgentControl("mode", id)}
+                />
+              </>
+            )}
+            <div className="min-w-0 flex-1" />
+            {statusText && <span className="text-muted-foreground shrink-0 truncate px-1 text-xs">{statusText}</span>}
+            {!localAgent && (
+              <ContextWindowUsage
+                usage={contextUsage}
+                state={contextWindowState}
+                sessionTotalTokens={tokenUsage.totalTokens}
+                showTokenCount={showTokenCount}
+                inputTokens={tokenUsage.inputTokens}
+                outputTokens={tokenUsage.outputTokens}
+              />
+            )}
+            {requesting ? (
+              <Button
+                size="icon"
+                variant="secondary"
+                className="size-7 shrink-0 cursor-pointer rounded-full"
+                aria-label={t("ai.composer.stop")}
+                title={t("ai.composer.stop")}
+                onClick={stop}
+              >
+                <Square className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                className="size-7 shrink-0 cursor-pointer rounded-full"
+                aria-label={t("ai.composer.send")}
+                title={t("ai.composer.send")}
+                onClick={handleUserSend}
+                disabled={!sessionLoaded || !inputValue.trim()}
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+            )}
+          </div>
+        </div>
         {showDebug && (
           <AIRequestTraceView buffer={project.aiEngine.getRequestTraceBuffer()} activeSessionId={session.id} />
         )}
       </div>
     </div>
   );
+}
+
+function ContextChip({
+  icon,
+  label,
+  title,
+  removeLabel,
+  onRemove,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  removeLabel?: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <span
+      title={title}
+      className="bg-muted text-muted-foreground inline-flex h-6 max-w-48 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs [&>svg]:size-3.5 [&>svg]:shrink-0"
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={removeLabel}
+          title={removeLabel}
+          className="hover:text-foreground -mr-0.5 cursor-pointer rounded-sm p-0.5"
+          onClick={onRemove}
+        >
+          <X className="size-3" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+function selectionKey(project: Project) {
+  return [...project.stageManager.getSelectedEntities(), ...project.stageManager.getSelectedAssociations()]
+    .map((object) => object.uuid)
+    .join(",");
 }
 
 function getTokenUsage(messages: UIMessage<AIMessageMetadata>[]) {
@@ -1009,18 +1117,26 @@ function formatCompactTokenCount(value: number) {
   return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
+/** 底栏右边的上下文用量小圆圈，细节放在悬停提示里 */
 function ContextWindowUsage({
   usage,
   state,
   sessionTotalTokens,
+  showTokenCount,
+  inputTokens,
+  outputTokens,
 }: {
   usage: CurrentContextUsage | null;
   state: ContextWindowState;
   sessionTotalTokens: number;
+  showTokenCount: boolean;
+  inputTokens: number;
+  outputTokens: number;
 }) {
   const tokenLimit = state.status === "ready" ? state.info.tokenLimit : undefined;
   const percentage = tokenLimit && usage ? Math.min(100, (usage.usedTokens / tokenLimit) * 100) : 0;
-  const indicatorVariant = percentage >= 90 ? "destructive" : percentage >= 70 ? "caution" : "default";
+  const ringClass = percentage >= 90 ? "stroke-destructive" : percentage >= 70 ? "stroke-amber-500" : "stroke-primary";
+  const circumference = 2 * Math.PI * 6;
   const usedText = usage ? formatCompactTokenCount(usage.usedTokens) : "--";
   const summary =
     state.status === "loading"
@@ -1036,25 +1152,33 @@ function ContextWindowUsage({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
-          className="mt-2 flex flex-col gap-1 outline-none"
+          className="text-muted-foreground flex h-7 shrink-0 items-center gap-1 rounded-md px-1 text-xs outline-none focus-visible:ring-2"
           tabIndex={0}
           role="status"
           aria-label={`上下文窗口 ${summary}`}
         >
-          <div className="text-muted-foreground flex items-center justify-between text-xs">
-            <span>上下文</span>
-            <span>{summary}</span>
-          </div>
-          <Progress
-            value={percentage}
-            indicatorVariant={indicatorVariant}
-            className="h-1"
-            aria-label="上下文窗口使用率"
-          />
+          {showTokenCount && (
+            <span>
+              ↑{formatCompactTokenCount(inputTokens)} ↓{formatCompactTokenCount(outputTokens)}
+            </span>
+          )}
+          <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
+            <circle cx="8" cy="8" r="6" className="stroke-border fill-none" strokeWidth="2" />
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              className={cn("fill-none", ringClass)}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={`${(percentage / 100) * circumference} ${circumference}`}
+            />
+          </svg>
         </div>
       </TooltipTrigger>
       <TooltipContent>
         <div className="flex min-w-56 flex-col gap-1">
+          <div>上下文：{summary}</div>
           <div>占用量按最后一步模型输入与输出计算</div>
           <div>最后输入：{usage ? formatTokenCount(usage.inputTokens) : "暂无"}</div>
           <div>最后输出：{usage ? formatTokenCount(usage.outputTokens) : "暂无"}</div>
@@ -1086,112 +1210,49 @@ function MessageBubble({
   onToolApproval: (id: string, approved: boolean) => Promise<void>;
 }) {
   const isUser = message.role === "user";
-  const parts = Array.isArray(message.parts) ? message.parts : [];
-  const bubbles = isUser ? [parts] : splitPartsByStepStart(parts);
+  const parts = (Array.isArray(message.parts) ? message.parts : []).filter((part: any) => part.type !== "step-start");
 
+  // 照插件的样子：你的消息是浅底圆角块，AI 的回答不套气泡，直接排文字，工具调用折成一行
   return (
-    <div className={cn("flex gap-2", isUser ? "justify-end" : "justify-start")}>
-      {!isUser && (
-        <div className="bg-primary/10 text-primary mt-1 flex size-7 shrink-0 items-center justify-center rounded-full">
-          <Bot className="size-4" />
-        </div>
+    <div
+      className={cn(
+        "flex min-w-0 cursor-text flex-col gap-2 text-sm select-text",
+        isUser && "bg-muted/70 text-foreground rounded-lg px-3 py-2",
       )}
-      <div className={cn("flex max-w-[88%] flex-col gap-2", isUser ? "items-end" : "items-start")}>
-        {bubbles.length > 0 ? (
-          bubbles.map((bubbleParts, bubbleIndex) => (
-            <div
-              key={bubbleIndex}
-              className={cn(
-                "flex max-w-full min-w-0 cursor-text flex-col gap-2 rounded-2xl px-3 py-2 text-sm select-text",
-                isUser
-                  ? "bg-accent text-accent-foreground rounded-br-md"
-                  : "bg-card border-border/70 rounded-bl-md border shadow-sm",
-              )}
-            >
-              {bubbleParts.length > 0 ? (
-                bubbleParts.map((part: any, index: number) => (
-                  <MessagePart
-                    key={part.toolCallId ?? `${part.type}-${bubbleIndex}-${index}`}
-                    part={part}
-                    components={components}
-                    isAnimating={!isUser && requesting}
-                    showCaret={!isUser && isLast}
-                    onToolApproval={onToolApproval}
-                  />
-                ))
-              ) : (
-                <Streamdown
-                  className="pg-ai-markdown"
-                  plugins={{ code }}
-                  components={components}
-                  animated={!isUser}
-                  isAnimating={!isUser && requesting}
-                  caret={!isUser && isLast ? "circle" : undefined}
-                >
-                  {String(message.content ?? "")}
-                </Streamdown>
-              )}
-            </div>
-          ))
-        ) : (
-          <div
-            className={cn(
-              "max-w-full min-w-0 cursor-text rounded-2xl px-3 py-2 text-sm select-text",
-              isUser
-                ? "bg-accent text-accent-foreground rounded-br-md"
-                : "bg-card border-border/70 rounded-bl-md border shadow-sm",
-            )}
-          >
-            <Streamdown
-              className="pg-ai-markdown"
-              plugins={{ code }}
-              components={components}
-              animated={!isUser}
-              isAnimating={!isUser && requesting}
-              caret={!isUser && isLast ? "circle" : undefined}
-            >
-              {String(message.content ?? "")}
-            </Streamdown>
-          </div>
-        )}
-        {!isUser && selectedCount === 1 && parts.some((p: any) => p.type === "text") && (!isLast || !requesting) && (
-          <button
-            className="text-muted-foreground hover:text-foreground mt-1 flex cursor-pointer items-center self-end text-xs"
-            onClick={() => createAnswerNode(message, project)}
-          >
-            <Plus className="size-3.5" />
-          </button>
-        )}
-      </div>
-      {isUser && (
-        <div className="bg-accent text-accent-foreground mt-1 flex size-7 shrink-0 items-center justify-center rounded-full">
-          <User className="size-4" />
-        </div>
+    >
+      {parts.length > 0 ? (
+        parts.map((part: any, index: number) => (
+          <MessagePart
+            key={part.toolCallId ?? `${part.type}-${index}`}
+            part={part}
+            components={components}
+            isAnimating={!isUser && requesting}
+            showCaret={!isUser && isLast}
+            onToolApproval={onToolApproval}
+          />
+        ))
+      ) : (
+        <Streamdown
+          className="pg-ai-markdown"
+          plugins={{ code }}
+          components={components}
+          animated={!isUser}
+          isAnimating={!isUser && requesting}
+          caret={!isUser && isLast ? "circle" : undefined}
+        >
+          {String(message.content ?? "")}
+        </Streamdown>
+      )}
+      {!isUser && selectedCount === 1 && parts.some((p: any) => p.type === "text") && (!isLast || !requesting) && (
+        <button
+          className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center self-end text-xs"
+          onClick={() => createAnswerNode(message, project)}
+        >
+          <Plus className="size-3.5" />
+        </button>
       )}
     </div>
   );
-}
-
-function splitPartsByStepStart(parts: any[]) {
-  const bubbles: any[][] = [];
-  let current: any[] = [];
-
-  for (const part of parts) {
-    if (part.type === "step-start") {
-      if (current.length > 0) {
-        bubbles.push(current);
-        current = [];
-      }
-      continue;
-    }
-    current.push(part);
-  }
-
-  if (current.length > 0) {
-    bubbles.push(current);
-  }
-
-  return bubbles;
 }
 
 function MessagePart({
@@ -1281,15 +1342,21 @@ function ToolPart({
     return <ToolApprovalPart name={name} part={part} onToolApproval={onToolApproval} />;
   }
 
+  // 一行小字：状态圆点、工具名，跑着或失败时再带一句状态；点开看参数和结果
   return (
-    <Collapsible className="group/collapsible">
-      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-2 text-xs">
-        {done ? <Check className="size-4" /> : <X className={cn("size-4", failed && "text-destructive")} />}
-        <span>{name}</span>
-        <span>{toolStateText(part.state)}</span>
-        <ChevronRight className="size-3 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+    <Collapsible className="group/collapsible min-w-0">
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex max-w-full cursor-pointer items-center gap-1.5 text-xs">
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            done ? "bg-muted-foreground/50" : failed ? "bg-destructive" : "bg-primary animate-pulse",
+          )}
+        />
+        <span className="truncate font-medium">{name}</span>
+        {!done && <span className={cn("shrink-0", failed && "text-destructive")}>{toolStateText(part.state)}</span>}
+        <ChevronRight className="size-3 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="bg-muted/60 mt-2 animate-none! rounded-lg px-3 py-2">
+      <CollapsibleContent className="bg-muted/60 mt-1.5 animate-none! rounded-md px-2.5 py-2">
         <Streamdown className="pg-ai-markdown" plugins={{ code }}>
           {`\`\`\`json\n${JSON.stringify({ input: part.input, output: part.output, error: part.errorText }, null, 2)}\n\`\`\``}
         </Streamdown>

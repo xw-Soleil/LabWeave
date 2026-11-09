@@ -1244,14 +1244,6 @@ settings:
       cursor: Cursor（未實測）
       opencode: OpenCode（未實測）
       qodercn: Qoder CN（未實測）
-  aiLocalAgentPermission:
-    title: 本機 AI 程序的權限
-    description: |
-      本機 AI 程序要寫文件、執行命令時怎麼處理。讀白板、改白板不受這一項限制，由本頁最後「外部 AI（MCP）」的三個開關決定
-    options:
-      restricted: 受限（拒絕寫文件、執行命令等請求）
-      ask: 每次詢問
-      auto: 自動批准
   aiApiFormat:
     title: AI 接口格式
     description: |
@@ -3130,6 +3122,19 @@ research:
       lineOfThought: 我的思路是什麼？
       whatIsMissing: 還缺什麼？
     inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
+    composer:
+      board: 當前白板「{{name}}」，AI 在這張白板上幹活
+      selected: 已選 {{count}} 個
+      selectedHint: 這條消息會帶上白板上選中的卡片和連線
+      removeSelected: 這條消息不帶選中的內容
+      source: 用哪個 AI
+      model: 模型
+      mode: 權限模式
+      send: 發送
+      stop: 停止
+      thinking: 正在思考
+      loadingMemory: 正在加載記憶
+      switchFailed: "沒切換成功：{{detail}}"
     emptyDescriptionLocal: "{{name}} 會讀當前白板上的卡片、連線、分組和文件摘要，也能按你的要求改白板，改之前會先說明要做什麼。"
     localAgent:
       api: AI 接口
@@ -3154,6 +3159,36 @@ research:
       login: 在終端中登錄
       permissionTitle: "{{name}} 請求批准"
       permissionInput: 參數
+      modes:
+        codex:
+          read-only:
+            name: 只讀
+            description: 能讀文件、跑只讀命令；要改文件或聯網時先問你
+          workspace-write:
+            name: 工作區可寫
+            description: 能改研究文件夾裡的文件；出了研究文件夾或要聯網時先問你
+          agent:
+            name: 自動審查
+            description: 由 Codex 自己判斷，只在它覺得有風險時問你
+          agent-full-access:
+            name: 完全訪問
+            description: 不受限制，能聯網、能改電腦上任何文件
+        claude:
+          default:
+            name: 手動
+            description: 改文件、跑命令前都先問你
+          acceptEdits:
+            name: 自動接受改文件
+            description: 改文件不問，跑命令前先問你
+          plan:
+            name: 先出計劃
+            description: 先列出打算怎麼做，你同意了再動手
+          auto:
+            name: 自動
+            description: 由 Claude 自己判斷什麼時候問你
+          bypassPermissions:
+            name: 跳過所有確認
+            description: 什麼都不問，直接做
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

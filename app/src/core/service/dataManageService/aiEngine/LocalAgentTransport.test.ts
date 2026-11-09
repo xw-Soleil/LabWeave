@@ -63,7 +63,6 @@ vi.mock("@/core/service/Settings", () => ({
     aiBackend: "api",
     aiLocalAgent: "codex",
     aiLocalAgentPaths: {},
-    aiLocalAgentPermission: "restricted",
     aiLocalAgentModes: {},
     aiLocalAgentModels: {},
   },
@@ -144,7 +143,6 @@ beforeEach(() => {
     aiBackend: "api",
     aiLocalAgent: "codex",
     aiLocalAgentPaths: {},
-    aiLocalAgentPermission: "restricted",
     aiLocalAgentModes: {},
     aiLocalAgentModels: {},
   });
@@ -601,7 +599,6 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
         return { stopReason: "end_turn" };
       }),
     );
-    Settings.aiLocalAgentPermission = "ask";
     const unsubscribed = vi.fn();
     f.transport.onStatus(unsubscribed)();
     const permissionListener = vi.fn();
@@ -618,14 +615,11 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(permissionListener).toHaveBeenLastCalledWith(null);
     unsubscribe();
     const count = permissionListener.mock.calls.length;
-    for (const policy of ["restricted", "auto"] as const) {
-      Settings.aiLocalAgentPermission = policy;
-      const next = collect(await f.send());
-      await vi.waitFor(() => expect(f.permissions.at(-1)).not.toBeNull());
-      f.transport.respondPermission(f.permissions.at(-1)!.requestId, "deny");
-      await next;
-      expect(replies.at(-1)).toEqual({ outcome: { outcome: "selected", optionId: "deny" } });
-    }
+    const next = collect(await f.send());
+    await vi.waitFor(() => expect(f.permissions.at(-1)).not.toBeNull());
+    f.transport.respondPermission(f.permissions.at(-1)!.requestId, "deny");
+    await next;
+    expect(replies.at(-1)).toEqual({ outcome: { outcome: "selected", optionId: "deny" } });
     expect(permissionListener).toHaveBeenCalledTimes(count);
     expect(unsubscribed).toHaveBeenCalledExactlyOnceWith({ kind: "idle" });
     expect(f.statuses.slice(0, 3)).toEqual([
@@ -938,15 +932,15 @@ describe("AIEngine backend selection and settings", () => {
     );
   });
 
-  it("缺省值、来源/程序/路径/权限 schema 校验与持久化", async () => {
+  it("缺省值、来源/程序/路径/模式/模型 schema 校验与持久化；旧的三档权限已删除", async () => {
     const actual = await vi.importActual<typeof import("@/core/service/Settings")>("@/core/service/Settings");
+    expect("aiLocalAgentPermission" in actual.settingsSchema.shape).toBe(false);
     const schema = actual.settingsSchema.pick({
       aiBackend: true,
       aiLocalAgent: true,
       aiLocalAgentPaths: true,
       aiLocalAgentModes: true,
       aiLocalAgentModels: true,
-      aiLocalAgentPermission: true,
     });
     expect(schema.parse({})).toEqual({
       aiBackend: "api",
@@ -954,7 +948,6 @@ describe("AIEngine backend selection and settings", () => {
       aiLocalAgentPaths: {},
       aiLocalAgentModes: {},
       aiLocalAgentModels: {},
-      aiLocalAgentPermission: "restricted",
     });
     const valid = {
       aiBackend: ["api", "localAgent"],
@@ -962,7 +955,6 @@ describe("AIEngine backend selection and settings", () => {
       aiLocalAgentPaths: [{ codex: "/bin/codex-acp" }],
       aiLocalAgentModes: [{ codex: "read-only", claude: "default" }],
       aiLocalAgentModels: [{ codex: "gpt-6-astra", claude: "default" }],
-      aiLocalAgentPermission: ["restricted", "ask", "auto"],
     };
     for (const [key, values] of Object.entries(valid))
       for (const value of values) {
@@ -976,7 +968,6 @@ describe("AIEngine backend selection and settings", () => {
       aiLocalAgentPaths: { codex: 1 },
       aiLocalAgentModes: { codex: 1 },
       aiLocalAgentModels: { claude: false },
-      aiLocalAgentPermission: "yes",
     }))
       expect(schema.safeParse({ [key]: value }).success).toBe(false);
   });

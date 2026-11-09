@@ -349,6 +349,12 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `Settings.tsx`：新增不在设置页显示的 `aiLocalAgentModes`、`aiLocalAgentModels`；旧 `aiLocalAgentPermission` 定义留待第 2 步与设置页一起删除。
 - `LocalAgent.test.ts`、`LocalAgentTransport.test.ts`：按 Codex、Claude 实测控制项构造测试数据，覆盖默认档退路、隐藏档、协议调用、通知、加载、多会话、设置写回与失败，以及权限卡片、白板识别和取消。
 
-### 26. 本文件
+### 26. AI 面板改成插件式的输入框（2026-11-09）
+
+- `app/src/sub/AIWindow.tsx`：输入框改成一个圆角框，从上到下是上下文小标签（当前白板；有选中时显示「已选 N 个」，点 × 这条消息不带选中内容，换了选中自动恢复）、打字区、底栏。底栏放来源、模型、权限模式、上下文用量小圆圈和圆形发送/停止按钮；来源下拉从标题下面挪到底栏。原来输入框上方的「已选中 N 个节点」、Token 数和「准备就绪」一行去掉，Token 数改到小圆圈旁（仍由「显示 Token 数」设置控制），上下文细节放在悬停提示里。你的消息改成浅底圆角块，AI 的回答不再套气泡、不显示头像，工具调用折成一行（状态圆点、工具名，跑着或失败时带一句状态）。打开面板或切换会话时提前启动本机程序，模型和模式下拉不必等第一条消息。新文案进 `zh_CN.yml`、`en.yml`（`ai.composer.*`）。
+- `app/src/sub/AIWindowLocalAgent.tsx`：新增模型下拉、权限模式下拉（列程序自带的模式，已知模式按程序翻成中英文，程序自己切到隐藏档时用红色盾牌照实显示）和订阅控制项的钩子；来源下拉改成底栏样式、向上展开。权限卡片改成插件样式：写明要做什么，跑命令时单独摆出命令，程序给的选项竖排，允许在前、拒绝在后。
+- 删除设置项「本机 AI 程序的权限」（`aiLocalAgentPermission`）：`Settings.tsx` 的定义、设置页条目和中英文案，`zh_TW.yml` 重新生成。旧设置文件里残留的这个键读入时被跳过。`LocalAgentTransport.test.ts` 去掉对它的引用，并检查它已不在设置定义里。
+
+### 27. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

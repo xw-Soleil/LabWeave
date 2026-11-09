@@ -11,18 +11,36 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { openLocalAgentTerminal, type LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import type {
+  LocalAgentChoice,
   LocalAgentPermissionRequest,
+  LocalAgentSessionControls,
   LocalAgentStatus,
   LocalAgentTransport,
 } from "@/core/service/dataManageService/aiEngine/LocalAgentTransport";
 import { Settings } from "@/core/service/Settings";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { setSettingsInitialPage, type SettingsSubPageId } from "@/sub/SettingsWindow/settings";
+import { cn } from "@/utils/cn";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@radix-ui/react-collapsible";
-import { AlertCircle, ChevronDown, ChevronRight, Info, LogIn, ShieldQuestion } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  LogIn,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+
+/** 输入框底栏里各个小下拉共用的样子：平时只是一行灰字，悬停或展开时才有底色 */
+export const composerMenuTriggerClass =
+  "text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground flex h-7 max-w-36 min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
+
+const emptyControls: LocalAgentSessionControls = { modes: [], currentMode: null, models: [], currentModel: null };
 
 function openSettings(pageId: string, subPage?: SettingsSubPageId) {
   setSettingsInitialPage(pageId, subPage);
@@ -53,7 +71,16 @@ export function useLocalAgentPermission(
   return request;
 }
 
-/** 面板标题下面的小下拉：用设置里的接口，还是本机已经装好的某个程序 */
+export function useLocalAgentControls(transport: LocalAgentTransport | undefined): LocalAgentSessionControls {
+  const [controls, setControls] = useState<LocalAgentSessionControls>(emptyControls);
+  useEffect(() => {
+    setControls(emptyControls);
+    return transport?.onControls(setControls);
+  }, [transport]);
+  return controls;
+}
+
+/** 输入框底栏最左边的下拉：用设置里的接口，还是本机已经装好的某个程序 */
 export function AISourceMenu({
   catalog,
   onOpen,
@@ -76,14 +103,11 @@ export function AISourceMenu({
 
   return (
     <DropdownMenu onOpenChange={(open) => open && onOpen()}>
-      <DropdownMenuTrigger
-        disabled={disabled}
-        className="text-muted-foreground hover:text-foreground flex max-w-full cursor-pointer items-center gap-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-      >
+      <DropdownMenuTrigger disabled={disabled} className={composerMenuTriggerClass} title={t("ai.composer.source")}>
         <span className="truncate">{label}</span>
         <ChevronDown className="size-3 shrink-0" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60">
+      <DropdownMenuContent side="top" align="start" className="w-60">
         <DropdownMenuRadioGroup
           value={backend === "api" ? "api" : agentId}
           onValueChange={(value) => {
@@ -127,6 +151,112 @@ export function AISourceMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** 程序自己报上来的模型；没有就不显示 */
+export function LocalAgentModelMenu({
+  controls,
+  disabled,
+  onSelect,
+}: {
+  controls: LocalAgentSessionControls;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation("research");
+  if (controls.models.length === 0) return null;
+  const current = controls.models.find((model) => model.id === controls.currentModel);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        className={composerMenuTriggerClass}
+        title={current?.name ?? t("ai.composer.model")}
+      >
+        <span className="truncate">{current?.name ?? controls.currentModel ?? t("ai.composer.model")}</span>
+        <ChevronDown className="size-3 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="max-h-80 w-64 overflow-y-auto">
+        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+          {t("ai.composer.model")}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={controls.currentModel ?? ""} onValueChange={onSelect}>
+          {controls.models.map((model) => (
+            <DropdownMenuRadioItem key={model.id} value={model.id}>
+              <ChoiceText name={model.name} description={model.description} />
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** 程序自带的权限模式，照两个 VS Code 插件的做法在输入框下面随时切换；最危险的一档核心逻辑已经去掉了 */
+export function LocalAgentModeMenu({
+  agentId,
+  controls,
+  disabled,
+  onSelect,
+}: {
+  agentId: string;
+  controls: LocalAgentSessionControls;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation("research");
+  if (controls.modes.length === 0) return null;
+  const text = (choice: LocalAgentChoice) => ({
+    name: t(`ai.localAgent.modes.${agentId}.${choice.id}.name`, { defaultValue: choice.name }),
+    description: t(`ai.localAgent.modes.${agentId}.${choice.id}.description`, {
+      defaultValue: choice.description ?? "",
+    }),
+  });
+  const current = controls.modes.find((mode) => mode.id === controls.currentMode);
+  // 程序自己切到了列表里没有的危险档时，照实显示出来提醒你
+  const hidden = controls.currentMode !== null && !current;
+  const currentText = current
+    ? text(current)
+    : hidden
+      ? text({ id: controls.currentMode!, name: controls.currentMode! })
+      : { name: t("ai.composer.mode"), description: "" };
+  const Icon = hidden ? ShieldAlert : ShieldCheck;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        className={cn(composerMenuTriggerClass, hidden && "text-destructive hover:text-destructive")}
+        title={currentText.description || t("ai.composer.mode")}
+      >
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{currentText.name}</span>
+        <ChevronDown className="size-3 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-72">
+        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+          {t("ai.composer.mode")}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={controls.currentMode ?? ""} onValueChange={onSelect}>
+          {controls.modes.map((mode) => (
+            <DropdownMenuRadioItem key={mode.id} value={mode.id}>
+              <ChoiceText {...text(mode)} />
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ChoiceText({ name, description }: { name: string; description?: string }) {
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="truncate">{name}</span>
+      {description && <span className="text-muted-foreground text-xs leading-snug">{description}</span>}
+    </span>
   );
 }
 
@@ -207,7 +337,7 @@ export function LocalAgentNotice({
   );
 }
 
-/** 「每次询问」档下 AI 程序要写文件、跑命令时的确认卡片，样子和 API 方式的工具审批一致 */
+/** AI 程序要写文件、跑命令时来问的卡片：上面写它要做什么，下面一列是它给的选项，照插件的样子允许在前、拒绝在后 */
 export function LocalAgentPermissionCard({
   request,
   agentName,
@@ -221,22 +351,25 @@ export function LocalAgentPermissionCard({
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => setSubmitted(false), [request.requestId]);
   const isReject = (kind: string) => kind.startsWith("reject");
-  // 拒绝放左边、允许放右边，和 API 方式的审批按钮同一个顺序
   const options = [
-    ...request.options.filter((option) => isReject(option.kind)),
     ...request.options.filter((option) => !isReject(option.kind)),
+    ...request.options.filter((option) => isReject(option.kind)),
   ];
+  const command = commandOf(request.rawInput);
 
   return (
-    <div className="flex justify-start gap-2">
-      <div className="w-7 shrink-0" />
-      <div className="bg-card border-border/70 flex max-w-[88%] min-w-0 flex-col gap-2 rounded-2xl rounded-bl-md border px-3 py-2 text-sm shadow-sm">
-        <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-          <ShieldQuestion className="size-3.5" />
-          {t("ai.localAgent.permissionTitle", { name: agentName })}
-        </div>
-        <div className="font-medium wrap-anywhere select-text">{request.title}</div>
-        {request.rawInput !== undefined && (
+    <div className="bg-card border-border flex min-w-0 flex-col gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-xs">
+      <div className="flex items-center gap-1.5 text-xs font-medium">
+        <ShieldQuestion className="text-primary size-3.5 shrink-0" />
+        {t("ai.localAgent.permissionTitle", { name: agentName })}
+      </div>
+      <div className="wrap-anywhere select-text">{request.title}</div>
+      {command ? (
+        <pre className="bg-muted max-h-32 overflow-auto rounded-md px-2 py-1.5 font-mono text-xs whitespace-pre-wrap select-text">
+          {command}
+        </pre>
+      ) : (
+        request.rawInput !== undefined && (
           <Collapsible className="group/input">
             <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1 text-xs">
               <ChevronRight className="size-3 transition-transform group-data-[state=open]/input:rotate-90" />
@@ -248,27 +381,36 @@ export function LocalAgentPermissionCard({
               </pre>
             </CollapsibleContent>
           </Collapsible>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
-          {options.map((option) => (
-            <Button
-              key={option.optionId}
-              size="sm"
-              className="h-7 px-2"
-              variant={isReject(option.kind) ? "outline" : "default"}
-              disabled={submitted}
-              onClick={() => {
-                setSubmitted(true);
-                onRespond(option.optionId);
-              }}
-            >
-              {option.name}
-            </Button>
-          ))}
-        </div>
+        )
+      )}
+      <div className="flex flex-col gap-1">
+        {options.map((option, index) => (
+          <Button
+            key={option.optionId}
+            size="sm"
+            className="h-auto min-h-7 justify-start px-2.5 py-1 text-left whitespace-normal"
+            variant={isReject(option.kind) ? "ghost" : index === 0 ? "default" : "outline"}
+            disabled={submitted}
+            onClick={() => {
+              setSubmitted(true);
+              onRespond(option.optionId);
+            }}
+          >
+            {option.name}
+          </Button>
+        ))}
       </div>
     </div>
   );
+}
+
+// 跑命令的请求把命令单独摆出来（Codex 和 Claude Code 都放在 rawInput.command），其他请求收在「参数」里
+function commandOf(rawInput: unknown): string | null {
+  if (!rawInput || typeof rawInput !== "object") return null;
+  const command = (rawInput as { command?: unknown }).command;
+  if (typeof command === "string") return command;
+  if (Array.isArray(command) && command.every((part) => typeof part === "string")) return command.join(" ");
+  return null;
 }
 
 function toastError(error: unknown) {

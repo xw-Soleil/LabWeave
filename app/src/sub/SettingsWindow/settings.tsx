@@ -71,7 +71,7 @@ export const settingsPages: SettingsPage[] = [
     sections: [
       {
         id: "source",
-        items: ["aiBackend", "aiLocalAgent", "aiLocalAgentPermission", { subPage: "localAgents" }],
+        items: ["aiBackend", "aiLocalAgent", { subPage: "localAgents" }],
       },
       { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
       { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
