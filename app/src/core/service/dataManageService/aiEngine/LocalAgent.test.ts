@@ -13,6 +13,11 @@ import {
   type SessionUpdate,
   type Stream,
 } from "@agentclientprotocol/sdk";
+import {
+  agent as unstableAgent,
+  methods as unstableMethods,
+  type AgentApp as UnstableAgentApp,
+} from "@agentclientprotocol/sdk/unstable";
 import { invoke } from "@tauri-apps/api/core";
 import {
   buildLocalAgentMcpServers,
@@ -24,6 +29,7 @@ import {
   LocalAgentConnection,
   mapSessionUpdate,
   openLocalAgentTerminal,
+  parseLocalAgentContext,
   startLocalAgent,
   stopLocalAgent,
   type LocalAgentEvent,
@@ -71,7 +77,7 @@ function eventStream(events: LocalAgentEvent[]) {
   });
 }
 
-function fixture(configure?: (app: AgentApp) => void) {
+function fixture(configure?: (app: AgentApp) => void, createApp: () => AgentApp = agent) {
   const initialize = vi.fn(() => ({
     protocolVersion: PROTOCOL_VERSION,
     agentCapabilities: { loadSession: true },
@@ -81,7 +87,7 @@ function fixture(configure?: (app: AgentApp) => void) {
   const load = vi.fn(() => ({}));
   const prompt = vi.fn(() => ({ stopReason: "end_turn" as const }));
   const cancel = vi.fn();
-  const app = agent();
+  const app = createApp();
   configure?.(app);
   app
     .onRequest(methods.agent.initialize, initialize)
@@ -1009,6 +1015,125 @@ describe("LocalAgent permissions", () => {
     else await connection[action]();
     await Promise.all(checked);
     expect(f.permissions.at(-1)).toBeNull();
+  });
+});
+
+describe("不进对话的看状态命令", () => {
+  const chunk = (sessionId: string, text: string, messageId: string) => ({
+    sessionId,
+    update: { sessionUpdate: "agent_message_chunk" as const, content: { type: "text" as const, text }, messageId },
+  });
+
+  function quietFixture(fork: (sessionId: string) => { sessionId: string } | Promise<never>) {
+    const forked = vi.fn((params: { sessionId: string }) => fork(params.sessionId));
+    const deleted = vi.fn<(params: { sessionId: string }) => object>(() => ({}));
+    const prompts: { sessionId: string; text: string }[] = [];
+    // 复制会话只在 unstable 入口里有
+    const f = fixture(
+      (app) => {
+        (app as unknown as UnstableAgentApp).onRequest(
+          unstableMethods.agent.session.fork,
+          ({ params }) => forked(params) as never,
+        );
+        app
+          .onRequest(methods.agent.session.delete, ({ params }) => deleted(params))
+          .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
+            const text = params.prompt[0].type === "text" ? params.prompt[0].text : "";
+            prompts.push({ sessionId: params.sessionId, text });
+            // 照实测：Claude Code 换个 messageId 把同一段结果再发一遍
+            await client.notify(methods.client.session.update, chunk(params.sessionId, "## Context", "a"));
+            await client.notify(methods.client.session.update, chunk(params.sessionId, " Usage", "a"));
+            await client.notify(methods.client.session.update, chunk(params.sessionId, "## Context Usage\n\n", "b"));
+            return { stopReason: "end_turn" };
+          });
+      },
+      () => unstableAgent() as unknown as AgentApp,
+    );
+    return { ...f, forked, deleted, prompts };
+  }
+
+  it("Claude Code 的 /context 在副本里跑，跑完删副本，原会话和聊天界面都收不到", async () => {
+    const f = quietFixture(() => ({ sessionId: "fork-1" }));
+    const connection = await f.start("claude");
+    await connection.openSession(session);
+    const text = await connection.runQuietCommand("context", { ...session, isolated: true });
+    expect(text).toBe("## Context Usage");
+    expect(f.forked).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "s1", cwd: "/research" }));
+    expect(f.prompts).toEqual([{ sessionId: "fork-1", text: "/context" }]);
+    expect(f.deleted).toHaveBeenCalledWith({ sessionId: "fork-1" });
+    expect(f.updates).toEqual([]);
+  });
+
+  it("还没发过消息、复制不了时，新开一个临时会话跑，用完同样删掉", async () => {
+    const f = quietFixture(() => Promise.reject(new RequestError(-32002, "Resource not found")));
+    f.newSession.mockReturnValueOnce({ sessionId: "s1" }).mockReturnValueOnce({ sessionId: "scratch" });
+    const connection = await f.start("claude");
+    await connection.openSession(session);
+    expect(await connection.runQuietCommand("context", { ...session, isolated: true })).toBe("## Context Usage");
+    expect(f.prompts).toEqual([{ sessionId: "scratch", text: "/context" }]);
+    expect(f.deleted).toHaveBeenCalledWith({ sessionId: "scratch" });
+  });
+
+  it("Codex 的 /status 直接在原会话里跑，结果只交给调用方", async () => {
+    const f = quietFixture(() => ({ sessionId: "unused" }));
+    const connection = await f.start("codex");
+    await connection.openSession(session);
+    expect(await connection.runQuietCommand("status", { ...session, isolated: false })).toBe("## Context Usage");
+    expect(f.prompts).toEqual([{ sessionId: "s1", text: "/status" }]);
+    expect(f.forked).not.toHaveBeenCalled();
+    expect(f.deleted).not.toHaveBeenCalled();
+    expect(f.updates).toEqual([]);
+  });
+
+  it("解析 /context 的分类表和明细、/status 的逐项字段（2026-11-10 实测格式）", () => {
+    const context = parseLocalAgentContext(
+      [
+        "## Context Usage",
+        "",
+        "**Model:** claude-opus-5-5  ",
+        "**Tokens:** 13.9k / 1m (1%)",
+        "",
+        "### Estimated usage by category",
+        "",
+        "| Category | Tokens | Percentage |",
+        "|----------|--------|------------|",
+        "| System prompt | 2k | 0.2% |",
+        "| MCP tools (deferred) | 10.3k | 1.0% |",
+        "| Messages | 10 | 0.0% |",
+        "| Free space | 953.1k | 95.3% |",
+        "",
+        "### Memory Files",
+        "",
+        "| Type | Path | Tokens |",
+        "|------|------|--------|",
+        "| Project | /a/CLAUDE.md | 2.6k |",
+      ].join("\n"),
+    );
+    expect(context.fields).toEqual([
+      { label: "Model", value: "claude-opus-5-5" },
+      { label: "Tokens", value: "13.9k / 1m (1%)" },
+    ]);
+    expect(context.categories).toEqual([
+      { name: "System prompt", tokens: "2k", percent: 0.2, deferred: false, free: false },
+      { name: "MCP tools (deferred)", tokens: "10.3k", percent: 1, deferred: true, free: false },
+      { name: "Messages", tokens: "10", percent: 0, deferred: false, free: false },
+      { name: "Free space", tokens: "953.1k", percent: 95.3, deferred: false, free: true },
+    ]);
+    expect(context.tables).toEqual([
+      { title: "Memory Files", columns: ["Type", "Path", "Tokens"], rows: [["Project", "/a/CLAUDE.md", "2.6k"]] },
+    ]);
+    const status = parseLocalAgentContext(
+      "**Model:** gpt-6-astra[xhigh]  \n**Session:** `01a1`  \n  \n**Context window:** 8% used (19.9K used / 258.4K)",
+    );
+    expect(status).toEqual({
+      fields: [
+        { label: "Model", value: "gpt-6-astra[xhigh]" },
+        { label: "Session", value: "01a1" },
+        { label: "Context window", value: "8% used (19.9K used / 258.4K)" },
+      ],
+      categories: [],
+      tables: [],
+    });
   });
 });
 

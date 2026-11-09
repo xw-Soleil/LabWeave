@@ -62,6 +62,7 @@ import {
   AISourceMenu,
   composerMenuTriggerClass,
   isLocalAgentReady,
+  LocalAgentContextPanel,
   LocalAgentModeMenu,
   LocalAgentModelMenu,
   LocalAgentNotice,
@@ -73,6 +74,7 @@ import {
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import {
   isLocalAgentCommand,
+  LOCAL_AGENT_CONTEXT_COMMANDS,
   type LocalAgentCommand,
   type LocalAgentInfo,
 } from "@/core/service/dataManageService/aiEngine/LocalAgent";
@@ -699,7 +701,20 @@ function AIChatPanel({
     commandListRef.current?.querySelector(`[data-index="${commandIndex}"]`)?.scrollIntoView({ block: "nearest" });
   }, [commandIndex]);
 
+  // 看上下文用量的命令（Claude Code 的 /context、Codex 的 /status）不发进对话，改成弹层
+  const contextCommand = localAgent ? LOCAL_AGENT_CONTEXT_COMMANDS[agentId] : undefined;
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
+  useEffect(() => {
+    setContextPanelOpen(false);
+  }, [localAgent, session.id]);
+
   function pickCommand(command: LocalAgentCommand) {
+    if (command.name === contextCommand?.name) {
+      if (slashQuery !== undefined) setInputValue("");
+      setCommandPickerOpen(false);
+      setContextPanelOpen(true);
+      return;
+    }
     // 从按钮打开时输入框里可能已经有字，命令放到最前面，后面的字当作命令参数
     const rest = slashQuery === undefined ? inputValue.trimStart() : "";
     setInputValue(`/${command.name} ${rest}`);
@@ -828,6 +843,11 @@ function AIChatPanel({
 
   function sendText(rawText: string): boolean {
     const text = rawText.trim();
+    if (contextCommand && text === `/${contextCommand.name}`) {
+      if (!sessionLoaded) return false;
+      setContextPanelOpen(true);
+      return true;
+    }
     if (!text || requesting || !sessionLoaded || configProblems.length > 0) return false;
     // 斜杠命令必须在提示词最前面程序才认，不加选中内容的前缀
     const isCommand = localAgent !== undefined && isLocalAgentCommand(text);
@@ -939,7 +959,20 @@ function AIChatPanel({
         : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {localAgent && contextCommand && contextPanelOpen && (
+        <LocalAgentContextPanel
+          transport={localAgent}
+          chatId={session.id}
+          agentName={agentInfo?.name ?? agentId}
+          command={contextCommand}
+          usage={agentUsage}
+          onClose={() => {
+            setContextPanelOpen(false);
+            textareaRef.current?.focus();
+          }}
+        />
+      )}
       <div ref={messagesElRef} className="flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 ? (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-center">
@@ -1106,7 +1139,11 @@ function AIChatPanel({
             <div className="min-w-0 flex-1" />
             {statusText && <span className="text-muted-foreground shrink-0 truncate px-1 text-xs">{statusText}</span>}
             {localAgent ? (
-              <LocalAgentContextUsage usage={agentUsage} agentName={agentInfo?.name ?? agentId} />
+              <LocalAgentContextUsage
+                usage={agentUsage}
+                agentName={agentInfo?.name ?? agentId}
+                onOpen={contextCommand ? () => setContextPanelOpen(true) : undefined}
+              />
             ) : (
               <ContextWindowUsage
                 usage={contextUsage}
@@ -1275,9 +1312,11 @@ function UsageRing({ percentage }: { percentage: number }) {
 function LocalAgentContextUsage({
   usage,
   agentName,
+  onOpen,
 }: {
   usage: { used: number; size: number } | null;
   agentName: string;
+  onOpen?: () => void;
 }) {
   const { t } = useTranslation("research");
   const percentage = usage ? Math.min(100, (usage.used / usage.size) * 100) : 0;
@@ -1291,19 +1330,23 @@ function LocalAgentContextUsage({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div
-          className="text-muted-foreground flex h-7 shrink-0 items-center rounded-md px-1 outline-none focus-visible:ring-2"
-          tabIndex={0}
-          role="status"
+        <button
+          type="button"
+          className={cn(
+            "text-muted-foreground flex h-7 shrink-0 items-center rounded-md px-1 outline-none focus-visible:ring-2",
+            onOpen ? "hover:bg-accent cursor-pointer" : "cursor-default",
+          )}
           aria-label={summary}
+          onClick={onOpen}
         >
           <UsageRing percentage={percentage} />
-        </div>
+        </button>
       </TooltipTrigger>
       <TooltipContent>
         <div className="flex flex-col gap-1">
           <div>{summary}</div>
           {usage && <div>{t("ai.composer.contextFrom", { name: agentName })}</div>}
+          {onOpen && <div>{t("ai.composer.contextOpen")}</div>}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -1450,7 +1493,7 @@ function replyText(message: any, parts: any[]): string {
 }
 
 function CopyReplyButton({ text }: { text: string }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation("research");
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;

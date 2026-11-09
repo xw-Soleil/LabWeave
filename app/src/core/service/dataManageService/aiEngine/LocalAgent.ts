@@ -20,6 +20,7 @@ import {
   type ToolCall,
   type UsageUpdate,
 } from "@agentclientprotocol/sdk";
+import { methods as unstableMethods } from "@agentclientprotocol/sdk/unstable";
 import type { UIMessageChunk } from "ai";
 import z from "zod";
 import type { AIMessageMetadata } from "./AIEngine";
@@ -38,6 +39,78 @@ export type LocalAgentSessionControls = {
   currentModel: string | null;
   commands: LocalAgentCommand[];
 };
+
+/**
+ * 看上下文用量的命令，结果放进弹窗，不进对话（2026-11-10 实测）：
+ * Claude Code 的 /context 会把整张表记进对话，每跑一次约占 2.3k token，所以复制一份会话在副本里跑，跑完删掉副本；
+ * Codex 的 /status 由转接器自己生成，不进对话，副本里又看不到用量，所以直接在原会话里跑。
+ */
+export const LOCAL_AGENT_CONTEXT_COMMANDS: Partial<Record<LocalAgentId, { name: string; isolated: boolean }>> = {
+  claude: { name: "context", isolated: true },
+  codex: { name: "status", isolated: false },
+};
+
+export type LocalAgentContextCategory = {
+  name: string;
+  tokens: string;
+  percent: number;
+  /** 按需加载的工具，没算进已用量 */
+  deferred: boolean;
+  free: boolean;
+};
+export type LocalAgentContextTable = { title: string; columns: string[]; rows: string[][] };
+export type LocalAgentContextDetails = {
+  /** 「**名字:** 值」这样的行：Claude Code 的 Model、Tokens，Codex /status 的每一项 */
+  fields: { label: string; value: string }[];
+  categories: LocalAgentContextCategory[];
+  /** 其余带标题的表格：Memory Files、MCP Tools、Skills… */
+  tables: LocalAgentContextTable[];
+};
+
+/** 解析 /context、/status 回复的 Markdown（格式见 过程文件/acp-probe 的实测记录）。读不出来的部分留空，由界面退回显示原文。 */
+export function parseLocalAgentContext(text: string): LocalAgentContextDetails {
+  const details: LocalAgentContextDetails = { fields: [], categories: [], tables: [] };
+  const lines = text.split("\n").map((line) => line.trim());
+  const cells = (line: string) =>
+    line
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+  let heading = "";
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const title = /^#{2,4}\s+(.+)$/.exec(line);
+    if (title) {
+      heading = title[1];
+      continue;
+    }
+    const field = /^\*\*(.+?):\*\*\s*(.*)$/.exec(line);
+    if (field) {
+      details.fields.push({ label: field[1], value: field[2].replace(/^`(.*)`$/, "$1") });
+      continue;
+    }
+    if (!line.startsWith("|") || !/^\|[\s:|-]+\|$/.test(lines[index + 1] ?? "")) continue;
+    const columns = cells(line);
+    const rows: string[][] = [];
+    for (index += 2; index < lines.length && lines[index].startsWith("|"); index++) rows.push(cells(lines[index]));
+    index--;
+    if (columns[0]?.toLowerCase() === "category") {
+      details.categories.push(
+        ...rows.map(([name = "", tokens = "", percent = ""]) => ({
+          name,
+          tokens,
+          percent: Number.parseFloat(percent) || 0,
+          deferred: /\(deferred\)/i.test(name),
+          free: /^free space$/i.test(name),
+        })),
+      );
+    } else {
+      details.tables.push({ title: heading, columns, rows });
+    }
+  }
+  return details;
+}
 
 // SDK 已移除旧 models 的类型和校验，但实测程序仍会返回，退回旧格式时需要自己校验。
 const legacyModelsSchema = z
@@ -240,6 +313,8 @@ export class LocalAgentConnection {
   private disposal?: Promise<void>;
   private failure?: LocalAgentError;
   private readonly sessionControls = new Map<string, SessionControlState>();
+  // 不进对话的命令：这些会话的回复交给收集器，不送进聊天界面
+  private readonly captures = new Map<string, (update: SessionUpdate) => void>();
   private readonly whiteboardToolCalls = new Set<string>();
   private readonly permissions = new Map<
     string,
@@ -259,6 +334,8 @@ export class LocalAgentConnection {
     const instance = new LocalAgentConnection(options);
     instance.connection = client({ name: "research-workbench" })
       .onNotification(methods.client.session.update, ({ params }) => {
+        const capture = instance.captures.get(params.sessionId);
+        capture?.(params.update);
         if (params.sessionId !== instance.sessionId || instance.disposed) return;
         if (params.update.sessionUpdate === "config_option_update") {
           instance.readControls(params.update);
@@ -283,7 +360,7 @@ export class LocalAgentConnection {
           options.onControls(state.controls);
           return;
         }
-        if (instance.loading) return;
+        if (instance.loading || capture) return;
         instance.noteToolCall(params.update);
         options.onSessionUpdate(params.update);
       })
@@ -472,6 +549,92 @@ export class LocalAgentConnection {
       signal?.removeEventListener("abort", abort);
       this.cancelPermissions();
       this.whiteboardToolCalls.clear();
+    }
+  }
+
+  /**
+   * 跑一条看状态的命令，把回复的文字交回来，不送进聊天界面。
+   * isolated 时在复制出来的副本里跑，跑完删掉副本（删掉后副本的程序进程也会退出），原会话一点不变。
+   */
+  async runQuietCommand(
+    command: string,
+    { cwd, mcpServers, isolated }: { cwd: string; mcpServers: McpServer[]; isolated: boolean },
+  ): Promise<string> {
+    const mainId = this.sessionId;
+    if (!mainId || this.disposed) throw new LocalAgentError("protocol");
+    try {
+      if (!isolated) return await this.captureCommand(mainId, command);
+      const scratchId = await this.openScratchSession(mainId, cwd, mcpServers);
+      try {
+        return await this.captureCommand(scratchId, command);
+      } finally {
+        await this.deleteSession(scratchId);
+      }
+    } catch (error) {
+      // 和切换模式一样：失败不影响会话本身，交给调用方提示；断连和登录问题照常报告
+      if (this.connection.signal.aborted || isAuthRequired(error)) throw this.reportError(error);
+      throw error instanceof LocalAgentError ? error : new LocalAgentError("protocol", String(error));
+    }
+  }
+
+  private async openScratchSession(mainId: string, cwd: string, mcpServers: McpServer[]): Promise<string> {
+    let response: Partial<NewSessionResponse> & { sessionId: string };
+    try {
+      // 复制会话在协议里还是试验功能，常量只在 unstable 入口里；两个程序都声明了 sessionCapabilities.fork
+      response = await this.connection.agent.request(unstableMethods.agent.session.fork, {
+        sessionId: mainId,
+        cwd,
+        mcpServers,
+      });
+    } catch (error) {
+      // 还没发过消息的会话，程序没建记录，复制不了。这时上下文只有系统提示、工具这些固定部分，新开一个会话数字一样。
+      if (this.connection.signal.aborted || isAuthRequired(error)) throw error;
+      response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
+    }
+    // 副本用的是程序默认模型；用户在面板里换过模型时，上下文上限跟着模型走，要换成一样的
+    const wanted = this.sessionControls.get(mainId)?.controls.currentModel;
+    const model = response.configOptions?.find((option) => option.category === "model" && option.type === "select");
+    if (wanted && model?.type === "select" && model.currentValue !== wanted) {
+      try {
+        await this.connection.agent.request(methods.agent.session.setConfigOption, {
+          sessionId: response.sessionId,
+          configId: model.id,
+          value: wanted,
+        });
+      } catch (error) {
+        await this.deleteSession(response.sessionId);
+        throw error;
+      }
+    }
+    return response.sessionId;
+  }
+
+  private async captureCommand(sessionId: string, command: string): Promise<string> {
+    let firstMessage: string | undefined;
+    let text = "";
+    this.captures.set(sessionId, (update) => {
+      if (update.sessionUpdate !== "agent_message_chunk" || update.content.type !== "text") return;
+      // Claude Code 会换个 messageId 把同一段结果再发一遍，只要第一条
+      firstMessage ??= update.messageId ?? "";
+      if ((update.messageId ?? "") === firstMessage) text += update.content.text;
+    });
+    try {
+      await this.connection.agent.request(methods.agent.session.prompt, {
+        sessionId,
+        prompt: [{ type: "text", text: `/${command}` }],
+      });
+    } finally {
+      this.captures.delete(sessionId);
+    }
+    return text;
+  }
+
+  private async deleteSession(sessionId: string): Promise<void> {
+    try {
+      await this.connection.agent.request(methods.agent.session.delete, { sessionId });
+    } catch (error) {
+      // 协议规定「找不到」也算删掉了
+      if (!(error instanceof RequestError && error.code === -32002)) throw error;
     }
   }
 

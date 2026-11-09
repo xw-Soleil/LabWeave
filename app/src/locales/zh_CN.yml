@@ -3142,6 +3142,20 @@ research:
       commands: 命令（也可以在输入框里打 /）
       copy: 复制这条回答
       copied: 已复制
+      contextOpen: 点开看明细
+    contextDialog:
+      title: 上下文用量
+      isolated: "在这段对话的副本里跑 /{{command}} 统计，副本随后删掉，不占这段对话的上下文"
+      quiet: "{{name}} 的 /{{command}} 结果，不记进对话"
+      loading: 正在统计…
+      failed: "没统计成功：{{detail}}"
+      retry: 重试
+      close: 关闭
+      category: 分类
+      tokens: Token
+      share: 占比
+      deferred: 灰色的几项按需加载，还没算进已用量
+      memoryFiles: 记忆文件
     emptyDescriptionLocal: "{{name}} 会读当前白板上的卡片、连线、分组和文件摘要，也能按你的要求改白板，改之前会先说明要做什么。"
     localAgent:
       api: AI 接口

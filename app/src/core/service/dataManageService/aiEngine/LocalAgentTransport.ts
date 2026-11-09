@@ -1,7 +1,7 @@
 import type { Project } from "@/core/Project";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import type { ExternalAiMcpLaunch } from "@/sub/SettingsWindow/externalAiCommands";
-import type { ContentBlock, SessionUpdate } from "@agentclientprotocol/sdk";
+import type { ContentBlock, McpServer, SessionUpdate } from "@agentclientprotocol/sdk";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import { AIChatSessionStore, getAIChatProjectKey } from "./AIChatSessionStore";
@@ -15,6 +15,7 @@ import {
   finishSessionUpdate,
   getLocalAgentCatalog,
   isLocalAgentCommand,
+  LOCAL_AGENT_CONTEXT_COMMANDS,
   LocalAgentConnection,
   LocalAgentError,
   mapSessionUpdate,
@@ -104,7 +105,9 @@ export function formatLocalAgentHistory(messages: UIMessage<AIMessageMetadata>[]
 }
 
 type SendOptions = Parameters<ChatTransport<UIMessage<AIMessageMetadata>>["sendMessages"]>[0];
-type ChatSession = LocalAgentSession & { firstPrompt: boolean };
+type ChatSession = LocalAgentSession & { firstPrompt: boolean; cwd: string; mcpServers: McpServer[] };
+/** 看上下文用量的命令和它原样的回复（Markdown），由界面解析成弹窗 */
+export type LocalAgentContextReport = { command: string; text: string };
 
 export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMetadata>> {
   private readonly lifetime = new AbortController();
@@ -141,6 +144,33 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       this.reportError(error);
     });
     return ready;
+  }
+
+  /**
+   * 看上下文用量：Claude Code 跑 /context，Codex 跑 /status，结果交给弹窗，不进对话。
+   * 和发消息排在同一个队列里，不会和正在进行的回答抢同一个会话。没有这类命令的程序返回 null。
+   */
+  inspectContext(chatId: string): Promise<LocalAgentContextReport | null> {
+    const command = LOCAL_AGENT_CONTEXT_COMMANDS[this.options.agentId];
+    if (!command) return Promise.resolve(null);
+    const report = this.turn.then(async () => {
+      this.lifetime.signal.throwIfAborted();
+      const root = ResearchFolder.getRoot();
+      if (!root) throw new LocalAgentError("no-research-folder");
+      const session = await this.ensureConnection(root, chatId);
+      const text = await this.connection!.runQuietCommand(command.name, {
+        cwd: session.cwd,
+        mcpServers: session.mcpServers,
+        isolated: command.isolated,
+      });
+      return { command: command.name, text };
+    });
+    // 失败交给弹窗显示；队列本身接着往下走
+    this.turn = report.then(
+      () => undefined,
+      () => undefined,
+    );
+    return report;
   }
 
   async sendMessages(options: SendOptions): Promise<ReadableStream<UIMessageChunk>> {
@@ -288,7 +318,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       agentId: this.options.agentId,
       sessionId: session.sessionId,
     });
-    const chatSession = { ...session, firstPrompt: true };
+    const chatSession = { ...session, firstPrompt: true, cwd, mcpServers };
     this.sessions.set(chatId, chatSession);
     this.setStatus({ kind: "ready", whiteboardTools: mcpServers.length > 0 });
     return chatSession;

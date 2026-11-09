@@ -3142,6 +3142,20 @@ research:
       commands: 命令（也可以在輸入框裡打 /）
       copy: 複製這條回答
       copied: 已複製
+      contextOpen: 點開看明細
+    contextDialog:
+      title: 上下文用量
+      isolated: "在這段對話的副本里跑 /{{command}} 統計，副本隨後刪掉，不佔這段對話的上下文"
+      quiet: "{{name}} 的 /{{command}} 結果，不記進對話"
+      loading: 正在統計…
+      failed: "沒統計成功：{{detail}}"
+      retry: 重試
+      close: 關閉
+      category: 分類
+      tokens: Token
+      share: 佔比
+      deferred: 灰色的幾項按需加載，還沒算進已用量
+      memoryFiles: 記憶文件
     emptyDescriptionLocal: "{{name}} 會讀當前白板上的卡片、連線、分組和文件摘要，也能按你的要求改白板，改之前會先說明要做什麼。"
     localAgent:
       api: AI 接口

@@ -9,8 +9,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { openLocalAgentTerminal, type LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
+import {
+  LocalAgentError,
+  openLocalAgentTerminal,
+  parseLocalAgentContext,
+  type LocalAgentContextTable,
+  type LocalAgentInfo,
+} from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import type {
+  LocalAgentContextReport,
   LocalAgentPermissionRequest,
   LocalAgentSessionControls,
   LocalAgentStatus,
@@ -26,12 +33,15 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
+  Loader2,
   LogIn,
   ShieldAlert,
   ShieldCheck,
   ShieldQuestion,
+  X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -423,4 +433,323 @@ function commandOf(rawInput: unknown): string | null {
 
 function toastError(error: unknown) {
   toast.error(String(error));
+}
+
+type ContextState =
+  | { status: "loading" }
+  | { status: "ready"; report: LocalAgentContextReport | null }
+  | { status: "error"; detail: string };
+
+// 照 Claude Code 插件的配色；程序以后多出来的分类按顺序取备用色
+const CATEGORY_COLORS: Record<string, string> = {
+  "system prompt": "#d97706",
+  "system tools": "#3b82f6",
+  "mcp server instructions": "#14b8a6",
+  "mcp tools": "#22c55e",
+  "custom agents": "#ec4899",
+  "memory files": "#c8956a",
+  skills: "#a855f7",
+  messages: "#ef4444",
+  "autocompact buffer": "#06b6d4",
+};
+const SPARE_COLORS = ["#f59e0b", "#6366f1", "#84cc16", "#f43f5e", "#0ea5e9"];
+
+/**
+ * 上下文用量弹层，盖在 AI 面板上（和插件一样不弹到窗口正中）。
+ * 打开时跑一次程序自己的 /context 或 /status，结果不进对话，详见 LOCAL_AGENT_CONTEXT_COMMANDS。
+ */
+export function LocalAgentContextPanel({
+  transport,
+  chatId,
+  agentName,
+  command,
+  usage,
+  onClose,
+}: {
+  transport: LocalAgentTransport;
+  chatId: string;
+  agentName: string;
+  command: { name: string; isolated: boolean };
+  usage: { used: number; size: number } | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("research");
+  const [state, setState] = useState<ContextState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    transport.inspectContext(chatId).then(
+      (report) => {
+        if (!cancelled) setState({ status: "ready", report });
+      },
+      (error) => {
+        if (!cancelled)
+          setState({
+            status: "error",
+            detail: error instanceof LocalAgentError ? error.detail || error.reason : String(error),
+          });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [transport, chatId, attempt]);
+  useEffect(() => {
+    cardRef.current?.focus();
+  }, []);
+  const title = t("ai.contextDialog.title");
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-start justify-center bg-black/25 p-3 pt-10"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          onClose();
+        }}
+        className="bg-popover text-popover-foreground flex max-h-full w-full max-w-md flex-col gap-3 overflow-y-auto rounded-xl border p-4 text-sm shadow-xl outline-none"
+      >
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-semibold">{title}</div>
+            <div className="text-muted-foreground mt-0.5 text-xs">
+              {command.isolated
+                ? t("ai.contextDialog.isolated", { command: command.name })
+                : t("ai.contextDialog.quiet", { name: agentName, command: command.name })}
+            </div>
+          </div>
+          <button
+            className="text-muted-foreground hover:text-foreground cursor-pointer rounded-md p-1"
+            aria-label={t("ai.contextDialog.close")}
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        {state.status === "loading" && (
+          <div className="text-muted-foreground flex items-center gap-2 py-6">
+            <Loader2 className="size-4 animate-spin" />
+            {t("ai.contextDialog.loading")}
+          </div>
+        )}
+        {state.status === "error" && (
+          <div className="flex flex-col items-start gap-2 py-2">
+            <div className="text-destructive flex items-start gap-1.5">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span className="wrap-anywhere select-text">
+                {t("ai.contextDialog.failed", { detail: state.detail, interpolation: { escapeValue: false } })}
+              </span>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setAttempt((count) => count + 1)}>
+              {t("ai.contextDialog.retry")}
+            </Button>
+          </div>
+        )}
+        {state.status === "ready" && <ContextReportView report={state.report} usage={usage} />}
+      </div>
+    </div>
+  );
+}
+
+function ContextReportView({
+  report,
+  usage,
+}: {
+  report: LocalAgentContextReport | null;
+  usage: { used: number; size: number } | null;
+}) {
+  const { t } = useTranslation("research");
+  const details = report ? parseLocalAgentContext(report.text) : null;
+  const field = (name: string) => details?.fields.find((item) => item.label.toLowerCase() === name)?.value;
+  const usageSummary = usage ? (
+    <>
+      <div className="tabular-nums">
+        {t("ai.composer.contextUsed", {
+          used: formatTokens(usage.used),
+          size: formatTokens(usage.size),
+          percent: `${((usage.used / usage.size) * 100).toFixed(1)}%`,
+        })}
+      </div>
+      <UsageBar segments={[{ key: "used", percent: (usage.used / usage.size) * 100, color: "#ef4444" }]} />
+    </>
+  ) : (
+    <div className="text-muted-foreground">{t("ai.composer.contextEmpty")}</div>
+  );
+
+  // Claude Code 的 /context：分类表 + 记忆文件等明细
+  if (details && details.categories.length > 0) {
+    const counted = details.categories.filter((category) => !category.deferred);
+    const ordered = [...counted.filter((category) => !category.free), ...counted.filter((category) => category.free)];
+    const deferred = details.categories.filter((category) => category.deferred);
+    let spare = 0;
+    const colorOf = new Map(
+      ordered
+        .filter((category) => !category.free)
+        .map((category) => [
+          category.name,
+          CATEGORY_COLORS[category.name.toLowerCase()] ?? SPARE_COLORS[spare++ % SPARE_COLORS.length],
+        ]),
+    );
+    const memory = details.tables.filter((table) => /memory/i.test(table.title) && table.rows.length > 0);
+    const others = details.tables.filter((table) => !/memory/i.test(table.title) && table.rows.length > 0);
+    return (
+      <div className="flex flex-col gap-3 select-text [&_*]:select-text">
+        <div>
+          {field("model") && <div>{field("model")}</div>}
+          {field("tokens") && <div className="tabular-nums">{field("tokens")}</div>}
+        </div>
+        <UsageBar
+          segments={ordered
+            .filter((category) => !category.free)
+            .map((category) => ({ key: category.name, percent: category.percent, color: colorOf.get(category.name)! }))}
+        />
+        <table className="w-full border-collapse tabular-nums">
+          <thead>
+            <tr className="text-muted-foreground border-b text-xs">
+              <th className="py-1.5 text-left font-medium">{t("ai.contextDialog.category")}</th>
+              <th className="py-1.5 text-right font-medium">{t("ai.contextDialog.tokens")}</th>
+              <th className="w-16 py-1.5 text-right font-medium">{t("ai.contextDialog.share")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map((category) => (
+              <tr key={category.name}>
+                <td className="py-1">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: colorOf.get(category.name) ?? "transparent" }}
+                    />
+                    {category.name}
+                  </span>
+                </td>
+                <td className="py-1 text-right">{category.tokens}</td>
+                <td className="text-muted-foreground py-1 text-right">{formatShare(category.percent)}</td>
+              </tr>
+            ))}
+            {deferred.map((category) => (
+              <tr key={category.name} className="text-muted-foreground" title={t("ai.contextDialog.deferred")}>
+                <td className="py-1">
+                  <span className="flex items-center gap-2">
+                    <span className="size-2.5 shrink-0" />
+                    {category.name}
+                  </span>
+                </td>
+                <td className="py-1 text-right">{category.tokens}</td>
+                <td className="py-1 text-right">—</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {deferred.length > 0 && <div className="text-muted-foreground text-xs">{t("ai.contextDialog.deferred")}</div>}
+        {memory.map((table) => (
+          <ContextTable key={table.title} table={table} title={t("ai.contextDialog.memoryFiles")} open />
+        ))}
+        {others.map((table) => (
+          <ContextTable key={table.title} table={table} title={table.title} />
+        ))}
+      </div>
+    );
+  }
+
+  // Codex 的 /status：总量来自程序每轮报的用量，其余逐项列出
+  if (details && details.fields.length > 0) {
+    return (
+      <div className="flex flex-col gap-3 select-text [&_*]:select-text">
+        {usageSummary}
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          {details.fields.map((item) => (
+            <Fragment key={item.label}>
+              <dt className="text-muted-foreground">{item.label}</dt>
+              <dd className="wrap-anywhere">{item.value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </div>
+    );
+  }
+
+  // 程序改了输出格式、读不出来时，原样显示它的文字
+  if (report && report.text.trim()) {
+    return (
+      <div className="flex flex-col gap-3 select-text [&_*]:select-text">
+        {usageSummary}
+        <Streamdown className="pg-ai-markdown">{report.text}</Streamdown>
+      </div>
+    );
+  }
+  return <div className="flex flex-col gap-3">{usageSummary}</div>;
+}
+
+function UsageBar({ segments }: { segments: { key: string; percent: number; color: string }[] }) {
+  return (
+    <div className="bg-muted flex h-2 w-full overflow-hidden rounded-full">
+      {segments.map((segment) => (
+        <div
+          key={segment.key}
+          className="h-full shrink-0"
+          style={{
+            width: `${Math.min(100, segment.percent)}%`,
+            minWidth: segment.percent > 0 ? 2 : 0,
+            backgroundColor: segment.color,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ContextTable({
+  table,
+  title,
+  open = false,
+}: {
+  table: LocalAgentContextTable;
+  title: string;
+  open?: boolean;
+}) {
+  // 第一列是名字（记忆文件取路径那列），最后一列是 Token 数
+  const pathColumn = table.columns.findIndex((column) => /path/i.test(column));
+  const nameColumn = pathColumn >= 0 ? pathColumn : 0;
+  const tokenColumn = table.columns.findIndex((column) => /tokens/i.test(column));
+  return (
+    <Collapsible defaultOpen={open}>
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex w-full cursor-pointer items-center gap-1 text-xs font-medium tracking-wide uppercase">
+        <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
+        {title}
+        <span className="font-normal">（{table.rows.length}）</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1 flex flex-col gap-0.5 pl-4.5">
+        {table.rows.map((row, index) => (
+          <div key={index} className="flex items-baseline gap-3">
+            <span className="min-w-0 flex-1 text-xs wrap-anywhere">{row[nameColumn]}</span>
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {row[tokenColumn >= 0 ? tokenColumn : row.length - 1]}
+            </span>
+          </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function formatShare(percent: number): string {
+  return percent > 0 && percent < 0.1 ? "<0.1%" : `${percent.toFixed(1)}%`;
+}
+
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
+  return String(count);
 }

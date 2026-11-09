@@ -3023,6 +3023,20 @@ research:
       commands: Commands (or type / in the box)
       copy: Copy this reply
       copied: Copied
+      contextOpen: Click for details
+    contextDialog:
+      title: Context usage
+      isolated: "Counted by running /{{command}} in a copy of this conversation, which is then deleted, so this conversation's context is untouched"
+      quiet: "Result of {{name}}'s /{{command}}, not recorded in the conversation"
+      loading: Counting…
+      failed: "Could not count: {{detail}}"
+      retry: Retry
+      close: Close
+      category: Category
+      tokens: Tokens
+      share: Usage
+      deferred: Grey rows load on demand and are not counted as used yet
+      memoryFiles: Memory files
     emptyDescriptionLocal: "{{name}} reads the cards, links, groups and file excerpts on the current board, and can edit the board when you ask. It says what it will change first."
     localAgent:
       api: AI API
