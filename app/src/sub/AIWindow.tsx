@@ -60,6 +60,7 @@ import { setSettingsInitialPage } from "@/sub/SettingsWindow/settings";
 import { useLocalAgentCatalog } from "@/sub/SettingsWindow/LocalAgentsPage";
 import {
   AISourceMenu,
+  composerMenuTriggerClass,
   isLocalAgentReady,
   LocalAgentModeMenu,
   LocalAgentModelMenu,
@@ -70,7 +71,7 @@ import {
   useLocalAgentStatus,
 } from "@/sub/AIWindowLocalAgent";
 import { displayWorkspaceName } from "@/components/ui/file-name";
-import type { LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
+import type { LocalAgentCommand, LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import { useChat } from "@ai-sdk/react";
 import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
@@ -248,6 +249,7 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
   const projectUri = getAIChatProjectKey(project);
   // 存储键换了但记录跟着搬过去时（草稿第一次存盘）viewKey 不变，不必重新载入
   const viewKey = getAIChatViewKey(project);
+  const [model] = Settings.use("aiModel");
   const [sessionState, setSessionState] = useState<AIChatSessionProjectState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -407,8 +409,11 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
         <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-xl">
           <Sparkles className="size-4" />
         </div>
-        <div className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {sessionState?.activeSession.title ?? "Project Graph AI"}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">
+            {sessionState?.activeSession.title ?? "Project Graph AI"}
+          </div>
+          <AISourceMenu catalog={catalog} onOpen={refreshCatalog} model={model} disabled={actionsDisabled} />
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -464,8 +469,6 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
           conversation={conversation.value}
           contextWindowTokenLimitRef={contextWindowTokenLimitRef}
           catalog={catalog}
-          onRefreshCatalog={refreshCatalog}
-          sourceDisabled={operationInProgress}
           onControllerChange={(controller) => {
             activeChatController.current = controller;
           }}
@@ -591,8 +594,6 @@ function AIChatPanel({
   conversation,
   contextWindowTokenLimitRef,
   catalog,
-  onRefreshCatalog,
-  sourceDisabled,
   onControllerChange,
   onRequestingChange,
   onSessionSaved,
@@ -603,8 +604,6 @@ function AIChatPanel({
   conversation: AIConversation;
   contextWindowTokenLimitRef: React.RefObject<number | undefined>;
   catalog: LocalAgentInfo[] | null;
-  onRefreshCatalog: () => void;
-  sourceDisabled: boolean;
   onControllerChange: (controller: ActiveChatController | null) => void;
   onRequestingChange: (requesting: boolean) => void;
   onSessionSaved: (state: AIChatSessionProjectState) => void;
@@ -671,6 +670,36 @@ function AIChatPanel({
   const requesting = status === "submitted" || status === "streaming";
   const tokenUsage = useMemo(() => getTokenUsage(messages), [messages]);
   const contextUsage = useMemo(() => getCurrentContextUsage(messages), [messages]);
+  const agentUsage = useMemo(() => getLocalAgentUsage(messages), [messages]);
+
+  // 斜杠命令菜单：输入框里只有「/开头的一个词」时弹出，或点底栏的 / 按钮打开
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commandListRef = useRef<HTMLDivElement>(null);
+  const [commandPickerOpen, setCommandPickerOpen] = useState(false);
+  const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const slashQuery = localAgent ? /^\/(\S*)$/.exec(inputValue)?.[1] : undefined;
+  const commandQuery = slashQuery ?? (commandPickerOpen ? "" : undefined);
+  const commandMatches = useMemo(
+    () => (commandQuery === undefined ? [] : matchCommands(agentControls.commands, commandQuery)),
+    [agentControls.commands, commandQuery],
+  );
+  const commandMenuOpen = commandMatches.length > 0 && !commandMenuDismissed;
+  useEffect(() => {
+    setCommandIndex(0);
+    setCommandMenuDismissed(false);
+  }, [commandQuery]);
+  useEffect(() => {
+    commandListRef.current?.querySelector(`[data-index="${commandIndex}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [commandIndex]);
+
+  function pickCommand(command: LocalAgentCommand) {
+    // 从按钮打开时输入框里可能已经有字，命令放到最前面，后面的字当作命令参数
+    const rest = slashQuery === undefined ? inputValue.trimStart() : "";
+    setInputValue(`/${command.name} ${rest}`);
+    setCommandPickerOpen(false);
+    textareaRef.current?.focus();
+  }
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -794,8 +823,10 @@ function AIChatPanel({
   function sendText(rawText: string): boolean {
     const text = rawText.trim();
     if (!text || requesting || !sessionLoaded || configProblems.length > 0) return false;
+    // 斜杠命令必须在提示词最前面程序才认，不加选中内容的前缀
+    const isCommand = localAgent !== undefined && text.startsWith("/");
     const selectedObjects =
-      selectionKey(project) === excludedSelectionKey
+      isCommand || selectionKey(project) === excludedSelectionKey
         ? []
         : [...project.stageManager.getSelectedEntities(), ...project.stageManager.getSelectedAssociations()];
     const selectedRefs = selectedObjects.map((object) => references.getOrCreateRef(object));
@@ -807,6 +838,27 @@ function AIChatPanel({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (commandMenuOpen && !isImeComposing(e)) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        setCommandIndex((index) => (index + step + commandMatches.length) % commandMatches.length);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        pickCommand(commandMatches[Math.min(commandIndex, commandMatches.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setCommandMenuDismissed(true);
+        setCommandPickerOpen(false);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       // 输入法选词时按的回车不算发送
       if (isImeComposing(e)) {
@@ -944,7 +996,40 @@ function AIChatPanel({
           />
         )}
         {/* 输入框照两个 VS Code 插件的样子：一个圆角框，从上到下是上下文小标签、打字区、底栏 */}
-        <div className="bg-background border-border focus-within:border-ring/60 flex flex-col rounded-xl border shadow-xs transition-colors">
+        <div className="bg-background border-border focus-within:border-ring/60 relative flex flex-col rounded-xl border shadow-xs transition-colors">
+          {commandMenuOpen && (
+            <div
+              ref={commandListRef}
+              role="listbox"
+              aria-label={t("ai.composer.commands")}
+              className="bg-popover text-popover-foreground absolute right-0 bottom-full left-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border p-1 shadow-md"
+            >
+              {commandMatches.map((command, index) => (
+                <button
+                  key={command.name}
+                  type="button"
+                  role="option"
+                  aria-selected={index === commandIndex}
+                  data-index={index}
+                  className={cn(
+                    "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left",
+                    index === commandIndex && "bg-accent text-accent-foreground",
+                  )}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setCommandIndex(index)}
+                  onClick={() => pickCommand(command)}
+                >
+                  <span className="flex w-full min-w-0 items-baseline gap-1.5 text-sm">
+                    <span className="shrink-0 font-mono">/{command.name}</span>
+                    {command.hint && <span className="text-muted-foreground truncate text-xs">{command.hint}</span>}
+                  </span>
+                  {command.description && (
+                    <span className="text-muted-foreground line-clamp-1 text-xs">{command.description}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1 px-2 pt-2">
             <ContextChip
               icon={<LayoutDashboard />}
@@ -962,38 +1047,61 @@ function AIChatPanel({
             )}
           </div>
           <Textarea
-            placeholder={t("ai.inputPlaceholder")}
+            ref={textareaRef}
+            placeholder={
+              localAgent && agentControls.commands.length > 0
+                ? t("ai.inputPlaceholderCommands")
+                : t("ai.inputPlaceholder")
+            }
             className="max-h-40 min-h-14 resize-none border-0 bg-transparent px-3 py-1.5 shadow-none focus-visible:ring-0 dark:bg-transparent"
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => setCommandMenuDismissed(false)}
+            onBlur={() => {
+              setCommandMenuDismissed(true);
+              setCommandPickerOpen(false);
+            }}
             value={inputValue}
             disabled={requesting || !sessionLoaded}
           />
           <div className="flex min-w-0 items-center gap-0.5 px-1.5 pb-1.5">
-            <AISourceMenu
-              catalog={catalog}
-              onOpen={onRefreshCatalog}
-              model={model}
-              disabled={sourceDisabled || requesting}
-            />
+            {localAgent && agentControls.commands.length > 0 && (
+              <button
+                type="button"
+                className={cn(composerMenuTriggerClass, "px-2 font-mono")}
+                title={t("ai.composer.commands")}
+                aria-label={t("ai.composer.commands")}
+                disabled={requesting || !sessionLoaded}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  textareaRef.current?.focus();
+                  setCommandMenuDismissed(false);
+                  if (inputValue.trim()) setCommandPickerOpen(true);
+                  else setInputValue("/");
+                }}
+              >
+                /
+              </button>
+            )}
             {localAgent && (
               <>
+                <LocalAgentModeMenu
+                  controls={agentControls}
+                  disabled={requesting || !sessionLoaded}
+                  onSelect={(id) => switchAgentControl("mode", id)}
+                />
                 <LocalAgentModelMenu
                   controls={agentControls}
                   disabled={requesting || !sessionLoaded}
                   onSelect={(id) => switchAgentControl("model", id)}
                 />
-                <LocalAgentModeMenu
-                  agentId={agentId}
-                  controls={agentControls}
-                  disabled={requesting || !sessionLoaded}
-                  onSelect={(id) => switchAgentControl("mode", id)}
-                />
               </>
             )}
             <div className="min-w-0 flex-1" />
             {statusText && <span className="text-muted-foreground shrink-0 truncate px-1 text-xs">{statusText}</span>}
-            {!localAgent && (
+            {localAgent ? (
+              <LocalAgentContextUsage usage={agentUsage} agentName={agentInfo?.name ?? agentId} />
+            ) : (
               <ContextWindowUsage
                 usage={contextUsage}
                 state={contextWindowState}
@@ -1034,6 +1142,16 @@ function AIChatPanel({
       </div>
     </div>
   );
+}
+
+// 名字以输入开头的排前面，名字里含输入的排后面；程序报什么就列什么
+function matchCommands(commands: LocalAgentCommand[], query: string) {
+  const q = query.toLowerCase();
+  const name = (command: LocalAgentCommand) => command.name.toLowerCase();
+  return [
+    ...commands.filter((command) => name(command).startsWith(q)),
+    ...commands.filter((command) => !name(command).startsWith(q) && name(command).includes(q)),
+  ];
 }
 
 function ContextChip({
@@ -1113,8 +1231,77 @@ function getCurrentContextUsage(messages: UIMessage<AIMessageMetadata>[]): Curre
   return null;
 }
 
+// 本机程序每轮报一次 usage_update（已用多少、上限多少），存在消息的 metadata 里，取最新的一条
+function getLocalAgentUsage(messages: UIMessage<AIMessageMetadata>[]): { used: number; size: number } | null {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const usage = (messages[index].metadata as { localAgentUsage?: { used?: unknown; size?: unknown } } | undefined)
+      ?.localAgentUsage;
+    if (typeof usage?.used === "number" && typeof usage.size === "number" && usage.size > 0)
+      return { used: usage.used, size: usage.size };
+  }
+  return null;
+}
+
 function formatCompactTokenCount(value: number) {
   return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function UsageRing({ percentage }: { percentage: number }) {
+  const ringClass = percentage >= 90 ? "stroke-destructive" : percentage >= 70 ? "stroke-amber-500" : "stroke-primary";
+  const circumference = 2 * Math.PI * 6;
+  return (
+    <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
+      <circle cx="8" cy="8" r="6" className="stroke-border fill-none" strokeWidth="2" />
+      <circle
+        cx="8"
+        cy="8"
+        r="6"
+        className={cn("fill-none", ringClass)}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={`${(percentage / 100) * circumference} ${circumference}`}
+      />
+    </svg>
+  );
+}
+
+/** 本机程序的上下文用量：数字是程序自己每轮报上来的已用量和上限 */
+function LocalAgentContextUsage({
+  usage,
+  agentName,
+}: {
+  usage: { used: number; size: number } | null;
+  agentName: string;
+}) {
+  const { t } = useTranslation("research");
+  const percentage = usage ? Math.min(100, (usage.used / usage.size) * 100) : 0;
+  const summary = usage
+    ? t("ai.composer.contextUsed", {
+        used: formatCompactTokenCount(usage.used),
+        size: formatCompactTokenCount(usage.size),
+        percent: `${percentage.toFixed(1)}%`,
+      })
+    : t("ai.composer.contextEmpty");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className="text-muted-foreground flex h-7 shrink-0 items-center rounded-md px-1 outline-none focus-visible:ring-2"
+          tabIndex={0}
+          role="status"
+          aria-label={summary}
+        >
+          <UsageRing percentage={percentage} />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className="flex flex-col gap-1">
+          <div>{summary}</div>
+          {usage && <div>{t("ai.composer.contextFrom", { name: agentName })}</div>}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 /** 底栏右边的上下文用量小圆圈，细节放在悬停提示里 */
@@ -1135,8 +1322,6 @@ function ContextWindowUsage({
 }) {
   const tokenLimit = state.status === "ready" ? state.info.tokenLimit : undefined;
   const percentage = tokenLimit && usage ? Math.min(100, (usage.usedTokens / tokenLimit) * 100) : 0;
-  const ringClass = percentage >= 90 ? "stroke-destructive" : percentage >= 70 ? "stroke-amber-500" : "stroke-primary";
-  const circumference = 2 * Math.PI * 6;
   const usedText = usage ? formatCompactTokenCount(usage.usedTokens) : "--";
   const summary =
     state.status === "loading"
@@ -1162,18 +1347,7 @@ function ContextWindowUsage({
               ↑{formatCompactTokenCount(inputTokens)} ↓{formatCompactTokenCount(outputTokens)}
             </span>
           )}
-          <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
-            <circle cx="8" cy="8" r="6" className="stroke-border fill-none" strokeWidth="2" />
-            <circle
-              cx="8"
-              cy="8"
-              r="6"
-              className={cn("fill-none", ringClass)}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray={`${(percentage / 100) * circumference} ${circumference}`}
-            />
-          </svg>
+          <UsageRing percentage={percentage} />
         </div>
       </TooltipTrigger>
       <TooltipContent>

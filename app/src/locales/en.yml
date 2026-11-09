@@ -3003,6 +3003,7 @@ research:
       lineOfThought: What is my line of thought?
       whatIsMissing: What is missing?
     inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
+    inputPlaceholderCommands: "Ask about the board; type / for commands such as /compact"
     composer:
       board: "Current board \"{{name}}\": the AI works on this board"
       selected: "{{count}} selected"
@@ -3016,6 +3017,10 @@ research:
       thinking: Thinking
       loadingMemory: Loading memory
       switchFailed: "Could not switch: {{detail}}"
+      contextUsed: "Context: {{used}} used of {{size}} ({{percent}})"
+      contextFrom: "Reported by {{name}}"
+      contextEmpty: "Context: usage appears after the first message"
+      commands: Commands (or type / in the box)
     emptyDescriptionLocal: "{{name}} reads the cards, links, groups and file excerpts on the current board, and can edit the board when you ask. It says what it will change first."
     localAgent:
       api: AI API
@@ -3040,36 +3045,6 @@ research:
       login: Sign in in Terminal
       permissionTitle: "{{name}} asks for approval"
       permissionInput: Arguments
-      modes:
-        codex:
-          read-only:
-            name: Read-only
-            description: Reads files and runs read-only commands; asks before editing files or going online
-          workspace-write:
-            name: Workspace access
-            description: Edits files in the research folder; asks before going outside it or online
-          agent:
-            name: Auto review
-            description: Codex decides, and only asks when it thinks an action is risky
-          agent-full-access:
-            name: Full access
-            description: Unrestricted access to the internet and any file on this computer
-        claude:
-          default:
-            name: Manual
-            description: Asks before editing files or running commands
-          acceptEdits:
-            name: Accept edits
-            description: Edits files without asking; asks before running commands
-          plan:
-            name: Plan
-            description: Lays out a plan first and waits for your go-ahead
-          auto:
-            name: Auto
-            description: Claude decides when to ask you
-          bypassPermissions:
-            name: Bypass permissions
-            description: Does everything without asking
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat

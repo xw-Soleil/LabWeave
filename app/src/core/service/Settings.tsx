@@ -140,8 +140,6 @@ export const settingsSchema = z.object({
     ])
     .default("codex"),
   aiLocalAgentPaths: z.record(z.string(), z.string()).default({}),
-  aiLocalAgentModes: z.record(z.string(), z.string()).default({}),
-  aiLocalAgentModels: z.record(z.string(), z.string()).default({}),
   aiApiBaseUrl: projectToolSettingSchemas.aiApiBaseUrl,
   aiApiKey: projectToolSettingSchemas.aiApiKey,
   aiModel: projectToolSettingSchemas.aiModel,

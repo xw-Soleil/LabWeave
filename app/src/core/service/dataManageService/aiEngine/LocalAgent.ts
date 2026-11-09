@@ -29,18 +29,16 @@ export type LocalAgentTerminalAction = "login" | "install";
 export const RESEARCH_WORKBENCH_MCP_NAME = "research-workbench";
 
 export type LocalAgentChoice = { id: string; name: string; description?: string };
+/** 程序报上来的斜杠命令（/compact 之类），提示词以「/名字」开头就会被程序当作命令执行 */
+export type LocalAgentCommand = { name: string; description: string; hint?: string };
 export type LocalAgentSessionControls = {
   modes: LocalAgentChoice[];
   currentMode: string | null;
   models: LocalAgentChoice[];
   currentModel: string | null;
+  commands: LocalAgentCommand[];
 };
 
-const MODE_POLICY: Partial<Record<LocalAgentId, { preferred: string[]; hidden: string[] }>> = {
-  codex: { preferred: ["read-only"], hidden: ["agent-full-access"] },
-  claude: { preferred: ["default"], hidden: ["bypassPermissions"] },
-};
-const GENERIC_HIDDEN_MODES = ["bypassPermissions", "agent-full-access", "full-access", "yolo"];
 // SDK 已移除旧 models 的类型和校验，但实测程序仍会返回，退回旧格式时需要自己校验。
 const legacyModelsSchema = z
   .object({
@@ -229,8 +227,6 @@ export type LocalAgentSessionOptions = {
   cwd: string;
   mcpServers: McpServer[];
   previousSessionId?: string;
-  rememberedMode?: string;
-  rememberedModel?: string;
 };
 export type LocalAgentSession = { sessionId: string; loaded: boolean };
 
@@ -274,6 +270,19 @@ export class LocalAgentConnection {
           options.onControls(state.controls);
           return;
         }
+        if (params.update.sessionUpdate === "available_commands_update") {
+          const state = instance.sessionControls.get(params.sessionId)!;
+          state.controls = {
+            ...state.controls,
+            commands: params.update.availableCommands.map((command) => ({
+              name: command.name,
+              description: command.description ?? "",
+              hint: command.input && "hint" in command.input ? String(command.input.hint) : undefined,
+            })),
+          };
+          options.onControls(state.controls);
+          return;
+        }
         if (instance.loading) return;
         instance.noteToolCall(params.update);
         options.onSessionUpdate(params.update);
@@ -313,13 +322,8 @@ export class LocalAgentConnection {
     }
   }
 
-  async openSession({
-    cwd,
-    mcpServers,
-    previousSessionId,
-    rememberedMode,
-    rememberedModel,
-  }: LocalAgentSessionOptions): Promise<LocalAgentSession> {
+  // 模式和模型照两个 VS Code 插件的做法，沿用程序自己配置里的默认值，开会话时不替用户切换。
+  async openSession({ cwd, mcpServers, previousSessionId }: LocalAgentSessionOptions): Promise<LocalAgentSession> {
     try {
       let loaded = false;
       if (previousSessionId && this.supportsLoad) {
@@ -346,38 +350,17 @@ export class LocalAgentConnection {
         this.activateSession(response.sessionId);
         this.readControls(response);
       }
-      const { controls } = this.sessionControls.get(this.sessionId!)!;
-      const policy = MODE_POLICY[this.options.agent.id];
-      const available = (id: string) => controls.modes.some((mode) => mode.id === id);
-      const mode =
-        (rememberedMode && available(rememberedMode) ? rememberedMode : undefined) ??
-        policy?.preferred.find(available) ??
-        (controls.currentMode && !this.hiddenModes.includes(controls.currentMode) ? controls.currentMode : undefined) ??
-        controls.modes[0]?.id;
-      if (mode && mode !== controls.currentMode) await this.setMode(mode);
-      const current = this.sessionControls.get(this.sessionId!)!;
-      if (
-        rememberedModel &&
-        current.modelConfigId &&
-        current.controls.models.some((model) => model.id === rememberedModel) &&
-        rememberedModel !== current.controls.currentModel
-      )
-        await this.setModel(rememberedModel);
       return { sessionId: this.sessionId!, loaded };
     } catch (error) {
       throw this.reportError(error);
     }
   }
 
-  private get hiddenModes(): string[] {
-    return MODE_POLICY[this.options.agent.id]?.hidden ?? GENERIC_HIDDEN_MODES;
-  }
-
   activateSession(sessionId: string): void {
     this.sessionId = sessionId;
     if (!this.sessionControls.has(sessionId))
       this.sessionControls.set(sessionId, {
-        controls: { modes: [], currentMode: null, models: [], currentModel: null },
+        controls: { modes: [], currentMode: null, models: [], currentModel: null, commands: [] },
       });
     this.options.onControls(this.sessionControls.get(sessionId)!.controls);
   }
@@ -396,19 +379,22 @@ export class LocalAgentConnection {
       state.modeConfigId = mode?.id;
       state.modelConfigId = model?.id;
       state.controls = {
-        modes: choices(mode).filter((choice) => !this.hiddenModes.includes(choice.id)),
+        modes: choices(mode),
         currentMode: mode?.type === "select" ? mode.currentValue : null,
         models: choices(model),
         currentModel: model?.type === "select" ? model.currentValue : null,
+        commands: state.controls.commands,
       };
     } else {
       if (response.modes != null) {
         state.modeConfigId = undefined;
         state.controls = {
           ...state.controls,
-          modes: response.modes.availableModes
-            .filter((mode) => !this.hiddenModes.includes(mode.id))
-            .map((mode) => ({ id: mode.id, name: mode.name, description: mode.description ?? undefined })),
+          modes: response.modes.availableModes.map((mode) => ({
+            id: mode.id,
+            name: mode.name,
+            description: mode.description ?? undefined,
+          })),
           currentMode: response.modes.currentModeId,
         };
       }

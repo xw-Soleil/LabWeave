@@ -3122,6 +3122,7 @@ research:
       lineOfThought: 我的思路是什麼？
       whatIsMissing: 還缺什麼？
     inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
+    inputPlaceholderCommands: 問問白板上的內容；輸入 / 可以用命令，比如 /compact
     composer:
       board: 當前白板「{{name}}」，AI 在這張白板上幹活
       selected: 已選 {{count}} 個
@@ -3135,6 +3136,10 @@ research:
       thinking: 正在思考
       loadingMemory: 正在加載記憶
       switchFailed: "沒切換成功：{{detail}}"
+      contextUsed: "上下文：已用 {{used}} / 上限 {{size}}（{{percent}}）"
+      contextFrom: "數字由 {{name}} 報告"
+      contextEmpty: 上下文：發一條消息後顯示用量
+      commands: 命令（也可以在輸入框裡打 /）
     emptyDescriptionLocal: "{{name}} 會讀當前白板上的卡片、連線、分組和文件摘要，也能按你的要求改白板，改之前會先說明要做什麼。"
     localAgent:
       api: AI 接口
@@ -3159,36 +3164,6 @@ research:
       login: 在終端中登錄
       permissionTitle: "{{name}} 請求批准"
       permissionInput: 參數
-      modes:
-        codex:
-          read-only:
-            name: 只讀
-            description: 能讀文件、跑只讀命令；要改文件或聯網時先問你
-          workspace-write:
-            name: 工作區可寫
-            description: 能改研究文件夾裡的文件；出了研究文件夾或要聯網時先問你
-          agent:
-            name: 自動審查
-            description: 由 Codex 自己判斷，只在它覺得有風險時問你
-          agent-full-access:
-            name: 完全訪問
-            description: 不受限制，能聯網、能改電腦上任何文件
-        claude:
-          default:
-            name: 手動
-            description: 改文件、跑命令前都先問你
-          acceptEdits:
-            name: 自動接受改文件
-            description: 改文件不問，跑命令前先問你
-          plan:
-            name: 先出計劃
-            description: 先列出打算怎麼做，你同意了再動手
-          auto:
-            name: 自動
-            description: 由 Claude 自己判斷什麼時候問你
-          bypassPermissions:
-            name: 跳過所有確認
-            description: 什麼都不問，直接做
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

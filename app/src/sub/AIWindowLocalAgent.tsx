@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { openLocalAgentTerminal, type LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import type {
-  LocalAgentChoice,
   LocalAgentPermissionRequest,
   LocalAgentSessionControls,
   LocalAgentStatus,
@@ -40,7 +39,13 @@ import { toast } from "sonner";
 export const composerMenuTriggerClass =
   "text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground flex h-7 max-w-36 min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
-const emptyControls: LocalAgentSessionControls = { modes: [], currentMode: null, models: [], currentModel: null };
+const emptyControls: LocalAgentSessionControls = {
+  modes: [],
+  currentMode: null,
+  models: [],
+  currentModel: null,
+  commands: [],
+};
 
 function openSettings(pageId: string, subPage?: SettingsSubPageId) {
   setSettingsInitialPage(pageId, subPage);
@@ -80,7 +85,7 @@ export function useLocalAgentControls(transport: LocalAgentTransport | undefined
   return controls;
 }
 
-/** 输入框底栏最左边的下拉：用设置里的接口，还是本机已经装好的某个程序 */
+/** 面板标题下面的小下拉：用设置里的接口，还是本机已经装好的某个程序 */
 export function AISourceMenu({
   catalog,
   onOpen,
@@ -103,11 +108,15 @@ export function AISourceMenu({
 
   return (
     <DropdownMenu onOpenChange={(open) => open && onOpen()}>
-      <DropdownMenuTrigger disabled={disabled} className={composerMenuTriggerClass} title={t("ai.composer.source")}>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        title={t("ai.composer.source")}
+        className="text-muted-foreground hover:text-foreground flex max-w-full cursor-pointer items-center gap-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+      >
         <span className="truncate">{label}</span>
         <ChevronDown className="size-3 shrink-0" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-60">
+      <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuRadioGroup
           value={backend === "api" ? "api" : agentId}
           onValueChange={(value) => {
@@ -194,45 +203,37 @@ export function LocalAgentModelMenu({
   );
 }
 
-/** 程序自带的权限模式，照两个 VS Code 插件的做法在输入框下面随时切换；最危险的一档核心逻辑已经去掉了 */
+// 这几档不受限制，照插件原样列出来但标红提醒；程序默认配置不是它们时，我们也从不自己切过去
+const DANGEROUS_MODES = new Set(["bypassPermissions", "agent-full-access", "full-access", "yolo"]);
+
+/** 程序自带的权限模式，名字和说明照程序给的原样显示，和两个 VS Code 插件一致 */
 export function LocalAgentModeMenu({
-  agentId,
   controls,
   disabled,
   onSelect,
 }: {
-  agentId: string;
   controls: LocalAgentSessionControls;
   disabled: boolean;
   onSelect: (id: string) => void;
 }) {
   const { t } = useTranslation("research");
   if (controls.modes.length === 0) return null;
-  const text = (choice: LocalAgentChoice) => ({
-    name: t(`ai.localAgent.modes.${agentId}.${choice.id}.name`, { defaultValue: choice.name }),
-    description: t(`ai.localAgent.modes.${agentId}.${choice.id}.description`, {
-      defaultValue: choice.description ?? "",
-    }),
-  });
   const current = controls.modes.find((mode) => mode.id === controls.currentMode);
-  // 程序自己切到了列表里没有的危险档时，照实显示出来提醒你
-  const hidden = controls.currentMode !== null && !current;
-  const currentText = current
-    ? text(current)
-    : hidden
-      ? text({ id: controls.currentMode!, name: controls.currentMode! })
-      : { name: t("ai.composer.mode"), description: "" };
-  const Icon = hidden ? ShieldAlert : ShieldCheck;
+  const dangerous = controls.currentMode !== null && DANGEROUS_MODES.has(controls.currentMode);
+  const Icon = dangerous ? ShieldAlert : ShieldCheck;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
-        className={cn(composerMenuTriggerClass, hidden && "text-destructive hover:text-destructive")}
-        title={currentText.description || t("ai.composer.mode")}
+        className={cn(
+          composerMenuTriggerClass,
+          dangerous && "text-destructive hover:text-destructive data-[state=open]:text-destructive",
+        )}
+        title={current?.description || t("ai.composer.mode")}
       >
         <Icon className="size-3.5 shrink-0" />
-        <span className="truncate">{currentText.name}</span>
+        <span className="truncate">{current?.name ?? controls.currentMode ?? t("ai.composer.mode")}</span>
         <ChevronDown className="size-3 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-72">
@@ -242,7 +243,7 @@ export function LocalAgentModeMenu({
         <DropdownMenuRadioGroup value={controls.currentMode ?? ""} onValueChange={onSelect}>
           {controls.modes.map((mode) => (
             <DropdownMenuRadioItem key={mode.id} value={mode.id}>
-              <ChoiceText {...text(mode)} />
+              <ChoiceText name={mode.name} description={mode.description} danger={DANGEROUS_MODES.has(mode.id)} />
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
@@ -251,11 +252,18 @@ export function LocalAgentModeMenu({
   );
 }
 
-function ChoiceText({ name, description }: { name: string; description?: string }) {
+function ChoiceText({ name, description, danger }: { name: string; description?: string; danger?: boolean }) {
   return (
-    <span className="flex min-w-0 flex-col gap-0.5">
-      <span className="truncate">{name}</span>
-      {description && <span className="text-muted-foreground text-xs leading-snug">{description}</span>}
+    <span className={cn("flex min-w-0 flex-col gap-0.5", danger && "text-destructive")}>
+      <span className="flex items-center gap-1 truncate">
+        {danger && <ShieldAlert className="size-3.5 shrink-0" />}
+        {name}
+      </span>
+      {description && (
+        <span className={cn("text-xs leading-snug", danger ? "text-destructive/80" : "text-muted-foreground")}>
+          {description}
+        </span>
+      )}
     </span>
   );
 }

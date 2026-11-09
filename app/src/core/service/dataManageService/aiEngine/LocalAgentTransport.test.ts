@@ -63,8 +63,6 @@ vi.mock("@/core/service/Settings", () => ({
     aiBackend: "api",
     aiLocalAgent: "codex",
     aiLocalAgentPaths: {},
-    aiLocalAgentModes: {},
-    aiLocalAgentModels: {},
   },
 }));
 vi.mock("@/core/research/ResearchFolder", () => ({
@@ -143,8 +141,6 @@ beforeEach(() => {
     aiBackend: "api",
     aiLocalAgent: "codex",
     aiLocalAgentPaths: {},
-    aiLocalAgentModes: {},
-    aiLocalAgentModels: {},
   });
 });
 afterEach(async () => {
@@ -279,7 +275,7 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
 }
 
 describe("LocalAgentTransport with an in-memory SDK agent", () => {
-  it("控制项立即回放和退订；恢复每个程序的记忆，成功写回，失败不覆盖", async () => {
+  it("控制项立即回放和退订；沿用程序默认，切换只改当前会话，失败不变", async () => {
     let configOptions = [
       {
         id: "permissions",
@@ -318,34 +314,36 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
           return { configOptions };
         }),
     );
-    Settings.aiLocalAgentModes = { codex: "read-only", claude: "plan" };
-    Settings.aiLocalAgentModels = { codex: "model-2", claude: "opus" };
     const listener = vi.fn();
     const unsubscribe = f.transport.onControls(listener);
-    expect(listener).toHaveBeenCalledExactlyOnceWith({ modes: [], models: [], currentMode: null, currentModel: null });
+    expect(listener).toHaveBeenCalledExactlyOnceWith({
+      modes: [],
+      models: [],
+      currentMode: null,
+      currentModel: null,
+      commands: [],
+    });
     await expect(f.transport.setMode("read-only")).rejects.toMatchObject({ reason: "protocol" });
     await f.transport.prepareSession(f.chatId);
     expect(f.prompts).toHaveLength(0);
-    expect(f.controls.at(-1)).toMatchObject({ currentMode: "read-only", currentModel: "model-2" });
+    // 照程序自己的默认配置，不替用户切换
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "agent", currentModel: "model-1" });
     const late = vi.fn();
     f.transport.onControls(late)();
     expect(late).toHaveBeenCalledExactlyOnceWith(f.controls.at(-1));
     unsubscribe();
     const count = listener.mock.calls.length;
-    await f.transport.setMode("agent");
-    await f.transport.setModel("model-1");
-    expect(Settings.aiLocalAgentModes).toEqual({ codex: "agent", claude: "plan" });
-    expect(Settings.aiLocalAgentModels).toEqual({ codex: "model-1", claude: "opus" });
+    await f.transport.setMode("read-only");
+    await f.transport.setModel("model-2");
     expect(listener).toHaveBeenCalledTimes(count);
-    expect(f.controls.at(-1)).toMatchObject({ currentMode: "agent", currentModel: "model-1" });
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "read-only", currentModel: "model-2" });
     fail = true;
-    await expect(f.transport.setMode("read-only")).rejects.toMatchObject({ reason: "protocol" });
-    await expect(f.transport.setModel("model-2")).rejects.toMatchObject({ reason: "protocol" });
-    expect(Settings.aiLocalAgentModes.codex).toBe("agent");
-    expect(Settings.aiLocalAgentModels.codex).toBe("model-1");
+    await expect(f.transport.setMode("agent")).rejects.toMatchObject({ reason: "protocol" });
+    await expect(f.transport.setModel("model-1")).rejects.toMatchObject({ reason: "protocol" });
+    expect(f.controls.at(-1)).toMatchObject({ currentMode: "read-only", currentModel: "model-2" });
     expect(f.statuses.at(-1)).toMatchObject({ kind: "ready" });
     await f.transport.dispose();
-    expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null });
+    expect(f.controls.at(-1)).toEqual({ modes: [], models: [], currentMode: null, currentModel: null, commands: [] });
   });
 
   it("发送前准备与发送共用队列；切换会话时回放各自控制项", async () => {
@@ -932,29 +930,24 @@ describe("AIEngine backend selection and settings", () => {
     );
   });
 
-  it("缺省值、来源/程序/路径/模式/模型 schema 校验与持久化；旧的三档权限已删除", async () => {
+  it("缺省值、来源/程序/路径 schema 校验与持久化；三档权限和模式记忆都已删除", async () => {
     const actual = await vi.importActual<typeof import("@/core/service/Settings")>("@/core/service/Settings");
-    expect("aiLocalAgentPermission" in actual.settingsSchema.shape).toBe(false);
+    for (const removed of ["aiLocalAgentPermission", "aiLocalAgentModes", "aiLocalAgentModels"])
+      expect(removed in actual.settingsSchema.shape).toBe(false);
     const schema = actual.settingsSchema.pick({
       aiBackend: true,
       aiLocalAgent: true,
       aiLocalAgentPaths: true,
-      aiLocalAgentModes: true,
-      aiLocalAgentModels: true,
     });
     expect(schema.parse({})).toEqual({
       aiBackend: "api",
       aiLocalAgent: "codex",
       aiLocalAgentPaths: {},
-      aiLocalAgentModes: {},
-      aiLocalAgentModels: {},
     });
     const valid = {
       aiBackend: ["api", "localAgent"],
       aiLocalAgent: ["codex", "claude", "gemini", "kimi", "cursor", "opencode", "qodercn"],
       aiLocalAgentPaths: [{ codex: "/bin/codex-acp" }],
-      aiLocalAgentModes: [{ codex: "read-only", claude: "default" }],
-      aiLocalAgentModels: [{ codex: "gpt-6-astra", claude: "default" }],
     };
     for (const [key, values] of Object.entries(valid))
       for (const value of values) {
@@ -966,8 +959,6 @@ describe("AIEngine backend selection and settings", () => {
       aiBackend: "other",
       aiLocalAgent: "shell",
       aiLocalAgentPaths: { codex: 1 },
-      aiLocalAgentModes: { codex: 1 },
-      aiLocalAgentModels: { claude: false },
     }))
       expect(schema.safeParse({ [key]: value }).success).toBe(false);
   });
