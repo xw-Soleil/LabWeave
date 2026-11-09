@@ -195,7 +195,7 @@ const definitions: BuiltInToolDefinition[] = [
   }),
   defineTool({
     name: "edit_text_node",
-    description: "编辑 TextNode 的内容、颜色和尺寸。此工具不会移动节点。",
+    description: "编辑 TextNode 的内容、颜色和尺寸。此工具不会移动节点，挪位置用 move_nodes。",
     inputSchema: z.object({
       ref: nodeRefSchema,
       data: z.object({
@@ -604,6 +604,29 @@ const researchDefinitions: BuiltInToolDefinition[] = [
     cancellation: "none",
     transaction: "non-transactional",
     persistence: "project-and-references",
+  }),
+  defineTool({
+    name: "move_nodes",
+    description:
+      "把卡片挪到新位置，x、y 是卡片左上角的世界坐标（x 向右、y 向下）。引用不变，连线跟着走；挪分组时里面的卡片一起走。一次可以挪好几张。不依赖视野，工作区没在桌面端打开时也能用。返回挪完后的位置和尺寸。",
+    inputSchema: z.object({
+      moves: z
+        .array(
+          z.object({
+            ref: nodeRefSchema,
+            x: z.number().describe("卡片左上角的世界坐标 x"),
+            y: z.number().describe("卡片左上角的世界坐标 y"),
+          }),
+        )
+        .min(1)
+        .describe("每张卡片挪到哪里"),
+    }),
+    // 挪分组时里面的卡片会加移动残影，要有特效服务
+    capabilities: ["project", "references", "history", "effects", "settings"],
+    projectReferences: { reads: true, allocates: false },
+    cancellation: "none",
+    transaction: "rollback-on-error",
+    persistence: "project",
   }),
 ];
 

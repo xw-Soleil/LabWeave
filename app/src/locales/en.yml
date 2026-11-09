@@ -3021,6 +3021,8 @@ research:
       contextFrom: "Reported by {{name}}"
       contextEmpty: "Context: usage appears after the first message"
       commands: Commands (or type / in the box)
+      copy: Copy this reply
+      copied: Copied
     emptyDescriptionLocal: "{{name}} reads the cards, links, groups and file excerpts on the current board, and can edit the board when you ask. It says what it will change first."
     localAgent:
       api: AI API

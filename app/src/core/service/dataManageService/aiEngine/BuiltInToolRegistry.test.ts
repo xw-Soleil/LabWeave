@@ -43,7 +43,13 @@ const upstreamToolNames = [
 ] as const;
 
 // 目录末尾是科研工作台加的工具
-const researchToolNames = ["dump_workspace", "create_file_card", "create_text_node_at", "create_section"] as const;
+const researchToolNames = [
+  "dump_workspace",
+  "create_file_card",
+  "create_text_node_at",
+  "create_section",
+  "move_nodes",
+] as const;
 const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
 
 function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
@@ -56,7 +62,7 @@ function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
 }
 
 describe("Built-in Tool Registry catalog", () => {
-  it("exposes the closed, ordered set of 29 upstream tools plus 4 research tools without loading executors", () => {
+  it("exposes the closed, ordered set of 29 upstream tools plus 5 research tools without loading executors", () => {
     expect(builtInToolCatalog.map(({ name }) => name)).toEqual(expectedToolNames);
     expect(new Set(expectedToolNames).size).toBe(expectedToolNames.length);
     expect(executorModule.loaded).toBe(false);
@@ -75,8 +81,8 @@ describe("Built-in Tool Registry catalog", () => {
     expect(() => createFileCard.inputSchema.parse({ path: "" })).toThrow();
   });
 
-  it("lets create_text_node_at and create_section run on a closed workspace and keeps them out of the in-app chat", () => {
-    for (const name of ["create_text_node_at", "create_section"]) {
+  it("lets create_text_node_at, create_section and move_nodes run on a closed workspace and keeps them out of the in-app chat", () => {
+    for (const name of ["create_text_node_at", "create_section", "move_nodes"]) {
       const definition = builtInToolCatalog.find((candidate) => candidate.name === name)!;
       expect(classifyBuiltInToolProjectContext(definition), name).toBe("closed-capable");
       expect(canClosedProjectProvideCapabilities(definition.capabilities), name).toBe(true);
@@ -166,6 +172,7 @@ describe("Built-in Tool Registry catalog", () => {
       "dump_workspace",
       "create_text_node_at",
       "create_section",
+      "move_nodes",
     ]);
     expect(namesFor("live-selection")).toEqual([
       "delete_selected_nodes",

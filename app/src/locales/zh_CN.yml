@@ -3140,6 +3140,8 @@ research:
       contextFrom: "数字由 {{name}} 报告"
       contextEmpty: 上下文：发一条消息后显示用量
       commands: 命令（也可以在输入框里打 /）
+      copy: 复制这条回答
+      copied: 已复制
     emptyDescriptionLocal: "{{name}} 会读当前白板上的卡片、连线、分组和文件摘要，也能按你的要求改白板，改之前会先说明要做什么。"
     localAgent:
       api: AI 接口

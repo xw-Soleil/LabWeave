@@ -65,7 +65,7 @@ describe("external AI MCP server", () => {
 
     const { tools } = await client.listTools();
     expect(tools[0].name).toBe("list_workspaces");
-    expect(tools).toHaveLength(34);
+    expect(tools).toHaveLength(35);
     const createEdges = tools.find(({ name }) => name === "create_edges")!;
     expect(createEdges.inputSchema.required).toEqual(["workspace", "edges"]);
     expect(Object.keys(createEdges.inputSchema.properties!)[0]).toBe("workspace");

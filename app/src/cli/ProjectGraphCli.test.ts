@@ -402,8 +402,8 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     const tools = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
-    // 29 个上游工具 + 科研工作台的 dump_workspace / create_file_card / create_text_node_at / create_section
-    expect(tools).toHaveLength(33);
+    // 29 个上游工具 + 科研工作台的 dump_workspace / create_file_card / create_text_node_at / create_section / move_nodes
+    expect(tools).toHaveLength(34);
     expect(tools[0]).toMatchObject({
       name: "get_all_nodes",
       description: expect.any(String),
@@ -1367,6 +1367,43 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       expect.objectContaining({ ref: placedRef, text: "Placed", position: { x: 600, y: 300 } }),
     );
     expect(objects).toContainEqual(expect.objectContaining({ ref: section.ref, type: "Section" }));
+
+    // 挪卡片：引用不变；挪分组时里面的卡片一起走
+    const positions = () =>
+      new Map(
+        (
+          JSON.parse(invoke("get_all_nodes", {}).stdout) as {
+            objects: Array<{ ref: string; position: { x: number; y: number } }>;
+          }
+        ).objects.map(({ ref, position }) => [ref, position]),
+      );
+    const start = positions();
+    const sectionStart = start.get(section.ref)!;
+    const n1Start = start.get("n1")!;
+    const moved = invoke("move_nodes", {
+      moves: [
+        { ref: placedRef, x: 800, y: 500 },
+        { ref: section.ref, x: sectionStart.x + 100, y: sectionStart.y + 50 },
+      ],
+    });
+    expect(moved).toMatchObject({ status: 0, stderr: "" });
+    expect(JSON.parse(moved.stdout)).toMatchObject({
+      success: true,
+      moved: [
+        { ref: placedRef, position: { x: 800, y: 500 } },
+        { ref: section.ref, position: { x: sectionStart.x + 100, y: sectionStart.y + 50 } },
+      ],
+    });
+    const end = positions();
+    expect(end.get(placedRef)).toEqual({ x: 800, y: 500 });
+    expect(end.get("n1")).toEqual({ x: n1Start.x + 100, y: n1Start.y + 50 });
+    const twice = invoke("move_nodes", {
+      moves: [
+        { ref: "n1", x: 0, y: 0 },
+        { ref: "n1", x: 1, y: 1 },
+      ],
+    });
+    expect(JSON.parse(twice.stdout)).toMatchObject({ success: false, error: { code: "duplicate_refs" } });
   }, 30_000);
 
   it("expands a closed Project tree without desktop-only effects or services", async () => {

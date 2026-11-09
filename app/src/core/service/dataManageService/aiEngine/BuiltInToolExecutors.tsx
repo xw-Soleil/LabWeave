@@ -966,6 +966,38 @@ addExecutor("create_section", () => (project, { refs, title }, references) => {
   };
 });
 
+addExecutor("move_nodes", () => (project, { moves }, references) => {
+  const targets = (moves as { ref: string; x: number; y: number }[]).map(({ ref, x, y }) => {
+    const object = references.resolve(ref, "node");
+    if (!(object instanceof Entity)) throw new Error(`节点引用 ${ref} 未指向卡片`);
+    return { ref, entity: object, location: new Vector(x, y) };
+  });
+  if (new Set(targets.map(({ entity }) => entity)).size !== targets.length) {
+    return { success: false, error: { code: "duplicate_refs", message: "同一张卡片只能出现一次" } };
+  }
+  // 分组一挪，里面的卡片跟着走；先挪外层，里面的卡片才能落在给定的位置上
+  const depth = (entity: Entity) => {
+    let count = 0;
+    for (let section = entity.parentSection; section; section = section.parentSection) count++;
+    return count;
+  };
+  for (const { entity, location } of targets.toSorted((a, b) => depth(a.entity) - depth(b.entity))) {
+    entity.moveTo(location);
+  }
+  project.historyManager.recordStep();
+  return {
+    success: true,
+    moved: targets.map(({ ref, entity }) => {
+      const rect = entity.collisionBox.getRectangle();
+      return {
+        ref,
+        position: { x: rect.location.x, y: rect.location.y },
+        size: { width: rect.size.x, height: rect.size.y },
+      };
+    }),
+  };
+});
+
 Object.freeze(builtInToolExecutorLoaders);
 
 async function recognizeImage(dataUrl: string, prompt: string): Promise<string> {

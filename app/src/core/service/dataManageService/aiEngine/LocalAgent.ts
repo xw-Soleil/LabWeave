@@ -594,6 +594,11 @@ function isAuthRequired(error: unknown): boolean {
   );
 }
 
+/** 程序只在整段提示词以 `/` 开头时才当命令执行（2026-11-09 用 /context、/status 实测），所以命令要单独发 */
+export function isLocalAgentCommand(text: string): boolean {
+  return /^\/\S/.test(text.trim());
+}
+
 const CLAUDE_WHITEBOARD_TOOL = /^mcp__research-workbench__[A-Za-z0-9_]+$/;
 const CODEX_WHITEBOARD_TOOL = /^mcp\.research-workbench\.[A-Za-z0-9_]+$/;
 
@@ -616,6 +621,8 @@ export type SessionUpdateState = {
   readonly messageId: string;
   readonly nextPartId: number;
   readonly activePart?: { readonly kind: "text" | "reasoning"; readonly id: string };
+  // 同一轮里程序可能先后发好几条消息（messageId 不同），每条单独成段，不首尾粘在一起
+  readonly lastMessage?: { readonly id: string; readonly text: string; readonly duplicate: boolean };
   readonly toolCalls: Readonly<Record<string, ToolCall>>;
   // ACP 的 used/size 是上下文占用量，不能冒充 API 的 inputTokens/outputTokens。
   readonly metadata: Readonly<AIMessageMetadata & { localAgentUsage?: UsageUpdate }>;
@@ -637,11 +644,30 @@ export function mapSessionUpdate(update: SessionUpdate, state: SessionUpdateStat
   if (update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "agent_thought_chunk") {
     if (update.content.type !== "text") return { chunks: [], state };
     const kind = update.sessionUpdate === "agent_message_chunk" ? "text" : "reasoning";
-    const result = state.activePart?.kind === kind ? { chunks: [] as UIMessageChunk[], state } : endPart(state);
+    let current = state;
+    let startsMessage = false;
+    if (kind === "text" && update.messageId) {
+      const last = state.lastMessage;
+      if (last?.id === update.messageId) {
+        if (last.duplicate) return { chunks: [], state };
+        current = { ...state, lastMessage: { ...last, text: last.text + update.content.text } };
+      } else {
+        // Claude Code 的本地命令（如 /context）会把同一段结果换个 messageId 再发一遍（2026-11-09 实测），一字不差的第二条不显示
+        const duplicate =
+          last !== undefined && last.text.trim() !== "" && last.text.trim() === update.content.text.trim();
+        current = { ...state, lastMessage: { id: update.messageId, text: update.content.text, duplicate } };
+        if (duplicate) return { chunks: [], state: current };
+        startsMessage = last !== undefined;
+      }
+    }
+    const result =
+      current.activePart?.kind === kind && !startsMessage
+        ? { chunks: [] as UIMessageChunk[], state: current }
+        : endPart(current);
     if (!result.state.activePart) {
-      const id = `${state.messageId}:${state.nextPartId}`;
+      const id = `${current.messageId}:${current.nextPartId}`;
       result.chunks.push({ type: `${kind}-start`, id });
-      result.state = { ...result.state, nextPartId: state.nextPartId + 1, activePart: { kind, id } };
+      result.state = { ...result.state, nextPartId: current.nextPartId + 1, activePart: { kind, id } };
     }
     result.chunks.push({ type: `${kind}-delta`, id: result.state.activePart!.id, delta: update.content.text });
     return result;

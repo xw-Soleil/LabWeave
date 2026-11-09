@@ -38,7 +38,8 @@ const INSTRUCTIONS = `这是「科研工作台」（一个白板程序）的接�
 - 看整块白板的内容用 dump_workspace；要改某张卡片，先用 get_all_nodes 或 search_text_nodes_by_regex 拿到它的引用（n1、e1 这种），引用只在同一个工作区里有效。
 - 工作区开在程序里时，改动马上出现在白板上，用户可以撤销；没开时直接改文件。
 - 名字里带 selected、viewport 的工具，以及不带坐标的 create_text_node、create_file_card，要用到程序里的选中或视野，只能用于开着的工作区。要在没开的工作区里加卡片，用 create_text_node_at。
-- 坐标是白板的世界坐标：x 向右、y 向下。
+- 坐标是白板的世界坐标：x 向右、y 向下。get_all_nodes 会给出每张卡片的位置和尺寸，摆新卡片时避开已有的。
+- 要调整位置用 move_nodes，不要删掉重建：删掉重建会换引用，连线也要重连。
 - 资源里每个工作区的「文字版」是上次保存时写出的，最新内容以 dump_workspace 为准。`;
 
 const WORKSPACE_PROPERTY = {

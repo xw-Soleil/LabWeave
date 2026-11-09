@@ -71,8 +71,13 @@ import {
   useLocalAgentStatus,
 } from "@/sub/AIWindowLocalAgent";
 import { displayWorkspaceName } from "@/components/ui/file-name";
-import type { LocalAgentCommand, LocalAgentInfo } from "@/core/service/dataManageService/aiEngine/LocalAgent";
+import {
+  isLocalAgentCommand,
+  type LocalAgentCommand,
+  type LocalAgentInfo,
+} from "@/core/service/dataManageService/aiEngine/LocalAgent";
 import { useChat } from "@ai-sdk/react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Color, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@radix-ui/react-collapsible";
@@ -84,6 +89,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  Copy,
   FolderOpen,
   History,
   LayoutDashboard,
@@ -824,7 +830,7 @@ function AIChatPanel({
     const text = rawText.trim();
     if (!text || requesting || !sessionLoaded || configProblems.length > 0) return false;
     // 斜杠命令必须在提示词最前面程序才认，不加选中内容的前缀
-    const isCommand = localAgent !== undefined && text.startsWith("/");
+    const isCommand = localAgent !== undefined && isLocalAgentCommand(text);
     const selectedObjects =
       isCommand || selectionKey(project) === excludedSelectionKey
         ? []
@@ -1385,12 +1391,16 @@ function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const parts = (Array.isArray(message.parts) ? message.parts : []).filter((part: any) => part.type !== "step-start");
+  const finished = !isUser && (!isLast || !requesting);
+  const hasText = parts.some((part: any) => part.type === "text");
+  const copyText = finished ? replyText(message, parts) : "";
 
-  // 照插件的样子：你的消息是浅底圆角块，AI 的回答不套气泡，直接排文字，工具调用折成一行
+  // 照插件的样子：你的消息是浅底圆角块，AI 的回答不套气泡，直接排文字，工具调用折成一行。
+  // 全局样式给每个元素都设了不可选中，只给外框设 select-text 管不到里面的段落，要连子元素一起放开。
   return (
     <div
       className={cn(
-        "flex min-w-0 cursor-text flex-col gap-2 text-sm select-text",
+        "group flex min-w-0 cursor-text flex-col gap-2 text-sm select-text [&_*]:select-text",
         isUser && "bg-muted/70 text-foreground rounded-lg px-3 py-2",
       )}
     >
@@ -1417,15 +1427,51 @@ function MessageBubble({
           {String(message.content ?? "")}
         </Streamdown>
       )}
-      {!isUser && selectedCount === 1 && parts.some((p: any) => p.type === "text") && (!isLast || !requesting) && (
-        <button
-          className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center self-end text-xs"
-          onClick={() => createAnswerNode(message, project)}
-        >
-          <Plus className="size-3.5" />
-        </button>
+      {finished && (copyText || (selectedCount === 1 && hasText)) && (
+        <div className="flex items-center justify-end gap-2">
+          {copyText && <CopyReplyButton text={copyText} />}
+          {selectedCount === 1 && hasText && (
+            <button
+              className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center"
+              onClick={() => createAnswerNode(message, project)}
+            >
+              <Plus className="size-3.5" />
+            </button>
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+function replyText(message: any, parts: any[]): string {
+  const texts = parts.filter((part) => part.type === "text").map((part) => String(part.text ?? ""));
+  return (texts.length > 0 ? texts.join("\n\n") : String(message.content ?? "")).trim();
+}
+
+function CopyReplyButton({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      className={cn(
+        "text-muted-foreground hover:text-foreground flex cursor-pointer items-center transition-opacity focus-visible:opacity-100",
+        copied ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+      title={t(copied ? "ai.composer.copied" : "ai.composer.copy")}
+      aria-label={t("ai.composer.copy")}
+      onClick={async () => {
+        await writeText(text);
+        setCopied(true);
+      }}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
   );
 }
 

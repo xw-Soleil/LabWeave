@@ -14,6 +14,7 @@ import {
   createSessionUpdateState,
   finishSessionUpdate,
   getLocalAgentCatalog,
+  isLocalAgentCommand,
   LocalAgentConnection,
   LocalAgentError,
   mapSessionUpdate,
@@ -47,10 +48,20 @@ export type LocalAgentPromptContext = {
   recentHistory?: string;
 };
 
+function messageText(message: UIMessage<AIMessageMetadata>): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
 export function buildLocalAgentPrompt(
   message: UIMessage<AIMessageMetadata>,
   context: LocalAgentPromptContext,
 ): ContentBlock[] {
+  const text = messageText(message);
+  // 前面拼了工作区说明，程序就把命令当普通文字交给模型
+  if (isLocalAgentCommand(text)) return [{ type: "text", text: text.trim() }];
   const workspace = context.workspace
     ? `当前工作区相对研究文件夹的路径：${JSON.stringify(context.workspace)}。调用白板工具时 workspace 填这个路径。`
     : "当前是未保存的草稿，白板工具用不了，只能根据下面的白板文字版回答。";
@@ -70,10 +81,7 @@ export function buildLocalAgentPrompt(
               context.recentHistory ? `<recent-history>\n${context.recentHistory}\n</recent-history>` : "",
             ]
           : []),
-        message.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n"),
+        text,
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -181,14 +189,16 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       const session = await this.ensureConnection(root, options.chatId);
       signal.throwIfAborted();
       const project = this.options.project;
-      const blocks = buildLocalAgentPrompt(options.messages[messageIndex], {
-        firstPrompt: session.firstPrompt,
+      const message = options.messages[messageIndex];
+      // 命令单独发，白板说明和历史留给下一条普通消息
+      const command = isLocalAgentCommand(messageText(message));
+      const firstPrompt = session.firstPrompt && !command;
+      const blocks = buildLocalAgentPrompt(message, {
+        firstPrompt,
         workspace: project.uri.scheme === "file" ? ResearchFolder.toRelative(project.uri.fsPath) : undefined,
-        researchContext: session.firstPrompt ? await buildResearchContext(project) : undefined,
+        researchContext: firstPrompt ? await buildResearchContext(project) : undefined,
         recentHistory:
-          session.firstPrompt && !session.loaded
-            ? formatLocalAgentHistory(options.messages.slice(0, messageIndex))
-            : undefined,
+          firstPrompt && !session.loaded ? formatLocalAgentHistory(options.messages.slice(0, messageIndex)) : undefined,
       });
       signal.throwIfAborted();
       this.update = (update) => {
@@ -196,7 +206,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
         state = mapped.state;
         mapped.chunks.forEach(emit);
       };
-      session.firstPrompt = false;
+      if (!command) session.firstPrompt = false;
       const response = await this.connection!.prompt(blocks, signal, session.sessionId);
       finishSessionUpdate(state, signal.aborted ? "cancelled" : response.stopReason).chunks.forEach(emit);
     } catch (error) {

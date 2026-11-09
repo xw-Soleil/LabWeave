@@ -51,4 +51,29 @@ describe("AutoLayout.autoLayoutDAG", () => {
     expect((child.moveTo as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ x: 260, y: 20 });
     expect((grandchild.moveTo as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ x: 570, y: 20 });
   });
+
+  it("stacks cards in the same column by their real height so tall cards do not overlap", () => {
+    // 11-09 实测：两张 200 高的文件卡片排在同一列，原来只隔 100，压在了一起
+    const goal = createEntity("goal", 10, 20, 280, 200);
+    const paper = createEntity("paper", 0, 0, 280, 200);
+    const note = createEntity("note", 0, 0, 280, 40);
+    const result = createEntity("result", 0, 0, 280, 200);
+    const children = new Map<ConnectableEntity, ConnectableEntity[]>([
+      [goal, [result]],
+      [paper, [result]],
+      [note, [result]],
+    ]);
+    const project = {
+      graphMethods: { nodeChildrenArray: (entity: ConnectableEntity) => children.get(entity) ?? [] },
+      historyManager: { recordStep: vi.fn() },
+    } as unknown as Project;
+
+    new AutoLayout(project).autoLayoutDAG([goal, paper, note, result]);
+
+    const placed = (entity: ConnectableEntity) => (entity.moveTo as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(placed(goal)).toMatchObject({ x: 10, y: 20 });
+    expect(placed(paper)).toMatchObject({ x: 10, y: 270 });
+    expect(placed(note)).toMatchObject({ x: 10, y: 520 });
+    expect(placed(result)).toMatchObject({ x: 440, y: 20 });
+  });
 });

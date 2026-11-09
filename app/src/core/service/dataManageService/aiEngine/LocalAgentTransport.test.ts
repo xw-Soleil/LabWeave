@@ -473,6 +473,18 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     });
   });
 
+  it("第一条是斜杠命令时只发命令，白板说明留到下一条普通消息", async () => {
+    const f = await setup();
+    await collect(await f.send([user("/status")]));
+    expect(promptText(f.prompts[0])).toBe("/status");
+    expect(buildResearchContext).not.toHaveBeenCalled();
+    await collect(await f.send([user("/status"), assistant("ok"), user("看看白板")]));
+    const next = promptText(f.prompts[1]);
+    expect(next).toContain("<whiteboard>n1 paper</whiteboard>");
+    expect(next).toContain("可以通过 research-workbench 的工具修改白板");
+    expect(next.endsWith("看看白板")).toBe(true);
+  });
+
   it("逐字、思考、工具成功/失败和 usage 流可被 AI SDK readUIMessageStream 读取", async () => {
     const updates: SessionUpdate[] = [
       { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "think" } },
@@ -860,6 +872,17 @@ describe("prompt history limits", () => {
         researchContext: "omit",
       }),
     ).toEqual([{ type: "text", text: expect.not.stringContaining("omit") }]);
+  });
+
+  it("斜杠命令单独发，前面不拼工作区说明、白板文字版和历史", () => {
+    const context = { firstPrompt: true, workspace: "board.prg", recentHistory: "history", researchContext: "board" };
+    expect(buildLocalAgentPrompt(user("  /compact  "), context)).toEqual([{ type: "text", text: "/compact" }]);
+    expect(buildLocalAgentPrompt(user("/context"), { ...context, firstPrompt: false })).toEqual([
+      { type: "text", text: "/context" },
+    ]);
+    expect(buildLocalAgentPrompt(user("/ 不是命令"), { ...context, firstPrompt: false })).toEqual([
+      { type: "text", text: expect.stringContaining("board.prg") },
+    ]);
   });
 });
 

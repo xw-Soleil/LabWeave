@@ -82,7 +82,7 @@ export class AutoLayout {
 
     // 定义层间距和节点间距
     const horizontalSpacing = 150; // 层与层之间的基本水平间距
-    const verticalSpacing = 100; // 同一层节点之间的垂直间距
+    const verticalSpacing = 50; // 同一层上一张卡片底边到下一张顶边的距离（普通文字卡片约 50 高，和原来每张隔 100 差不多）
 
     // 处理第一个节点（拓扑序第一个）
     if (topologicalOrder.length > 0) {
@@ -136,19 +136,15 @@ export class AutoLayout {
         // 计算当前层的水平位置
         const levelX = levelOffsets.get(level) || 0;
 
-        // 处理当前层的所有节点
+        // 同一层从上往下排，下一张卡片从上一张的底边再往下留出间距（原来按序号乘固定间距，高卡片会叠在一起）
+        let nextY = baseY;
         for (let i = 0; i < nodesInLevel.length; i++) {
           const currentNodeId = nodesInLevel[i];
+          const height = nodeMap.get(currentNodeId)!.rectangle.height;
 
           // 如果是第一层第一个节点，已经处理过，跳过
-          if (level === 0 && i === 0) continue;
-
-          // 计算垂直位置：基于第一层第一个节点的y坐标加上垂直间距
-          // 同一层的节点在垂直方向上排列
-          const newY = baseY + i * verticalSpacing;
-
-          // 设置节点位置
-          newPositions[currentNodeId] = new Vector(levelX, newY);
+          if (!(level === 0 && i === 0)) newPositions[currentNodeId] = new Vector(levelX, nextY);
+          nextY += height + verticalSpacing;
         }
       }
     }

@@ -1071,6 +1071,39 @@ describe("mapSessionUpdate", () => {
     expect(mapSessionUpdate(textUpdate("after"), result.state).chunks[0]).toEqual({ type: "text-start", id: "m:2" });
   });
 
+  it("换了 messageId 另起一段；Claude Code 本地命令换个 messageId 重发的同一段结果只显示一次", () => {
+    const chunk = (text: string, messageId: string): SessionUpdate => ({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text },
+      messageId,
+    });
+    // 2026-11-09 实测 /context：两条内容一样，第二条末尾多两个换行
+    const table = "## Context Usage\n\n| Category | Tokens |";
+    let state = createSessionUpdateState("m");
+    const chunks: unknown[] = [];
+    for (const update of [
+      chunk("## Context", "a"),
+      chunk(" Usage\n\n| Category | Tokens |", "a"),
+      chunk(`${table}\n\n`, "b"),
+    ]) {
+      const mapped = mapSessionUpdate(update, state);
+      chunks.push(...mapped.chunks);
+      state = mapped.state;
+    }
+    const next = mapSessionUpdate(chunk("另一条", "c"), state);
+    chunks.push(...next.chunks, ...finishSessionUpdate(next.state, "end_turn").chunks.slice(0, -1));
+    expect(chunks).toEqual([
+      { type: "text-start", id: "m:0" },
+      { type: "text-delta", id: "m:0", delta: "## Context" },
+      { type: "text-delta", id: "m:0", delta: " Usage\n\n| Category | Tokens |" },
+      { type: "text-end", id: "m:0" },
+      { type: "text-start", id: "m:1" },
+      { type: "text-delta", id: "m:1", delta: "另一条" },
+      { type: "text-end", id: "m:1" },
+    ]);
+    expect(mapSessionUpdate(chunk("more", "b"), state).chunks).toEqual([]);
+  });
+
   it("usage 保存上下文占用量到元数据，不伪造输入输出 token", () => {
     const usage = { used: 123, size: 200000 };
     const result = mapSessionUpdate({ sessionUpdate: "usage_update", ...usage }, createSessionUpdateState("m"));
