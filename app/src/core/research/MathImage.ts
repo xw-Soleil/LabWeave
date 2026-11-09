@@ -52,6 +52,10 @@ async function getMeasurementDocument(owner: Document, css: string, fonts: Katex
   frame.tabIndex = -1;
   owner.body.appendChild(frame);
   const doc = frame.contentDocument!;
+  // 空白 iframe 是怪异模式，文字少的行内盒不撑行高；SVG 图片按标准模式排版，矮公式在图里会比量出的基线低。
+  doc.open();
+  doc.write("<!DOCTYPE html><html><head></head><body></body></html>");
+  doc.close();
   const style = doc.createElement("style");
   style.textContent = css + mathLayoutCss;
   doc.head.appendChild(style);

@@ -256,6 +256,12 @@ describe("shared math measurement", () => {
     expect(images).toHaveLength(1);
   });
 
+  it("measures in standards mode, the mode the SVG image is laid out in", async () => {
+    await renderMathImage(request("x"));
+    expect(frames[0].contentDocument!.compatMode).toBe("CSS1Compat");
+    expect(frames[0].contentDocument!.head.querySelectorAll("style")).toHaveLength(1);
+  });
+
   it("uses a large offscreen viewport without making it visible or interactive", async () => {
     await renderMathImage(request("x"));
     const frame = frames[0];
