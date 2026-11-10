@@ -1,0 +1,336 @@
+/* Markdown 文档的阅读外观。数值来自「阅读外观」设置挂上的 --reading-* 变量，没有时用默认值。
+ * 这里的规则不放进 @layer，才能盖过 prose 和 text-sm 这些工具类。 */
+
+@font-face {
+  font-family: "Inter";
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("../assets/fonts/InterVariable-Italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/JetBrainsMono-Italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.reading-view {
+  --rv-body: var(
+    --reading-font-body,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    "PingFang SC",
+    "Noto Sans CJK SC",
+    sans-serif
+  );
+  --rv-heading: var(--reading-font-heading, var(--rv-body));
+  --rv-code: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  --rv-muted: color-mix(in oklab, var(--foreground) 58%, transparent);
+  --rv-faint: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --rv-line: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --rv-accent: var(--reading-accent, var(--primary));
+  width: 100%;
+  max-width: var(--reading-line-width, 46rem);
+  margin-inline: auto;
+  color: var(--foreground);
+  font-family: var(--rv-body);
+  font-size: var(--reading-font-size, 15px);
+  line-height: var(--reading-line-height, 1.6);
+  font-feature-settings: "cv11", "ss01";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.reading-source {
+  font-family: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+.reading-view ::selection,
+.reading-source::selection {
+  background: rgba(0, 122, 255, 0.2);
+}
+
+.reading-view .reading-title {
+  margin: 0 0 0.9em;
+  font-family: var(--rv-heading);
+  font-size: calc(var(--reading-h1, 1.5) * 1.15em);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+/* prose 自带的字号、颜色和间距统一让给上面的变量 */
+.reading-view .prose {
+  max-width: none;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.reading-view .prose :where(p) {
+  margin: 0.85em 0;
+}
+.reading-view .prose > :first-child {
+  margin-top: 0;
+}
+.reading-view .prose :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.6em 0 0.55em;
+  color: var(--foreground);
+  font-family: var(--rv-heading);
+  letter-spacing: -0.01em;
+}
+.reading-view .prose :where(h1) {
+  font-size: calc(var(--reading-h1, 1.5) * 1em);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.reading-view .prose :where(h2) {
+  font-size: calc(var(--reading-h2, 1.3) * 1em);
+  font-weight: 650;
+  line-height: 1.35;
+}
+.reading-view .prose :where(h3) {
+  font-size: calc(var(--reading-h3, 1.15) * 1em);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.reading-view .prose :where(h4) {
+  font-size: calc(var(--reading-h4, 1.05) * 1em);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.reading-view .prose :where(h5) {
+  font-size: calc(var(--reading-h5, 1) * 1em);
+  font-weight: 600;
+  line-height: 1.45;
+}
+.reading-view .prose :where(h6) {
+  font-size: calc(var(--reading-h6, 1) * 1em);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--rv-muted);
+}
+
+.reading-view .prose :where(a) {
+  color: var(--rv-accent);
+  font-weight: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--rv-accent) 35%, transparent);
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.reading-view .prose :where(a):hover {
+  text-decoration-color: var(--rv-accent);
+}
+.reading-view .prose .wikilink.is-unresolved {
+  color: var(--rv-muted);
+  text-decoration-style: dashed;
+  text-decoration-color: var(--rv-line);
+}
+
+.reading-view .prose :where(strong) {
+  color: inherit;
+  font-weight: 650;
+}
+.reading-view .prose :where(ul, ol) {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+.reading-view .prose :where(li) {
+  margin: 0.2em 0;
+}
+.reading-view .prose :where(li > p) {
+  margin: 0.2em 0;
+}
+.reading-view .prose :where(ul > li)::marker,
+.reading-view .prose :where(ol > li)::marker {
+  color: var(--rv-muted);
+}
+.reading-view .prose :where(hr) {
+  margin: 2em 0;
+  border-color: var(--rv-line);
+}
+
+.reading-view .prose :where(blockquote) {
+  margin: 1em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 2px solid var(--rv-line);
+  color: var(--rv-muted);
+  font-style: normal;
+  font-weight: inherit;
+  quotes: none;
+}
+.reading-view .prose :where(blockquote p)::before,
+.reading-view .prose :where(blockquote p)::after {
+  content: none;
+}
+
+.reading-view .prose :where(code) {
+  padding: 0.12em 0.36em;
+  border-radius: 4px;
+  background: var(--rv-faint);
+  color: inherit;
+  font-family: var(--rv-code);
+  font-size: 0.86em;
+  font-weight: 400;
+}
+.reading-view .prose :where(code)::before,
+.reading-view .prose :where(code)::after {
+  content: none;
+}
+.reading-view .prose :where(pre) {
+  margin: 1em 0;
+  padding: 0.9em 1.1em;
+  border: 1px solid var(--rv-line);
+  border-radius: 8px;
+  background: var(--rv-faint);
+  color: inherit;
+  font-size: 0.86em;
+  line-height: 1.55;
+}
+.reading-view .prose :where(pre code) {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* 表格：照用户 Obsidian 的 tables.css，表头有底色、四周有边框、隔行浅色、悬停高亮 */
+.reading-view .prose :where(table) {
+  width: auto;
+  margin: 1.2em var(--reading-table-margin, 0);
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.55;
+}
+.reading-view .prose :where(th, td) {
+  padding: 7px 12px;
+  border: 1px solid var(--rv-line);
+}
+.reading-view .prose :where(th) {
+  background: var(--rv-faint);
+  color: inherit;
+  font-weight: 600;
+}
+.reading-view .prose :where(tbody tr:nth-child(even)) {
+  background: color-mix(in oklab, var(--foreground) 2.5%, transparent);
+}
+.reading-view .prose :where(tbody tr:hover) {
+  background: color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+/* 图片居中；紧跟在图片后面的整行斜体当图注（和用户 Obsidian 的 image-caption.css 同一种写法） */
+.reading-view .prose :where(img) {
+  display: block;
+  max-width: 100%;
+  margin: 1.2em auto 0.6em;
+  border-radius: 6px;
+}
+.reading-view .prose p:has(> img) + p:has(> em:only-child) {
+  margin-top: -0.4em;
+  color: var(--rv-muted);
+  font-size: 0.82em;
+  line-height: 1.45;
+  text-align: center;
+}
+.reading-view .prose p:has(> img) + p > em:only-child {
+  font-style: normal;
+}
+.reading-view .prose p > img ~ em:last-child {
+  display: block;
+  margin-top: 0.35em;
+  color: var(--rv-muted);
+  font-size: 0.82em;
+  font-style: normal;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.reading-view .prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+
+/* 提示框：照 Obsidian 的配色，一种类型一种颜色 */
+.reading-view .callout {
+  --callout: 8, 109, 221;
+  margin: 1em 0;
+  padding: 0.7em 1em;
+  border-radius: 6px;
+  background: rgba(var(--callout), 0.08);
+  border-left: 3px solid rgba(var(--callout), 0.55);
+}
+.reading-view .callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  color: rgb(var(--callout));
+  font-weight: 600;
+}
+.reading-view .callout[data-fold="+"] > .callout-title,
+.reading-view .callout[data-fold="-"] > .callout-title {
+  cursor: pointer;
+  user-select: none;
+}
+.reading-view .callout-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.reading-view .callout-icon svg {
+  width: 1em;
+  height: 1em;
+}
+.reading-view .callout-content {
+  margin-top: 0.35em;
+}
+.reading-view .callout-content > :first-child {
+  margin-top: 0;
+}
+.reading-view .callout-content > :last-child {
+  margin-bottom: 0;
+}
+.reading-view .callout:is([data-callout="abstract"], [data-callout="summary"], [data-callout="tldr"]),
+.reading-view .callout:is([data-callout="tip"], [data-callout="hint"], [data-callout="important"]) {
+  --callout: 0, 168, 172;
+}
+.reading-view .callout:is([data-callout="success"], [data-callout="check"], [data-callout="done"]) {
+  --callout: 8, 185, 78;
+}
+.reading-view .callout:is([data-callout="question"], [data-callout="help"], [data-callout="faq"]),
+.reading-view .callout:is([data-callout="warning"], [data-callout="caution"], [data-callout="attention"]) {
+  --callout: 236, 117, 0;
+}
+.reading-view .callout:is([data-callout="failure"], [data-callout="fail"], [data-callout="missing"]),
+.reading-view .callout:is([data-callout="danger"], [data-callout="error"], [data-callout="bug"]) {
+  --callout: 233, 49, 71;
+}
+.reading-view .callout[data-callout="example"] {
+  --callout: 120, 82, 238;
+}
+.reading-view .callout:is([data-callout="quote"], [data-callout="cite"]) {
+  --callout: 158, 158, 158;
+}

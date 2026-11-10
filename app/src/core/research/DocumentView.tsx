@@ -1,5 +1,4 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import Markdown from "@/components/ui/markdown";
@@ -8,7 +7,8 @@ import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store } from "@/state";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
-import { ExternalLink, RefreshCw, Save } from "lucide-react";
+import { cn } from "@/utils/cn";
+import { BookOpen, Columns2, ExternalLink, PencilLine, RefreshCw, Save, type LucideIcon } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
@@ -95,20 +95,79 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     }
     await tab.loadMarkdown(true);
   };
+  const [mode, setMode] = useState<MarkdownMode>(storedMarkdownMode);
+  const pickMode = (value: MarkdownMode) => {
+    setMode(value);
+    globalThis.localStorage?.setItem(MARKDOWN_MODE_KEY, value);
+  };
+  const editor = tab.markdown && (
+    <Textarea
+      id={`source-${tab.id}`}
+      aria-label={t("source")}
+      className="reading-source min-h-0 flex-1 resize-none overflow-auto rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+      style={{ fieldSizing: "fixed" }}
+      spellCheck={false}
+      disabled={tab.loadingMarkdown}
+      value={editorText(tab.markdown.text)}
+      onChange={(event) => {
+        tab.markdown!.edit(event.target.value);
+        tab.changed();
+      }}
+    />
+  );
+  const preview = (
+    <article className="reading-view [&_*]:select-text">
+      <h1 className="reading-title">{tab.title}</h1>
+      <Markdown source={source} components={components} />
+    </article>
+  );
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-        <Badge variant="secondary">Markdown</Badge>
-        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs" title={tab.path}>
-          {tab.path}
-        </span>
-        <Button variant="ghost" size="sm" disabled={tab.saving || tab.loadingMarkdown} onClick={() => void reload()}>
+      <div className="flex items-center gap-1 px-3 py-1.5">
+        <div
+          role="radiogroup"
+          aria-label={t("mode")}
+          className="bg-foreground/[0.05] flex items-center gap-0.5 rounded-md p-0.5"
+        >
+          {MARKDOWN_MODES.map(({ id, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={mode === id}
+              title={t(`modes.${id}`)}
+              className={cn(
+                "text-muted-foreground hover:text-foreground flex h-6 items-center gap-1 rounded px-2 text-xs",
+                mode === id && "bg-background text-foreground shadow-xs",
+              )}
+              onClick={() => pickMode(id)}
+            >
+              <Icon className="size-3.5" />
+              {t(`modes.${id}`)}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        {tab.hasUnsavedChanges && (
+          <span className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
+            <span className="bg-primary size-1.5 rounded-full" />
+            {t("unsaved")}
+          </span>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={tab.saving || tab.loadingMarkdown}
+          onClick={() => void reload()}
+        >
           <RefreshCw data-icon="inline-start" />
           {t("reload")}
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
+          className="h-7 text-xs"
           disabled={!tab.markdown || tab.saving || tab.loadingMarkdown}
           onClick={() => void tab.save()}
         >
@@ -125,35 +184,37 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         <div role="status" className="text-muted-foreground p-6">
           {tab.error ? t("retryHint") : t("loading")}
         </div>
+      ) : mode === "split" ? (
+        <div className="grid min-h-0 flex-1 grid-rows-2 border-t md:grid-cols-2 md:grid-rows-1">
+          <section className="flex min-h-0 min-w-0 flex-col px-6 py-5 max-md:border-b md:border-r">{editor}</section>
+          <section className="min-h-0 min-w-0 overflow-auto px-8 py-6" aria-label={t("preview")}>
+            {preview}
+          </section>
+        </div>
+      ) : mode === "edit" ? (
+        <div className="flex min-h-0 flex-1 flex-col border-t px-8 py-6">
+          <div className="reading-view flex min-h-0 flex-1 flex-col">{editor}</div>
+        </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-rows-2 gap-3 p-3 md:grid-cols-2 md:grid-rows-1">
-          <section className="flex min-h-0 min-w-0 flex-col gap-2">
-            <label htmlFor={`source-${tab.id}`} className="text-muted-foreground px-1 text-xs">
-              {t("source")}
-            </label>
-            <Textarea
-              id={`source-${tab.id}`}
-              className="min-h-0 flex-1 resize-none overflow-auto font-mono"
-              style={{ fieldSizing: "fixed" }}
-              spellCheck={false}
-              disabled={tab.loadingMarkdown}
-              value={editorText(tab.markdown.text)}
-              onChange={(event) => {
-                tab.markdown!.edit(event.target.value);
-                tab.changed();
-              }}
-            />
-          </section>
-          <section className="flex min-h-0 min-w-0 flex-col gap-2" aria-label={t("preview")}>
-            <div className="text-muted-foreground px-1 text-xs">{t("preview")}</div>
-            <div className="bg-card min-h-0 flex-1 overflow-auto rounded-md border p-5 [&_*]:select-text">
-              <Markdown source={source} components={components} />
-            </div>
-          </section>
+        <div className="min-h-0 flex-1 overflow-auto border-t px-8 pt-8 pb-24" aria-label={t("preview")}>
+          {preview}
         </div>
       )}
     </>
   );
+}
+
+type MarkdownMode = "edit" | "split" | "read";
+const MARKDOWN_MODE_KEY = "labweave.markdownMode";
+const MARKDOWN_MODES: { id: MarkdownMode; icon: LucideIcon }[] = [
+  { id: "edit", icon: PencilLine },
+  { id: "split", icon: Columns2 },
+  { id: "read", icon: BookOpen },
+];
+function storedMarkdownMode(): MarkdownMode {
+  // 测试环境里 localStorage 可能是 undefined
+  const value = globalThis.localStorage?.getItem(MARKDOWN_MODE_KEY);
+  return MARKDOWN_MODES.some(({ id }) => id === value) ? (value as MarkdownMode) : "split";
 }
 
 export default function DocumentView({ tab }: { tab: DocumentTab }) {

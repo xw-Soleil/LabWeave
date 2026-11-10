@@ -3,6 +3,7 @@
 @plugin "tailwind-scrollbar-hide";
 @plugin "@tailwindcss/typography";
 @import "tw-animate-css";
+@import "./reading.css";
 
 @font-face {
   font-family: "Project Graph Canvas";

@@ -2812,6 +2812,12 @@ research:
     loading: Reading…
     source: Markdown source
     preview: Live preview
+    mode: View mode
+    modes:
+      edit: Edit
+      split: Side by side
+      read: Read
+    unsaved: Unsaved
     save: Save
     saving: Saving…
     cancel: Cancel

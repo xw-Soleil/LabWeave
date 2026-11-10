@@ -2931,6 +2931,12 @@ research:
     loading: 正在读取…
     source: Markdown 源码
     preview: 实时预览
+    mode: 显示方式
+    modes:
+      edit: 编辑
+      split: 对照
+      read: 阅读
+    unsaved: 未保存
     save: 保存
     saving: 正在保存…
     cancel: 取消
