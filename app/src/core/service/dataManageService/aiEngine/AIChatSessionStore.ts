@@ -1,5 +1,6 @@
 import type { AIMessageMetadata } from "@/core/service/dataManageService/aiEngine/AIEngine";
 import type { AIChatSessionMemory } from "@/core/service/dataManageService/aiEngine/AIChatSessionMemory";
+import type { LocalAgentSessionRecovery } from "./LocalAgent";
 import { isActivatedSkillSnapshot } from "./AISkillSession";
 import type { ActivatedSkillSnapshot } from "./AISkills";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -27,7 +28,7 @@ export type StoredAIChatSession = {
   messages: UIMessage<AIMessageMetadata>[];
   memory?: AIChatSessionMemory;
   activatedSkills?: ActivatedSkillSnapshot[];
-  localAgent?: { agentId: string; sessionId: string };
+  localAgent?: { agentId: string; sessionId: string; recovery?: LocalAgentSessionRecovery };
   createdAt: number;
   updatedAt: number;
 };
@@ -228,11 +229,20 @@ function isStoredSession(value: unknown): value is StoredAIChatSession {
 function isLocalAgentSession(value: unknown): value is NonNullable<StoredAIChatSession["localAgent"]> {
   if (!value || typeof value !== "object") return false;
   const session = value as Partial<NonNullable<StoredAIChatSession["localAgent"]>>;
+  const recovery = session.recovery;
   return (
     typeof session.agentId === "string" &&
     session.agentId.length > 0 &&
     typeof session.sessionId === "string" &&
-    session.sessionId.length > 0
+    session.sessionId.length > 0 &&
+    (recovery === undefined ||
+      (recovery !== null &&
+        typeof recovery === "object" &&
+        typeof recovery.previousSessionId === "string" &&
+        recovery.previousSessionId.length > 0 &&
+        typeof recovery.cwd === "string" &&
+        (recovery.reason === "load-failed" || recovery.reason === "unsupported") &&
+        typeof recovery.detail === "string"))
   );
 }
 
@@ -355,6 +365,7 @@ export namespace AIChatSessionStore {
     projectUri: string,
     sessionId: string,
     localAgent: StoredAIChatSession["localAgent"],
+    signal?: AbortSignal,
   ): Promise<void> {
     if (localAgent !== undefined && !isLocalAgentSession(localAgent)) throw new Error("local-agent:protocol");
     await enqueueWrite(async (initializedStore) => {
@@ -362,6 +373,7 @@ export namespace AIChatSessionStore {
       if (!index || !index.sessions.some((session) => session.id === sessionId))
         throw new Error("local-agent:protocol");
       const current = await readRequiredSession(initializedStore, projectUri, sessionId);
+      signal?.throwIfAborted();
       await initializedStore.set(getSessionKey(projectUri, sessionId), {
         ...current,
         localAgent: localAgent === undefined ? undefined : { ...localAgent },

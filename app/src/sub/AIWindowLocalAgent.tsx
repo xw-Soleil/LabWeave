@@ -1,3 +1,4 @@
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -294,6 +295,32 @@ export function LocalAgentNotice({
 }) {
   const { t } = useTranslation("research");
   const name = agent?.name ?? agentId;
+
+  if (status?.kind === "ready" && status.recovery) {
+    const recovery = status.recovery;
+    return (
+      <Alert className="mb-2">
+        <AlertCircle />
+        <AlertTitle>{t("ai.localAgent.resumeFailed")}</AlertTitle>
+        <AlertDescription>
+          <p>{t("ai.localAgent.openedFallback", { name })}</p>
+          <p>{t(`ai.localAgent.resumeReasons.${recovery.reason}`)}</p>
+          {recovery.detail && (
+            <pre className="max-h-28 w-full overflow-auto whitespace-pre-wrap select-text">{recovery.detail}</pre>
+          )}
+          <Collapsible className="w-full">
+            <CollapsibleTrigger>{t("ai.localAgent.details")}</CollapsibleTrigger>
+            <CollapsibleContent className="break-all select-text">
+              {t("ai.localAgent.previousSession", { id: recovery.previousSessionId })}
+              <br />
+              {recovery.cwd}
+            </CollapsibleContent>
+          </Collapsible>
+          {!status.whiteboardTools && <p>{t("ai.localAgent.noWhiteboardTools", { name })}</p>}
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   let tone: "error" | "info" = "error";
   let text: string;

@@ -3253,6 +3253,12 @@ research:
       notFound: 没找到 {{name}}。在设置里装好以后就能在这里用。
       needsLogin: "{{name}} 还没登录，或者接口设置没生效。用官方账号的，在终端里登录一次再发消息；用第三方接口的，检查它自己的设置文件（Claude Code 是 ~/.claude/settings.json，Codex 是 ~/.codex/config.toml）。"
       noWhiteboardTools: 这个版本还不能让 {{name}} 直接读改白板，它只能根据白板的文字版回答。
+      resumeFailed: 没接上上次的对话
+      openedFallback: "已在 {{name}} 中新开对话。面板里的旧记录仍然保留，但不代表程序已恢复原会话。"
+      resumeReasons:
+        load-failed: 程序载入原会话失败，原因如下：
+        unsupported: 这个程序没有声明支持载入已有会话。
+      previousSession: "原会话号：{{id}}"
       errors:
         spawn-failed: "{{name}} 启动失败。"
         exited: "{{name}} 意外退出了。"

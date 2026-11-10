@@ -265,6 +265,11 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     const existing = this.sessions.get(chatId);
     if (existing) {
       this.connection!.activateSession(existing.sessionId);
+      this.setStatus({
+        kind: "ready",
+        whiteboardTools: existing.mcpServers.length > 0,
+        ...(existing.recovery ? { recovery: existing.recovery } : {}),
+      });
       return existing;
     }
     const launch = await invoke<ExternalAiMcpLaunch>("external_ai_mcp_launch");
@@ -309,18 +314,26 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     }
     const projectKey = getAIChatProjectKey(this.options.project);
     const stored = await AIChatSessionStore.loadSession(projectKey, chatId);
+    this.lifetime.signal.throwIfAborted();
+    const previous = stored.localAgent?.agentId === this.options.agentId ? stored.localAgent : undefined;
     const session = await this.connection.openSession({
       cwd,
       mcpServers,
-      previousSessionId: stored.localAgent?.agentId === this.options.agentId ? stored.localAgent.sessionId : undefined,
+      previousSessionId: previous?.sessionId,
     });
-    await AIChatSessionStore.setLocalAgentSession(getAIChatProjectKey(this.options.project), chatId, {
-      agentId: this.options.agentId,
-      sessionId: session.sessionId,
-    });
-    const chatSession = { ...session, firstPrompt: true, cwd, mcpServers };
+    this.lifetime.signal.throwIfAborted();
+    // Loading the fallback after a restart doesn't restore the original conversation.
+    const recovery = session.recovery ?? previous?.recovery;
+    await AIChatSessionStore.setLocalAgentSession(
+      getAIChatProjectKey(this.options.project),
+      chatId,
+      { agentId: this.options.agentId, sessionId: session.sessionId, ...(recovery ? { recovery } : {}) },
+      this.lifetime.signal,
+    );
+    this.lifetime.signal.throwIfAborted();
+    const chatSession = { ...session, ...(recovery ? { recovery } : {}), firstPrompt: true, cwd, mcpServers };
     this.sessions.set(chatId, chatSession);
-    this.setStatus({ kind: "ready", whiteboardTools: mcpServers.length > 0 });
+    this.setStatus({ kind: "ready", whiteboardTools: mcpServers.length > 0, ...(recovery ? { recovery } : {}) });
     return chatSession;
   }
 

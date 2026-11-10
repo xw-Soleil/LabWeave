@@ -146,7 +146,7 @@ export type LocalAgentProcess = { handle: number; events: ReadableStream<LocalAg
 export type LocalAgentStatus =
   | { kind: "idle" }
   | { kind: "starting" }
-  | { kind: "ready"; whiteboardTools: boolean }
+  | { kind: "ready"; whiteboardTools: boolean; recovery?: LocalAgentSessionRecovery }
   | { kind: "needs-login"; agentId: string; loginCommand: string | null }
   | {
       kind: "agent-error";
@@ -301,7 +301,13 @@ export type LocalAgentSessionOptions = {
   mcpServers: McpServer[];
   previousSessionId?: string;
 };
-export type LocalAgentSession = { sessionId: string; loaded: boolean };
+export type LocalAgentSessionRecovery = {
+  previousSessionId: string;
+  cwd: string;
+  reason: "load-failed" | "unsupported";
+  detail: string;
+};
+export type LocalAgentSession = { sessionId: string; loaded: boolean; recovery?: LocalAgentSessionRecovery };
 
 export class LocalAgentConnection {
   private connection!: ClientConnection;
@@ -403,6 +409,9 @@ export class LocalAgentConnection {
   async openSession({ cwd, mcpServers, previousSessionId }: LocalAgentSessionOptions): Promise<LocalAgentSession> {
     try {
       let loaded = false;
+      let recovery: LocalAgentSessionRecovery | undefined;
+      if (previousSessionId && !this.supportsLoad)
+        recovery = { previousSessionId, cwd, reason: "unsupported", detail: "" };
       if (previousSessionId && this.supportsLoad) {
         this.activateSession(previousSessionId);
         this.loading = true;
@@ -416,18 +425,28 @@ export class LocalAgentConnection {
           loaded = true;
         } catch (error) {
           // load 失败允许重建，但认证或断连错误不能伪装成可恢复的历史丢失。
-          if (this.connection.signal.aborted || isAuthRequired(error)) throw error;
+          if (this.disposed || this.connection.signal.aborted || isAuthRequired(error)) throw error;
+          recovery = {
+            previousSessionId,
+            cwd,
+            reason: "load-failed",
+            detail:
+              error instanceof RequestError
+                ? JSON.stringify({ code: error.code, message: error.message, data: error.data })
+                : String(error),
+          };
         } finally {
           this.loading = false;
         }
         if (loaded) this.readControls(response ?? {});
       }
+      if (this.disposed) throw new LocalAgentError("exited");
       if (!loaded) {
         const response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
         this.activateSession(response.sessionId);
         this.readControls(response);
       }
-      return { sessionId: this.sessionId!, loaded };
+      return { sessionId: this.sessionId!, loaded, ...(recovery ? { recovery } : {}) };
     } catch (error) {
       throw this.reportError(error);
     }

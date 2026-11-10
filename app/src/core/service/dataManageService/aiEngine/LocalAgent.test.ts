@@ -674,10 +674,20 @@ describe("LocalAgentConnection with SDK agent() and paired TransformStreams", ()
         .onRequest(methods.agent.session.load, load),
     );
     const connection = await f.start();
-    expect(await connection.openSession({ ...session, previousSessionId: "old" })).toEqual({
+    const opened = await connection.openSession({ ...session, previousSessionId: "old" });
+    expect(opened).toMatchObject({
       sessionId: mode === "supported" ? "old" : "s1",
       loaded: mode === "supported",
     });
+    if (mode === "supported") expect(opened.recovery).toBeUndefined();
+    else {
+      expect(opened.recovery).toMatchObject({
+        previousSessionId: "old",
+        cwd: "/research",
+        reason: mode === "unsupported" ? "unsupported" : "load-failed",
+      });
+      if (mode === "failed") expect(opened.recovery?.detail).toContain("-32002");
+    }
     expect(load).toHaveBeenCalledTimes(mode === "unsupported" ? 0 : 1);
     expect(f.newSession).toHaveBeenCalledTimes(mode === "supported" ? 0 : 1);
     expect(f.updates).toEqual([]);
@@ -686,6 +696,18 @@ describe("LocalAgentConnection with SDK agent() and paired TransformStreams", ()
       update: textUpdate("new"),
     });
     await vi.waitFor(() => expect(f.updates).toEqual([textUpdate("new")]));
+  });
+
+  it("载入认证失败不创建后备，保留需要登录的状态", async () => {
+    const f = fixture((app) =>
+      app.onRequest(methods.agent.session.load, () => {
+        throw RequestError.authRequired();
+      }),
+    );
+    const connection = await f.start("claude");
+    await expect(connection.openSession({ ...session, previousSessionId: "original" })).rejects.toThrow("needs-login");
+    expect(f.newSession).not.toHaveBeenCalled();
+    expect(f.statuses.at(-1)?.kind).toBe("needs-login");
   });
 
   it.each(["initialize", "new", "prompt"])("%s 的 auth_required 提供固定登录命令", async (method) => {

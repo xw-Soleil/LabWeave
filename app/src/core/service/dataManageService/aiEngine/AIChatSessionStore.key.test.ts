@@ -85,4 +85,21 @@ describe("getAIChatProjectKey", () => {
     const reopened = project("file:///root/b.prg", { workbench: { id: "w-closed" } });
     expect(getAIChatProjectKey(reopened)).toBe("workbench:w-closed");
   });
+
+  it.each(["file:///research/renamed.prg", "file:///C:/Research/renamed.prg"])(
+    "按白板 ID 恢复时，改名/换项目路径仍保留原 ACP 绑定：%s",
+    async (uri) => {
+      const id = crypto.randomUUID();
+      const original = project("file:///research/original.prg", { workbench: { id } });
+      const key = getAIChatProjectKey(original);
+      const { activeSession } = await AIChatSessionStore.initializeProject(key);
+      const binding = { agentId: "claude", sessionId: "original-acp-id" };
+      await AIChatSessionStore.setLocalAgentSession(key, activeSession.id, binding);
+      setAIChatProjectOpenCheck(() => false);
+      const reopened = project(uri, { workbench: { id } });
+      const restored = await AIChatSessionStore.initializeProject(getAIChatProjectKey(reopened));
+      expect(restored.activeSession.id).toBe(activeSession.id);
+      expect(restored.activeSession.localAgent).toEqual(binding);
+    },
+  );
 });

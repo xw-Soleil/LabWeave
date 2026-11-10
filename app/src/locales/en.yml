@@ -3134,6 +3134,12 @@ research:
       notFound: "{{name}} was not found. Install it in Settings and you can use it here."
       needsLogin: "{{name}} is not signed in, or its API settings did not take effect. With an official account, sign in once in a terminal and send again; with a third-party API, check its own settings file (~/.claude/settings.json for Claude Code, ~/.codex/config.toml for Codex)."
       noWhiteboardTools: "This build cannot let {{name}} read or edit the board directly yet; it only answers from the text version of the board."
+      resumeFailed: The previous conversation was not restored
+      openedFallback: "A new conversation was opened in {{name}}. The old messages remain in this panel, but the app has not restored the original session."
+      resumeReasons:
+        load-failed: "The app failed to load the original session for this reason:"
+        unsupported: This app does not declare support for loading existing sessions.
+      previousSession: "Original session: {{id}}"
       errors:
         spawn-failed: "{{name}} failed to start."
         exited: "{{name}} quit unexpectedly."
