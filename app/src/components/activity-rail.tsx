@@ -18,7 +18,8 @@ import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelState
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
 import { findTabGroupByTabId, type FixedSideEdge } from "@/core/TabGroup";
-import { tabGroupRootAtom, tabsAtom } from "@/state";
+import { LibraryTab, openLibraryTab } from "@/core/research/LibraryTab";
+import { activeTabAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { cn } from "@/utils/cn";
 import { formatKeyBindSequenceToString } from "@/utils/keyDisplay";
@@ -28,6 +29,7 @@ import {
   FolderOpen,
   FolderSearch,
   LayoutDashboard,
+  Library,
   LoaderCircle,
   MessageSquareText,
   Plus,
@@ -256,6 +258,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   };
   // 没打开工作区时 AI 对话收起（见 DockedArea），按钮也变灰
   const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
+  const activeTab = useAtomValue(activeTabAtom);
 
   return (
     <nav
@@ -317,6 +320,14 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
           hideTooltip={isSidePanelShown(sideStates.left)}
         >
           <FolderOpen />
+        </RailButton>
+        <RailButton
+          label={t("shell.rail.library")}
+          keyBindId="researchOpenLibrary"
+          active={activeTab instanceof LibraryTab}
+          onClick={openLibraryTab}
+        >
+          <Library />
         </RailButton>
         <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
         <div>

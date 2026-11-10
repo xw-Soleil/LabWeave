@@ -2937,6 +2937,11 @@ research:
       split: 对照
       read: 阅读
     unsaved: 未保存
+    selection:
+      menu: 选中文字的操作
+      translate: 翻译
+      askAi: 问 AI
+      copy: 复制
     save: 保存
     saving: 正在保存…
     cancel: 取消
@@ -3079,6 +3084,7 @@ research:
       ai: AI 对话
       aiNeedsWorkspace: AI 对话（打开白板后可用）
       files: 文件
+      library: 文献库
       settings: 设置
     setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
     restoreFailed: "没能重新打开白板 {{path}}：{{message}}"
@@ -3158,6 +3164,136 @@ research:
         title: 设置…
       openAboutWindow:
         title: 关于科研工作台
+  readingTheme:
+    presets: 预设
+    recommended: 推荐
+    names:
+      default: 默认
+      obsidian: 照我的 Obsidian
+      notion: Notion 风
+    descriptions:
+      default: 程序自带的样子，系统字体，紧凑一些
+      obsidian: Minimal 主题加你的标题、表格、图注片段，正文用 Inter
+      notion: 宽松留白，标题大一号，系统字体
+    sampleHeading: 研究笔记
+    sampleText: 扩散模型在训练时加入物理残差，生成结果更贴合方程。
+    adjust: 细调
+    reset: 恢复预设
+    fontSize: 正文字号
+    lineHeight: 行高
+    lineWidth: 阅读宽度
+    fontBody: 正文字体
+    fontCode: 代码字体
+    fonts:
+      preset: 跟随预设
+      sans: 系统无衬线
+      inter: Inter（随程序附带）
+      serif: 系统衬线（宋体）
+      jetbrains: JetBrains Mono（随程序附带）
+      system: 系统等宽
+    preview: 预览
+    previewTitle: PDE-Refiner 复现笔记
+    previewBody: |
+      > [!abstract] 一句话
+      > 用多步细化把长时间滚动预测的误差压下去。
+
+      ## 方法
+
+      每一步先**加一点噪声**，再让网络预测去噪后的结果，相当于一个很短的扩散过程。公式是 $\hat u_{t+1} = f_\theta(u_t)$。
+
+      | 方法 | 滚动步数 | 相对误差 |
+      |---|---|---|
+      | MSE 基线 | 80 | 0.32 |
+      | PDE-Refiner | 160 | 0.11 |
+
+      代码里关键的一行：`loss = mse(model(x + noise), x)`
+  translate:
+    title: 划词翻译
+    loading: 正在翻译…
+    auto: 选中文字就自动翻译
+    autoShort: 选中即译
+    close: 关闭
+    copy: 复制译文
+    copied: 已复制译文
+    highlightWithNote: 高亮并把译文写进批注
+    services:
+      google: Google
+      bing: Bing
+      ai: AI
+    errors:
+      network: 连不上翻译服务，检查一下网络
+      rateLimited: 翻译服务暂时限流了，稍等一会儿再试
+      aiNotConfigured: 设置里选了用 AI 翻译，但还没有配好 AI 模型
+      failed: 翻译失败，再试一次
+  library:
+    title: 文献库
+    emptyTitle: 还没有指定文献库
+    emptyHint: 文献库是一个单独的文件夹，每篇文献一个子文件夹，放笔记、PDF 和图片。可以直接选 Obsidian 文献库插件用的那个文件夹，两边读的是同一份。
+    chooseFolder: 选择文献库文件夹
+    chooseTitle: 选择文献库文件夹
+    chooseHint: 选中文献库所在的文件夹（有 .litlib 文件的那一层）；还没有的话选一个空文件夹，会在里面新建。
+    useFolder: 用这个文件夹
+    changeFolder: 换一个文献库文件夹
+    libraryActions: 文献库操作
+    all: 我的文库
+    unfiled: 未分类条目
+    trash: 回收站
+    tags: 标签
+    filterTags: 筛选标签
+    noTags: 当前列表还没有标签
+    collections: 分类
+    newCollection: 新建分类
+    newSubcollection: 新建子分类
+    collectionName: 分类名
+    renameCollection: 重命名分类
+    removeCollection: 删除分类
+    removeCollectionTitle: "删除分类「{{name}}」？"
+    removeCollectionHint: 只把这个分类和它的子分类去掉，里面的文献还在，会归到别的分类或「未分类条目」。
+    collectionActions: "{{name}} 的操作"
+    toggleCollection: "展开或收起 {{name}}"
+    newItem: 新建条目
+    newItemTitle: 新建条目
+    importPdf: 导入 PDF
+    importTitle: 导入 PDF
+    importHint: 选一个 PDF，会复制进文献库，新建一个条目。标题先用文件名，之后可以在右边改。
+    import: 导入
+    refresh: 刷新
+    info: 信息
+    searchPlaceholder: 在当前列表中快速搜索（标题 / 作者 / 期刊 / 标签 / DOI）
+    clearSearch: 清空搜索
+    items: 文献列表
+    loading: 正在读取文献库…
+    loadFailed: "读不了文献库：{{error}}"
+    noItems: 这里还没有文献，可以导入 PDF 或新建条目
+    noMatch: 没有找到匹配的文献
+    footer: "{{count}} 篇文献"
+    pickItem: 选择一篇文献查看详情
+    toggleAttachments: 展开或收起附件
+    openPdf: 打开 PDF
+    openTranslation: 打开译文
+    openNote: 打开笔记
+    markAs: "标成{{status}}"
+    restore: 从回收站恢复
+    moveToTrash: 移到回收站
+    addValue: "添加{{label}}"
+    removeValue: "去掉 {{value}}"
+    status:
+      unread: 未读
+      toRead: 待读
+      reading: 阅读中
+      read: 已读
+    fields:
+      title: 标题
+      authors: 创建者
+      year: 年份
+      status: 状态
+      attachments: 附件
+      venue: 期刊/会议
+      itemType: 类型
+      added: 添加日期
+      collections: 分类
+      tags: 标签
+      abstract: 摘要
   files:
     title: 文件
     placeholder: 文件面板（建设中）

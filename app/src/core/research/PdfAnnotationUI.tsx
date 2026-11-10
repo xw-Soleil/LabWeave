@@ -16,10 +16,12 @@ import {
 } from "@embedpdf/models";
 import type { SelectionScope } from "@embedpdf/plugin-selection";
 import {
+  Bot,
   Copy,
   Crop,
   Eraser,
   Highlighter,
+  Languages,
   MessageSquarePlus,
   MousePointer2,
   Pencil,
@@ -54,6 +56,7 @@ import {
   type PdfPoint,
 } from "./PdfAnnotations";
 import type { PdfReaderEngine } from "./PdfReader";
+import { autoTranslateEnabled } from "./TranslateCard";
 
 type Tool = "select" | AnnotationType | "eraser";
 type ExternalAnnotation = { id: string; pageIndex: number; source: PdfAnnotationObject };
@@ -156,7 +159,13 @@ export function usePdfAnnotations(
       if (focusComment && live.current)
         requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${annotation.id}`)?.focus());
     });
-  const annotateSelection = (type: "highlight" | "underline", addComment = false, chosenColor = color) => {
+  const annotateSelection = (
+    type: "highlight" | "underline",
+    addComment = false,
+    chosenColor = color,
+    /** 划词翻译卡片「高亮并写进批注」时带上译文 */
+    comment = "",
+  ) => {
     // Capture selection state before plugin teardown or another gesture can clear it.
     const formatted = selection?.getFormattedSelection() ?? [];
     const geometries = selection?.getState().geometry;
@@ -186,6 +195,7 @@ export function usePdfAnnotations(
         created.push(newAnnotation(type, chosenColor, position, page, geometry, text, pageLabel));
       }
       if (tab.closing || tab.annotations !== model || model.moving) throw new Error("annotationBusy");
+      if (comment) created[0] = { ...created[0], comment };
       commit([...model.annotations, ...created]);
       if (live.current) {
         selection.clear();
@@ -456,10 +466,29 @@ export function PdfAnnotationToolbar({ controller: c }: { controller: Annotation
   );
 }
 
-export function PdfSelectionMenu({ controller: c, copy }: { controller: AnnotationController; copy: () => void }) {
+/** 选区菜单在面板里的位置：中线横坐标、菜单下沿，翻译卡片接在下面 */
+export type SelectionAnchor = { center: number; bottom: number };
+
+export function PdfSelectionMenu({
+  controller: c,
+  copy,
+  onTranslate,
+  onAskAi,
+}: {
+  controller: AnnotationController;
+  copy: () => void;
+  onTranslate?: (anchor: SelectionAnchor) => void;
+  onAskAi?: () => void;
+}) {
   const [type, setType] = useState<"highlight" | "underline">("highlight");
   const element = useRef<HTMLDivElement>(null);
   const [location, setLocation] = useState({ left: 12, top: 12 });
+  const onTranslateRef = useRef(onTranslate);
+  onTranslateRef.current = onTranslate;
+  const anchor = () => ({
+    center: location.left + (element.current?.offsetWidth ?? 0) / 2,
+    bottom: location.top + (element.current?.offsetHeight ?? 0),
+  });
   useEffect(() => {
     const menu = element.current;
     const panel = menu?.parentElement;
@@ -489,7 +518,7 @@ export function PdfSelectionMenu({ controller: c, copy }: { controller: Annotati
     });
     const top = Math.min(...corners.map((point) => point[1])) - menu.offsetHeight - 8;
     const left = corners.reduce((sum, point) => sum + point[0], 0) / 4 - menu.offsetWidth / 2;
-    setLocation({
+    const next = {
       left: Math.max(8, Math.min(left, parent.width - menu.offsetWidth - 8)),
       top: Math.max(
         8,
@@ -498,7 +527,14 @@ export function PdfSelectionMenu({ controller: c, copy }: { controller: Annotati
           parent.height - menu.offsetHeight - 8,
         ),
       ),
-    });
+    };
+    setLocation(next);
+    // 照用户 Obsidian 插件的「选中就翻译」：开着的话一松开鼠标就翻
+    if (autoTranslateEnabled())
+      onTranslateRef.current?.({
+        center: next.left + menu.offsetWidth / 2,
+        bottom: next.top + menu.offsetHeight,
+      });
   }, [c.menu, c.pdf, c.selection]);
   if (!c.menu) return null;
   return (
@@ -548,6 +584,19 @@ export function PdfSelectionMenu({ controller: c, copy }: { controller: Annotati
       >
         <MessageSquarePlus />
       </Button>
+      {(onTranslate || onAskAi) && <span className="bg-border mx-0.5 h-5 w-px" />}
+      {onTranslate && (
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={() => onTranslate(anchor())}>
+          <Languages />
+          {t("selection.translate")}
+        </Button>
+      )}
+      {onAskAi && (
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={onAskAi}>
+          <Bot />
+          {t("selection.askAi")}
+        </Button>
+      )}
     </div>
   );
 }

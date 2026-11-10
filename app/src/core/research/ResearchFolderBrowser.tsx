@@ -23,7 +23,8 @@ import {
 import { homeDir } from "@tauri-apps/api/path";
 import { exists } from "@tauri-apps/plugin-fs";
 import { isWindows } from "@/utils/platform";
-import { ArrowUp, Folder, HardDrive, Home } from "lucide-react";
+import { cn } from "@/utils/cn";
+import { ArrowUp, FileText, Folder, HardDrive, Home } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -48,8 +49,20 @@ export async function folderBrowserLocations(): Promise<{
   };
 }
 
-export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onDone: (path: string | null) => void }) {
+export type LocalPathPick = { pick: "folder" | "pdf"; title: string; description: string; confirm: string };
+
+export function ResearchFolderBrowser({
+  create,
+  picking,
+  onDone,
+}: {
+  create: boolean;
+  /** 只挑一个位置交回去，不登记成项目：文献库选文件夹、导入 PDF 都用这个 */
+  picking?: LocalPathPick;
+  onDone: (path: string | null) => void;
+}) {
   const { t } = useTranslation("research");
+  const [pickedFile, setPickedFile] = useState("");
   const [locations, setLocations] = useState<Awaited<ReturnType<typeof folderBrowserLocations>>>();
   const [path, setPath] = useState("");
   const [address, setAddress] = useState("");
@@ -85,9 +98,10 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
     setEntries(undefined);
     setVisibleCount(200);
     setError("");
-    void readResearchDirectory(path, path, true)
+    setPickedFile("");
+    void readResearchDirectory(path, path, picking?.pick !== "pdf")
       .then((value) => {
-        if (alive) setEntries(value);
+        if (alive) setEntries(value.filter((entry) => entry.directory || entry.kind === "pdf"));
       })
       .catch((error) => {
         if (alive) setError(String(error));
@@ -95,9 +109,13 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
     return () => {
       alive = false;
     };
-  }, [path, retry]);
+  }, [path, retry, picking?.pick]);
 
   const select = async () => {
+    if (picking) {
+      onDone(picking.pick === "folder" ? path : pickedFile || null);
+      return;
+    }
     setBusy(true);
     try {
       onDone(create ? await createResearchProject(path, name) : await addResearchProject(path));
@@ -131,8 +149,10 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
     >
       <DialogContent className="sm:max-w-2xl" showCloseButton={!busy}>
         <DialogHeader>
-          <DialogTitle>{t(create ? "projectTree.create" : "projectTree.add")}</DialogTitle>
-          <DialogDescription>{t(create ? "projectTree.createHint" : "projectTree.addHint")}</DialogDescription>
+          <DialogTitle>{picking?.title ?? t(create ? "projectTree.create" : "projectTree.add")}</DialogTitle>
+          <DialogDescription>
+            {picking?.description ?? t(create ? "projectTree.createHint" : "projectTree.addHint")}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 gap-3">
           <nav aria-label={t("projectTree.locations")} className="flex w-40 shrink-0 flex-col gap-1 overflow-y-auto">
@@ -190,11 +210,14 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
                 <Button
                   key={entry.absPath}
                   variant="ghost"
-                  className="justify-start"
+                  className={cn("justify-start", entry.absPath === pickedFile && "bg-accent")}
                   disabled={busy}
-                  onClick={() => setPath(entry.absPath)}
+                  onClick={() => (entry.directory ? setPath(entry.absPath) : setPickedFile(entry.absPath))}
+                  onDoubleClick={() => {
+                    if (!entry.directory) onDone(entry.absPath);
+                  }}
                 >
-                  <Folder />
+                  {entry.directory ? <Folder /> : <FileText />}
                   <span className="truncate">{entry.name}</span>
                 </Button>
               ))}
@@ -235,13 +258,32 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
           <Button variant="ghost" disabled={busy} onClick={() => onDone(null)}>
             {t("document.cancel")}
           </Button>
-          <Button disabled={busy || !entries || (create && !name.trim())} onClick={() => void select()}>
-            {t(create ? "projectTree.createHere" : "projectTree.useFolder")}
+          <Button
+            disabled={busy || !entries || (create && !name.trim()) || (picking?.pick === "pdf" && !pickedFile)}
+            onClick={() => void select()}
+          >
+            {picking?.confirm ?? t(create ? "projectTree.createHere" : "projectTree.useFolder")}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 用程序自带的浏览器挑一个文件夹或 PDF，不弹系统窗口 */
+export function browseLocalPath(picking: LocalPathPick): Promise<string | null> {
+  return new Promise((resolve) => {
+    const overlay = OverlayHost.open(
+      <ResearchFolderBrowser
+        create={false}
+        picking={picking}
+        onDone={(path) => {
+          OverlayHost.close(overlay.id);
+          resolve(path);
+        }}
+      />,
+    );
+  });
 }
 
 export function browseResearchProject(create = false): Promise<string | null> {

@@ -2818,6 +2818,11 @@ research:
       split: Side by side
       read: Read
     unsaved: Unsaved
+    selection:
+      menu: Selection actions
+      translate: Translate
+      askAi: Ask AI
+      copy: Copy
     save: Save
     saving: Saving…
     cancel: Cancel
@@ -2960,6 +2965,7 @@ research:
       ai: AI chat
       aiNeedsWorkspace: AI chat (open a board first)
       files: Files
+      library: Library
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
     restoreFailed: "Couldn't reopen board {{path}}: {{message}}"
@@ -3039,6 +3045,136 @@ research:
         title: Settings…
       openAboutWindow:
         title: About Research Workbench
+  readingTheme:
+    presets: Presets
+    recommended: Recommended
+    names:
+      default: Default
+      obsidian: Like my Obsidian
+      notion: Notion-like
+    descriptions:
+      default: The app's own look with system fonts, a little denser
+      obsidian: Minimal theme plus your heading, table and caption snippets, Inter for body text
+      notion: Roomy spacing, larger headings, system fonts
+    sampleHeading: Research notes
+    sampleText: Adding a physics residual during training keeps diffusion samples close to the equation.
+    adjust: Fine-tune
+    reset: Back to preset
+    fontSize: Body size
+    lineHeight: Line height
+    lineWidth: Reading width
+    fontBody: Body font
+    fontCode: Code font
+    fonts:
+      preset: Same as preset
+      sans: System sans-serif
+      inter: Inter (bundled)
+      serif: System serif
+      jetbrains: JetBrains Mono (bundled)
+      system: System monospace
+    preview: Preview
+    previewTitle: PDE-Refiner reproduction notes
+    previewBody: |
+      > [!abstract] In one line
+      > Multi-step refinement keeps long rollouts accurate.
+
+      ## Method
+
+      Each step **adds a little noise** and has the network predict the denoised state, a very short diffusion process. The update is $\hat u_{t+1} = f_\theta(u_t)$.
+
+      | Method | Rollout steps | Relative error |
+      |---|---|---|
+      | MSE baseline | 80 | 0.32 |
+      | PDE-Refiner | 160 | 0.11 |
+
+      The key line in the code: `loss = mse(model(x + noise), x)`
+  translate:
+    title: Translate selection
+    loading: Translating…
+    auto: Translate as soon as text is selected
+    autoShort: Auto
+    close: Close
+    copy: Copy translation
+    copied: Translation copied
+    highlightWithNote: Highlight with translation as comment
+    services:
+      google: Google
+      bing: Bing
+      ai: AI
+    errors:
+      network: Can't reach the translation service. Check your network.
+      rateLimited: The translation service is busy. Try again in a moment.
+      aiNotConfigured: AI translation is selected in Settings, but no AI model is set up yet.
+      failed: Translation failed. Try again.
+  library:
+    title: Library
+    emptyTitle: No library folder yet
+    emptyHint: A library is a separate folder with one subfolder per paper holding its note, PDF and images. You can pick the folder used by the Obsidian Literature Library plugin; both read the same files.
+    chooseFolder: Choose library folder
+    chooseTitle: Choose library folder
+    chooseHint: Pick the folder that holds the .litlib file. If you have no library yet, pick an empty folder and one is created there.
+    useFolder: Use this folder
+    changeFolder: Use another library folder
+    libraryActions: Library actions
+    all: My Library
+    unfiled: Unfiled items
+    trash: Trash
+    tags: Tags
+    filterTags: Filter tags
+    noTags: No tags in this list yet
+    collections: Collections
+    newCollection: New collection
+    newSubcollection: New subcollection
+    collectionName: Collection name
+    renameCollection: Rename collection
+    removeCollection: Delete collection
+    removeCollectionTitle: "Delete the collection “{{name}}”?"
+    removeCollectionHint: Only the collection and its subcollections go away. The papers stay and move to their other collections or to Unfiled items.
+    collectionActions: "Actions for {{name}}"
+    toggleCollection: "Expand or collapse {{name}}"
+    newItem: New item
+    newItemTitle: New item
+    importPdf: Import PDF
+    importTitle: Import PDF
+    importHint: Pick a PDF. It is copied into the library as a new item, titled after the file name until you change it on the right.
+    import: Import
+    refresh: Refresh
+    info: Info
+    searchPlaceholder: Search this list (title / author / venue / tag / DOI)
+    clearSearch: Clear search
+    items: Papers
+    loading: Reading the library…
+    loadFailed: "Can't read the library: {{error}}"
+    noItems: No papers yet. Import a PDF or create an item.
+    noMatch: No matching papers
+    footer: "{{count}} papers"
+    pickItem: Select a paper to see its details
+    toggleAttachments: Show or hide attachments
+    openPdf: Open PDF
+    openTranslation: Open translation
+    openNote: Open note
+    markAs: "Mark as {{status}}"
+    restore: Restore from Trash
+    moveToTrash: Move to Trash
+    addValue: "Add {{label}}"
+    removeValue: "Remove {{value}}"
+    status:
+      unread: Unread
+      toRead: To read
+      reading: Reading
+      read: Read
+    fields:
+      title: Title
+      authors: Creators
+      year: Year
+      status: Status
+      attachments: Attachments
+      venue: Venue
+      itemType: Type
+      added: Added
+      collections: Collections
+      tags: Tags
+      abstract: Abstract
   files:
     title: Files
     placeholder: File panel (coming soon)

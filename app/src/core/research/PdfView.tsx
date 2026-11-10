@@ -61,7 +61,10 @@ import {
   PdfSelectionMenu,
   usePdfAnnotations,
   type AnnotationController,
+  type SelectionAnchor,
 } from "./PdfAnnotationUI";
+import { askAiAboutSelection } from "./ReadingContext";
+import { selectionForTranslation, TranslateCard } from "./TranslateCard";
 
 const reportToast = (error: unknown) => toast.error(documentError(pdfReaderError(error)));
 
@@ -258,6 +261,7 @@ export function PdfReaderContent({
   onError: (error: unknown) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const readingArea = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [initialLocation] = useState(() => ({ ...tab.pdfLocation }));
   const { provides: scrollApi } = useScrollCapability();
@@ -392,6 +396,27 @@ export function PdfReaderContent({
         .then((text) => writeText(text.join("\n")))
         .catch(reportToast);
   };
+  const [translation, setTranslation] = useState<{ text: string; center: number; bottom: number }>();
+  const selectedPassage = async () => {
+    if (!selection) return null;
+    const first = selection.getFormattedSelection()[0];
+    const text = selectionForTranslation((await selection.getSelectedText().toPromise()).join("\n"));
+    return text && first ? { text, page: first.pageIndex + 1 } : null;
+  };
+  const translate = (anchor: SelectionAnchor) =>
+    void selectedPassage()
+      .then((passage) => {
+        if (passage) setTranslation({ text: passage.text, ...anchor });
+      })
+      .catch(reportToast);
+  const askAi = () =>
+    void selectedPassage()
+      .then((passage) => {
+        if (!passage) return;
+        askAiAboutSelection({ text: passage.text, path: tab.path, title: tab.title.replace(/\.pdf$/i, ""), page: passage.page });
+        selection?.clear();
+      })
+      .catch(reportToast);
   const go = (value: string | number) => {
     const target = pdfPageNumber(value, pages);
     if (target && scroll) {
@@ -669,7 +694,7 @@ export function PdfReaderContent({
             </Tabs>
           </aside>
         )}
-        <div className="bg-muted relative min-h-0 min-w-0 flex-1">
+        <div ref={readingArea} className="bg-muted relative min-h-0 min-w-0 flex-1">
           <Viewport
             documentId={tab.id}
             tabIndex={0}
@@ -696,7 +721,33 @@ export function PdfReaderContent({
               />
             </GlobalPointerProvider>
           </Viewport>
-          <PdfSelectionMenu controller={annotations} copy={copy} />
+          <PdfSelectionMenu
+            controller={annotations}
+            copy={copy}
+            onTranslate={canCopyContents ? translate : undefined}
+            onAskAi={canCopyContents ? askAi : undefined}
+          />
+          {translation && (
+            <TranslateCard
+              text={translation.text}
+              left={translation.center}
+              top={translation.bottom + 6}
+              bounds={{
+                width: readingArea.current?.clientWidth ?? 800,
+                height: readingArea.current?.clientHeight ?? 600,
+              }}
+              onClose={() => setTranslation(undefined)}
+              onHighlight={
+                annotations.menu && annotations.enabled
+                  ? (text) =>
+                      void annotations
+                        .annotateSelection("highlight", false, annotations.color, text)
+                        .then(() => setTranslation(undefined))
+                        .catch(reportToast)
+                  : undefined
+              }
+            />
+          )}
         </div>
       </div>
     </div>

@@ -2937,6 +2937,11 @@ research:
       split: 對照
       read: 閱讀
     unsaved: 未保存
+    selection:
+      menu: 選中文字的操作
+      translate: 翻譯
+      askAi: 問 AI
+      copy: 複製
     save: 保存
     saving: 正在保存…
     cancel: 取消
@@ -3079,6 +3084,7 @@ research:
       ai: AI 對話
       aiNeedsWorkspace: AI 對話（打開白板後可用）
       files: 文件
+      library: 文獻庫
       settings: 設置
     setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
     restoreFailed: "沒能重新打開白板 {{path}}：{{message}}"
@@ -3158,6 +3164,136 @@ research:
         title: 設置…
       openAboutWindow:
         title: 關於科研工作臺
+  readingTheme:
+    presets: 預設
+    recommended: 推薦
+    names:
+      default: 默認
+      obsidian: 照我的 Obsidian
+      notion: Notion 風
+    descriptions:
+      default: 程序自帶的樣子，系統字體，緊湊一些
+      obsidian: Minimal 主題加你的標題、表格、圖注片段，正文用 Inter
+      notion: 寬鬆留白，標題大一號，系統字體
+    sampleHeading: 研究筆記
+    sampleText: 擴散模型在訓練時加入物理殘差，生成結果更貼合方程。
+    adjust: 細調
+    reset: 恢復預設
+    fontSize: 正文字號
+    lineHeight: 行高
+    lineWidth: 閱讀寬度
+    fontBody: 正文字體
+    fontCode: 代碼字體
+    fonts:
+      preset: 跟隨預設
+      sans: 系統無襯線
+      inter: Inter（隨程序附帶）
+      serif: 系統襯線（宋體）
+      jetbrains: JetBrains Mono（隨程序附帶）
+      system: 系統等寬
+    preview: 預覽
+    previewTitle: PDE-Refiner 復現筆記
+    previewBody: |
+      > [!abstract] 一句話
+      > 用多步細化把長時間滾動預測的誤差壓下去。
+
+      ## 方法
+
+      每一步先**加一點噪聲**，再讓網絡預測去噪後的結果，相當於一個很短的擴散過程。公式是 $\hat u_{t+1} = f_\theta(u_t)$。
+
+      | 方法 | 滾動步數 | 相對誤差 |
+      |---|---|---|
+      | MSE 基線 | 80 | 0.32 |
+      | PDE-Refiner | 160 | 0.11 |
+
+      代碼裡關鍵的一行：`loss = mse(model(x + noise), x)`
+  translate:
+    title: 劃詞翻譯
+    loading: 正在翻譯…
+    auto: 選中文字就自動翻譯
+    autoShort: 選中即譯
+    close: 關閉
+    copy: 複製譯文
+    copied: 已複製譯文
+    highlightWithNote: 高亮並把譯文寫進批註
+    services:
+      google: Google
+      bing: Bing
+      ai: AI
+    errors:
+      network: 連不上翻譯服務，檢查一下網絡
+      rateLimited: 翻譯服務暫時限流了，稍等一會兒再試
+      aiNotConfigured: 設置裡選了用 AI 翻譯，但還沒有配好 AI 模型
+      failed: 翻譯失敗，再試一次
+  library:
+    title: 文獻庫
+    emptyTitle: 還沒有指定文獻庫
+    emptyHint: 文獻庫是一個單獨的文件夾，每篇文獻一個子文件夾，放筆記、PDF 和圖片。可以直接選 Obsidian 文獻庫插件用的那個文件夾，兩邊讀的是同一份。
+    chooseFolder: 選擇文獻庫文件夾
+    chooseTitle: 選擇文獻庫文件夾
+    chooseHint: 選中文獻庫所在的文件夾（有 .litlib 文件的那一層）；還沒有的話選一個空文件夾，會在裡面新建。
+    useFolder: 用這個文件夾
+    changeFolder: 換一個文獻庫文件夾
+    libraryActions: 文獻庫操作
+    all: 我的文庫
+    unfiled: 未分類條目
+    trash: 回收站
+    tags: 標籤
+    filterTags: 篩選標籤
+    noTags: 當前列表還沒有標籤
+    collections: 分類
+    newCollection: 新建分類
+    newSubcollection: 新建子分類
+    collectionName: 分類名
+    renameCollection: 重命名分類
+    removeCollection: 刪除分類
+    removeCollectionTitle: "刪除分類「{{name}}」？"
+    removeCollectionHint: 只把這個分類和它的子分類去掉，裡面的文獻還在，會歸到別的分類或「未分類條目」。
+    collectionActions: "{{name}} 的操作"
+    toggleCollection: "展開或收起 {{name}}"
+    newItem: 新建條目
+    newItemTitle: 新建條目
+    importPdf: 導入 PDF
+    importTitle: 導入 PDF
+    importHint: 選一個 PDF，會複製進文獻庫，新建一個條目。標題先用文件名，之後可以在右邊改。
+    import: 導入
+    refresh: 刷新
+    info: 信息
+    searchPlaceholder: 在當前列表中快速搜索（標題 / 作者 / 期刊 / 標籤 / DOI）
+    clearSearch: 清空搜索
+    items: 文獻列表
+    loading: 正在讀取文獻庫…
+    loadFailed: "讀不了文獻庫：{{error}}"
+    noItems: 這裡還沒有文獻，可以導入 PDF 或新建條目
+    noMatch: 沒有找到匹配的文獻
+    footer: "{{count}} 篇文獻"
+    pickItem: 選擇一篇文獻查看詳情
+    toggleAttachments: 展開或收起附件
+    openPdf: 打開 PDF
+    openTranslation: 打開譯文
+    openNote: 打開筆記
+    markAs: "標成{{status}}"
+    restore: 從回收站恢復
+    moveToTrash: 移到回收站
+    addValue: "添加{{label}}"
+    removeValue: "去掉 {{value}}"
+    status:
+      unread: 未讀
+      toRead: 待讀
+      reading: 閱讀中
+      read: 已讀
+    fields:
+      title: 標題
+      authors: 創建者
+      year: 年份
+      status: 狀態
+      attachments: 附件
+      venue: 期刊/會議
+      itemType: 類型
+      added: 添加日期
+      collections: 分類
+      tags: 標籤
+      abstract: 摘要
   files:
     title: 文件
     placeholder: 文件面板（建設中）

@@ -5,16 +5,38 @@ import Markdown from "@/components/ui/markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store } from "@/state";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
 import { cn } from "@/utils/cn";
-import { BookOpen, Columns2, ExternalLink, PencilLine, RefreshCw, Save, type LucideIcon } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState, type ComponentProps } from "react";
+import {
+  BookOpen,
+  Bot,
+  Columns2,
+  Copy,
+  ExternalLink,
+  Languages,
+  PencilLine,
+  RefreshCw,
+  Save,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type RefObject,
+} from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import PdfView from "./PdfView";
+import { askAiAboutSelection } from "./ReadingContext";
 import { fileKindOf } from "./ResearchShell";
+import { autoTranslateEnabled, selectionForTranslation, TranslateCard } from "./TranslateCard";
 
 function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
   const [image, setImage] = useState<{ url?: string; error?: string }>({});
@@ -96,6 +118,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     await tab.loadMarkdown(true);
   };
   const [mode, setMode] = useState<MarkdownMode>(storedMarkdownMode);
+  const previewArea = useRef<HTMLDivElement>(null);
   const pickMode = (value: MarkdownMode) => {
     setMode(value);
     globalThis.localStorage?.setItem(MARKDOWN_MODE_KEY, value);
@@ -187,8 +210,13 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       ) : mode === "split" ? (
         <div className="grid min-h-0 flex-1 grid-rows-2 border-t md:grid-cols-2 md:grid-rows-1">
           <section className="flex min-h-0 min-w-0 flex-col px-6 py-5 max-md:border-b md:border-r">{editor}</section>
-          <section className="min-h-0 min-w-0 overflow-auto px-8 py-6" aria-label={t("preview")}>
+          <section
+            ref={previewArea}
+            className="relative min-h-0 min-w-0 overflow-auto px-8 py-6"
+            aria-label={t("preview")}
+          >
             {preview}
+            <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
           </section>
         </div>
       ) : mode === "edit" ? (
@@ -196,9 +224,103 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           <div className="reading-view flex min-h-0 flex-1 flex-col">{editor}</div>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto border-t px-8 pt-8 pb-24" aria-label={t("preview")}>
+        <div
+          ref={previewArea}
+          className="relative min-h-0 flex-1 overflow-auto border-t px-8 pt-8 pb-24"
+          aria-label={t("preview")}
+        >
           {preview}
+          <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
         </div>
+      )}
+    </>
+  );
+}
+
+/** Markdown 预览里选中文字：弹出翻译、问 AI、复制，和 PDF 的选区菜单一样 */
+function PreviewSelection({ area, path, title }: { area: RefObject<HTMLDivElement | null>; path: string; title: string }) {
+  const [menu, setMenu] = useState<{ text: string; center: number; top: number; bottom: number }>();
+  const [translation, setTranslation] = useState<{ text: string; center: number; bottom: number }>();
+  useEffect(() => {
+    const element = area.current;
+    if (!element) return;
+    const onUp = () =>
+      requestAnimationFrame(() => {
+        const selection = window.getSelection();
+        const raw = selection?.toString().trim() ?? "";
+        if (!selection?.rangeCount || !raw || !element.contains(selection.anchorNode)) return setMenu(undefined);
+        const rect = selection.getRangeAt(0).getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        const next = {
+          text: selectionForTranslation(raw),
+          center: rect.left + rect.width / 2 - box.left + element.scrollLeft,
+          top: rect.top - box.top + element.scrollTop,
+          bottom: rect.bottom - box.top + element.scrollTop,
+        };
+        setMenu(next);
+        if (autoTranslateEnabled()) setTranslation(next);
+      });
+    const onDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Element && event.target.closest("[data-selection-ui], [role=dialog]")))
+        setMenu(undefined);
+    };
+    element.addEventListener("pointerup", onUp);
+    element.addEventListener("pointerdown", onDown);
+    return () => {
+      element.removeEventListener("pointerup", onUp);
+      element.removeEventListener("pointerdown", onDown);
+    };
+  }, [area]);
+  const width = area.current?.clientWidth ?? 600;
+  return (
+    <>
+      {menu && (
+        <div
+          data-selection-ui
+          role="toolbar"
+          aria-label={t("selection.menu")}
+          className="bg-popover text-popover-foreground absolute z-40 flex items-center gap-0.5 rounded-lg border p-1 shadow-lg"
+          style={{ left: Math.max(8, Math.min(menu.center - 110, width - 228)), top: Math.max(4, menu.top - 44) }}
+        >
+          <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => setTranslation(menu)}>
+            <Languages />
+            {t("selection.translate")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={() => {
+              askAiAboutSelection({ text: menu.text, path, title: title.replace(/\.md$/i, "") });
+              setMenu(undefined);
+            }}
+          >
+            <Bot />
+            {t("selection.askAi")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={() =>
+              void writeText(window.getSelection()?.toString() ?? menu.text)
+                .then(() => setMenu(undefined))
+                .catch((error) => toast.error(documentError(error)))
+            }
+          >
+            <Copy />
+            {t("selection.copy")}
+          </Button>
+        </div>
+      )}
+      {translation && (
+        <TranslateCard
+          text={translation.text}
+          left={translation.center}
+          top={translation.bottom + 8}
+          bounds={{ width, height: area.current?.scrollHeight ?? 800 }}
+          onClose={() => setTranslation(undefined)}
+        />
       )}
     </>
   );
