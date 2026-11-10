@@ -221,4 +221,65 @@ describe("scoped PDF range reads", () => {
     await expect(reading).rejects.toThrow("fileClosed");
     await closing;
   });
+
+  it.each([262143, 262144, 262145, 600001])(
+    "reads the exact EOF across 256 KiB chunks and short reads: %s",
+    async (size) => {
+      const { reader, handle } = range(size, 100003);
+      const bytes = await reader.read(0, size);
+      expect(bytes).toEqual(Uint8Array.from({ length: size }, (_, i) => i % 256));
+      expect(reader.bytesRead).toBe(size);
+      expect(handle.read.mock.calls.every(([buffer]) => buffer.length <= 262144)).toBe(true);
+      await reader.close();
+    },
+  );
+
+  it("seeks again after a failed seek or an EOF short read, including when the cursor moved", async () => {
+    const { reader, handle } = range(1000000, Infinity);
+    const seek = handle.seek.getMockImplementation()!;
+    const read = handle.read.getMockImplementation()!;
+    await reader.read(0, 10);
+    handle.seek.mockImplementationOnce(async (offset) => {
+      await seek(offset + 100);
+      throw new Error("seek failed");
+    });
+    await expect(reader.read(20, 30)).rejects.toThrow("seek failed");
+    expect([...(await reader.read(10, 20))]).toEqual(Array.from({ length: 10 }, (_, i) => 10 + i));
+    handle.read.mockImplementationOnce(async (buffer) => {
+      await read(buffer);
+      throw new Error("read failed");
+    });
+    await expect(reader.read(20, 30)).rejects.toThrow("read failed");
+    handle.read.mockResolvedValueOnce(null);
+    await expect(reader.read(20, 30)).rejects.toThrow("fileChanged");
+    expect([...(await reader.read(20, 30))]).toEqual(Array.from({ length: 10 }, (_, i) => 20 + i));
+    await reader.close();
+  });
+
+  it.each(["seek", "read"] as const)(
+    "close resolves before a hung %s, then rejects queued reads without issuing new I/O",
+    async (method) => {
+      const { reader, handle } = range(1000000, Infinity);
+      let finish!: (count: number) => void;
+      handle[method].mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const first = reader.read(0, 600000);
+      const queued = reader.read(600000, 700000);
+      const rejected = Promise.all([
+        expect(first).rejects.toThrow("fileClosed"),
+        expect(queued).rejects.toThrow("fileClosed"),
+      ]);
+      await vi.waitFor(() => expect(handle[method]).toHaveBeenCalledOnce());
+      await reader.close();
+      expect(handle.close).toHaveBeenCalledOnce();
+      finish(262144);
+      await rejected;
+      expect(handle.seek).toHaveBeenCalledOnce();
+      expect(handle.read).toHaveBeenCalledTimes(method === "read" ? 1 : 0);
+    },
+  );
 });

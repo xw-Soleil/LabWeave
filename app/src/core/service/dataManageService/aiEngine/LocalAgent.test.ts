@@ -683,10 +683,9 @@ describe("LocalAgentConnection with SDK agent() and paired TransformStreams", ()
     else {
       expect(opened.recovery).toMatchObject({
         previousSessionId: "old",
-        cwd: "/research",
-        reason: mode === "unsupported" ? "unsupported" : "load-failed",
+        reason: mode === "unsupported" ? "unsupported" : "not-found",
       });
-      if (mode === "failed") expect(opened.recovery?.detail).toContain("-32002");
+      expect(opened.recovery).not.toHaveProperty("detail");
     }
     expect(load).toHaveBeenCalledTimes(mode === "unsupported" ? 0 : 1);
     expect(f.newSession).toHaveBeenCalledTimes(mode === "supported" ? 0 : 1);
@@ -1105,6 +1104,20 @@ describe("不进对话的看状态命令", () => {
     expect(f.forked).not.toHaveBeenCalled();
     expect(f.deleted).not.toHaveBeenCalled();
     expect(f.updates).toEqual([]);
+  });
+
+  it.each(["failed", "loaded", "prompted"])("复制失败不能用空会话冒充已有上下文：%s", async (mode) => {
+    const f = quietFixture(() =>
+      Promise.reject(mode === "failed" ? RequestError.internalError() : new RequestError(-32002, "Resource not found")),
+    );
+    const connection = await f.start("claude");
+    await connection.openSession({ ...session, previousSessionId: mode === "loaded" ? "old" : undefined });
+    if (mode === "prompted") await connection.prompt([{ type: "text", text: "question" }]);
+    const newCount = f.newSession.mock.calls.length;
+    const promptCount = f.prompts.length;
+    await expect(connection.runQuietCommand("context", { ...session, isolated: true })).rejects.toThrow();
+    expect(f.newSession).toHaveBeenCalledTimes(newCount);
+    expect(f.prompts).toHaveLength(promptCount);
   });
 
   it("解析 /context 的分类表和明细、/status 的逐项字段（2026-11-10 实测格式）", () => {

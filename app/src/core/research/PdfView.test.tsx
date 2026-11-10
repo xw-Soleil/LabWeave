@@ -139,6 +139,21 @@ async function show(tab: DocumentTab) {
 }
 
 describe("PDF reading tabs", () => {
+  it("releases zoom listeners and a pending frame when switching tabs", async () => {
+    vi.useFakeTimers();
+    const first = new DocumentTab("/r/first.pdf", "pdf");
+    await show(first);
+    const oldContainer = container.querySelector(".pg-document-pdf")!;
+    oldContainer.dispatchEvent(
+      new WheelEvent("wheel", { ctrlKey: true, deltaY: -10, bubbles: true, cancelable: true }),
+    );
+    await show(new DocumentTab("/r/second.pdf", "pdf"));
+    await act(async () => vi.advanceTimersByTimeAsync(20));
+    expect(mocks.viewers[0].options.abortSignal?.aborted).toBe(true);
+    expect(mocks.viewers[0].currentScale).toBe(1);
+    expect(mocks.viewers[1].currentScale).toBe(1);
+    expect(mocks.destroy).toHaveBeenCalledOnce();
+  });
   it("disconnects the real pdf.js viewer's internal observer using its lifetime signal", async () => {
     const disconnect = vi.fn();
     vi.stubGlobal(

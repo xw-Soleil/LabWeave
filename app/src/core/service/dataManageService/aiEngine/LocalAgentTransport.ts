@@ -4,7 +4,7 @@ import type { ExternalAiMcpLaunch } from "@/sub/SettingsWindow/externalAiCommand
 import type { ContentBlock, McpServer, SessionUpdate } from "@agentclientprotocol/sdk";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
-import { AIChatSessionStore, getAIChatProjectKey } from "./AIChatSessionStore";
+import { AIChatSessionStore, getAIChatProjectKey, getStoredLocalAgentSession } from "./AIChatSessionStore";
 import { RESEARCH_ASSISTANT_GUIDE, type AIMessageMetadata } from "./AIEngine";
 import type { AIObjectReferenceRegistry } from "./AIObjectReferenceRegistry";
 import { buildResearchContext } from "./ResearchContext";
@@ -146,6 +146,32 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     return ready;
   }
 
+  acknowledgeRecovery(chatId: string): Promise<void> {
+    const acknowledged = this.turn.then(async () => {
+      this.lifetime.signal.throwIfAborted();
+      const projectKey = getAIChatProjectKey(this.options.project);
+      const stored = await AIChatSessionStore.loadSession(projectKey, chatId);
+      const binding = getStoredLocalAgentSession(stored, this.options.agentId);
+      if (!binding?.recovery) return;
+      await AIChatSessionStore.setLocalAgentSession(
+        projectKey,
+        chatId,
+        { ...binding, recovery: undefined },
+        this.lifetime.signal,
+      );
+      const session = this.sessions.get(chatId);
+      if (session) delete session.recovery;
+      if (this.status.kind === "ready" && this.status.chatId === chatId)
+        this.setStatus({ ...this.status, recovery: undefined });
+    });
+    // The caller displays a failed acknowledgement; keep later turns usable.
+    this.turn = acknowledged.then(
+      () => undefined,
+      () => undefined,
+    );
+    return acknowledged;
+  }
+
   /**
    * 看上下文用量：Claude Code 跑 /context，Codex 跑 /status，结果交给弹窗，不进对话。
    * 和发消息排在同一个队列里，不会和正在进行的回答抢同一个会话。没有这类命令的程序返回 null。
@@ -267,16 +293,18 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       this.connection!.activateSession(existing.sessionId);
       this.setStatus({
         kind: "ready",
+        chatId,
         whiteboardTools: existing.mcpServers.length > 0,
         ...(existing.recovery ? { recovery: existing.recovery } : {}),
       });
       return existing;
     }
+    this.setStatus({ kind: "starting" });
+    this.setControls({ modes: [], currentMode: null, models: [], currentModel: null, commands: [] });
     const launch = await invoke<ExternalAiMcpLaunch>("external_ai_mcp_launch");
     const mcpServers = buildLocalAgentMcpServers(launch);
     this.lifetime.signal.throwIfAborted();
     if (!this.connection) {
-      this.setStatus({ kind: "starting" });
       const catalog = await getLocalAgentCatalog();
       const agent = catalog.find((agent) => agent.id === this.options.agentId);
       if (!agent || (!agent.resolvedPath && !this.options.pathOverride)) throw new LocalAgentError("not-found");
@@ -315,7 +343,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     const projectKey = getAIChatProjectKey(this.options.project);
     const stored = await AIChatSessionStore.loadSession(projectKey, chatId);
     this.lifetime.signal.throwIfAborted();
-    const previous = stored.localAgent?.agentId === this.options.agentId ? stored.localAgent : undefined;
+    const previous = getStoredLocalAgentSession(stored, this.options.agentId);
     const session = await this.connection.openSession({
       cwd,
       mcpServers,
@@ -333,7 +361,12 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     this.lifetime.signal.throwIfAborted();
     const chatSession = { ...session, ...(recovery ? { recovery } : {}), firstPrompt: true, cwd, mcpServers };
     this.sessions.set(chatId, chatSession);
-    this.setStatus({ kind: "ready", whiteboardTools: mcpServers.length > 0, ...(recovery ? { recovery } : {}) });
+    this.setStatus({
+      kind: "ready",
+      chatId,
+      whiteboardTools: mcpServers.length > 0,
+      ...(recovery ? { recovery } : {}),
+    });
     return chatSession;
   }
 
@@ -386,12 +419,14 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
 
   // 只改当前这个会话；新会话照样从程序自己的默认配置开始
   async setMode(id: string): Promise<void> {
-    if (!this.connection || this.lifetime.signal.aborted) throw new LocalAgentError("protocol");
+    if (!this.connection || this.status.kind !== "ready" || this.lifetime.signal.aborted)
+      throw new LocalAgentError("protocol");
     await this.connection.setMode(id);
   }
 
   async setModel(id: string): Promise<void> {
-    if (!this.connection || this.lifetime.signal.aborted) throw new LocalAgentError("protocol");
+    if (!this.connection || this.status.kind !== "ready" || this.lifetime.signal.aborted)
+      throw new LocalAgentError("protocol");
     await this.connection.setModel(id);
   }
 

@@ -3256,9 +3256,11 @@ research:
       resumeFailed: 没接上上次的对话
       openedFallback: "已在 {{name}} 中新开对话。面板里的旧记录仍然保留，但不代表程序已恢复原会话。"
       resumeReasons:
-        load-failed: 程序载入原会话失败，原因如下：
+        load-failed: 程序未能读取上次的对话，原有记录可能暂时无法使用。
+        not-found: 程序找不到上次的对话记录。
         unsupported: 这个程序没有声明支持载入已有会话。
-      previousSession: "原会话号：{{id}}"
+      acknowledge: 知道了
+      acknowledgeFailed: 提示未能清除，请再试一次。
       errors:
         spawn-failed: "{{name}} 启动失败。"
         exited: "{{name}} 意外退出了。"

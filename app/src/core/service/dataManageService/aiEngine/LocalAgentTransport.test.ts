@@ -11,6 +11,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { DefaultChatTransport, readUIMessageStream, type UIMessage, type UIMessageChunk } from "ai";
 import { invoke } from "@tauri-apps/api/core";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import type { Project } from "@/core/Project";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import { Settings } from "@/core/service/Settings";
@@ -275,6 +276,67 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
 }
 
 describe("LocalAgentTransport with an in-memory SDK agent", () => {
+  it("上下文弹层和斜杠命令排在载入之后，重放不混入结果且仍使用原会话", async () => {
+    let release!: () => void;
+    const load = vi.fn(
+      async ({ client, params }: { client: AgentConnection["client"]; params: { sessionId: string } }) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: textUpdate("old replay"),
+        });
+        return {};
+      },
+    );
+    const f = await setup((app) => app.onRequest(methods.agent.session.load, load));
+    await actualStore.AIChatSessionStore.setLocalAgentSession(f.key, f.chatId, {
+      agentId: "codex",
+      sessionId: "original",
+    });
+    const preparing = f.transport.prepareSession(f.chatId);
+    const inspecting = f.transport.inspectContext(f.chatId);
+    const sending = collect(await f.send([user("old question"), assistant("old answer"), user("/compact")]));
+    await vi.waitFor(() => expect(load).toHaveBeenCalledOnce());
+    expect(f.statuses.at(-1)).toEqual({ kind: "starting" });
+    expect(f.controls.at(-1)?.commands).toEqual([]);
+    expect(f.prompts).toEqual([]);
+    await expect(f.transport.setMode("old-mode")).rejects.toThrow();
+    release();
+    await preparing;
+    expect(await inspecting).toEqual({ command: "status", text: "answer" });
+    await sending;
+    expect(f.prompts.map((prompt) => ({ sessionId: prompt.sessionId, text: promptText(prompt) }))).toEqual([
+      { sessionId: "original", text: "/status" },
+      { sessionId: "original", text: "/compact" },
+    ]);
+    expect(f.newSession).not.toHaveBeenCalled();
+    await collect(await f.send([user("normal question")]));
+    expect(promptText(f.prompts[2])).toContain("<whiteboard>");
+    expect(promptText(f.prompts[2])).not.toContain("recent-history");
+  });
+
+  it("同一聊天切换 Codex、Claude Code 再切回时分别恢复各自的会话", async () => {
+    const f = await setup();
+    f.catalog.push({ ...info, id: "claude", name: "Claude Code" });
+    f.newSession
+      .mockReturnValueOnce({ sessionId: "codex-original" })
+      .mockReturnValueOnce({ sessionId: "claude-original" });
+    await f.transport.prepareSession(f.chatId);
+    await f.transport.dispose();
+    const claude = new LocalAgentTransport({ project: f.project, references: f.references, agentId: "claude" });
+    cleanups.push(() => claude.dispose());
+    await claude.prepareSession(f.chatId);
+    await claude.dispose();
+    const codex = new LocalAgentTransport({ project: f.project, references: f.references, agentId: "codex" });
+    cleanups.push(() => codex.dispose());
+    await codex.prepareSession(f.chatId);
+    expect(f.load).toHaveBeenCalledWith(
+      expect.objectContaining({ params: expect.objectContaining({ sessionId: "codex-original" }) }),
+    );
+    expect(f.newSession).toHaveBeenCalledTimes(2);
+  });
   it("控制项立即回放和退订；沿用程序默认，切换只改当前会话，失败不变", async () => {
     let configOptions = [
       {
@@ -565,13 +627,16 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
       if (mode !== "loaded") expect(first).toContain("assistant: past answer");
       await collect(await f.send([user("next")]));
       expect(promptText(observed[1])).not.toContain("recent-history");
-      const binding = (await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgent;
+      const binding = (await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgents?.codex;
       expect(binding).toMatchObject({
         agentId: "codex",
         sessionId: mode === "loaded" ? "old" : "acp-new",
       });
       if (mode === "unsupported" || mode === "load-failed") {
-        expect(binding?.recovery).toMatchObject({ previousSessionId: "old", reason: mode, cwd: "/research" });
+        expect(binding?.recovery).toMatchObject({
+          previousSessionId: "old",
+          reason: mode === "load-failed" ? "not-found" : mode,
+        });
         expect(f.statuses.at(-1)).toMatchObject({ kind: "ready", recovery: binding!.recovery });
       } else {
         expect(binding?.recovery).toBeUndefined();
@@ -590,7 +655,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
       expect(chunks).toContainEqual({ type: "error", errorText: "local-agent:no-research-folder" });
       expect(f.statuses.at(-1)).toMatchObject({ kind: "agent-error", reason: "no-research-folder" });
     } else {
-      expect(f.statuses.at(-1)).toEqual({ kind: "ready", whiteboardTools: mode !== "no-mcp" });
+      expect(f.statuses.at(-1)).toEqual({ kind: "ready", chatId: f.chatId, whiteboardTools: mode !== "no-mcp" });
       if (mode === "no-mcp")
         expect(f.newSession).toHaveBeenCalledWith(
           expect.objectContaining({ params: expect.objectContaining({ mcpServers: [] }) }),
@@ -645,7 +710,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(f.statuses.slice(0, 3)).toEqual([
       { kind: "idle" },
       { kind: "starting" },
-      { kind: "ready", whiteboardTools: true },
+      { kind: "ready", chatId: f.chatId, whiteboardTools: true },
     ]);
   });
 
@@ -767,7 +832,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(f.load).toHaveBeenCalledWith(
       expect.objectContaining({ params: expect.objectContaining({ sessionId: "acp-new" }) }),
     );
-    expect(f.statuses.at(-1)).toEqual({ kind: "ready", whiteboardTools: true });
+    expect(f.statuses.at(-1)).toEqual({ kind: "ready", chatId: f.chatId, whiteboardTools: true });
   });
 
   it("关闭或热重载期间迟到的打开结果不能覆盖已保存的会话号", async () => {
@@ -791,7 +856,9 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     const closing = f.transport.dispose();
     finish({ sessionId: "late-fallback", loaded: false });
     await closing;
-    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgent?.sessionId).toBe("original");
+    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgents?.codex.sessionId).toBe(
+      "original",
+    );
     expect(await preparing).toBe("rejected");
     expect(AIChatSessionStore.setLocalAgentSession).not.toHaveBeenCalled();
   });
@@ -821,7 +888,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     expect(f.prompts[0]).toMatchObject({ sessionId: "original", prompt: [{ type: "text", text: "/compact" }] });
   });
 
-  it("失败原因和原会话号在切换聊天、保存消息及重启后仍可见", async () => {
+  it("恢复提示按聊天保留，确认后跨重启清除，新一次失败重新提示", async () => {
     const f = await setup((app) =>
       app.onRequest(methods.agent.session.load, ({ params }) => {
         if (params.sessionId === "original") throw RequestError.internalError({ detail: "Cannot read transcript" });
@@ -833,9 +900,9 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
       sessionId: "original",
     });
     await f.transport.prepareSession(f.chatId);
-    const failure = (await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgent!.recovery;
+    const failure = (await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgents!.codex.recovery;
     expect(failure).toMatchObject({ previousSessionId: "original", reason: "load-failed" });
-    expect(failure!.detail).toContain("Cannot read transcript");
+    expect(failure).not.toHaveProperty("detail");
     const { activeSession: other } = await actualStore.AIChatSessionStore.createSession(f.key);
     await f.transport.prepareSession(other.id);
     expect(f.statuses.at(-1)).not.toHaveProperty("recovery");
@@ -849,7 +916,27 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     restarted.onStatus((status) => statuses.push(status));
     await restarted.prepareSession(f.chatId);
     expect(statuses.at(-1)).toMatchObject({ kind: "ready", recovery: failure });
-    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgent!.recovery).toEqual(failure);
+    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgents!.codex.recovery).toEqual(
+      failure,
+    );
+    await restarted.acknowledgeRecovery(f.chatId);
+    expect(statuses.at(-1)).not.toMatchObject({ recovery: failure });
+    await restarted.dispose();
+    const acknowledged = new LocalAgentTransport({ project: f.project, references: f.references, agentId: "codex" });
+    cleanups.push(() => acknowledged.dispose());
+    acknowledged.onStatus((status) => statuses.push(status));
+    await acknowledged.prepareSession(f.chatId);
+    expect(statuses.at(-1)).not.toHaveProperty("recovery");
+    await acknowledged.dispose();
+    await actualStore.AIChatSessionStore.setLocalAgentSession(f.key, f.chatId, {
+      agentId: "codex",
+      sessionId: "original",
+    });
+    const failedAgain = new LocalAgentTransport({ project: f.project, references: f.references, agentId: "codex" });
+    cleanups.push(() => failedAgain.dispose());
+    failedAgain.onStatus((status) => statuses.push(status));
+    await failedAgain.prepareSession(f.chatId);
+    expect(statuses.at(-1)).toMatchObject({ recovery: failure });
   });
 
   it.each(["exited", "needs-login"])("上一轮 %s 后缺少研究文件夹，先恢复 idle 并报告本轮原因", async (reason) => {
@@ -923,7 +1010,7 @@ describe("LocalAgentTransport with an in-memory SDK agent", () => {
     );
     await actualStore.AIChatSessionStore.setLocalAgentSession(f.key, f.chatId, { agentId: "claude", sessionId: "old" });
     await collect(await f.send());
-    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgent).toEqual({
+    expect((await actualStore.AIChatSessionStore.loadSession(f.key, f.chatId)).localAgents?.claude).toEqual({
       agentId: "claude",
       sessionId: "old",
     });
@@ -979,6 +1066,72 @@ describe("prompt history limits", () => {
 });
 
 describe("local agent session persistence", () => {
+  it("迁移旧单程序绑定时保留它，并清除旧版诊断字段", async () => {
+    const store = actualStore.AIChatSessionStore;
+    const key = crypto.randomUUID();
+    const { activeSession } = await store.initializeProject(key);
+    const legacy = {
+      agentId: "claude",
+      sessionId: "original",
+      recovery: {
+        previousSessionId: "older",
+        reason: "load-failed",
+        cwd: "/private/project",
+        detail: "secret diagnostic",
+      },
+    };
+    const storedKey = `project:${key}:session:${activeSession.id}`;
+    stores.get("ai-chat-sessions.json")!.set(storedKey, { ...activeSession, localAgent: legacy });
+    expect(actualStore.getStoredLocalAgentSession(await store.loadSession(key, activeSession.id), "claude")).toEqual({
+      agentId: "claude",
+      sessionId: "original",
+      recovery: { previousSessionId: "older", reason: "load-failed" },
+    });
+    await store.setLocalAgentSession(key, activeSession.id, { agentId: "codex", sessionId: "second" });
+    const saved = await store.loadSession(key, activeSession.id);
+    expect(saved.localAgent).toBeUndefined();
+    expect(saved.localAgents?.claude.sessionId).toBe("original");
+    expect(saved.localAgents?.codex.sessionId).toBe("second");
+    expect(JSON.stringify(saved)).not.toContain("secret diagnostic");
+    expect(JSON.stringify(saved)).not.toContain("/private/project");
+  });
+
+  it.each([
+    null,
+    [],
+    { codex: { agentId: "claude", sessionId: "s" } },
+    { claude: { agentId: "claude", sessionId: "" } },
+  ])("损坏的按程序绑定也报告错误：%j", async (localAgents) => {
+    const store = actualStore.AIChatSessionStore;
+    const key = crypto.randomUUID();
+    const { activeSession } = await store.initializeProject(key);
+    stores
+      .get("ai-chat-sessions.json")!
+      .set(`project:${key}:session:${activeSession.id}`, { ...activeSession, localAgents });
+    await expect(store.loadSession(key, activeSession.id)).rejects.toThrow();
+  });
+
+  it.each(["set", "save"] as const)("%s 已开始时取消也不能留下迟到的会话号", async (method) => {
+    const store = actualStore.AIChatSessionStore;
+    const key = crypto.randomUUID();
+    const { activeSession } = await store.initializeProject(key);
+    const original = { agentId: "claude", sessionId: "original" };
+    await store.setLocalAgentSession(key, activeSession.id, original);
+    const controller = new AbortController();
+    const operation = LazyStore.prototype[method];
+    const spy = vi.spyOn(LazyStore.prototype, method).mockImplementationOnce(async function (
+      this: LazyStore,
+      ...args: unknown[]
+    ) {
+      await (operation as (...values: unknown[]) => Promise<void>).apply(this, args);
+      controller.abort();
+    });
+    await expect(
+      store.setLocalAgentSession(key, activeSession.id, { ...original, sessionId: "stale" }, controller.signal),
+    ).rejects.toThrow();
+    spy.mockRestore();
+    expect((await store.loadSession(key, activeSession.id)).localAgents?.claude).toEqual(original);
+  });
   it("持久化队列在落盘前检查取消，不写入旧 transport 的后备会话号", async () => {
     const store = actualStore.AIChatSessionStore;
     const key = crypto.randomUUID();
@@ -994,7 +1147,7 @@ describe("local agent session persistence", () => {
     );
     controller.abort();
     await expect(writing).rejects.toThrow();
-    expect((await store.loadSession(key, activeSession.id)).localAgent).toEqual(original);
+    expect((await store.loadSession(key, activeSession.id)).localAgents?.claude).toEqual(original);
   });
 
   it("旧会话兼容，ACP 保存走队列且不改其他字段；保存消息/重命名/键迁移保留字段", async () => {
@@ -1005,7 +1158,10 @@ describe("local agent session persistence", () => {
     expect((await store.loadSession(key, activeSession.id)).localAgent).toBeUndefined();
     const localAgent = { agentId: "codex", sessionId: "s1" };
     await store.setLocalAgentSession(key, activeSession.id, localAgent);
-    expect(await store.loadSession(key, activeSession.id)).toEqual({ ...activeSession, localAgent });
+    expect(await store.loadSession(key, activeSession.id)).toEqual({
+      ...activeSession,
+      localAgents: { codex: localAgent },
+    });
     const operations = [
       store.saveSession(key, activeSession.id, [user()]),
       store.setLocalAgentSession(key, activeSession.id, { ...localAgent, sessionId: "s2" }),
@@ -1013,19 +1169,19 @@ describe("local agent session persistence", () => {
     ];
     await Promise.all(operations);
     expect(await store.loadSession(key, activeSession.id)).toMatchObject({
-      localAgent: { agentId: "codex", sessionId: "s2" },
+      localAgents: { codex: { agentId: "codex", sessionId: "s2" } },
       title: "renamed",
       messages: [user()],
     });
     project.metadata = { workbench: { id: crypto.randomUUID() } };
     project.uri = { scheme: "file", toString: () => "file:///saved.prg" };
     const migratedKey = actualStore.getAIChatProjectKey(project);
-    expect((await store.loadSession(migratedKey, activeSession.id)).localAgent).toEqual({
+    expect((await store.loadSession(migratedKey, activeSession.id)).localAgents?.codex).toEqual({
       agentId: "codex",
       sessionId: "s2",
     });
     await store.setLocalAgentSession(migratedKey, activeSession.id, undefined);
-    expect((await store.loadSession(migratedKey, activeSession.id)).localAgent).toBeUndefined();
+    expect((await store.loadSession(migratedKey, activeSession.id)).localAgents).toBeUndefined();
   });
 
   it.each([
@@ -1050,7 +1206,7 @@ describe("local agent session persistence", () => {
     await expect(store.loadSession(key, activeSession.id)).rejects.toThrow();
     stores.get("ai-chat-sessions.json")!.set(storeKey, activeSession);
     await store.setLocalAgentSession(key, activeSession.id, { agentId: "codex", sessionId: "valid" });
-    expect((await store.loadSession(key, activeSession.id)).localAgent?.sessionId).toBe("valid");
+    expect((await store.loadSession(key, activeSession.id)).localAgents?.codex.sessionId).toBe("valid");
     await expect(store.setLocalAgentSession(key, "missing", { agentId: "codex", sessionId: "s" })).rejects.toThrow();
   });
 });

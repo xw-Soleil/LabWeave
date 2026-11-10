@@ -627,9 +627,9 @@ function AIChatPanel({
   const [apiFormat] = Settings.use("aiApiFormat");
   const { t } = useTranslation("research");
   const localAgent = conversation.localAgent;
-  const agentStatus = useLocalAgentStatus(localAgent);
+  const agentStatus = useLocalAgentStatus(localAgent, session.id);
   const permission = useLocalAgentPermission(localAgent);
-  const agentControls = useLocalAgentControls(localAgent);
+  const agentControls = useLocalAgentControls(localAgent, agentStatus?.kind === "ready");
   const [agentId] = Settings.use("aiLocalAgent");
   const [agentPaths] = Settings.use("aiLocalAgentPaths");
   const agentInfo = catalog?.find((agent) => agent.id === agentId);
@@ -1032,6 +1032,7 @@ function AIChatPanel({
             agentId={agentId}
             missing={catalog !== null && !isLocalAgentReady(agentInfo, agentPaths[agentId])}
             onRetry={() => void regenerate()}
+            onAcknowledge={() => localAgent.acknowledgeRecovery(session.id)}
           />
         )}
         {/* 输入框照两个 VS Code 插件的样子：一个圆角框，从上到下是上下文小标签、打字区、底栏 */}
@@ -1126,12 +1127,12 @@ function AIChatPanel({
               <>
                 <LocalAgentModeMenu
                   controls={agentControls}
-                  disabled={requesting || !sessionLoaded}
+                  disabled={requesting || !sessionLoaded || agentStatus?.kind !== "ready"}
                   onSelect={(id) => switchAgentControl("mode", id)}
                 />
                 <LocalAgentModelMenu
                   controls={agentControls}
-                  disabled={requesting || !sessionLoaded}
+                  disabled={requesting || !sessionLoaded || agentStatus?.kind !== "ready"}
                   onSelect={(id) => switchAgentControl("model", id)}
                 />
               </>

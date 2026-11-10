@@ -392,7 +392,7 @@ function PdfView({ tab }: { tab: DocumentTab }) {
             {t("loading")}
           </div>
         )}
-        <div ref={container} className="pg-document-pdf absolute inset-0 overflow-auto">
+        <div ref={container} tabIndex={0} className="pg-document-pdf absolute inset-0 overflow-auto">
           <div className="pdfViewer" />
         </div>
       </div>

@@ -99,7 +99,7 @@ describe("getAIChatProjectKey", () => {
       const reopened = project(uri, { workbench: { id } });
       const restored = await AIChatSessionStore.initializeProject(getAIChatProjectKey(reopened));
       expect(restored.activeSession.id).toBe(activeSession.id);
-      expect(restored.activeSession.localAgent).toEqual(binding);
+      expect(restored.activeSession.localAgents?.claude).toEqual(binding);
     },
   );
 });

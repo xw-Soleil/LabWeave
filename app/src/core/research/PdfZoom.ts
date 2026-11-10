@@ -50,15 +50,28 @@ export function bindPdfZoom(
     },
     { passive: false, signal },
   );
-  window.addEventListener(
+  container.addEventListener(
+    "pointerdown",
+    (event) => {
+      const target = event.target;
+      if (target instanceof Element && !target.closest("input, textarea, select, button, a, [contenteditable]"))
+        container.focus({ preventScroll: true });
+    },
+    { signal },
+  );
+  container.addEventListener(
     "keydown",
     (event) => {
       if (!isActive() || (!event.ctrlKey && !event.metaKey) || event.altKey || event.isComposing) return;
       if (!["+", "=", "-", "0"].includes(event.key)) return;
       const target = event.target;
-      if (target instanceof Element && target.closest("input, textarea, [contenteditable=true]")) return;
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")
+      )
+        return;
       event.preventDefault();
-      // Capture before KeyBindsUI's window listener and the WebView's page zoom.
+      // Consume inside the reader before KeyBindsUI's window listener.
       event.stopImmediatePropagation();
       reset();
       const viewer = getViewer();

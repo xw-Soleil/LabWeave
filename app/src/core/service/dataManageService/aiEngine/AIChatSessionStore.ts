@@ -20,6 +20,8 @@ export type AIChatSessionIndex = {
   sessions: AIChatSessionSummary[];
 };
 
+type StoredLocalAgentSession = { agentId: string; sessionId: string; recovery?: LocalAgentSessionRecovery };
+
 export type StoredAIChatSession = {
   version: 1;
   id: string;
@@ -28,7 +30,8 @@ export type StoredAIChatSession = {
   messages: UIMessage<AIMessageMetadata>[];
   memory?: AIChatSessionMemory;
   activatedSkills?: ActivatedSkillSnapshot[];
-  localAgent?: { agentId: string; sessionId: string; recovery?: LocalAgentSessionRecovery };
+  localAgent?: StoredLocalAgentSession;
+  localAgents?: Record<string, StoredLocalAgentSession>;
   createdAt: number;
   updatedAt: number;
 };
@@ -37,6 +40,18 @@ export type AIChatSessionProjectState = {
   index: AIChatSessionIndex;
   activeSession: StoredAIChatSession;
 };
+
+export function getStoredLocalAgentSession(session: StoredAIChatSession, agentId: string) {
+  const binding =
+    session.localAgents?.[agentId] ?? (session.localAgent?.agentId === agentId ? session.localAgent : undefined);
+  if (!binding) return undefined;
+  const { recovery } = binding;
+  return {
+    agentId: binding.agentId,
+    sessionId: binding.sessionId,
+    ...(recovery ? { recovery: { previousSessionId: recovery.previousSessionId, reason: recovery.reason } } : {}),
+  };
+}
 
 const DEFAULT_SESSION_TITLE = "新会话";
 const store = new LazyStore("ai-chat-sessions.json");
@@ -221,6 +236,13 @@ function isStoredSession(value: unknown): value is StoredAIChatSession {
     (session.activatedSkills === undefined ||
       (Array.isArray(session.activatedSkills) && session.activatedSkills.every(isActivatedSkillSnapshot))) &&
     (session.localAgent === undefined || isLocalAgentSession(session.localAgent)) &&
+    (session.localAgents === undefined ||
+      (session.localAgents !== null &&
+        typeof session.localAgents === "object" &&
+        !Array.isArray(session.localAgents) &&
+        Object.entries(session.localAgents).every(
+          ([id, binding]) => isLocalAgentSession(binding) && binding.agentId === id,
+        ))) &&
     typeof session.createdAt === "number" &&
     typeof session.updatedAt === "number"
   );
@@ -240,9 +262,7 @@ function isLocalAgentSession(value: unknown): value is NonNullable<StoredAIChatS
         typeof recovery === "object" &&
         typeof recovery.previousSessionId === "string" &&
         recovery.previousSessionId.length > 0 &&
-        typeof recovery.cwd === "string" &&
-        (recovery.reason === "load-failed" || recovery.reason === "unsupported") &&
-        typeof recovery.detail === "string"))
+        (recovery.reason === "load-failed" || recovery.reason === "not-found" || recovery.reason === "unsupported")))
   );
 }
 
@@ -374,11 +394,30 @@ export namespace AIChatSessionStore {
         throw new Error("local-agent:protocol");
       const current = await readRequiredSession(initializedStore, projectUri, sessionId);
       signal?.throwIfAborted();
-      await initializedStore.set(getSessionKey(projectUri, sessionId), {
-        ...current,
-        localAgent: localAgent === undefined ? undefined : { ...localAgent },
-      });
-      await initializedStore.save();
+      const bindings = { ...current.localAgents };
+      if (current.localAgent)
+        bindings[current.localAgent.agentId] ??= getStoredLocalAgentSession(current, current.localAgent.agentId)!;
+      if (localAgent)
+        bindings[localAgent.agentId] = getStoredLocalAgentSession(
+          { ...current, localAgent, localAgents: undefined },
+          localAgent.agentId,
+        )!;
+      const key = getSessionKey(projectUri, sessionId);
+      try {
+        await initializedStore.set(key, {
+          ...current,
+          localAgent: undefined,
+          localAgents: localAgent === undefined ? undefined : bindings,
+        });
+        await initializedStore.save();
+      } finally {
+        if (signal?.aborted) {
+          // IPC may finish after disposal; roll back before the next queued reader or writer runs.
+          await initializedStore.set(key, current);
+          await initializedStore.save();
+        }
+      }
+      signal?.throwIfAborted();
     });
   }
 

@@ -67,13 +67,16 @@ export function isLocalAgentReady(agent: LocalAgentInfo | undefined, customPath:
   return Boolean(customPath || agent?.resolvedPath);
 }
 
-export function useLocalAgentStatus(transport: LocalAgentTransport | undefined): LocalAgentStatus | null {
+export function useLocalAgentStatus(
+  transport: LocalAgentTransport | undefined,
+  chatId: string,
+): LocalAgentStatus | null {
   const [status, setStatus] = useState<LocalAgentStatus | null>(null);
   useEffect(() => {
     setStatus(null);
     return transport?.onStatus(setStatus);
   }, [transport]);
-  return status;
+  return status?.kind === "ready" && status.chatId !== chatId ? { kind: "starting" } : status;
 }
 
 export function useLocalAgentPermission(
@@ -87,13 +90,16 @@ export function useLocalAgentPermission(
   return request;
 }
 
-export function useLocalAgentControls(transport: LocalAgentTransport | undefined): LocalAgentSessionControls {
+export function useLocalAgentControls(
+  transport: LocalAgentTransport | undefined,
+  ready: boolean,
+): LocalAgentSessionControls {
   const [controls, setControls] = useState<LocalAgentSessionControls>(emptyControls);
   useEffect(() => {
     setControls(emptyControls);
     return transport?.onControls(setControls);
   }, [transport]);
-  return controls;
+  return ready ? controls : emptyControls;
 }
 
 /** 面板标题下面的小下拉：用设置里的接口，还是本机已经装好的某个程序 */
@@ -286,12 +292,14 @@ export function LocalAgentNotice({
   agentId,
   missing,
   onRetry,
+  onAcknowledge,
 }: {
   status: LocalAgentStatus | null;
   agent: LocalAgentInfo | undefined;
   agentId: string;
   missing: boolean;
   onRetry: () => void;
+  onAcknowledge: () => Promise<void>;
 }) {
   const { t } = useTranslation("research");
   const name = agent?.name ?? agentId;
@@ -305,17 +313,13 @@ export function LocalAgentNotice({
         <AlertDescription>
           <p>{t("ai.localAgent.openedFallback", { name })}</p>
           <p>{t(`ai.localAgent.resumeReasons.${recovery.reason}`)}</p>
-          {recovery.detail && (
-            <pre className="max-h-28 w-full overflow-auto whitespace-pre-wrap select-text">{recovery.detail}</pre>
-          )}
-          <Collapsible className="w-full">
-            <CollapsibleTrigger>{t("ai.localAgent.details")}</CollapsibleTrigger>
-            <CollapsibleContent className="break-all select-text">
-              {t("ai.localAgent.previousSession", { id: recovery.previousSessionId })}
-              <br />
-              {recovery.cwd}
-            </CollapsibleContent>
-          </Collapsible>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void onAcknowledge().catch(() => toast.error(t("ai.localAgent.acknowledgeFailed")))}
+          >
+            {t("ai.localAgent.acknowledge")}
+          </Button>
           {!status.whiteboardTools && <p>{t("ai.localAgent.noWhiteboardTools", { name })}</p>}
         </AlertDescription>
       </Alert>

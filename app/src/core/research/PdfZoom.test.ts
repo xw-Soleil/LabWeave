@@ -18,6 +18,7 @@ let removeInterceptor: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
   container = document.createElement("div");
+  container.tabIndex = 0;
   document.body.append(container);
   vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ left: 240, top: 120 } as DOMRect);
   viewer = {
@@ -54,7 +55,7 @@ function wheel(options: WheelEventInit) {
   container.dispatchEvent(event);
   return event;
 }
-function key(options: KeyboardEventInit, target: EventTarget = document.body) {
+function key(options: KeyboardEventInit, target: EventTarget = container) {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...options });
   target.dispatchEvent(event);
   return event;
@@ -117,6 +118,39 @@ describe("PDF zoom input", () => {
     document.body.append(input);
     expect(key({ key: "+", metaKey: true }, input).defaultPrevented).toBe(false);
     expect(viewer.updateScale).not.toHaveBeenCalled();
+  });
+
+  it("does not take shortcuts from a sidebar, dialog or another split pane", () => {
+    const button = document.createElement("button");
+    document.body.append(button);
+    expect(key({ key: "+", ctrlKey: true }, button).defaultPrevented).toBe(false);
+    expect(key({ key: "0", metaKey: true }, document.body).defaultPrevented).toBe(false);
+    expect(viewer.updateScale).not.toHaveBeenCalled();
+  });
+
+  it("focuses clicked page content without taking focus from an editable PDF field", () => {
+    const page = document.createElement("div");
+    const input = document.createElement("input");
+    container.append(page, input);
+    page.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(document.activeElement).toBe(container);
+    input.focus();
+    input.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(document.activeElement).toBe(input);
+    expect(key({ key: "0", ctrlKey: true }, input).defaultPrevented).toBe(false);
+    const editable = document.createElement("div");
+    editable.setAttribute("contenteditable", "");
+    container.append(editable);
+    expect(key({ key: "+", metaKey: true }, editable).defaultPrevented).toBe(false);
+  });
+
+  it("recomputes the anchor after a split pane moves without changing its offset parent", () => {
+    wheel({ ctrlKey: true, deltaY: -10 });
+    vi.advanceTimersByTime(20);
+    vi.mocked(container.getBoundingClientRect).mockReturnValue({ left: 80, top: 50 } as DOMRect);
+    wheel({ ctrlKey: true, deltaY: -10 });
+    vi.advanceTimersByTime(20);
+    expect(viewer.updateScale).toHaveBeenLastCalledWith(expect.objectContaining({ origin: [340, 260] }));
   });
 
   it("cancels pending zoom and removes listeners when the tab closes", () => {

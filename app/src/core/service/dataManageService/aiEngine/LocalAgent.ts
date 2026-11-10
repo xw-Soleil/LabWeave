@@ -146,7 +146,7 @@ export type LocalAgentProcess = { handle: number; events: ReadableStream<LocalAg
 export type LocalAgentStatus =
   | { kind: "idle" }
   | { kind: "starting" }
-  | { kind: "ready"; whiteboardTools: boolean; recovery?: LocalAgentSessionRecovery }
+  | { kind: "ready"; whiteboardTools: boolean; recovery?: LocalAgentSessionRecovery; chatId?: string }
   | { kind: "needs-login"; agentId: string; loginCommand: string | null }
   | {
       kind: "agent-error";
@@ -303,9 +303,7 @@ export type LocalAgentSessionOptions = {
 };
 export type LocalAgentSessionRecovery = {
   previousSessionId: string;
-  cwd: string;
-  reason: "load-failed" | "unsupported";
-  detail: string;
+  reason: "load-failed" | "not-found" | "unsupported";
 };
 export type LocalAgentSession = { sessionId: string; loaded: boolean; recovery?: LocalAgentSessionRecovery };
 
@@ -319,6 +317,7 @@ export class LocalAgentConnection {
   private disposal?: Promise<void>;
   private failure?: LocalAgentError;
   private readonly sessionControls = new Map<string, SessionControlState>();
+  private readonly emptySessions = new Set<string>();
   // 不进对话的命令：这些会话的回复交给收集器，不送进聊天界面
   private readonly captures = new Map<string, (update: SessionUpdate) => void>();
   private readonly whiteboardToolCalls = new Set<string>();
@@ -410,8 +409,7 @@ export class LocalAgentConnection {
     try {
       let loaded = false;
       let recovery: LocalAgentSessionRecovery | undefined;
-      if (previousSessionId && !this.supportsLoad)
-        recovery = { previousSessionId, cwd, reason: "unsupported", detail: "" };
+      if (previousSessionId && !this.supportsLoad) recovery = { previousSessionId, reason: "unsupported" };
       if (previousSessionId && this.supportsLoad) {
         this.activateSession(previousSessionId);
         this.loading = true;
@@ -423,17 +421,13 @@ export class LocalAgentConnection {
             mcpServers,
           });
           loaded = true;
+          this.emptySessions.delete(previousSessionId);
         } catch (error) {
           // load 失败允许重建，但认证或断连错误不能伪装成可恢复的历史丢失。
           if (this.disposed || this.connection.signal.aborted || isAuthRequired(error)) throw error;
           recovery = {
             previousSessionId,
-            cwd,
-            reason: "load-failed",
-            detail:
-              error instanceof RequestError
-                ? JSON.stringify({ code: error.code, message: error.message, data: error.data })
-                : String(error),
+            reason: error instanceof RequestError && error.code === -32002 ? "not-found" : "load-failed",
           };
         } finally {
           this.loading = false;
@@ -443,6 +437,8 @@ export class LocalAgentConnection {
       if (this.disposed) throw new LocalAgentError("exited");
       if (!loaded) {
         const response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
+        if (this.disposed) throw new LocalAgentError("exited");
+        this.emptySessions.add(response.sessionId);
         this.activateSession(response.sessionId);
         this.readControls(response);
       }
@@ -549,6 +545,7 @@ export class LocalAgentConnection {
     if (signal?.aborted) return { stopReason: "cancelled" };
     if (!sessionId || this.disposed) throw new LocalAgentError("protocol");
     this.activateSession(sessionId);
+    this.emptySessions.delete(sessionId);
     this.cancelling = false;
     const abort = () => {
       void this.cancel().catch((error) => {
@@ -607,7 +604,12 @@ export class LocalAgentConnection {
       });
     } catch (error) {
       // 还没发过消息的会话，程序没建记录，复制不了。这时上下文只有系统提示、工具这些固定部分，新开一个会话数字一样。
-      if (this.connection.signal.aborted || isAuthRequired(error)) throw error;
+      if (
+        this.disposed ||
+        this.connection.signal.aborted ||
+        !(error instanceof RequestError && error.code === -32002 && this.emptySessions.has(mainId))
+      )
+        throw error;
       response = await this.connection.agent.request(methods.agent.session.new, { cwd, mcpServers });
     }
     // 副本用的是程序默认模型；用户在面板里换过模型时，上下文上限跟着模型走，要换成一样的
