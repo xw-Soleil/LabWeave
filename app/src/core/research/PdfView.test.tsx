@@ -26,6 +26,14 @@ vi.mock("./PdfAnnotationStore", async (original) => {
   };
 });
 vi.mock("./PdfReader", async (original) => ({ ...(await original<object>()), readPdfBuffer: mocks.read }));
+vi.mock("./PdfDocument", async (original) => ({
+  ...(await original<object>()),
+  openPdfDocument: async () => ({
+    document: { getPageLabels: async () => ["iv", "v", "1", "2", "3", "4", "5", "6"] },
+    run: (promise: Promise<unknown>) => promise,
+    destroy: async () => {},
+  }),
+}));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { ensureRootRegistered: vi.fn() },
   notifyResearchFilesChanged: vi.fn(),
@@ -622,6 +630,46 @@ describe("PDF annotation tools and persistence", () => {
       { runs: [] },
     );
 
+  it("finishes an annotation after switching tabs before its geometry arrives", async () => {
+    TestWorker.heldMethods.add("getPageGeometry");
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("note");
+    const worker = TestWorker.instances[0];
+    expect(tab.pendingAnnotations).toBe(true);
+    await show(new DocumentTab("/r/b.pdf", "pdf"));
+    expect(worker.terminate).not.toHaveBeenCalled();
+    await act(async () => {
+      for (const [request] of worker.postMessage.mock.calls)
+        if (request.data?.name === "getPageGeometry")
+          worker.send({ id: request.id, type: "ExecuteResponse", data: { type: "result", value: { runs: [] } } });
+    });
+    expect(tab.annotations!.annotations).toHaveLength(1);
+    expect(tab.pendingAnnotations).toBe(false);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    await act(async () => tab.save());
+    expect(tab.hasUnsavedChanges).toBe(false);
+  });
+
+  it("waits for an unfinished annotation before asking to save on close", async () => {
+    TestWorker.heldMethods.add("getPageGeometry");
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("note");
+    mocks.closeAnswer.mockResolvedValue("save");
+    const closing = tab.beforeClose!();
+    expect(mocks.closeAnswer).not.toHaveBeenCalled();
+    const worker = TestWorker.instances[0];
+    await act(async () => {
+      for (const [request] of worker.postMessage.mock.calls)
+        if (request.data?.name === "getPageGeometry")
+          worker.send({ id: request.id, type: "ExecuteResponse", data: { type: "result", value: { runs: [] } } });
+      expect(await closing).toBe(true);
+    });
+    expect(mocks.annotationSave).toHaveBeenCalledOnce();
+    expect(tab.annotations!.annotations).toHaveLength(1);
+  });
+
   it.each(["note", "text", "image", "ink"])(
     "creates %s in PDF coordinates, edits comments/tags, and saves JSON without calling a PDF mutation",
     async (tool) => {
@@ -636,6 +684,7 @@ describe("PDF annotation tools and persistence", () => {
       const item = tab.annotations!.annotations[0];
       expect(item.type).toBe(tool);
       expect(item.position.pageIndex).toBe(0);
+      expect(item.pageLabel).toBe("iv");
       if (tool === "note") expect(item.position.rects).toEqual([[189, 649, 211, 671]]);
       if (tool === "image") expect(item.position.rects).toEqual([[100, 660, 200, 700]]);
       if (tool === "ink") expect(item.position.paths?.[0].slice(0, 4)).toEqual([100, 700, 150, 680]);
@@ -791,6 +840,42 @@ describe("PDF annotation tools and persistence", () => {
     expect(button("annotation.delete")).toBeNull();
     expect(tab.annotations!.annotations).toEqual([]);
     expect(mocks.annotationSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps the captured selection when switching tabs before selected text arrives", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+    for (const [type, clientX, clientY] of [
+      ["pointerdown", 41, 85],
+      ["pointermove", 79, 115],
+      ["pointerup", 79, 115],
+    ] as const) {
+      await act(async () =>
+        page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+      );
+    }
+    TestWorker.heldMethods.add("getTextSlices");
+    const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
+    await act(async () =>
+      menu.querySelector<HTMLButtonElement>('[aria-label="document.annotation.colors.green"]')!.click(),
+    );
+    const worker = TestWorker.instances[0];
+    expect(tab.pendingAnnotations).toBe(true);
+    await show(new DocumentTab("/r/b.pdf", "pdf"));
+    expect(worker.terminate).not.toHaveBeenCalled();
+    await act(async () => {
+      for (const [request] of worker.postMessage.mock.calls)
+        if (request.data?.name === "getTextSlices")
+          worker.send({ id: request.id, type: "ExecuteResponse", data: { type: "result", value: ["test\nnext"] } });
+    });
+    expect(tab.annotations!.annotations).toHaveLength(1);
+    expect(tab.annotations!.annotations[0]).toMatchObject({ text: "test\nnext", pageLabel: "iv" });
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(mocks.error).not.toHaveBeenCalled();
+    await act(async () => tab.save());
+    expect(tab.hasUnsavedChanges).toBe(false);
   });
 
   it("loads read-only records without mutation controls and blocks editing after a load failure", async () => {

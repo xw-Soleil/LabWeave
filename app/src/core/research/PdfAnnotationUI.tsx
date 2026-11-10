@@ -98,7 +98,12 @@ export function usePdfAnnotations(
       tab.off("state-change", changed);
     };
   }, [tab]);
-  const enabled = !!tab.annotations && !tab.annotations.moving && !tab.loadingAnnotations;
+  const enabled =
+    !!tab.annotations &&
+    !tab.annotations.moving &&
+    !tab.annotations.locationFailed &&
+    !tab.loadingAnnotations &&
+    !tab.pendingAnnotations;
   const items = tab.annotations?.annotations ?? [];
   const commit = (annotations: PdfAnnotation[]) => {
     if (!enabled || tab.closing) return;
@@ -106,64 +111,69 @@ export function usePdfAnnotations(
     tab.annotationsChanged();
   };
   const select = (id: string) => {
+    if (!live.current) return;
     setSelected(id);
     reveal();
   };
-  const add = async (type: AnnotationType, position: AnnotationPosition, text = "", focusComment = false) => {
-    const model = tab.annotations;
-    if (!model || model.moving) return;
-    const page = pdf.pages[position.pageIndex];
-    const geometry =
-      selection?.getState().geometry[page.index] ?? (await engine.getPageGeometry(pdf, page).toPromise());
-    if (!live.current || tab.closing || model !== tab.annotations || model.moving) return;
-    const annotation = newAnnotation(type, color, position, page, geometry, text);
-    while (model.annotations.some((item) => item.id === annotation.id))
-      annotation.id = newAnnotation(type, color, position, page, geometry).id;
-    commit([...model.annotations, annotation]);
-    select(annotation.id);
-    if (focusComment)
-      requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${annotation.id}`)?.focus());
+  const action = (work: () => Promise<void>) => {
+    const release = engine.retain();
+    return tab.runAnnotationAction(work).finally(release);
   };
-  const annotateSelection = async (type: "highlight" | "underline", addComment = false, chosenColor = color) => {
-    if (!selection || !enabled) return;
-    const formatted = selection.getFormattedSelection();
-    if (!formatted.length) return;
-    const captured = selection.getState().selection;
-    const model = tab.annotations!;
-    const texts = await selection.getSelectedText().toPromise();
-    const created: PdfAnnotation[] = [];
-    // Zotero represents at most two adjacent pages in one annotation via nextPageRects.
-    for (let i = 0; i < formatted.length; i += 2) {
-      const first = formatted[i];
-      const page = pdf.pages[first.pageIndex];
-      const position: AnnotationPosition = {
-        pageIndex: page.index,
-        rects: first.segmentRects.map((rect) => readerRectToPdf(page, rect)),
-      };
-      let text = texts[i] ?? "";
-      const next = formatted[i + 1];
-      if (next && next.pageIndex === page.index + 1) {
-        position.nextPageRects = next.segmentRects.map((rect) => readerRectToPdf(pdf.pages[next.pageIndex], rect));
-        text += " " + (texts[i + 1] ?? "");
-      } else if (next) i--;
-      const geometry =
-        selection.getState().geometry[page.index] ?? (await engine.getPageGeometry(pdf, page).toPromise());
-      created.push(newAnnotation(type, chosenColor, position, page, geometry, text));
-    }
-    if (
-      !live.current ||
-      tab.closing ||
-      tab.annotations !== model ||
-      model.moving ||
-      selection.getState().selection !== captured
-    )
-      return;
-    commit([...model.annotations, ...created]);
-    selection.clear();
-    setMenu(false);
-    select(created[0].id);
-    if (addComment)
-      requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${created[0].id}`)?.focus());
+  const add = (type: AnnotationType, position: AnnotationPosition, text = "", focusComment = false) =>
+    action(async () => {
+      const model = tab.annotations;
+      if (!model || model.moving) return;
+      const page = pdf.pages[position.pageIndex];
+      const geometryTask = selection?.getState().geometry[page.index] ?? engine.getPageGeometry(pdf, page).toPromise();
+      const [pageLabel, geometry] = await Promise.all([tab.pdfPageLabel(page.index), geometryTask]);
+      if (tab.closing || model !== tab.annotations || model.moving) throw new Error("annotationBusy");
+      const annotation = newAnnotation(type, color, position, page, geometry, text, pageLabel);
+      while (model.annotations.some((item) => item.id === annotation.id))
+        annotation.id = newAnnotation(type, color, position, page, geometry).id;
+      commit([...model.annotations, annotation]);
+      select(annotation.id);
+      if (focusComment && live.current)
+        requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${annotation.id}`)?.focus());
+    });
+  const annotateSelection = (type: "highlight" | "underline", addComment = false, chosenColor = color) => {
+    // Capture selection state before plugin teardown or another gesture can clear it.
+    const formatted = selection?.getFormattedSelection() ?? [];
+    const geometries = selection?.getState().geometry;
+    const textTask = selection && enabled && formatted.length ? selection.getSelectedText() : undefined;
+    return action(async () => {
+      if (!selection || !enabled) return;
+      if (!formatted.length) return;
+      const model = tab.annotations!;
+      const texts = await textTask!.toPromise();
+      const created: PdfAnnotation[] = [];
+      // Zotero represents at most two adjacent pages in one annotation via nextPageRects.
+      for (let i = 0; i < formatted.length; i += 2) {
+        const first = formatted[i];
+        const page = pdf.pages[first.pageIndex];
+        const pageLabel = await tab.pdfPageLabel(page.index);
+        const position: AnnotationPosition = {
+          pageIndex: page.index,
+          rects: first.segmentRects.map((rect) => readerRectToPdf(page, rect)),
+        };
+        let text = texts[i] ?? "";
+        const next = formatted[i + 1];
+        if (next && next.pageIndex === page.index + 1) {
+          position.nextPageRects = next.segmentRects.map((rect) => readerRectToPdf(pdf.pages[next.pageIndex], rect));
+          text += " " + (texts[i + 1] ?? "");
+        } else if (next) i--;
+        const geometry = geometries?.[page.index] ?? (await engine.getPageGeometry(pdf, page).toPromise());
+        created.push(newAnnotation(type, chosenColor, position, page, geometry, text, pageLabel));
+      }
+      if (tab.closing || tab.annotations !== model || model.moving) throw new Error("annotationBusy");
+      commit([...model.annotations, ...created]);
+      if (live.current) {
+        selection.clear();
+        setMenu(false);
+      }
+      select(created[0].id);
+      if (addComment && live.current)
+        requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${created[0].id}`)?.focus());
+    });
   };
   const selectionAction = useRef(annotateSelection);
   selectionAction.current = annotateSelection;
@@ -220,21 +230,22 @@ export function usePdfAnnotations(
       if (live.current) setScanning(false);
     }
   }, [pdf, engine, receiveExternal]);
-  const finishErase = async (before: PdfAnnotation[], after: PdfAnnotation[], page: PdfPageObject) => {
-    if (before.length === after.length && before.every((item, index) => item === after[index])) return;
-    const model = tab.annotations;
-    const geometry =
-      selection?.getState().geometry[page.index] ?? (await engine.getPageGeometry(pdf, page).toPromise());
-    if (!live.current || tab.closing || !model || model.moving) return;
-    if (model.annotations !== before) throw new Error("annotationBusy");
-    commit(
-      after.map((item) => {
-        if (before.includes(item)) return item;
-        const position = roundedAnnotationPosition(item.position);
-        return { ...item, position, sortIndex: annotationSortIndex(page, position, geometry) };
-      }),
-    );
-  };
+  const finishErase = (before: PdfAnnotation[], after: PdfAnnotation[], page: PdfPageObject) =>
+    action(async () => {
+      if (before.length === after.length && before.every((item, index) => item === after[index])) return;
+      const model = tab.annotations;
+      const geometry =
+        selection?.getState().geometry[page.index] ?? (await engine.getPageGeometry(pdf, page).toPromise());
+      if (tab.closing || !model || model.moving) throw new Error("annotationBusy");
+      if (model.annotations !== before) throw new Error("annotationBusy");
+      commit(
+        after.map((item) => {
+          if (before.includes(item)) return item;
+          const position = roundedAnnotationPosition(item.position);
+          return { ...item, position, sortIndex: annotationSortIndex(page, position, geometry) };
+        }),
+      );
+    });
   const edit = (id: string, patch: Partial<Pick<PdfAnnotation, "color" | "comment" | "tags">>) =>
     commit(
       items.map((item) =>
@@ -409,15 +420,15 @@ export function PdfAnnotationToolbar({ controller: c }: { controller: Annotation
           size="icon"
           aria-label={t("reload")}
           title={t("reload")}
-          disabled={c.tab.loadingAnnotations || c.tab.saving || c.tab.annotations?.moving}
+          disabled={c.tab.loadingAnnotations || c.tab.saving || c.tab.pendingAnnotations || c.tab.annotations?.moving}
           onClick={() => void reload().catch(report)}
         >
           <RefreshCw />
         </Button>
       </div>
-      {c.tab.error && (
+      {(c.tab.error || c.tab.annotations?.locationFailed) && (
         <Alert variant="destructive">
-          <AlertDescription>{c.tab.error}</AlertDescription>
+          <AlertDescription>{c.tab.error || t("errors.annotationRollbackFailed")}</AlertDescription>
         </Alert>
       )}
     </>
@@ -799,7 +810,7 @@ function AnnotationShape({
               <div
                 style={{
                   color: item.color,
-                  fontSize: position.fontSize ?? 14,
+                  fontSize: (position.fontSize ?? 14) * (pdfToReader(page, [1, 0])[0] - pdfToReader(page, [0, 0])[0]),
                   lineHeight: 1.2,
                   whiteSpace: "pre-wrap",
                   overflowWrap: "anywhere",
@@ -857,7 +868,7 @@ function AnnotationShape({
               points={points.join(" ")}
               fill="none"
               stroke={item.color}
-              strokeWidth={position.width}
+              strokeWidth={position.width! * (pdfToReader(page, [1, 0])[0] - pdfToReader(page, [0, 0])[0])}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -889,7 +900,8 @@ export function PdfAnnotationLayer({
     const gesture = stroke.current!;
     gesture.after = gesture.after.flatMap((item) => {
       if (item.type !== "ink" || item.readOnly || item.position.pageIndex !== page.index) return [item];
-      const paths = eraseInkPaths(item.position.paths!, from, to, 6 / scale + item.position.width! / 2);
+      const radius = readerToPdf(page, [6 / scale, 0])[0] - readerToPdf(page, [0, 0])[0];
+      const paths = eraseInkPaths(item.position.paths!, from, to, radius + item.position.width! / 2);
       if (JSON.stringify(paths) === JSON.stringify(item.position.paths)) return [item];
       return paths.length
         ? [{ ...item, dateModified: new Date().toISOString(), position: { ...item.position, paths } }]

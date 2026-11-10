@@ -84,6 +84,14 @@ function pageBox(page: PdfPageObject): PdfRect {
     : [0, 0, page.size.width, page.size.height];
 }
 
+export function normalizePdfPageBox(page: PdfPageObject): PdfPageObject {
+  if (!page.boxes) return page;
+  const [left, bottom, right, top] = pageBox(page);
+  if (left >= right || bottom >= top) return page;
+  // PDFium renders the intersection, but EmbedPDF 2.15.1's coordinate helpers use crop's raw origin.
+  return { ...page, boxes: { ...page.boxes, crop: { left, bottom, right, top } } };
+}
+
 // The reader opens with normalizedRotation: geometry is unrotated, CSS rotates the page afterwards.
 export function readerToPdf(page: PdfPageObject, [x, y]: PdfPoint): PdfPoint {
   const [left, bottom, right, top] = pageBox(page);
@@ -127,14 +135,13 @@ export function clientToReader(
 }
 
 export function annotationBounds(position: AnnotationPosition): PdfRect {
-  if (position.rects)
-    return [
-      Math.min(...position.rects.map((rect) => rect[0])),
-      Math.min(...position.rects.map((rect) => rect[1])),
-      Math.max(...position.rects.map((rect) => rect[2])),
-      Math.max(...position.rects.map((rect) => rect[3])),
-    ];
   const bounds: PdfRect = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const rect of position.rects ?? []) {
+    bounds[0] = Math.min(bounds[0], rect[0]);
+    bounds[1] = Math.min(bounds[1], rect[1]);
+    bounds[2] = Math.max(bounds[2], rect[2]);
+    bounds[3] = Math.max(bounds[3], rect[3]);
+  }
   for (const path of position.paths ?? [])
     for (let i = 0; i < path.length; i += 2) {
       bounds[0] = Math.min(bounds[0], path[i]);
@@ -188,6 +195,7 @@ export function newAnnotation(
   page: PdfPageObject,
   geometry: PdfPageGeometry,
   text = "",
+  pageLabel = String(page.index + 1),
 ): PdfAnnotation {
   const alphabet = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
   const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (value) => alphabet[value % alphabet.length]).join(
@@ -200,7 +208,7 @@ export function newAnnotation(
     color,
     position: roundedAnnotationPosition(position),
     sortIndex: annotationSortIndex(page, position, geometry),
-    pageLabel: String(page.index + 1),
+    pageLabel,
     text,
     comment: "",
     tags: [],

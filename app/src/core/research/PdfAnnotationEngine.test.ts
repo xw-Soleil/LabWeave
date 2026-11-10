@@ -8,20 +8,26 @@ import {
   annotationColors,
   filterAnnotations,
   newAnnotation,
+  normalizePdfPageBox,
   parseAnnotations,
   readerRectToPdf,
 } from "./PdfAnnotations";
 import { PdfAnnotationStore } from "./PdfAnnotationStore";
+import { loadPdfJs } from "./PdfDocument";
 
-function coordinateFixture() {
-  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+function coordinateFixture(crop = "30 50 570 780") {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /r /St 4 >> 2 << /S /D /P (A-) /St 1 >>] >> >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
   const kids: string[] = [];
   for (const rotation of [0, 90, 180, 270]) {
     const id = objects.length + 1;
     kids.push(`${id} 0 R`);
     const content = "BT /F1 12 Tf 75 700 Td (Coordinate fixture) Tj ET";
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [10 20 610 820] /CropBox [30 50 570 780] /Rotate ${rotation} /Resources << /Font << /F1 3 0 R >> >> /Contents ${id + 1} 0 R /Annots [${id + 2} 0 R] >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [10 20 610 820] /CropBox [${crop}] /Rotate ${rotation} /Resources << /Font << /F1 3 0 R >> >> /Contents ${id + 1} 0 R /Annots [${id + 2} 0 R] >>`,
       `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
       "<< /Type /Annot /Subtype /Highlight /Rect [70 690 110 720] /QuadPoints [70 720 110 720 70 690 110 690] /C [1 1 0] /Contents (External comment) /T (Original author) >>",
     );
@@ -44,56 +50,77 @@ function coordinateFixture() {
 }
 
 describe("annotation coordinates against the installed PDFium engine", () => {
-  it("matches real rotated/cropped page coordinates and leaves embedded annotations and original PDF bytes intact", async () => {
-    const wasmBinary = await readFile(createRequire(import.meta.url).resolve("@embedpdf/pdfium/pdfium.wasm"));
+  it.each(["30 50 570 780", "-30 -50 700 900"])(
+    "matches real rotated/cropped page coordinates for CropBox %s without changing PDF bytes",
+    async (crop) => {
+      const wasmBinary = await readFile(createRequire(import.meta.url).resolve("@embedpdf/pdfium/pdfium.wasm"));
+      const network = vi.fn(() => {
+        throw new Error("network forbidden");
+      });
+      vi.stubGlobal("fetch", network);
+      const bytes = coordinateFixture(crop);
+      const before = bytes.slice();
+      const wasm = await init({ wasmBinary });
+      const engine = new PdfEngine(new PdfiumNative(wasm, { fontFallback: null }), {
+        imageConverter: browserImageDataToBlobConverter,
+      });
+      try {
+        const pdf = await engine
+          .openDocumentBuffer({ id: "coordinates", content: bytes.buffer }, { normalizeRotation: true })
+          .toPromise();
+        pdf.pages = pdf.pages.map(normalizePdfPageBox);
+        expect(pdf.pages.map((page) => page.rotation)).toEqual([0, 1, 2, 3]);
+        for (const page of pdf.pages) {
+          expect(page.size).toEqual(crop.startsWith("-") ? { width: 600, height: 800 } : { width: 540, height: 730 });
+          const external = (await engine.getPageAnnotations(pdf, page).toPromise()).find(
+            (item) => item.type === PdfAnnotationSubtype.HIGHLIGHT,
+          )!;
+          expect(external.contents).toBe("External comment");
+          expect(readerRectToPdf(page, external.rect)).toEqual([70, 690, 110, 720]);
+          const geometry = await engine.getPageGeometry(pdf, page).toPromise();
+          const first = geometry.runs[0].glyphs[0];
+          const box = readerRectToPdf(page, {
+            origin: { x: first.x, y: first.y },
+            size: { width: first.width, height: first.height },
+          });
+          expect(box[0]).toBeCloseTo(75, 0);
+          expect(box[1]).toBeLessThan(701);
+          expect(box[3]).toBeGreaterThan(705);
+          const annotation = newAnnotation(
+            "highlight",
+            annotationColors.yellow,
+            { pageIndex: page.index, rects: [box] },
+            page,
+            geometry,
+            "C",
+          );
+          expect(parseAnnotations([annotation])[0].sortIndex).toMatch(
+            new RegExp(`^0000${page.index}\\|000000\\|\\d{5}$`),
+          );
+        }
+        expect(bytes).toEqual(before);
+        expect(network).not.toHaveBeenCalled();
+        await engine.closeDocument(pdf).toPromise();
+      } finally {
+        await engine.destroy().toPromise();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("reads Roman and prefixed PDF page labels offline through the existing pdf.js metadata API", async () => {
     const network = vi.fn(() => {
       throw new Error("network forbidden");
     });
     vi.stubGlobal("fetch", network);
-    const bytes = coordinateFixture();
-    const before = bytes.slice();
-    const wasm = await init({ wasmBinary });
-    const engine = new PdfEngine(new PdfiumNative(wasm, { fontFallback: null }), {
-      imageConverter: browserImageDataToBlobConverter,
-    });
+    const pdfjs = await loadPdfJs();
+    const loading = pdfjs.getDocument({ data: coordinateFixture() });
     try {
-      const pdf = await engine
-        .openDocumentBuffer({ id: "coordinates", content: bytes.buffer }, { normalizeRotation: true })
-        .toPromise();
-      expect(pdf.pages.map((page) => page.rotation)).toEqual([0, 1, 2, 3]);
-      for (const page of pdf.pages) {
-        expect(page.size).toEqual({ width: 540, height: 730 });
-        const external = (await engine.getPageAnnotations(pdf, page).toPromise()).find(
-          (item) => item.type === PdfAnnotationSubtype.HIGHLIGHT,
-        )!;
-        expect(external.contents).toBe("External comment");
-        expect(readerRectToPdf(page, external.rect)).toEqual([70, 690, 110, 720]);
-        const geometry = await engine.getPageGeometry(pdf, page).toPromise();
-        const first = geometry.runs[0].glyphs[0];
-        const box = readerRectToPdf(page, {
-          origin: { x: first.x, y: first.y },
-          size: { width: first.width, height: first.height },
-        });
-        expect(box[0]).toBeCloseTo(75, 0);
-        expect(box[1]).toBeLessThan(701);
-        expect(box[3]).toBeGreaterThan(705);
-        const annotation = newAnnotation(
-          "highlight",
-          annotationColors.yellow,
-          { pageIndex: page.index, rects: [box] },
-          page,
-          geometry,
-          "C",
-        );
-        expect(parseAnnotations([annotation])[0].sortIndex).toMatch(
-          new RegExp(`^0000${page.index}\\|000000\\|\\d{5}$`),
-        );
-      }
-      expect(bytes).toEqual(before);
+      const pdf = await loading.promise;
+      expect(await pdf.getPageLabels()).toEqual(["iv", "v", "A-1", "A-2"]);
       expect(network).not.toHaveBeenCalled();
-      await engine.closeDocument(pdf).toPromise();
     } finally {
-      await engine.destroy().toPromise();
+      await loading.destroy();
       vi.unstubAllGlobals();
     }
   });

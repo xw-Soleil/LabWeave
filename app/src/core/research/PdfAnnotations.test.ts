@@ -2,6 +2,7 @@ import type { PdfPageGeometry, PdfPageObject } from "@embedpdf/models";
 import { describe, expect, it } from "vitest";
 import {
   annotationColors,
+  annotationBounds,
   annotationSortIndex,
   clientToReader,
   eraseInkPaths,
@@ -174,6 +175,11 @@ describe("Zotero-compatible PDF annotation records", () => {
 });
 
 describe("PDF user-space coordinates", () => {
+  it("bounds large imported rectangle lists without exceeding the JavaScript argument stack", () => {
+    expect(annotationBounds({ pageIndex: 0, rects: Array.from({ length: 150000 }, () => [10, 20, 30, 40]) })).toEqual([
+      10, 20, 30, 40,
+    ]);
+  });
   it("round-trips rects with non-zero CropBox/MediaBox origins and fractional page sizes", () => {
     const cropped = {
       ...page,

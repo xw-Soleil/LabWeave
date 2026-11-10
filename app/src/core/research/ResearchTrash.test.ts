@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   notify: vi.fn(),
   annotations: vi.fn(),
+  remove: vi.fn(),
 }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { confirm: mocks.confirm } }));
 vi.mock("@/core/Project", () => ({ Project: class {}, ProjectState: { Saved: "saved", Unsaved: "unsaved" } }));
@@ -56,9 +57,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
     if (options.createNew && mocks.files.has(p)) throw new Error("exists");
     mocks.files.set(p, data);
   },
-  remove: async (p: string) => {
-    mocks.files.delete(p);
-  },
+  remove: mocks.remove,
   readDir: async (root: string) =>
     [
       ...new Set(
@@ -87,6 +86,9 @@ beforeEach(() => {
     operation(),
   );
   mocks.files.set("/research/paper.pdf", new Uint8Array([0, 255, 17]));
+  mocks.remove.mockImplementation(async (p: string) => {
+    mocks.files.delete(p);
+  });
   mocks.close.mockImplementation(async (id: string) => {
     const index = mocks.tabs.findIndex((tab) => (tab as Project).id === id);
     if (index >= 0) mocks.tabs.splice(index, 1);
@@ -99,6 +101,14 @@ beforeEach(() => {
 });
 
 describe("recoverable file deletion", () => {
+  it("removes the restored PDF copy if deleting its trash payload fails, so restore can be retried", async () => {
+    const record = await trashResearchFile("/research/paper.pdf");
+    mocks.remove.mockRejectedValueOnce(new Error("payload is locked"));
+    await expect(restoreResearchFile(record)).rejects.toThrow("payload is locked");
+    expect(mocks.files.has("/research/paper.pdf")).toBe(false);
+    expect(mocks.files.has(`${record.directory}/paper.pdf`)).toBe(true);
+    await expect(restoreResearchFile(record)).resolves.toBe("/research/paper.pdf");
+  });
   it("routes the same annotation entry through trash and restore, and refuses a conflicting sidecar", async () => {
     const record = await trashResearchFile("/research/paper.pdf");
     const entryId = record.directory.split("/").at(-1);

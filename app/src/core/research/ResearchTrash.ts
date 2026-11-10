@@ -120,8 +120,21 @@ export async function restoreResearchFile(record: TrashEntry): Promise<string> {
       payload,
       path,
       async () => {
-        await writeFile(path, await readFile(payload), { createNew: true });
-        await remove(payload);
+        const bytes = await readFile(payload);
+        await writeFile(path, bytes, { createNew: true });
+        try {
+          await remove(payload);
+        } catch (error) {
+          try {
+            const current = await readFile(path);
+            if (current.length !== bytes.length || !current.every((byte, index) => byte === bytes[index]))
+              throw new Error("fileChanged", { cause: error });
+            await remove(path);
+          } catch (rollback) {
+            throw new AggregateError([error, rollback], "annotationRollbackFailed", { cause: rollback });
+          }
+          throw error;
+        }
       },
       { entryId: Utils.basename(URI.file(record.directory)), restoring: true },
     );

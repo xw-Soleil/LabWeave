@@ -63,7 +63,11 @@ const empty = (): AnnotationSnapshot => ({ annotations: [], revision: null });
 
 beforeEach(() => {
   mocks.tabs = [];
+  mocks.root = "/project";
   mocks.invoke.mockReset();
+  mocks.invoke.mockImplementation(async (command, args) =>
+    command === "authorize_research_project" ? args.path : empty(),
+  );
 });
 
 describe("annotation JSON sessions", () => {
@@ -183,6 +187,11 @@ describe("annotation JSON sessions", () => {
     });
     expect(await annotationTarget("C:\\Outside\\Paper.pdf")).toEqual(await annotationTarget("c:/outside/PAPER.pdf"));
     expect(await annotationTarget("/outside/Paper.pdf")).not.toEqual(await annotationTarget("/outside/paper.pdf"));
+    expect(await annotationTarget("/project/.workbench/trash/12345678-1234-1234-1234-123456789012/p.pdf")).toEqual({
+      kind: "trash",
+      rootKey: await annotationPathHash("/project"),
+      entryId: "12345678-1234-1234-1234-123456789012",
+    });
   });
 
   it("moves saved annotations before the PDF, rebinds open tabs, and rolls back failures", async () => {
@@ -211,7 +220,6 @@ describe("annotation JSON sessions", () => {
   });
 
   it("keeps the PDF in place on annotation conflict and uses the same trash sidecar on restore", async () => {
-    mocks.invoke.mockResolvedValue(empty());
     const op = vi.fn().mockResolvedValue(undefined);
     const entryId = "12345678-1234-1234-1234-123456789012";
     await moveDocumentAnnotations("/project/p.pdf", `/project/.workbench/trash/${entryId}/p.pdf`, op, { entryId });
@@ -226,7 +234,8 @@ describe("annotation JSON sessions", () => {
       restoring: true,
     });
     expect(mocks.invoke).toHaveBeenCalledWith("load_pdf_annotations", { target: trash });
-    mocks.invoke.mockImplementation(async (command) => {
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "authorize_research_project") return args.path;
       if (command === "move_pdf_annotations") throw new Error("annotationChanged");
       return empty();
     });
@@ -235,5 +244,43 @@ describe("annotation JSON sessions", () => {
       "annotationChanged",
     );
     expect(op).not.toHaveBeenCalled();
+  });
+
+  it("keeps the captured project when the active root changes during authorization", async () => {
+    mocks.invoke.mockImplementationOnce(async (_command, args) => {
+      mocks.root = "/other";
+      return args.path;
+    });
+    expect(await annotationTarget("/project/p.pdf")).toEqual({
+      kind: "project",
+      rootKey: await annotationPathHash("/project"),
+      relativePath: "p.pdf",
+    });
+  });
+
+  it("blocks further edits when a failed PDF move cannot roll its sidecar back", async () => {
+    const io: AnnotationIO = {
+      load: vi.fn(),
+      save: vi.fn(),
+      move: vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("disk failure")),
+    };
+    const model = new PdfAnnotationStore(
+      await annotationTarget("/project/p.pdf"),
+      { annotations: [item()], revision: "v1" },
+      io,
+    );
+    const tab = new DocumentTab("/project/p.pdf", "pdf");
+    tab.annotations = model;
+    mocks.tabs = [tab];
+    await expect(
+      moveDocumentAnnotations(tab.path, "/project/new.pdf", async () => {
+        throw new Error("PDF move failed");
+      }),
+    ).rejects.toThrow("annotationRollbackFailed");
+    expect(tab.path).toBe("/project/p.pdf");
+    expect(model.moving).toBe(false);
+    expect(() => model.change([])).toThrow("annotationRollbackFailed");
+    await expect(model.save()).rejects.toThrow("annotationRollbackFailed");
+    expect(io.save).not.toHaveBeenCalled();
   });
 });

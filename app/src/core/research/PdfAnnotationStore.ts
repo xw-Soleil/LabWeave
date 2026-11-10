@@ -37,13 +37,15 @@ export async function annotationTarget(path: string): Promise<AnnotationTarget> 
   if (!root) return { kind: "external", pathKey: await annotationPathHash(documentKey(path)) };
   let registered: string;
   if (root === current) {
-    await ResearchFolder.ensureRootRegistered();
-    registered = ResearchFolder.getRoot();
+    registered = await invoke<string>("authorize_research_project", { path: root });
   } else registered = await authorizeResearchProject(root);
+  const relativePath = ResearchFolder.toRelative(path, root);
+  const trashed = /^\.workbench\/trash\/([\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})\/[^/]+\.pdf$/i.exec(relativePath);
+  if (trashed) return { kind: "trash", rootKey: await annotationPathHash(registered), entryId: trashed[1] };
   return {
     kind: "project",
     rootKey: await annotationPathHash(registered),
-    relativePath: ResearchFolder.toRelative(path, root),
+    relativePath,
   };
 }
 
@@ -65,6 +67,7 @@ function serialized(annotations: PdfAnnotation[]) {
 export class PdfAnnotationStore {
   annotations: PdfAnnotation[];
   moving = false;
+  locationFailed = false;
   private saved: string;
   private revision: string | null;
   private saving?: Promise<void>;
@@ -84,13 +87,14 @@ export class PdfAnnotationStore {
     return serialized(this.annotations) !== this.saved;
   }
   get canUndo() {
-    return !this.moving && this.past.length > 0;
+    return !this.moving && !this.locationFailed && this.past.length > 0;
   }
   get canRedo() {
-    return !this.moving && this.future.length > 0;
+    return !this.moving && !this.locationFailed && this.future.length > 0;
   }
 
   change(after: PdfAnnotation[]) {
+    if (this.locationFailed) throw new Error("annotationRollbackFailed");
     if (this.moving) throw new Error("annotationBusy");
     const next = parseAnnotations(after);
     if (JSON.stringify(next) === JSON.stringify(this.annotations)) return;
@@ -116,6 +120,7 @@ export class PdfAnnotationStore {
     this.annotations = change.after;
   }
   save(): Promise<void> {
+    if (this.locationFailed) return Promise.reject(new Error("annotationRollbackFailed"));
     if (this.moving) return Promise.reject(new Error("annotationBusy"));
     if (this.saving) return this.saving;
     this.saving = (async () => {
@@ -133,6 +138,7 @@ export class PdfAnnotationStore {
     return this.saving;
   }
   async reload() {
+    if (this.locationFailed) throw new Error("annotationRollbackFailed");
     if (this.saving || this.moving) throw new Error("annotationBusy");
     const before = this.annotations;
     const snapshot = await this.io.load(this.target);
@@ -201,6 +207,7 @@ export async function moveDocumentAnnotations(
       try {
         await annotations.move(from);
       } catch (rollback) {
+        for (const item of stores) item.locationFailed = true;
         throw new AggregateError([error, rollback], "annotationRollbackFailed", { cause: rollback });
       }
     }

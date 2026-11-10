@@ -1,6 +1,13 @@
 import { EngineRunner } from "@embedpdf/engines";
 import { createPdfiumEngine } from "@embedpdf/engines/pdfium-direct-engine";
-import { FontCharset, PdfErrorCode, type PdfEngineMethodName, type PdfTask } from "@embedpdf/models";
+import {
+  FontCharset,
+  PdfErrorCode,
+  type PdfDocumentObject,
+  type PdfEngineMethodName,
+  type PdfTask,
+} from "@embedpdf/models";
+import { normalizePdfPageBox } from "./PdfAnnotations";
 import wasmUrl from "@embedpdf/pdfium/pdfium.wasm?url";
 import fontUrl from "@/assets/fonts/NotoSansSC-Regular.otf?url";
 
@@ -48,7 +55,13 @@ class PdfReaderRunner extends EngineRunner {
         if (this.pending.get(id) === task) self.postMessage({ id, type: "ExecuteProgress", data: progress });
       });
       task.wait(
-        (value) => respond({ type: "result", value }),
+        (value) => {
+          if (data.name === "openDocumentBuffer") {
+            const document = value as PdfDocumentObject;
+            document.pages = document.pages.map(normalizePdfPageBox);
+          }
+          respond({ type: "result", value });
+        },
         (value) => respond({ type: "error", value }),
       );
     } catch {

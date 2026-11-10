@@ -9,7 +9,11 @@ const mocks = vi.hoisted(() => ({
   buttons: vi.fn(),
   error: vi.fn(),
   registerRoot: vi.fn(),
+  labels: vi.fn(),
+  labelOpen: vi.fn(),
+  labelClose: vi.fn(),
 }));
+vi.mock("./PdfDocument", () => ({ openPdfDocument: mocks.labelOpen }));
 vi.mock("@tauri-apps/plugin-fs", () => ({
   stat: mocks.stat,
   exists: mocks.exists,
@@ -45,12 +49,34 @@ beforeEach(() => {
   });
   mocks.open.mockResolvedValue(undefined);
   mocks.registerRoot.mockResolvedValue(undefined);
+  mocks.labels.mockResolvedValue(["i", "ii", "1"]);
+  mocks.labelClose.mockResolvedValue(undefined);
+  mocks.labelOpen.mockResolvedValue({
+    document: { getPageLabels: mocks.labels },
+    run: (promise: Promise<unknown>) => promise,
+    destroy: mocks.labelClose,
+  });
 });
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("document tab actions", () => {
+  it("reads actual PDF page labels once, falls back only when absent, and closes the metadata reader", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    expect(await Promise.all([tab.pdfPageLabel(0), tab.pdfPageLabel(1)])).toEqual(["i", "ii"]);
+    expect(await tab.pdfPageLabel(2)).toBe("1");
+    expect(mocks.labelOpen).toHaveBeenCalledOnce();
+    expect(mocks.labelClose).toHaveBeenCalledOnce();
+    const unlabelled = new DocumentTab("/r/b.pdf", "pdf");
+    mocks.labels.mockResolvedValueOnce(null);
+    expect(await unlabelled.pdfPageLabel(2)).toBe("3");
+    const failed = new DocumentTab("/r/c.pdf", "pdf");
+    mocks.labels.mockRejectedValueOnce(new Error("fileChanged"));
+    await expect(failed.pdfPageLabel(0)).rejects.toThrow("fileChanged");
+    expect(mocks.labelClose).toHaveBeenCalledTimes(3);
+    expect(await failed.pdfPageLabel(0)).toBe("i");
+  });
   it("normalizes a renamed Windows PDF path without changing tab identity or reader location", () => {
     const tab = new DocumentTab("C:/papers/old.pdf", "pdf");
     const id = tab.id;

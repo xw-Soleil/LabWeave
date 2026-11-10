@@ -53,8 +53,10 @@ export class DocumentTab extends Tab {
   markdown?: MarkdownDocument;
   annotations?: PdfAnnotationStore;
   loadingAnnotations = false;
+  private annotationActions = new Set<Promise<unknown>>();
   private annotationLoading?: Promise<void>;
   private annotationSaveTimer?: ReturnType<typeof setTimeout>;
+  private pageLabels?: Promise<string[] | null>;
   error = "";
   saving = false;
   loadingMarkdown = false;
@@ -74,6 +76,7 @@ export class DocumentTab extends Tab {
     this.uri = URI.file(path);
     this.closeOnEscape = false;
     this.beforeClose = async () => {
+      if (!(await this.finishAnnotationActions())) return false;
       if (this.annotations?.moving) return false;
       if (!this.hasUnsavedChanges && !this.saving) return true;
       TabWorkspace.focus(this.id);
@@ -102,7 +105,7 @@ export class DocumentTab extends Tab {
     return this.kind === "markdown" ? NotebookPen : FileText;
   }
   override get hasUnsavedChanges() {
-    return this.markdown?.dirty ?? this.annotations?.dirty ?? false;
+    return this.pendingAnnotations || (this.markdown?.dirty ?? this.annotations?.dirty ?? false);
   }
   getComponent() {
     return this.component;
@@ -119,6 +122,44 @@ export class DocumentTab extends Tab {
     this.changed();
   }
 
+  get pendingAnnotations() {
+    return this.annotationActions.size > 0;
+  }
+
+  async runAnnotationAction(action: () => Promise<void>) {
+    const pending = Promise.resolve().then(action);
+    this.annotationActions.add(pending);
+    this.changed();
+    try {
+      await pending;
+    } finally {
+      this.annotationActions.delete(pending);
+      this.changed();
+    }
+  }
+
+  async finishAnnotationActions() {
+    const results = await Promise.allSettled(this.annotationActions);
+    return results.every((result) => result.status === "fulfilled");
+  }
+
+  async pdfPageLabel(pageIndex: number): Promise<string> {
+    // EmbedPDF 2.15.1 omits PageLabels; reuse the existing range reader only for this metadata.
+    this.pageLabels ??= (async () => {
+      const { openPdfDocument } = await import("./PdfDocument");
+      const session = await openPdfDocument(this.path, (error) => toast.error(documentError(error)));
+      try {
+        return await session.run(session.document.getPageLabels());
+      } finally {
+        await session.destroy();
+      }
+    })().catch((error) => {
+      this.pageLabels = undefined;
+      throw error;
+    });
+    return (await this.pageLabels)?.[pageIndex] ?? String(pageIndex + 1);
+  }
+
   override async dispose() {
     clearTimeout(this.annotationSaveTimer);
     await super.dispose();
@@ -126,7 +167,8 @@ export class DocumentTab extends Tab {
 
   loadAnnotations(reload = false): Promise<void> {
     if (this.annotationLoading) return this.annotationLoading;
-    if (this.closing || this.saving || (this.annotations && !reload)) return Promise.resolve();
+    if (this.closing || this.saving || this.pendingAnnotations || (this.annotations && !reload))
+      return Promise.resolve();
     this.loadingAnnotations = true;
     this.changed();
     this.annotationLoading = (async () => {
@@ -184,6 +226,7 @@ export class DocumentTab extends Tab {
   }
 
   async save(): Promise<boolean> {
+    if (!(await this.finishAnnotationActions())) return false;
     const document = this.kind === "pdf" ? this.annotations : this.markdown;
     if (!document || this.loadingMarkdown || this.loadingAnnotations || this.closing) return false;
     clearTimeout(this.annotationSaveTimer);

@@ -45,6 +45,15 @@ export function pdfPageTransform(rotation: number, width: number, height: number
 export class PdfReaderEngine extends WebWorkerEngine {
   private stopped = false;
   private pending = new Set<WorkerTask<unknown>>();
+  private retained = 0;
+  private deferredClose: (() => void)[] = [];
+
+  retain() {
+    this.retained++;
+    return () => {
+      if (--this.retained === 0) this.deferredClose.splice(0).forEach((close) => close());
+    };
+  }
 
   constructor(
     private readonly nativeWorker: Worker,
@@ -64,7 +73,7 @@ export class PdfReaderEngine extends WebWorkerEngine {
 
   private fail(error: Error) {
     if (this.stopped) return;
-    this.destroy();
+    this.destroy(true);
     this.report(error);
   }
 
@@ -84,6 +93,10 @@ export class PdfReaderEngine extends WebWorkerEngine {
   }
 
   override proxy<R>(task: WorkerTask<R>, request: Parameters<WebWorkerEngine["proxy"]>[1]) {
+    if (this.retained && ["closeDocument", "closeAllDocuments"].includes(request.data.name)) {
+      this.deferredClose.push(() => this.proxy(task, request));
+      return;
+    }
     if (this.stopped) {
       // Plugin teardown may close documents after the owning tab has terminated its worker.
       if (request.data.name === "closeDocument" || request.data.name === "closeAllDocuments") task.resolve(true as R);
@@ -108,7 +121,15 @@ export class PdfReaderEngine extends WebWorkerEngine {
     );
   }
 
-  override destroy() {
+  override destroy(force = false) {
+    if (this.retained && !force) {
+      const task = new WorkerTask<boolean>(this.nativeWorker, "draining");
+      this.deferredClose.push(() => {
+        this.destroy();
+        task.resolve(true);
+      });
+      return task;
+    }
     if (!this.stopped) {
       this.stopped = true;
       this.nativeWorker.removeEventListener("error", this.workerFailed);

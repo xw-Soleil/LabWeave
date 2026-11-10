@@ -3018,7 +3018,7 @@ research:
       closeTitle: 保存此 PDF 的批注修改？
     errors:
       annotationBusy: 批注正在保存、读取或随文件移动，请稍后重试。
-      annotationLocation: 批注位置无效或项目未登记；请重新打开项目。未修改任何文件权限。
+      annotationLocation: 批注路径不安全、名称过长或项目未登记。请检查目录符号链接和文件名，再重新打开项目。未修改任何文件权限。
       annotationReadFailed: 无法读取批注文件，请检查磁盘后重试。
       annotationWriteFailed: 无法保存批注，本地修改已保留。请检查磁盘或文件权限后点击保存。
       annotationCorrupt: 批注文件格式无效或超过 16 MiB，未覆盖原文件。请保留文件并检查内容。
