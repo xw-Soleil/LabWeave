@@ -51,23 +51,40 @@ import { exists } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { useAtomValue } from "jotai";
 import {
+  Archive,
+  BookOpen,
+  BookOpenText,
   ChevronDown,
   ChevronRight,
+  Database,
   ExternalLink,
   File,
+  FileArchive,
+  FileAudio,
+  FileCode,
   FileImage,
+  FileJson,
+  FileSpreadsheet,
   FileText,
+  FileVideo,
+  FlaskConical,
   Folder,
+  FolderCode,
   FolderInput,
   FolderOpen,
   FolderPlus,
+  Images,
   LayoutDashboard,
+  Library,
   MoreHorizontal,
   NotebookPen,
+  Paperclip,
   Pencil,
   Plus,
+  Presentation,
   RefreshCw,
   Search,
+  Trash2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -76,13 +93,53 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-const FILE_ICONS: Record<ResearchFileEntry["kind"], LucideIcon> = {
-  workspace: LayoutDashboard,
-  pdf: FileText,
-  image: FileImage,
-  markdown: NotebookPen,
-  other: File,
-};
+// 照 Obsidian 的文件栏：按文件夹名、扩展名自动配图标，用户不用手动选
+const FOLDER_ICONS: [RegExp, LucideIcon][] = [
+  [/^(assets?|attachments?|附件|资源)$/i, Paperclip],
+  [/^(images?|imgs?|figures?|figs?|pics?|pictures?|screenshots?|图片|截图|插图)$/i, Images],
+  [/^(data|datasets?|数据|数据集)$/i, Database],
+  [/^(src|code|scripts?|源码|代码|脚本)$/i, FolderCode],
+  [/^(papers?|refs?|references?|literature|library|文献|文献库|论文|参考文献)$/i, Library],
+  [/^(notes?|笔记|随笔)$/i, NotebookPen],
+  [/^(docs?|documents?|文档|资料)$/i, BookOpen],
+  [/^(tests?|experiments?|实验)$/i, FlaskConical],
+  [/^(archives?|归档|存档)$/i, Archive],
+  [/^(\.?trash|回收站)$/i, Trash2],
+];
+const EXTENSION_ICONS: [RegExp, LucideIcon][] = [
+  [/\.(md|markdown|txt)$/i, FileText],
+  [/\.pdf$/i, BookOpenText],
+  [/\.(png|jpe?g|gif|webp|svg|bmp|tiff?|heic|avif)$/i, FileImage],
+  [/\.(csv|tsv|xlsx?|numbers)$/i, FileSpreadsheet],
+  [/\.(json|ya?ml|toml|xml)$/i, FileJson],
+  [/\.(py|ipynb|m|ts|tsx|js|jsx|rs|c|cc|cpp|h|hpp|v|sv|vh|vhdl?|java|go|sh|tex|bib)$/i, FileCode],
+  [/\.(zip|tar|gz|tgz|7z|rar)$/i, FileArchive],
+  [/\.(mp3|wav|flac|m4a)$/i, FileAudio],
+  [/\.(mp4|mov|mkv|webm)$/i, FileVideo],
+  [/\.(pptx?|key)$/i, Presentation],
+];
+function folderIcon(name: string, expanded: boolean): LucideIcon {
+  return FOLDER_ICONS.find(([pattern]) => pattern.test(name))?.[1] ?? (expanded ? FolderOpen : Folder);
+}
+function fileIcon(entry: Pick<ResearchFileEntry, "kind" | "name">): LucideIcon {
+  if (entry.kind === "workspace") return LayoutDashboard;
+  return EXTENSION_ICONS.find(([pattern]) => pattern.test(entry.name))?.[1] ?? File;
+}
+const TREE_INDENT = 16;
+const treeIndent = (depth: number) => 6 + depth * TREE_INDENT;
+const TREE_ROW = "group flex h-7 min-w-0 items-center gap-1.5 rounded-md pr-1.5 text-[13px] select-none";
+const TREE_IDLE = "text-foreground/80 hover:bg-foreground/[0.05]";
+const TREE_ACTIVE = "bg-foreground/[0.08] text-foreground";
+
+function TreeGuide({ depth }: { depth: number }) {
+  return (
+    <span
+      aria-hidden
+      className="bg-foreground/10 pointer-events-none absolute top-0 bottom-0 w-px"
+      style={{ left: treeIndent(depth) + 8 }}
+    />
+  );
+}
 let cachedQuery = "";
 const showError = (error: unknown) =>
   toast.error(
@@ -279,7 +336,7 @@ export default function FileManagerWindow() {
   };
 
   const renderFile = (entry: ResearchFileEntry, projectRoot: string, depth: number) => {
-    const Icon = FILE_ICONS[entry.kind];
+    const Icon = fileIcon(entry);
     const highlighted = projectPathKey(entry.absPath) === activePath || entry.absPath === selected;
     const open = () => {
       if (!suppressClick.current) void openEntry(entry, projectRoot).catch(showError);
@@ -290,11 +347,8 @@ export default function FileManagerWindow() {
           role="button"
           tabIndex={0}
           title={`${entry.absPath}\n${t(entry.kind === "workspace" ? "files.workspaceRowHint" : "files.fileRowHint")}`}
-          className={cn(
-            "flex h-7 min-w-0 cursor-default items-center gap-2 rounded-md pr-2 text-[13px] select-none",
-            highlighted ? "bg-primary/10 text-primary" : "hover:bg-accent",
-          )}
-          style={{ paddingLeft: 8 + depth * 14 }}
+          className={cn(TREE_ROW, "cursor-default", highlighted ? TREE_ACTIVE : TREE_IDLE)}
+          style={{ paddingLeft: treeIndent(depth) }}
           onClick={() => {
             if (!suppressClick.current) setSelected(entry.absPath);
           }}
@@ -313,7 +367,8 @@ export default function FileManagerWindow() {
             }
           }}
         >
-          <Icon className="text-muted-foreground size-3.5 shrink-0" />
+          {!searching && <span className="w-4 shrink-0" />}
+          <Icon className="text-muted-foreground size-4 shrink-0" strokeWidth={1.75} />
           <FileName name={entry.kind === "workspace" ? displayWorkspaceName(entry.name) : entry.name} tailChars={4} />
           {searching && (
             <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{entry.relPath}</span>
@@ -411,7 +466,7 @@ export default function FileManagerWindow() {
           disabled={!root}
           aria-label={t("files.searchPlaceholder")}
           placeholder={t("files.searchPlaceholder")}
-          className="h-7 min-w-0"
+          className="bg-foreground/[0.04] dark:bg-foreground/[0.06] h-7 min-w-0 border-transparent text-[13px] shadow-none"
           onChange={(event) => updateQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -448,7 +503,7 @@ export default function FileManagerWindow() {
           </Button>
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto p-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-px overflow-auto px-1.5 py-1">
         {searching ? (
           <>
             <p className="text-muted-foreground px-2 text-xs">
@@ -456,7 +511,7 @@ export default function FileManagerWindow() {
             </p>
             {!scan && !error && root && <p className="text-muted-foreground px-2 text-xs">{t("files.loading")}</p>}
             {scan && matches.length === 0 && <p className="text-muted-foreground px-2 text-xs">{t("files.noMatch")}</p>}
-            {matches.map((entry) => renderFile(entry, root, 1))}
+            {matches.map((entry) => renderFile(entry, root, 0))}
             {scan?.truncated && (
               <p className="text-muted-foreground px-2 text-xs">
                 {t("files.truncated", { count: scan.entries.length })}
@@ -504,7 +559,7 @@ export default function FileManagerWindow() {
             className="bg-popover text-popover-foreground pointer-events-none fixed z-[9999] flex max-w-60 items-center gap-2 rounded-md border px-2 py-1 text-xs shadow-md"
             style={{ left: drag.x + 12, top: drag.y + 8 }}
           >
-            {React.createElement(FILE_ICONS[drag.entry.kind], { className: "size-3.5" })}
+            {React.createElement(fileIcon(drag.entry), { className: "size-3.5" })}
             <FileName name={drag.entry.name} />
           </div>,
           document.body,
@@ -570,28 +625,27 @@ function DirectoryRow({
       alive = false;
     };
   }, [expanded, path, projectRoot, version, depth]);
+  const Icon = folderIcon(projectName(path), expanded);
+  const note = "text-muted-foreground py-1 text-xs";
+  const notePadding = { paddingLeft: treeIndent(depth + 1) + 22 };
   return (
     <div>
       <div
-        className={cn(
-          "flex h-8 items-center gap-1 rounded-md pr-1 text-[13px]",
-          current ? "bg-primary/5" : "hover:bg-accent",
-        )}
-        style={{ paddingLeft: depth * 14 + 4 }}
+        className={cn(TREE_ROW, current ? TREE_ACTIVE : TREE_IDLE, onSelect && "font-medium")}
+        style={{ paddingLeft: treeIndent(depth) }}
       >
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-6 shrink-0"
+        <button
+          type="button"
+          className="text-muted-foreground/70 hover:text-foreground flex size-4 shrink-0 items-center justify-center rounded-sm"
           aria-label={t("projectTree.expand", { name: projectName(path) })}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
-          <ChevronRight className={cn(expanded && "rotate-90")} />
-        </Button>
+          <ChevronRight className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-90")} />
+        </button>
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
           title={path}
           onClick={() => {
             if (onSelect) {
@@ -600,21 +654,21 @@ function DirectoryRow({
             } else setExpanded(!expanded);
           }}
         >
-          {onSelect ? (
-            <FolderOpen className="text-muted-foreground size-4 shrink-0" />
-          ) : (
-            <Folder className="text-muted-foreground size-3.5 shrink-0" />
-          )}
+          <Icon className="text-muted-foreground size-4 shrink-0" strokeWidth={1.75} />
           <span className="truncate">{projectName(path)}</span>
         </button>
-        {current && <Badge variant="secondary">{t("projectTree.current")}</Badge>}
+        {current && (
+          <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
+            {t("projectTree.current")}
+          </Badge>
+        )}
         {onRemove && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-6 shrink-0"
+                className="size-5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                 aria-label={t("projectTree.actions", { name: projectName(path) })}
               >
                 <MoreHorizontal />
@@ -633,16 +687,21 @@ function DirectoryRow({
         )}
       </div>
       {error && (
-        <p role="status" className="text-muted-foreground px-4 py-1 text-xs" title={error}>
+        <p role="status" className={note} style={notePadding} title={error}>
           {t(onSelect ? "projectTree.missing" : "projectTree.unreadable")}
         </p>
       )}
       {expanded && !error && (
-        <div>
+        <div className="relative flex flex-col gap-px pt-px">
+          <TreeGuide depth={depth} />
           {!entries ? (
-            <p className="text-muted-foreground px-4 py-1 text-xs">{t("files.loading")}</p>
+            <p className={note} style={notePadding}>
+              {t("files.loading")}
+            </p>
           ) : entries.length === 0 ? (
-            <p className="text-muted-foreground px-4 py-1 text-xs">{t("projectTree.noFiles")}</p>
+            <p className={note} style={notePadding}>
+              {t("projectTree.noFiles")}
+            </p>
           ) : (
             entries
               .slice(0, visibleCount)
@@ -657,12 +716,18 @@ function DirectoryRow({
                     renderFile={renderFile}
                   />
                 ) : (
-                  renderFile(entry, projectRoot, depth + 2)
+                  renderFile(entry, projectRoot, depth + 1)
                 ),
               )
           )}
           {entries && entries.length > visibleCount && (
-            <Button variant="ghost" onClick={() => setVisibleCount((count) => count + 200)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground h-7 justify-start text-xs"
+              style={notePadding}
+              onClick={() => setVisibleCount((count) => count + 200)}
+            >
               {t("projectTree.showMore", { count: entries.length - visibleCount })}
             </Button>
           )}
