@@ -1266,6 +1266,9 @@ settings:
     title: 当前项目（研究文件夹）
     description: |
       论文、图片、笔记和白板都放在这个项目文件夹里
+  literatureLibraryPath:
+    title: 文献库文件夹
+    description: 填包含 .litlib 文件和「条目」文件夹的绝对路径。留空时不启用文献库。
   writeAiSidecarOnSave:
     title: 保存时生成 AI 可读的文字版
     description: |
@@ -2887,6 +2890,26 @@ projectOwnership:
 
 # 科研工作台。每个工作单元只往自己的小节里加键
 research:
+  library:
+    notConfigured: 请先设置文献库文件夹。
+    pathNotAllowed: 路径不在已设置的文献库中，或包含符号链接、不安全的文件名。
+    unavailable: 文献库文件夹无法访问，请检查路径和文件权限。
+    manifestMissing: 文件夹中没有 .litlib 文件，请选择已有文献库。
+    manifestAmbiguous: 文件夹中有多个 .litlib 文件，无法确定使用哪一个。
+    invalidManifest: .litlib 文件损坏或格式不受支持，原文件已保留。
+    invalidFrontmatter: 笔记开头的 YAML 损坏或不是支持的文献条目，已跳过。
+    invalidFields: 文献字段的值或类型不正确。
+    invalidCollection: 分类路径无效，请用 / 分隔非空的分类名称。
+    collectionExists: 已有同名分类。
+    collectionNotFound: 分类不存在，请刷新后重试。
+    itemsHaveErrors: 文献库中有无法读取的条目。请先修复它们，再改名或删除分类。
+    readFailed: 无法读取文献条目，请检查文件和权限。
+    writeFailed: 保存失败，未完成写入的原文件已保留，请检查磁盘和权限后重试。
+    fileChanged: 文件已被其他程序修改，请刷新后重试。
+    partialWrite: 分类修改中途失败，部分条目无法回退。请刷新后检查剩余条目，不要覆盖外部修改。
+    watchUnavailable: 文件夹监听不可用，外部修改需要手动刷新。
+    untitled: 未命名文献
+    noteTemplate: "\n# 研究笔记\n\n## 研究问题\n\n\n## 方法\n\n\n## 结论与启发\n\n"
   translate:
     network: 翻译请求失败，请检查网络后重试。
     rateLimited: 翻译服务暂时限流，请稍后重试。

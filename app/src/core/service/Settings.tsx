@@ -951,6 +951,7 @@ export const settingsSchema = z.object({
     ]),
   subWindowOpenModes: subWindowOpenModesSchema.default(DEFAULT_SUB_WINDOW_OPEN_MODES),
   researchFolderPath: projectToolSettingSchemas.researchFolderPath,
+  literatureLibraryPath: z.string().default(""),
   writeAiSidecarOnSave: projectToolSettingSchemas.writeAiSidecarOnSave,
   /** 工作区路径都相对研究文件夹 */
   researchSession: z

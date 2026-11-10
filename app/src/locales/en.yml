@@ -1234,6 +1234,9 @@ settings:
     title: Current project (research folder)
     description: |
       The project folder that holds your papers, images, notes and boards.
+  literatureLibraryPath:
+    title: Literature library folder
+    description: Enter the absolute path containing a .litlib file and the 条目 folder. Leave empty to disable the library.
   writeAiSidecarOnSave:
     title: Write an AI-readable copy when saving
     description: |
@@ -2768,6 +2771,26 @@ projectOwnership:
 
 # Research Workbench. Each work unit adds keys only to its own subsection.
 research:
+  library:
+    notConfigured: Set a literature library folder first.
+    pathNotAllowed: The path is outside the configured library, contains a symbolic link, or has an unsafe filename.
+    unavailable: Cannot access the library folder. Check the path and permissions.
+    manifestMissing: No .litlib file was found. Select an existing literature library.
+    manifestAmbiguous: Multiple .litlib files were found. The library cannot be selected unambiguously.
+    invalidManifest: The .litlib file is damaged or unsupported. The original file was preserved.
+    invalidFrontmatter: The note has invalid YAML or an unsupported item format and was skipped.
+    invalidFields: A literature field has an invalid value or type.
+    invalidCollection: Use nonempty collection names separated by /.
+    collectionExists: A collection with this name already exists.
+    collectionNotFound: The collection no longer exists. Refresh and retry.
+    itemsHaveErrors: Some items cannot be read. Repair them before renaming or removing collections.
+    readFailed: Cannot read this item. Check the file and permissions.
+    writeFailed: Saving failed. Files whose writes did not complete were preserved. Check disk space and permissions.
+    fileChanged: Another application changed the file. Refresh and retry.
+    partialWrite: The collection change failed and some items could not be rolled back. Refresh and inspect the remaining items without overwriting external edits.
+    watchUnavailable: Folder watching is unavailable. Refresh manually to see external changes.
+    untitled: Untitled paper
+    noteTemplate: "\n# Research notes\n\n## Research question\n\n\n## Method\n\n\n## Conclusions and insights\n\n"
   translate:
     network: Translation request failed. Check your connection and try again.
     rateLimited: The translation service is rate limited. Try again later.
