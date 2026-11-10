@@ -9,12 +9,13 @@ import { activeTabAtom, store } from "@/state";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
 import { ExternalLink, RefreshCw, Save } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import PdfView from "./PdfView";
 import { fileKindOf } from "./ResearchShell";
+import { clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
 
 function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
   const [image, setImage] = useState<{ url?: string; error?: string }>({});
@@ -157,7 +158,16 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
 }
 
 export default function DocumentView({ tab }: { tab: DocumentTab }) {
+  const host = useRef<HTMLDivElement>(null);
   const [, update] = useState(0);
+  useEffect(() => {
+    const unwatch =
+      tab.kind === "markdown" && host.current ? watchMarkdownReadingSelection(tab, host.current) : undefined;
+    return () => {
+      unwatch?.();
+      clearReadingContext(tab);
+    };
+  }, [tab]);
   useEffect(() => {
     const changed = () => update((value) => value + 1);
     tab.on("state-change", changed);
@@ -167,6 +177,7 @@ export default function DocumentView({ tab }: { tab: DocumentTab }) {
   }, [tab]);
   return (
     <div
+      ref={host}
       className="bg-background flex h-full min-h-0 flex-col pt-9"
       onFocusCapture={() => {
         if (store.get(activeTabAtom) !== tab) TabWorkspace.focus(tab.id);

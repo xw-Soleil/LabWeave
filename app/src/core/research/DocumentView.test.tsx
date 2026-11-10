@@ -16,6 +16,7 @@ vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
 import { activeDocumentTab, DocumentTab } from "./DocumentTab";
 import DocumentView from "./DocumentView";
+import { readingContextAtom } from "./ReadingContext";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -132,5 +133,12 @@ describe("Markdown document view", () => {
     );
     await act(async () => container.querySelectorAll("textarea")[1].focus());
     expect(activeDocumentTab()).toBe(second);
+    expect(store.get(readingContextAtom)).toMatchObject({ path: second.path, kind: "markdown", title: "b" });
+    await act(async () => {
+      const textarea = container.querySelectorAll("textarea")[1];
+      textarea.setSelectionRange(0, 4);
+      textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    expect(store.get(readingContextAtom)?.selection?.text).toBe("note");
   });
 });

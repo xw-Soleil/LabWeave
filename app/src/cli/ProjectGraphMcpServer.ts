@@ -36,6 +36,7 @@ const INSTRUCTIONS = `这是「科研工作台」（一个白板程序）的接�
 - 先调用 list_workspaces，看有哪些工作区、哪些正开在程序里。
 - 其他工具都要传 workspace：工作区名字（可以不带 .prg），或相对研究文件夹的路径。
 - 看整块白板的内容用 dump_workspace；要改某张卡片，先用 get_all_nodes 或 search_text_nodes_by_regex 拿到它的引用（n1、e1 这种），引用只在同一个工作区里有效。
+- 用户在阅读论文、需要核对原文时用 read_pdf_text（path 为 PDF 绝对路径，pages 如 3-5，最多 10 页）；找术语或引文先用 search_pdf（最多 50 条），再按命中页读取。文本有上限，注意 truncated 和 stoppedAt。只读当前打开的 PDF 或已登记项目中的 PDF（包括其中的文献库），需要 workspace 指向桌面端开着的白板；不支持 OCR。
 - 工作区开在程序里时，改动马上出现在白板上，用户可以撤销；没开时直接改文件。
 - 名字里带 selected、viewport 的工具，以及不带坐标的 create_text_node、create_file_card，要用到程序里的选中或视野，只能用于开着的工作区。要在没开的工作区里加卡片，用 create_text_node_at。
 - 坐标是白板的世界坐标：x 向右、y 向下。get_all_nodes 会给出每张卡片的位置和尺寸，摆新卡片时避开已有的。

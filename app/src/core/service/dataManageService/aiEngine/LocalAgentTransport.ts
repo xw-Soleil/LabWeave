@@ -1,5 +1,6 @@
 import type { Project } from "@/core/Project";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
+import { formatReadingContext } from "@/core/research/ReadingContext";
 import type { ExternalAiMcpLaunch } from "@/sub/SettingsWindow/externalAiCommands";
 import type { ContentBlock, McpServer, SessionUpdate } from "@agentclientprotocol/sdk";
 import { invoke } from "@tauri-apps/api/core";
@@ -46,6 +47,7 @@ export type LocalAgentPromptContext = {
   firstPrompt: boolean;
   workspace?: string;
   researchContext?: string;
+  readingContext?: string;
   recentHistory?: string;
 };
 
@@ -76,6 +78,7 @@ export function buildLocalAgentPrompt(
             ]
           : []),
         workspace,
+        context.readingContext,
         ...(context.firstPrompt
           ? [
               context.researchContext,
@@ -200,6 +203,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
   }
 
   async sendMessages(options: SendOptions): Promise<ReadableStream<UIMessageChunk>> {
+    const readingContext = formatReadingContext();
     const abort = new AbortController();
     const signal = AbortSignal.any([
       this.lifetime.signal,
@@ -214,7 +218,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
             if (!cancelled) controller.enqueue(chunk);
           };
           try {
-            await this.runTurn(options, signal, emit);
+            await this.runTurn(options, signal, emit, readingContext);
           } finally {
             if (!cancelled) controller.close();
           }
@@ -231,6 +235,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
     options: SendOptions,
     signal: AbortSignal,
     emit: (chunk: UIMessageChunk) => void,
+    readingContext: string,
   ): Promise<void> {
     if (this.status.kind === "agent-error" || this.status.kind === "needs-login") this.setStatus({ kind: "idle" });
     let state = createSessionUpdateState(crypto.randomUUID());
@@ -251,6 +256,7 @@ export class LocalAgentTransport implements ChatTransport<UIMessage<AIMessageMet
       const firstPrompt = session.firstPrompt && !command;
       const blocks = buildLocalAgentPrompt(message, {
         firstPrompt,
+        readingContext,
         workspace: project.uri.scheme === "file" ? ResearchFolder.toRelative(project.uri.fsPath) : undefined,
         researchContext: firstPrompt ? await buildResearchContext(project) : undefined,
         recentHistory:

@@ -54,6 +54,7 @@ import {
   readPdfBuffer,
 } from "./PdfReader";
 import { bindPdfZoom, zoomPdf } from "./PdfZoom";
+import { updateReadingContext } from "./ReadingContext";
 import {
   PdfAnnotationLayer,
   PdfAnnotationSidebar,
@@ -323,6 +324,7 @@ export function PdfReaderContent({
   }, [scroll, scrollApi, viewportApi, zoom, tab, initialLocation, pages]);
 
   useEffect(() => setJump(String(page)), [page]);
+  useEffect(() => updateReadingContext(tab, { page, pageCount: pages }), [tab, page, pages]);
   useEffect(() => {
     if (!bookmarksApi) return;
     let live = true;
@@ -342,6 +344,34 @@ export function PdfReaderContent({
   }, [bookmarksApi, tab.id, onError]);
 
   useEffect(() => selection?.onSelectionChange((value) => setHasSelection(!!value)), [selection]);
+  useEffect(() => {
+    if (!selection) return;
+    let revision = 0;
+    const offChange = selection.onSelectionChange(() => {
+      revision++;
+      updateReadingContext(tab, { selection: undefined });
+    });
+    const offEnd = selection.onEndSelection(() => {
+      const current = ++revision;
+      const selectedPage = selection.getFormattedSelection()[0]?.pageIndex;
+      if (!canCopyContents || selectedPage === undefined) return;
+      selection.getSelectedText().wait(
+        (parts) => {
+          if (current !== revision) return;
+          const text = parts.join("\n").trim();
+          updateReadingContext(tab, { selection: text ? { text, page: selectedPage + 1 } : undefined });
+        },
+        (error) => {
+          if (current === revision && error.type !== "abort") onError(pdfReaderError(error));
+        },
+      );
+    });
+    return () => {
+      revision++;
+      offChange();
+      offEnd();
+    };
+  }, [selection, tab, canCopyContents, onError]);
   useEffect(() => {
     if (searchOpen) searchInput.current?.focus();
   }, [searchOpen]);

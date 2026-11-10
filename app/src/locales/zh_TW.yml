@@ -1208,6 +1208,13 @@ settings:
     title: AI 模型
     description: |
       要調用的模型名稱，照服務商文檔原樣填寫（區分大小寫），例如 deepseek-chat、gpt-4o-mini、claude-sonnet-4-5
+  translateService:
+    title: 劃詞翻譯服務
+    description: Google 和 Bing 失敗時自動互換。AI 使用上方配置的模型接口。
+    options:
+      google: Google
+      bing: Bing
+      ai: AI
   aiCustomHeaders:
     title: AI 請求頭
     description: |
@@ -2880,6 +2887,14 @@ projectOwnership:
 
 # 科研工作臺。每個工作單元只往自己的小節里加鍵
 research:
+  translate:
+    network: 翻譯請求失敗，請檢查網絡後重試。
+    rateLimited: 翻譯服務暫時限流，請稍後重試。
+    aiNotConfigured: 請先在 AI 設置裡配置模型接口。
+    failed: 翻譯失敗，請重試或更換翻譯服務。
+  reading:
+    citation: "——《{{title}}》"
+    citationPage: "——《{{title}}》第 {{page}} 頁"
   projectTree:
     defaultName: 我的工作區
     workspaceHint: 工作區是一張項目清單，項目可以在磁盤的不同位置
@@ -3409,6 +3424,7 @@ research:
         source: 來源
         api: 接口
         context: 讀取與用量
+        translation: 翻譯
         external: 外部 AI（MCP）
       appearance:
         title: 外觀
