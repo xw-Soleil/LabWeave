@@ -65,11 +65,11 @@ describe("PDF worker and range lifecycle", () => {
   it("loads only an initial range, disables eager loading and serves further requested ranges", async () => {
     const session = await openPdfDocument("/allowed/a.pdf", vi.fn());
     expect(mocks.open).toHaveBeenCalledWith("/allowed/a.pdf", { read: true });
-    expect(session.reader.bytesRead).toBe(65536);
+    expect(session.reader.bytesRead).toBe(262144);
     expect(mocks.getDocument.mock.calls[0][0]).toMatchObject({
       disableAutoFetch: true,
       disableStream: true,
-      rangeChunkSize: 65536,
+      rangeChunkSize: 262144,
       isOffscreenCanvasSupported: false,
       isImageDecoderSupported: false,
     });
@@ -78,9 +78,10 @@ describe("PDF worker and range lifecycle", () => {
       requestDataRange(begin: number, end: number): void;
       onDataRange: ReturnType<typeof vi.fn>;
     };
-    transport.requestDataRange(65536, 131072);
+    transport.requestDataRange(262144, 524288);
     await vi.waitFor(() => expect(transport.onDataRange).toHaveBeenCalledOnce());
-    expect(session.reader.bytesRead).toBe(131072);
+    expect(session.reader.bytesRead).toBe(524288);
+    expect(file.seek).toHaveBeenCalledOnce();
     await Promise.all([session.destroy(), session.destroy()]);
     expect(workers[0].terminate).toHaveBeenCalledOnce();
     expect(file.close).toHaveBeenCalledOnce();
@@ -94,6 +95,22 @@ describe("PDF worker and range lifecycle", () => {
     await closing;
     expect(workers[0].terminate).toHaveBeenCalledOnce();
     expect(file.close).toHaveBeenCalledOnce();
+  });
+  it("clips the initial chunk to a small file and caps merged range reads", async () => {
+    file.stat.mockResolvedValueOnce({ size: 100000 });
+    const small = await openPdfDocument("/small.pdf", vi.fn());
+    expect(small.reader.bytesRead).toBe(100000);
+    await small.destroy();
+    const session = await openPdfDocument("/large.pdf", vi.fn());
+    file.read.mockClear();
+    const transport = mocks.transport as {
+      requestDataRange(begin: number, end: number): void;
+      onDataRange: ReturnType<typeof vi.fn>;
+    };
+    transport.requestDataRange(262144, 900000);
+    await vi.waitFor(() => expect(transport.onDataRange).toHaveBeenCalledOnce());
+    expect(file.read.mock.calls.map(([buffer]) => buffer.length)).toEqual([262144, 262144, 113568]);
+    await session.destroy();
   });
   it("times out a stalled load, releases the handle and terminates the worker", async () => {
     vi.useFakeTimers();

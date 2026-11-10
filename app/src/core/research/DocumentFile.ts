@@ -124,7 +124,8 @@ export class MarkdownDocument {
   }
 }
 
-export const PDF_RANGE_CHUNK_SIZE = 64 * 1024;
+// Local range requests pay a Tauri round trip per read; bound buffers without 64 KiB IPC chatter.
+export const PDF_RANGE_CHUNK_SIZE = 256 * 1024;
 
 export interface RangeHandle {
   seek(offset: number, whence: SeekMode): Promise<number>;
@@ -137,6 +138,7 @@ export class DocumentRangeReader {
   private pending: Promise<unknown> = Promise.resolve();
   private closed = false;
   private closing?: Promise<void>;
+  private position?: number;
   bytesRead = 0;
   largestRead = 0;
 
@@ -172,16 +174,22 @@ export class DocumentRangeReader {
         throw new Error("invalidRange");
       }
       const bytes = new Uint8Array(end - begin);
-      await this.handle.seek(begin, SeekMode.Start);
+      if (this.position !== begin) {
+        this.position = undefined;
+        await this.handle.seek(begin, SeekMode.Start);
+      }
       let offset = 0;
       while (offset < bytes.length) {
         if (this.closed) throw new Error("fileClosed");
+        // A failed IPC read may have moved the backend cursor; force seek on retry.
+        this.position = undefined;
         const count = await this.handle.read(
           bytes.subarray(offset, Math.min(offset + PDF_RANGE_CHUNK_SIZE, bytes.length)),
         );
         if (this.closed) throw new Error("fileClosed");
         if (!count) throw new Error("fileChanged");
         offset += count;
+        this.position = begin + offset;
         this.bytesRead += count;
         this.largestRead = Math.max(this.largestRead, count);
       }

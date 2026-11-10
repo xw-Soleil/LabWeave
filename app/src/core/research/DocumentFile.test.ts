@@ -158,12 +158,30 @@ describe("scoped PDF range reads", () => {
     expect(handle.seek).toHaveBeenCalledTimes(2);
     await reader.close();
   });
-  it("limits individual IPC reads to 64 KiB and never fetches unused data", async () => {
+  it("limits individual IPC reads to 256 KiB and never fetches unused data", async () => {
     const { reader, handle } = range(1000000000, Infinity);
-    await reader.read(0, 140000);
-    expect(handle.read.mock.calls.map(([buffer]) => buffer.length)).toEqual([65536, 65536, 8928]);
-    expect(reader.bytesRead).toBe(140000);
-    expect(reader.largestRead).toBe(65536);
+    await reader.read(0, 600000);
+    expect(handle.read.mock.calls.map(([buffer]) => buffer.length)).toEqual([262144, 262144, 75712]);
+    expect(reader.bytesRead).toBe(600000);
+    expect(reader.largestRead).toBe(262144);
+    await reader.close();
+  });
+  it("avoids seek round trips for adjacent queued ranges, but seeks for backward reads", async () => {
+    const { reader, handle } = range(1000000, Infinity);
+    const [first, next, backward] = await Promise.all([reader.read(5, 15), reader.read(15, 25), reader.read(2, 8)]);
+    expect([...first]).toEqual(Array.from({ length: 10 }, (_, i) => 5 + i));
+    expect([...next]).toEqual(Array.from({ length: 10 }, (_, i) => 15 + i));
+    expect([...backward]).toEqual([2, 3, 4, 5, 6, 7]);
+    expect(handle.seek.mock.calls.map(([offset]) => offset)).toEqual([5, 2]);
+    await reader.close();
+  });
+  it("does not reuse an uncertain cursor after a failed read", async () => {
+    const { reader, handle } = range(1000000, Infinity);
+    await reader.read(0, 10);
+    handle.read.mockRejectedValueOnce(new Error("read failed"));
+    await expect(reader.read(10, 20)).rejects.toThrow("read failed");
+    expect([...(await reader.read(10, 20))]).toEqual(Array.from({ length: 10 }, (_, i) => 10 + i));
+    expect(handle.seek.mock.calls.map(([offset]) => offset)).toEqual([0, 10]);
     await reader.close();
   });
   it.each([
