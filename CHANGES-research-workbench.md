@@ -467,7 +467,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 ### 40. PDF 高亮样子、选区颜色、文档时面板停靠（2026-11-10）
 
-- `app/src/core/research/PdfAnnotationUI.tsx`：高亮改为整条批注一层统一上色，透明度加在整层上（行与行重叠处不再叠深），每行上下放宽一点连成一片，不描边；选中时只在整体外面画一圈细框，悬停稍加深。下划线、便签等其他类型不变。
+- `app/src/core/research/PdfAnnotationUI.tsx`：高亮改为整条批注一层统一上色，透明度加在整层上（行与行重叠处不再叠深），每行上下放宽一点连成一片，不描边；选中时只是颜色稍深（不再画外框），悬停稍加深。点页面空白处或按 Esc 取消选中（点批注本身、侧栏卡片、工具栏不取消）。下划线、便签等其他类型不变。
 - `app/src/core/research/PdfView.tsx`：选中文字的底色改为半透明浅蓝（`rgba(0, 122, 255, 0.2)`），原来是 EmbedPDF 默认的深蓝。
 - `app/src/components/docked-area.tsx`：编辑区某一组显示的不是白板（Markdown、PDF 等）时，这组内容给左边竖栏和固定住的左右面板让出位置，切换时 0.2 秒平滑滑开；白板组照旧铺满、面板浮在上面，画布尺寸不变。临时弹出的面板仍盖在上面。
 - `app/vite.config.ts`：开发版启动时预先打包 EmbedPDF，第一次打开 PDF 时不再整页刷新（开发版专用）。

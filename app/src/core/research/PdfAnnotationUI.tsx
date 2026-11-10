@@ -98,6 +98,27 @@ export function usePdfAnnotations(
       tab.off("state-change", changed);
     };
   }, [tab]);
+  // 和 Zotero 一样：点页面空白处或按 Esc 取消选中；点批注本身、侧栏卡片、工具栏不算
+  useEffect(() => {
+    if (!selected) return;
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest("[data-pdf-page]") || target.closest("[data-annotation-id]")) return;
+      setSelected("");
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      setSelected("");
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selected]);
   const enabled =
     !!tab.annotations &&
     !tab.annotations.moving &&
@@ -791,20 +812,16 @@ function AnnotationShape({
   const rects = position.pageIndex === page.index ? position.rects : position.nextPageRects;
   if (item.type === "highlight" && rects?.length) {
     // 照 Zotero：整条高亮作为一层统一上色，透明度加在这一层上，行与行重叠的地方不会叠深；
-    // 每行上下各放宽一点，相邻两行连成一片；不描边，选中时只在整体外面画一圈细框。
+    // 每行上下各放宽一点，相邻两行连成一片；不描边，选中时只是颜色稍深一点（侧栏卡片同时标出）。
     const boxes = rects.map((rect) => {
       const { origin, size } = pdfRectToReader(page, rect);
       const pad = size.height * 0.12;
       return { x: origin.x, y: origin.y - pad, width: size.width, height: size.height + pad * 2 };
     });
-    const left = Math.min(...boxes.map((box) => box.x));
-    const top = Math.min(...boxes.map((box) => box.y));
-    const right = Math.max(...boxes.map((box) => box.x + box.width));
-    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
     return (
       <g data-annotation-id={item.id} onClick={onSelect} style={{ cursor: "pointer", pointerEvents: "visiblePainted" }}>
         <g
-          className={selected ? "opacity-50" : "opacity-40 hover:opacity-50"}
+          className={selected ? "opacity-55" : "opacity-40 hover:opacity-50"}
           style={{ mixBlendMode: "multiply" }}
           fill={item.color}
         >
@@ -812,18 +829,6 @@ function AnnotationShape({
             <rect key={i} {...box} />
           ))}
         </g>
-        {selected && (
-          <rect
-            x={left - 2}
-            y={top - 2}
-            width={right - left + 4}
-            height={bottom - top + 4}
-            rx={2}
-            fill="none"
-            stroke={item.color}
-            strokeWidth={1}
-          />
-        )}
       </g>
     );
   }
