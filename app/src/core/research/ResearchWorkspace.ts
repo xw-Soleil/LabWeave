@@ -2,27 +2,37 @@ import { ResearchFolder, isHiddenResearchName, type ResearchFileEntry } from "./
 import { fileKindOf, emitResearchEvent } from "./ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { createStore } from "@/utils/store";
+import { isWeb } from "@/utils/platform";
 import { store } from "@/state";
 import { invoke } from "@tauri-apps/api/core";
 import { mkdir, readDir } from "@tauri-apps/plugin-fs";
 import { atom } from "jotai";
 import { z } from "zod";
+import i18next from "i18next";
 
 const sessionSchema = z.object({ openWorkspaces: z.array(z.string()), active: z.string() });
-const workspaceSchema = z.object({
-  version: z.literal(1),
-  activeId: z.string(),
-  workspaces: z
-    .array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        projects: z.array(z.object({ path: z.string(), session: sessionSchema.optional() })),
-      }),
-    )
-    .min(1),
-  recentProjects: z.array(z.string()),
-});
+export const projectPathSchema = z
+  .string()
+  .refine(
+    (path) =>
+      !path.includes("\0") && (/^\//.test(path) || /^[a-z]:[\\/]/i.test(path) || /^\\\\[^\\]+\\[^\\]+/.test(path)),
+  );
+const workspaceSchema = z
+  .object({
+    version: z.literal(1),
+    activeId: z.string(),
+    workspaces: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          projects: z.array(z.object({ path: projectPathSchema, session: sessionSchema.optional() })),
+        }),
+      )
+      .min(1),
+    recentProjects: z.array(projectPathSchema),
+  })
+  .refine((data) => data.workspaces.some((workspace) => workspace.id === data.activeId));
 export type ResearchWorkspaceData = z.infer<typeof workspaceSchema>;
 export const researchWorkspaceAtom = atom<ResearchWorkspaceData | null>(null);
 let loading: Promise<ResearchWorkspaceData> | undefined;
@@ -30,7 +40,38 @@ let saving: Promise<unknown> = Promise.resolve();
 const authorized = new Map<string, Promise<string>>();
 
 export function projectPathKey(path: string): string {
-  return ResearchFolder.toAbsolute(path, "").replace(/\/+$/, "").normalize("NFC").toLowerCase();
+  const normalized = ResearchFolder.toAbsolute(path, "");
+  const key = (normalized === "/" ? "/" : normalized.replace(/\/+$/, "")).normalize("NFC");
+  return /^[a-z]:\//i.test(normalized) || normalized.startsWith("//") ? key.toLowerCase() : key;
+}
+
+export function researchWorkspaceError(error: unknown): string {
+  const code = error instanceof Error ? error.message : String(error);
+  const key = `projectTree.errors.${code}`;
+  return i18next.exists(key, { ns: "research" }) ? i18next.t(key, { ns: "research" }) : code;
+}
+
+async function readWorkspace(): Promise<unknown> {
+  return isWeb
+    ? ((await (await createStore("research-workspaces.json")).get("data")) ?? null)
+    : invoke("load_research_workspace");
+}
+
+async function writeWorkspace(expected: unknown, data: ResearchWorkspaceData) {
+  if (isWeb) {
+    const storage = await createStore("research-workspaces.json");
+    if (JSON.stringify((await storage.get("data")) ?? null) !== JSON.stringify(expected)) {
+      throw new Error("workspaceChanged");
+    }
+    await storage.set("data", data);
+    await storage.save();
+  } else await invoke("save_research_workspace", { expected, data });
+}
+
+function parseWorkspace(saved: unknown): ResearchWorkspaceData {
+  const parsed = workspaceSchema.safeParse(saved);
+  if (!parsed.success) throw new Error("workspaceCorrupt");
+  return saved as ResearchWorkspaceData;
 }
 
 export function projectName(path: string): string {
@@ -41,26 +82,34 @@ export function activeResearchWorkspace(data: ResearchWorkspaceData) {
   return data.workspaces.find((workspace) => workspace.id === data.activeId) ?? data.workspaces[0];
 }
 
-export async function loadResearchWorkspace(): Promise<ResearchWorkspaceData> {
-  if (store.get(researchWorkspaceAtom)) return store.get(researchWorkspaceAtom)!;
+export async function projectForFile(path: string): Promise<string | undefined> {
+  const key = projectPathKey(path);
+  const project = activeResearchWorkspace(await loadResearchWorkspace())
+    .projects.filter((project) => ResearchFolder.isInside(path, project.path))
+    .filter((project) => {
+      const root = projectPathKey(project.path);
+      return key === root || key.startsWith(root === "/" ? "/" : `${root}/`);
+    })
+    .sort((a, b) => b.path.length - a.path.length)[0]?.path;
+  return project && projectPathKey(project) !== projectPathKey(ResearchFolder.getRoot()) ? project : undefined;
+}
+
+export async function loadResearchWorkspace(refresh = false): Promise<ResearchWorkspaceData> {
+  if (!refresh && store.get(researchWorkspaceAtom)) return store.get(researchWorkspaceAtom)!;
   if (!loading) {
     loading = (async () => {
-      const storage = await createStore("research-workspaces.json");
-      const saved = await storage.get<unknown>("data");
+      const saved = await readWorkspace();
       const root = ResearchFolder.getRoot();
       const data =
-        saved === undefined
+        saved === null
           ? {
               version: 1 as const,
               activeId: "default",
               workspaces: [{ id: "default", name: "", projects: root ? [{ path: root }] : [] }],
               recentProjects: root ? [root] : [],
             }
-          : workspaceSchema.parse(saved);
-      if (saved === undefined) {
-        await storage.set("data", data);
-        await storage.save();
-      }
+          : parseWorkspace(saved);
+      if (saved === null) await writeWorkspace(null, data);
       store.set(researchWorkspaceAtom, data);
       return data;
     })().finally(() => {
@@ -72,12 +121,11 @@ export async function loadResearchWorkspace(): Promise<ResearchWorkspaceData> {
 
 export function updateResearchWorkspace(update: (data: ResearchWorkspaceData) => void): Promise<void> {
   const task = saving.then(async () => {
-    const data = structuredClone(await loadResearchWorkspace());
+    const previous = await loadResearchWorkspace(true);
+    const data = structuredClone(previous);
     update(data);
     workspaceSchema.parse(data);
-    const storage = await createStore("research-workspaces.json");
-    await storage.set("data", data);
-    await storage.save();
+    await writeWorkspace(previous, data);
     store.set(researchWorkspaceAtom, data);
   });
   // Each caller receives its own failure; a failed write must not block later retries.
@@ -104,15 +152,15 @@ export async function addResearchProject(path: string): Promise<string> {
   return canonical;
 }
 
-export async function authorizeResearchProject(path: string): Promise<string> {
-  const data = await loadResearchWorkspace();
+export async function authorizeResearchProject(path: string, refresh = false): Promise<string> {
+  const data = await loadResearchWorkspace(refresh);
   if (
     !activeResearchWorkspace(data).projects.some((project) => projectPathKey(project.path) === projectPathKey(path))
   ) {
     throw new Error("projectNotInWorkspace");
   }
   const key = projectPathKey(path);
-  let task = authorized.get(key);
+  let task = refresh ? undefined : authorized.get(key);
   if (!task) {
     task = invoke<string>("authorize_research_project", { path });
     authorized.set(key, task);
@@ -172,8 +220,10 @@ export async function readResearchDirectory(
     );
 }
 
-export function requestResearchProject(path: string, openPath?: string): Promise<boolean> {
-  return new Promise((resolve, reject) => emitResearchEvent("switchProject", { path, openPath, resolve, reject }));
+export function requestResearchProject(path: string, openPath?: string, removePath?: string): Promise<boolean> {
+  return new Promise((resolve, reject) =>
+    emitResearchEvent("switchProject", { path, openPath, removePath, resolve, reject }),
+  );
 }
 
 export async function rememberProjectSession(

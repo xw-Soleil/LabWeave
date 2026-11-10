@@ -423,7 +423,7 @@ export class Project extends Tab {
     }
   }
 
-  async saveAs(targetUri: URI, options: { includeThumbnail?: boolean } = {}) {
+  async saveAs(targetUri: URI, options: { includeThumbnail?: boolean; createNew?: boolean } = {}) {
     if (this.fileMutationInProgress) throw new Error("正在重命名文件，请稍后保存");
     if (targetUri.scheme !== "file") throw new Error("Project Save As requires a file URI");
     const fileSystemProvider = this.fileSystemProviders.get("file");
@@ -436,7 +436,12 @@ export class Project extends Tab {
       this.saveAsTarget = saveAsTarget;
       const content = await this.getFileContent(options);
       this.saveAsTarget = null;
-      await this.projectOwnership.saveAs(targetUri, () => fileSystemProvider.write(targetUri, content));
+      await this.projectOwnership.saveAs(targetUri, async () => {
+        if (options.createNew) {
+          const { writeFile } = await import("@tauri-apps/plugin-fs");
+          await writeFile(targetUri.fsPath, content, { createNew: true });
+        } else await fileSystemProvider.write(targetUri, content);
+      });
       // 写盘成功、uri 已换成新位置后再改内存里的路径：失败时原工程保持原样
       for (const [card, sourcePath] of saveAsTarget.sourcePaths) {
         card.sourcePath = sourcePath;

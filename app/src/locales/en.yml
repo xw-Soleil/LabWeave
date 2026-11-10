@@ -2782,11 +2782,24 @@ research:
     searchIn: "Current project: {{name}}"
     saveBoard: Save board changes before switching projects?
     switchBusy: A project switch or file save is in progress. Please retry shortly.
+    switchChanged: A tab was edited, opened or closed during the switch. The switch was cancelled; please retry.
+    saveDraft: Save draft board
+    boardMissing: "Board not found; the project was not switched: {{path}}"
+    showMore: "Show more ({{count}} remaining)"
+    errors:
+      workspaceCorrupt: The workspace list is damaged or uses an unsupported format. The original file was preserved; repair it and retry.
+      workspaceChanged: Another window changed the workspace list. Refresh and retry.
+      workspaceBusy: Another window is saving the workspace list. Please retry shortly.
+      projectNotInWorkspace: This project is no longer in the workspace. Refresh or add it again.
+      directoryOutsideProject: This folder is outside the selected project.
+      projectPathNotAbsolute: A project requires an absolute folder path.
     locations: Folder locations
     home: Home
     drives: External disks / drives
     recent: Recent projects
     parent: Parent folder
+    path: Absolute folder path (network shares supported)
+    go: Go
     folders: Subfolders
     noFolders: No visible subfolders
     addHint: Browse folders only. Enter your project folder and choose “Use this folder”.

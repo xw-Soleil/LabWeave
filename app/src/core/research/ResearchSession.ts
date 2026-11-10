@@ -8,8 +8,10 @@ import {
   loadResearchWorkspace,
   projectPathKey,
   rememberProjectSession,
+  researchWorkspaceError,
+  updateResearchWorkspace,
 } from "./ResearchWorkspace";
-import { RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
+import { checkWorkspaceName, RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import {
@@ -23,6 +25,7 @@ import {
 } from "@/core/research/SidePanels";
 import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
+import { RecentFileManager } from "@/core/service/dataFileService/RecentFileManager";
 import { ComponentTab, Tab } from "@/core/Tab";
 import {
   findTabGroup,
@@ -33,10 +36,18 @@ import {
   type FixedSideEdge,
 } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { activeResourceTabAtom, store, tabGroupRootAtom, tabsAtom } from "@/state";
+import {
+  activeDockedTabAtom,
+  activeGroupIdAtom,
+  activeResourceTabAtom,
+  activeTabAtom,
+  store,
+  tabGroupRootAtom,
+  tabsAtom,
+} from "@/state";
 // 静态 import 让文件面板模块常驻，它在模块加载时注册 toggleFiles 监听
 import FileManagerWindow from "@/sub/FileManagerWindow";
-import { exists } from "@tauri-apps/plugin-fs";
+import { exists, readDir } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { atom } from "jotai";
 import { FolderOpen } from "lucide-react";
@@ -64,7 +75,7 @@ function t(key: string, options?: Record<string, unknown>) {
 }
 
 function reportError(error: unknown) {
-  toast.error(t("workspace.failed", { message: error instanceof Error ? error.message : String(error) }));
+  toast.error(t("workspace.failed", { message: researchWorkspaceError(error) }));
 }
 
 function bumpFilesVersion() {
@@ -72,8 +83,7 @@ function bumpFilesVersion() {
 }
 
 function samePath(a: string, b: string) {
-  const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "").normalize("NFC").toLowerCase();
-  return normalize(a) === normalize(b);
+  return projectPathKey(a) === projectPathKey(b);
 }
 
 function openFileProjects(): Project[] {
@@ -173,7 +183,7 @@ export async function listResearchWorkspaces(): Promise<ResearchWorkspaceItem[]>
 }
 
 export async function openResearchWorkspace(absPath: string) {
-  const opened = await onOpenFile(URI.file(absPath), "科研工作台-工作区列表");
+  const opened = await onOpenFile(URI.file(absPath), "科研工作台-工作区列表", undefined, { projectSelected: true });
   if (opened instanceof Project) await closeEmptyDrafts(opened);
 }
 
@@ -183,34 +193,114 @@ export async function chooseResearchFolder(): Promise<string | null> {
   return (await switchResearchProject(root)) ? root : null;
 }
 
-let switchingProject = false;
+let changingSession = false;
 
-export async function switchResearchProject(path: string, openPath?: string): Promise<boolean> {
-  if (switchingProject) throw new Error(t("projectTree.switchBusy"));
-  switchingProject = true;
+export function beginResearchSessionChange(): boolean {
+  if (changingSession) return false;
+  changingSession = true;
+  return true;
+}
+
+export function endResearchSessionChange() {
+  changingSession = false;
+}
+
+function resourceTabs() {
+  return store
+    .get(tabsAtom)
+    .filter((tab): tab is Project | DocumentTab => tab instanceof Project || tab instanceof DocumentTab);
+}
+
+function tabRevision(tab: Project | DocumentTab) {
+  return tab instanceof Project ? tab.editRevision : tab.markdown?.text;
+}
+
+function tabBusy(tab: Project | DocumentTab) {
+  return (
+    tab.closing ||
+    (tab instanceof Project ? tab.isSaving || tab.fileMutationInProgress : tab.saving || tab.loadingMarkdown)
+  );
+}
+
+async function saveBoardForSwitch(tab: Project): Promise<boolean> {
+  if (tab.uri.scheme === "file") {
+    await tab.save();
+  } else {
+    if (!ResearchFolder.getRoot()) throw new Error(t("files.noRoot"));
+    const input = await Dialog.input(t("projectTree.saveDraft"), t("workspace.newDescription"));
+    if (input === undefined) return false;
+    const name = checkWorkspaceName(input);
+    if (!name.ok) throw new Error(t(`files.workspaceName.${name.reason}`));
+    const path = ResearchFolder.toAbsolute(`${name.name}.prg`);
+    if (await exists(path)) throw new Error(t("files.workspaceName.exists", { name: name.name }));
+    await tab.saveAs(URI.file(path), { createNew: true });
+  }
+  return tab.projectState === ProjectState.Saved;
+}
+
+export async function switchResearchProject(path: string, openPath?: string, removePath?: string): Promise<boolean> {
+  if (!beginResearchSessionChange()) throw new Error(t("projectTree.switchBusy"));
   const tracking = sessionTracking;
+  const previousRoot = ResearchFolder.getRoot();
+  const previousActive = store.get(activeResourceTabAtom);
+  const previousFocus = store.get(activeTabAtom);
+  const previousDocked = store.get(activeDockedTabAtom);
+  const previousGroup = store.get(activeGroupIdAtom);
+  const previousLayout = store.get(tabGroupRootAtom);
+  const previousZ = new Map(store.get(tabsAtom).map((tab) => [tab, tab.zIndex]));
+  const previousMissing = unreachableWorkspaces;
+  const previousMissingActive = unreachableActive;
+  const previousSession = Settings.researchSession;
+  const opened: Project[] = [];
+  let rootChanged = false;
+  let committed = false;
+  const remove = () =>
+    updateResearchWorkspace((data) => {
+      const workspace = activeResearchWorkspace(data);
+      workspace.projects = workspace.projects.filter(
+        (project) => projectPathKey(project.path) !== projectPathKey(removePath!),
+      );
+    });
   try {
-    if (path) await authorizeResearchProject(path);
+    if (removePath && projectPathKey(removePath) !== projectPathKey(previousRoot)) {
+      await remove();
+      committed = true;
+      return true;
+    }
+    if (path) path = await authorizeResearchProject(path, true);
     if (openPath && (!path || !ResearchFolder.isInside(openPath, path) || !/\.prg$/i.test(openPath))) {
       throw new Error(t("files.outsideFolder", { path: openPath }));
     }
-    if (projectPathKey(path) !== projectPathKey(ResearchFolder.getRoot())) {
-      // Check availability before prompting or closing any tab; authorization alone may be cached.
+    if (projectPathKey(path) !== projectPathKey(previousRoot)) {
       if (path && !(await exists(path))) throw new Error(t("projectTree.missing"));
+      if (path) await readDir(path);
+      if (openPath && !(await exists(openPath))) throw new Error(t("projectTree.boardMissing", { path: openPath }));
       persistResearchSession();
-      await rememberProjectSession(ResearchFolder.getRoot());
       const data = await loadResearchWorkspace();
       const next = activeResearchWorkspace(data).projects.find(
         (project) => projectPathKey(project.path) === projectPathKey(path),
       )?.session;
-      const previousRoot = ResearchFolder.getRoot();
-      const previousTabs = store.get(tabsAtom);
-      const previousActive = store.get(activeResourceTabAtom);
+      const previousTabs = resourceTabs();
+      const destinations = [
+        ...new Set([
+          ...(next?.openWorkspaces ?? []).map((stored) => ResearchFolder.toAbsolute(stored, path)),
+          ...(openPath ? [openPath] : []),
+        ]),
+      ];
+      const keep = new Set(
+        previousTabs.filter(
+          (tab) =>
+            tab instanceof Project &&
+            ((!previousRoot && tab.uri.scheme === "draft") ||
+              destinations.some((target) => samePath(target, tab.uri.fsPath))),
+        ),
+      );
+      const revisions = new Map<Project | DocumentTab, ReturnType<typeof tabRevision>>();
       sessionTracking = false;
       for (const tab of previousTabs) {
-        if (tab.closing || !(tab instanceof Project || tab instanceof DocumentTab)) continue;
+        if (tabBusy(tab)) throw new Error(t("projectTree.switchBusy"));
+        if (keep.has(tab)) continue;
         if (tab instanceof Project) {
-          if (tab.isSaving || tab.fileMutationInProgress) throw new Error(t("projectTree.switchBusy"));
           if (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed) {
             TabWorkspace.focus(tab.id);
             const answer = await Dialog.buttons(t("projectTree.saveBoard"), tab.title, [
@@ -218,16 +308,22 @@ export async function switchResearchProject(path: string, openPath?: string): Pr
               { id: "discard", label: t("document.discard"), variant: "destructive" },
               { id: "save", label: t("document.save") },
             ]);
-            if (answer === "cancel") return false;
-            if (answer === "save") {
-              await tab.save();
-              if ((tab.projectState as ProjectState) !== ProjectState.Saved) return false;
-            }
+            if (answer !== "save" && answer !== "discard") return false;
+            if (answer === "save" && !(await saveBoardForSwitch(tab))) return false;
           }
-        }
-        if ((await TabWorkspace.close(tab.id)) === false) return false;
+        } else if (tab.beforeClose && !(await tab.beforeClose())) return false;
+        revisions.set(tab, tabRevision(tab));
       }
-      // Saving a draft in the close prompt may have given it a file path for the first time.
+      const checkUnchanged = () => {
+        if (
+          previousTabs.some((tab) => !store.get(tabsAtom).includes(tab) || tabBusy(tab)) ||
+          [...revisions].some(([tab, revision]) => tabRevision(tab) !== revision) ||
+          resourceTabs().some((tab) => !previousTabs.includes(tab) && !opened.includes(tab as Project))
+        ) {
+          throw new Error(t("projectTree.switchChanged"));
+        }
+      };
+      checkUnchanged();
       const previousBoards = previousTabs.filter(
         (tab): tab is Project => tab instanceof Project && tab.uri.scheme === "file" && !isTemporaryWorkspace(tab),
       );
@@ -241,22 +337,90 @@ export async function switchResearchProject(path: string, openPath?: string): Pr
             : unreachableActive,
       });
       await ResearchFolder.setRoot(path);
-      unreachableWorkspaces = [];
-      unreachableActive = "";
-      store.set(activeResourceTabAtom, undefined);
+      rootChanged = true;
+      const missing: string[] = [];
+      const restored: Project[] = [];
+      for (const target of destinations) {
+        if (!ResearchFolder.isInside(target, path) || !/\.prg$/i.test(target))
+          throw new Error(t("files.outsideFolder", { path: target }));
+        if (!(await exists(target))) {
+          if (target === openPath) throw new Error(t("projectTree.boardMissing", { path: target }));
+          missing.push(ResearchFolder.toRelative(target, path));
+          continue;
+        }
+        const board = await onOpenFile(URI.file(target), "科研工作台-切换项目", undefined, {
+          recordRecent: false,
+          deferActivation: true,
+        });
+        if (!board) return false;
+        if (!previousTabs.includes(board)) opened.push(board);
+        restored.push(board);
+      }
+      checkUnchanged();
+      if (removePath) await remove();
+      // Nothing below can cancel: the old objects stay alive until all destination boards are ready.
+      committed = true;
+      store.set(tabsAtom, [...store.get(tabsAtom), ...opened.filter((tab) => !store.get(tabsAtom).includes(tab))]);
+      unreachableWorkspaces = missing;
+      unreachableActive = missing.includes(next?.active ?? "") ? next!.active : "";
+      const closing = previousTabs.filter((tab) => !keep.has(tab));
+      const results = await Promise.allSettled(closing.map((tab) => TabWorkspace.close(tab.id, { confirmed: true })));
+      for (const result of results) if (result.status === "rejected") reportError(result.reason);
+      const focus =
+        restored.find((tab) =>
+          samePath(tab.uri.fsPath, openPath ?? ResearchFolder.toAbsolute(next?.active ?? "", path)),
+        ) ??
+        restored[0] ??
+        [...keep][0];
+      if (focus) TabWorkspace.focus(focus.id);
+      else store.set(activeResourceTabAtom, undefined);
       Settings.researchSession = {
         ...Settings.researchSession,
-        openWorkspaces: next?.openWorkspaces ?? [],
-        active: next?.active ?? "",
+        openWorkspaces: [...restored.map((tab) => ResearchFolder.toRelative(tab.uri.fsPath, path)), ...missing],
+        active:
+          focus instanceof Project && focus.uri.scheme === "file"
+            ? ResearchFolder.toRelative(focus.uri.fsPath, path)
+            : unreachableActive,
       };
-      await startResearchSession();
+      try {
+        await RecentFileManager.addRecentFilesByUris(restored.map((tab) => tab.uri));
+      } catch (error) {
+        reportError(error);
+      }
+    } else {
+      if (openPath) await openResearchWorkspace(openPath);
+      committed = true;
     }
-    if (openPath) await openResearchWorkspace(openPath);
     return true;
   } finally {
-    switchingProject = false;
-    sessionTracking = tracking;
-    persistResearchSession();
+    try {
+      if (!committed) {
+        const cleanup = await Promise.allSettled(
+          opened.map((tab) =>
+            store.get(tabsAtom).includes(tab) ? TabWorkspace.close(tab.id, { confirmed: true }) : tab.dispose(),
+          ),
+        );
+        for (const result of cleanup) if (result.status === "rejected") reportError(result.reason);
+        try {
+          if (rootChanged) await ResearchFolder.setRoot(previousRoot, true);
+        } finally {
+          Settings.researchFolderPath = previousRoot;
+          Settings.researchSession = previousSession;
+          unreachableWorkspaces = previousMissing;
+          unreachableActive = previousMissingActive;
+          store.set(tabGroupRootAtom, previousLayout);
+          for (const [tab, zIndex] of previousZ) tab.zIndex = zIndex;
+          store.set(activeTabAtom, previousFocus);
+          store.set(activeDockedTabAtom, previousDocked);
+          store.set(activeResourceTabAtom, previousActive);
+          store.set(activeGroupIdAtom, previousGroup);
+        }
+      }
+    } finally {
+      endResearchSessionChange();
+      sessionTracking = tracking;
+      persistResearchSession();
+    }
   }
 }
 
@@ -415,7 +579,8 @@ export async function startResearchSession(): Promise<boolean> {
         continue;
       }
       reachable++;
-      if (await onOpenFile(URI.file(absPath), "科研工作台-恢复会话")) restored = true;
+      if (await onOpenFile(URI.file(absPath), "科研工作台-恢复会话", undefined, { projectSelected: true }))
+        restored = true;
     } catch (error) {
       toast.error(t("shell.restoreFailed", { path: storedPath, message: String(error) }));
     }
@@ -468,10 +633,14 @@ export function registerResearchSession() {
       const request = detail as {
         path: string;
         openPath?: string;
+        removePath?: string;
         resolve: (changed: boolean) => void;
         reject: (error: unknown) => void;
       };
-      void switchResearchProject(request.path, request.openPath).then(request.resolve, request.reject);
+      void switchResearchProject(request.path, request.openPath, request.removePath).then(
+        request.resolve,
+        request.reject,
+      );
     }),
     onResearchEvent(
       "toggleFiles",

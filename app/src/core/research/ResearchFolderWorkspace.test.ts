@@ -83,7 +83,7 @@ describe("ResearchFolder.ensureRootRegistered", () => {
     mocks.invoke.mockResolvedValue("/private/var/research");
 
     await ResearchFolder.ensureRootRegistered();
-    expect(mocks.invoke).toHaveBeenCalledWith("set_research_root", { path: "/var/research" });
+    expect(mocks.invoke).toHaveBeenCalledWith("set_research_root", { path: "/var/research", restore: false });
     expect(mocks.settings.researchFolderPath).toBe("/private/var/research");
 
     await ResearchFolder.ensureRootRegistered();
@@ -97,5 +97,27 @@ describe("ResearchFolder.ensureRootRegistered", () => {
     await expect(ResearchFolder.ensureRootRegistered()).rejects.toBe("folder is gone");
     await ResearchFolder.ensureRootRegistered();
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes an old registration with switching and does not let background scans re-register the old root", async () => {
+    mocks.settings.researchFolderPath = "/old";
+    let finishOld!: (path: string) => void;
+    mocks.invoke
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            finishOld = resolve;
+          }),
+      )
+      .mockImplementation(async (_command, args) => args.path);
+    const old = ResearchFolder.ensureRootRegistered();
+    await vi.waitFor(() => expect(finishOld).toBeDefined());
+    const switching = ResearchFolder.setRoot("/new");
+    const scan = ResearchFolder.ensureRootRegistered();
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    finishOld("/canonical-old");
+    await Promise.all([old, switching, scan]);
+    expect(mocks.invoke.mock.calls.map(([, args]) => args.path)).toEqual(["/old", "/new"]);
+    expect(mocks.settings.researchFolderPath).toBe("/new");
   });
 });

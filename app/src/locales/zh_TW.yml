@@ -2901,11 +2901,24 @@ research:
     searchIn: "當前項目：{{name}}"
     saveBoard: 切換項目之前，是否保存白板的更改？
     switchBusy: 正在切換項目或保存文件，請稍後重試。
+    switchChanged: 切換期間有標籤被編輯、打開或關閉，已取消切換，請重試。
+    saveDraft: 保存草稿白板
+    boardMissing: "找不到白板，未切換項目：{{path}}"
+    showMore: "繼續顯示（還有 {{count}} 項）"
+    errors:
+      workspaceCorrupt: 工作區清單已損壞或格式不受支持，已保留原文件，請修復後重試。
+      workspaceChanged: 工作區清單已被另一個窗口修改，請刷新後重試。
+      workspaceBusy: 另一個窗口正在保存工作區清單，請稍後重試。
+      projectNotInWorkspace: 這個項目已不在工作區清單中，請刷新或重新添加。
+      directoryOutsideProject: 這個文件夾不在所選項目內。
+      projectPathNotAbsolute: 項目必須使用完整的文件夾路徑。
     locations: 文件夾起點
     home: 主目錄
     drives: 外接磁盤 / 驅動器
     recent: 最近用過的項目
     parent: 上一級文件夾
+    path: 文件夾完整路徑（支持網絡共享）
+    go: 前往
     folders: 子文件夾
     noFolders: 沒有可顯示的子文件夾
     addHint: 只瀏覽文件夾。進入目標文件夾後，選「就用這個文件夾」加入工作區。

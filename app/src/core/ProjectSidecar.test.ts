@@ -8,6 +8,7 @@ const toastWarning = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { warning: toastWarning, error: vi.fn(), success: vi.fn() } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => true), isTauri: vi.fn(() => false) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
+vi.mock("@tauri-apps/plugin-fs", () => ({ writeFile: vi.fn() }));
 vi.mock("@/core/stage/ProjectUpgrader", () => ({
   ProjectUpgrader: class ProjectUpgrader {
     static NLatestVersion = "2.7.0";
@@ -68,6 +69,7 @@ import { Settings } from "@/core/service/Settings";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import { Decoder, encode } from "@msgpack/msgpack";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
@@ -461,6 +463,19 @@ describe("Save As", () => {
     await draft.saveAs(URI.file("/research/topic/draft.prg"), { includeThumbnail: false });
     expect(await storedSourcePaths("/research/topic/draft.prg")).toEqual(["/research/papers/a.pdf"]);
     expect(card.sourcePath).toBe("/research/papers/a.pdf");
+  });
+
+  it("refuses a concurrently created draft target without rebinding or marking the draft saved", async () => {
+    const draft = new Project(URI.parse("draft:1"));
+    draft.registerFileSystemProvider("file", MemoryFileSystemProvider);
+    draft.projectState = ProjectState.Unsaved;
+    vi.mocked(writeFile).mockRejectedValueOnce(new Error("already exists"));
+    await expect(
+      draft.saveAs(URI.file("/research/draft.prg"), { includeThumbnail: false, createNew: true }),
+    ).rejects.toThrow("already exists");
+    expect(writeFile).toHaveBeenCalledWith("/research/draft.prg", expect.any(Uint8Array), { createNew: true });
+    expect(draft.uri.scheme).toBe("draft");
+    expect(draft.projectState).toBe(ProjectState.Unsaved);
   });
 
   it("refuses targets outside the research folder", async () => {

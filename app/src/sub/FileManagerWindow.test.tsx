@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   confirm: vi.fn(),
   browse: vi.fn(),
+  load: vi.fn(),
 }));
 vi.mock("@/state", () => ({ store: getDefaultStore(), tabsAtom: atom([]), activeResourceTabAtom: atom(undefined) }));
 vi.mock("@/core/service/Settings", () => ({ Settings: { use: () => ["/current"] } }));
@@ -37,13 +38,14 @@ vi.mock("@/core/research/ResearchWorkspace", () => ({
     workspaces: [{ name: "My workspace", projects: [{ path: "/current" }, { path: "/other" }] }],
   }),
   activeResearchWorkspace: (data: { workspaces: unknown[] }) => data.workspaces[0],
-  loadResearchWorkspace: vi.fn(async () => undefined),
+  loadResearchWorkspace: mocks.load,
   authorizeResearchProject: mocks.authorize,
   readResearchDirectory: mocks.read,
   requestResearchProject: mocks.switchProject,
   updateResearchWorkspace: mocks.update,
   projectPathKey: (path: string) => path.toLowerCase(),
   projectName: (path: string) => path.split("/").at(-1),
+  researchWorkspaceError: String,
 }));
 vi.mock("@/core/research/ResearchRename", () => ({ promptResearchRename: vi.fn() }));
 vi.mock("@/core/research/ResearchTrash", () => ({
@@ -69,6 +71,7 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.load.mockResolvedValue(undefined);
   mocks.exists.mockResolvedValue(true);
   mocks.authorize.mockResolvedValue(undefined);
   mocks.switchProject.mockResolvedValue(true);
@@ -146,17 +149,15 @@ describe("workspace file tree", () => {
     await removeFromMenu("other");
     expect(mocks.update).not.toHaveBeenCalled();
     await removeFromMenu("other");
-    expect(mocks.switchProject).not.toHaveBeenCalled();
-    const data = { workspaces: [{ projects: [{ path: "/current" }, { path: "/other" }] }] };
-    mocks.update.mock.calls[0][0](data);
-    expect(data.workspaces[0].projects).toEqual([{ path: "/current" }]);
+    expect(mocks.switchProject).toHaveBeenCalledExactlyOnceWith("", undefined, "/other");
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("does not remove the current project when closing unsaved tabs is cancelled", async () => {
     mocks.confirm.mockResolvedValue(true);
     mocks.switchProject.mockResolvedValueOnce(false);
     await removeFromMenu("current");
-    expect(mocks.switchProject).toHaveBeenCalledWith("");
+    expect(mocks.switchProject).toHaveBeenCalledWith("", undefined, "/current");
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
@@ -218,6 +219,29 @@ describe("workspace file tree", () => {
     expect(button("projectTree.actions:other")).not.toBeNull();
   });
 
+  it("renders a large directory in batches without rereading it or dropping the remaining files", async () => {
+    mocks.read.mockResolvedValue(
+      Array.from({ length: 450 }, (_, index) => ({
+        absPath: `/other/${index}.md`,
+        relPath: `${index}.md`,
+        name: `${index}.md`,
+        directory: false,
+        kind: "markdown",
+      })),
+    );
+    await expandOther();
+    expect(container.querySelectorAll('[role="button"]')).toHaveLength(200);
+    const more = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "projectTree.showMore",
+      )!;
+    await act(async () => more().click());
+    expect(container.querySelectorAll('[role="button"]')).toHaveLength(400);
+    await act(async () => more().click());
+    expect(container.querySelectorAll('[role="button"]')).toHaveLength(450);
+    expect(mocks.read).toHaveBeenCalledOnce();
+  });
+
   it("searches only the current project's existing scan and restores the tree when cleared", async () => {
     const input = container.querySelector("input")!;
     await act(async () => {
@@ -229,5 +253,18 @@ describe("workspace file tree", () => {
     expect(container.textContent).toContain("match.md");
     await act(async () => button("files.clearSearch").click());
     expect(button("projectTree.expand:other")).not.toBeNull();
+  });
+
+  it("keeps a workspace load failure visible while the current-project search succeeds", async () => {
+    mocks.load.mockRejectedValueOnce(new Error("workspaceCorrupt"));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    const input = container.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "match");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("match.md");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

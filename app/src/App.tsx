@@ -9,6 +9,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import {
+  beginResearchSessionChange,
+  endResearchSessionChange,
   persistResearchSession,
   registerResearchSession,
   setResearchSessionTracking,
@@ -299,63 +301,70 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(async (e) => {
         e.preventDefault();
-
-        // 已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
-        if (Settings.autoSaveWhenClose || Settings.autoSave) {
-          for (const tab of tabs) {
-            if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
-            if (tab.projectState !== ProjectState.Unsaved) continue;
-            try {
-              await tab.save();
-            } catch (error) {
-              toast.error(tResearch("shell.autoSaveFailed", { name: tab.title, message: String(error) }));
-            }
-          }
-        }
-
-        // 检查是否有未保存的项目
-        const unsavedTabs = tabs.filter(
-          (tab): tab is Project =>
-            tab instanceof Project &&
-            (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed),
-        );
-
-        if (unsavedTabs.length > 0) {
-          // 弹出警告对话框
-          const response = await Dialog.buttons(
-            "检测到未保存文件",
-            `当前有 ${unsavedTabs.length} 个未保存的文件。直接关闭可能有文件被清空的风险，建议先手动保存文件。`,
-            [
-              { id: "cancel", label: "取消", variant: "ghost" },
-              { id: "continue", label: "继续关闭", variant: "destructive" },
-            ],
-          );
-
-          if (response === "cancel") {
-            // 用户选择取消关闭，返回
-            return;
-          }
-          // 用户选择继续关闭，执行原有关闭流程
-        }
-
-        // 逐个关标签页时不能记会话，否则下次启动什么都恢复不了
-        setResearchSessionTracking(false);
-        try {
-          for (const tab of tabs) {
-            console.log("尝试关闭", tab);
-            await closeTab(tab);
-          }
-        } catch (error) {
-          Telemetry.event("关闭应用提示是否保存文件选择了取消");
-          reportResearchCloseError(error);
-          setResearchSessionTracking(true);
-          persistResearchSession();
+        if (!beginResearchSessionChange()) {
+          toast.error(tResearch("projectTree.switchBusy"));
           return;
         }
-        Telemetry.event("关闭应用");
-        // 保存窗口位置
-        await saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED);
-        await getCurrentWindow().destroy();
+        try {
+          // 已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
+          if (Settings.autoSaveWhenClose || Settings.autoSave) {
+            for (const tab of tabs) {
+              if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
+              if (tab.projectState !== ProjectState.Unsaved) continue;
+              try {
+                await tab.save();
+              } catch (error) {
+                toast.error(tResearch("shell.autoSaveFailed", { name: tab.title, message: String(error) }));
+              }
+            }
+          }
+
+          // 检查是否有未保存的项目
+          const unsavedTabs = tabs.filter(
+            (tab): tab is Project =>
+              tab instanceof Project &&
+              (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed),
+          );
+
+          if (unsavedTabs.length > 0) {
+            // 弹出警告对话框
+            const response = await Dialog.buttons(
+              "检测到未保存文件",
+              `当前有 ${unsavedTabs.length} 个未保存的文件。直接关闭可能有文件被清空的风险，建议先手动保存文件。`,
+              [
+                { id: "cancel", label: "取消", variant: "ghost" },
+                { id: "continue", label: "继续关闭", variant: "destructive" },
+              ],
+            );
+
+            if (response === "cancel") {
+              // 用户选择取消关闭，返回
+              return;
+            }
+            // 用户选择继续关闭，执行原有关闭流程
+          }
+
+          // 逐个关标签页时不能记会话，否则下次启动什么都恢复不了
+          setResearchSessionTracking(false);
+          try {
+            for (const tab of tabs) {
+              console.log("尝试关闭", tab);
+              await closeTab(tab);
+            }
+          } catch (error) {
+            Telemetry.event("关闭应用提示是否保存文件选择了取消");
+            reportResearchCloseError(error);
+            setResearchSessionTracking(true);
+            persistResearchSession();
+            return;
+          }
+          Telemetry.event("关闭应用");
+          // 保存窗口位置
+          await saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED);
+          await getCurrentWindow().destroy();
+        } finally {
+          endResearchSessionChange();
+        }
       })
       .then((it) => {
         unlisten1 = it;

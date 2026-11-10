@@ -2901,11 +2901,24 @@ research:
     searchIn: "当前项目：{{name}}"
     saveBoard: 切换项目之前，是否保存白板的更改？
     switchBusy: 正在切换项目或保存文件，请稍后重试。
+    switchChanged: 切换期间有标签被编辑、打开或关闭，已取消切换，请重试。
+    saveDraft: 保存草稿白板
+    boardMissing: "找不到白板，未切换项目：{{path}}"
+    showMore: "继续显示（还有 {{count}} 项）"
+    errors:
+      workspaceCorrupt: 工作区清单已损坏或格式不受支持，已保留原文件，请修复后重试。
+      workspaceChanged: 工作区清单已被另一个窗口修改，请刷新后重试。
+      workspaceBusy: 另一个窗口正在保存工作区清单，请稍后重试。
+      projectNotInWorkspace: 这个项目已不在工作区清单中，请刷新或重新添加。
+      directoryOutsideProject: 这个文件夹不在所选项目内。
+      projectPathNotAbsolute: 项目必须使用完整的文件夹路径。
     locations: 文件夹起点
     home: 主目录
     drives: 外接磁盘 / 驱动器
     recent: 最近用过的项目
     parent: 上一级文件夹
+    path: 文件夹完整路径（支持网络共享）
+    go: 前往
     folders: 子文件夹
     noFolders: 没有可显示的子文件夹
     addHint: 只浏览文件夹。进入目标文件夹后，选「就用这个文件夹」加入工作区。

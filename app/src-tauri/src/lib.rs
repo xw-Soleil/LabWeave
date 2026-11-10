@@ -181,6 +181,8 @@ pub fn run() {
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
             cmd::research::authorize_research_project,
+            cmd::research_workspace::load_research_workspace,
+            cmd::research_workspace::save_research_workspace,
             cmd::research::external_ai_mcp_launch,
             cmd::research::read_clipboard_file_paths,
             local_agent::local_agent_catalog,

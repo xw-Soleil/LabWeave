@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Runtime, State};
@@ -5,9 +6,25 @@ use tauri_plugin_fs::FsExt;
 
 /// The research folder chosen by the user, canonicalized. Re-set by the frontend on every startup.
 #[derive(Default)]
-pub struct ResearchRoot(Mutex<Option<PathBuf>>);
+pub struct ResearchRoot(Mutex<Option<PathBuf>>, Mutex<HashMap<String, PathBuf>>);
 
 impl ResearchRoot {
+    fn restore(&self, path: &str) -> Result<String, String> {
+        let canonical = self
+            .1
+            .lock()
+            .map_err(|error| error.to_string())?
+            .get(path)
+            .cloned();
+        // An unavailable startup root may never have been registered; restore no backend root then.
+        let display = canonical
+            .as_ref()
+            .map(|_| path.to_owned())
+            .unwrap_or_default();
+        *self.0.lock().map_err(|error| error.to_string())? = canonical;
+        Ok(display)
+    }
+
     pub(crate) fn canonical_path(&self) -> Result<PathBuf, String> {
         self.0
             .lock()
@@ -22,13 +39,22 @@ pub fn set_research_root<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ResearchRoot>,
     path: String,
+    restore: Option<bool>,
 ) -> Result<String, String> {
     if path.is_empty() {
         *state.0.lock().map_err(|error| error.to_string())? = None;
         return Ok(String::new());
     }
+    if restore == Some(true) {
+        return state.restore(&path);
+    }
     let canonical = resolve_research_root(&path)?;
     let display = allow_research_directory(&app, &canonical, &path)?;
+    state
+        .1
+        .lock()
+        .map_err(|error| error.to_string())?
+        .insert(display.clone(), canonical.clone());
     let mut guard = state
         .0
         .lock()
@@ -55,12 +81,18 @@ fn allow_research_directory<R: Runtime>(
     let scope = app
         .try_fs_scope()
         .ok_or_else(|| "文件访问插件没有加载".to_string())?;
-    for dir in research_directory_aliases(canonical, path) {
+    let aliases = research_directory_aliases(canonical, path);
+    for dir in &aliases {
         scope
             .allow_directory(&dir, true)
             .map_err(|e| format!("无法允许访问研究文件夹 {}: {e}", dir.display()))?;
     }
-    Ok(display_root(canonical, path))
+    let display = display_root(canonical, path);
+    Ok(if aliases.contains(&PathBuf::from(&display)) {
+        display
+    } else {
+        strip_windows_verbatim_prefix(canonical)
+    })
 }
 
 fn research_directory_aliases(canonical: &Path, path: &str) -> Vec<PathBuf> {
@@ -74,7 +106,12 @@ fn research_directory_aliases(canonical: &Path, path: &str) -> Vec<PathBuf> {
         PathBuf::from(&display),
         PathBuf::from(path),
     ] {
-        if candidate.is_absolute() && !allowed.contains(&candidate) {
+        if candidate.is_absolute()
+            && !allowed.contains(&candidate)
+            && candidate
+                .canonicalize()
+                .is_ok_and(|resolved| resolved == canonical)
+        {
             allowed.push(candidate);
         }
     }
@@ -84,6 +121,9 @@ fn research_directory_aliases(canonical: &Path, path: &str) -> Vec<PathBuf> {
 fn resolve_research_root(path: &str) -> Result<PathBuf, String> {
     if path.trim().is_empty() {
         return Err("研究文件夹路径为空".to_string());
+    }
+    if !Path::new(path).is_absolute() {
+        return Err("projectPathNotAbsolute".to_string());
     }
     let canonical =
         std::fs::canonicalize(path).map_err(|e| format!("无法打开研究文件夹 {path}: {e}"))?;
@@ -213,9 +253,24 @@ mod tests {
     #[test]
     fn canonical_path_returns_registered_root_without_changing_it() {
         let path = std::env::temp_dir().canonicalize().unwrap();
-        let root = super::ResearchRoot(std::sync::Mutex::new(Some(path.clone())));
+        let root = super::ResearchRoot(
+            std::sync::Mutex::new(Some(path.clone())),
+            Default::default(),
+        );
         assert_eq!(root.canonical_path().unwrap(), path);
         assert_eq!(root.canonical_path().unwrap(), path);
+    }
+
+    #[test]
+    fn rollback_uses_only_previously_registered_roots_even_if_the_disk_is_gone() {
+        let root = super::ResearchRoot::default();
+        let path = std::env::temp_dir().join("disconnected-research-project");
+        let display = path.to_string_lossy().into_owned();
+        root.1.lock().unwrap().insert(display.clone(), path.clone());
+        assert_eq!(root.restore(&display).unwrap(), display);
+        assert_eq!(root.canonical_path().unwrap(), path);
+        assert_eq!(root.restore("/not-registered").unwrap(), "");
+        assert!(root.canonical_path().is_err());
     }
 
     #[test]
@@ -235,6 +290,7 @@ mod tests {
         assert_eq!(resolved, std::fs::canonicalize(&folder).unwrap());
         assert!(resolve_research_root("").is_err());
         assert!(resolve_research_root("   ").is_err());
+        assert!(resolve_research_root(".").is_err());
         assert!(resolve_research_root(&file.to_string_lossy()).is_err());
         assert!(resolve_research_root(&base.join("missing").to_string_lossy()).is_err());
 
@@ -243,11 +299,9 @@ mod tests {
 
     #[test]
     fn grants_only_the_selected_directory_and_its_aliases_not_its_parent() {
-        let canonical = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join("selected");
-        let picked = std::env::temp_dir().join("selected");
+        let picked = std::env::temp_dir().join(format!("selected-{}", std::process::id()));
+        std::fs::create_dir_all(&picked).unwrap();
+        let canonical = picked.canonicalize().unwrap();
         let aliases = research_directory_aliases(&canonical, &picked.to_string_lossy());
         assert!(aliases.contains(&canonical));
         assert!(aliases.contains(&picked));
@@ -262,6 +316,26 @@ mod tests {
             .all(|path| path.file_name() == canonical.file_name()));
         let relative = research_directory_aliases(&canonical, "relative/selected");
         assert!(!relative.iter().any(|path| path.is_relative()));
+        assert!(
+            !research_directory_aliases(&canonical, &std::env::temp_dir().to_string_lossy())
+                .contains(&std::env::temp_dir())
+        );
+        std::fs::remove_dir_all(picked).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_and_parent_segments_only_grant_the_resolved_directory() {
+        let base = std::env::temp_dir().join(format!("selected-link-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("real/child")).unwrap();
+        std::os::unix::fs::symlink(base.join("real/child"), base.join("link")).unwrap();
+        let picked = base.join("link/..");
+        let canonical = resolve_research_root(&picked.to_string_lossy()).unwrap();
+        assert_eq!(canonical, base.join("real").canonicalize().unwrap());
+        for alias in research_directory_aliases(&canonical, &picked.to_string_lossy()) {
+            assert_eq!(alias.canonicalize().unwrap(), canonical);
+        }
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

@@ -15,7 +15,11 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   error: vi.fn(),
   recent: new Map<string, unknown>(),
+  projectForFile: vi.fn(),
+  switchProject: vi.fn(),
 }));
+vi.mock("./ResearchWorkspace", () => ({ projectForFile: mocks.projectForFile }));
+vi.mock("./ResearchSession", () => ({ switchResearchProject: mocks.switchProject }));
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: {} }));
 vi.mock("@/components/global-menu-content", () => ({ default: () => null }));
@@ -106,6 +110,7 @@ beforeEach(async () => {
   mocks.settings.researchFolderPath = "/research";
   store.set(tabsAtom, []);
   mocks.recent.clear();
+  mocks.projectForFile.mockResolvedValue(undefined);
   mocks.create.mockImplementation(async (uri: URI) => new Project(uri));
   vi.spyOn(ResearchFolder, "ensureRootRegistered").mockResolvedValue();
   await RecentFileManager.init();
@@ -116,6 +121,49 @@ afterEach(() => {
 });
 
 describe("workspace open entry points", () => {
+  it("preloads a destination without exposing a tab, recent-file writes or deferred TXT imports", async () => {
+    expect(
+      await onOpenFile(URI.file("/research/target.prg"), "switch", undefined, {
+        recordRecent: false,
+        deferActivation: true,
+      }),
+    ).toBeInstanceOf(Project);
+    expect(store.get(tabsAtom)).toEqual([]);
+    await vi.runAllTimersAsync();
+    expect(await RecentFileManager.getRecentFiles()).toEqual([]);
+    expect(mocks.exists).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("removes a failed opening from the tab list before disposing it", async () => {
+    const project = new Project(URI.file("/research/target.prg"));
+    mocks.create.mockResolvedValueOnce(project);
+    vi.spyOn(RecentFileManager, "addRecentFileByUri").mockRejectedValueOnce(new Error("disk full"));
+    await expect(onOpenFile(project.uri)).rejects.toThrow("disk full");
+    expect(store.get(tabsAtom)).not.toContain(project);
+    expect(project.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each([undefined, "file-drop", "file-paste", "os-file"] as const)(
+    "switches before opening another listed project's board from %s",
+    async (origin) => {
+      const uri = URI.file("/other/a.prg");
+      mocks.projectForFile.mockResolvedValue("/other");
+      mocks.switchProject.mockImplementation(async () => {
+        mocks.settings.researchFolderPath = "/other";
+        const board = new Project(uri);
+        store.set(tabsAtom, [board]);
+        return true;
+      });
+      expect((await onOpenFile(uri, "test", origin))?.uri).toEqual(uri);
+      expect(mocks.switchProject).toHaveBeenCalledWith("/other", "/other/a.prg");
+      expect(mocks.create).not.toHaveBeenCalled();
+      mocks.switchProject.mockResolvedValueOnce(false);
+      mocks.settings.researchFolderPath = "/research";
+      expect(await onOpenFile(uri, "test", origin)).toBeUndefined();
+    },
+  );
   it("opens an outside file selected in the dialog without importing or clearing its sibling TXT", async () => {
     mocks.open.mockResolvedValueOnce("/outside/a.prg");
     const project = await onOpenFile();

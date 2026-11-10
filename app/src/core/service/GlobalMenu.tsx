@@ -198,6 +198,7 @@ export async function onOpenFile(
   uri?: URI,
   source: string = "unknown",
   origin?: WorkspaceOpenOrigin,
+  options: { recordRecent?: boolean; projectSelected?: boolean; deferActivation?: boolean } = {},
 ): Promise<Project | undefined> {
   if (!uri) {
     const path = await open({
@@ -209,6 +210,23 @@ export async function onOpenFile(
     if (!path) return;
     uri = URI.file(path);
     origin = "file-dialog";
+  }
+
+  if (
+    uri.scheme === "file" &&
+    /\.prg$/i.test(uri.fsPath) &&
+    options.recordRecent !== false &&
+    !options.projectSelected
+  ) {
+    const { projectForFile } = await import("@/core/research/ResearchWorkspace");
+    const projectRoot = await projectForFile(uri.fsPath);
+    if (projectRoot) {
+      const { switchResearchProject } = await import("@/core/research/ResearchSession");
+      if (!(await switchResearchProject(projectRoot, uri.fsPath))) return;
+      return store
+        .get(tabsAtom)
+        .find((tab): tab is Project => tab instanceof Project && !tab.closing && tab.uri.toString() === uri.toString());
+    }
   }
 
   // 已经打开的标签也要先检查，不能通过复用标签绕过入口限制。
@@ -350,11 +368,13 @@ export async function onOpenFile(
           loading: "正在打开文件...",
           success: async () => {
             const readFileTime = performance.now() - initializationStartedAt;
-            store.set(tabsAtom, [...store.get(tabsAtom), tab]);
+            if (!options.deferActivation) {
+              store.set(tabsAtom, [...store.get(tabsAtom), tab]);
+              store.set(activeTabAtom, tab);
+            }
             finishOpeningProject(tab instanceof Project ? tab : undefined);
-            store.set(activeTabAtom, tab);
             const project = tab instanceof Project ? tab : undefined;
-            await RecentFileManager.addRecentFileByUri(uri);
+            if (options.recordRecent !== false) await RecentFileManager.addRecentFileByUri(uri);
             if (
               isMac &&
               Settings.showRecentFilesThumbnails &&
@@ -372,6 +392,7 @@ export async function onOpenFile(
             // 处理同名TXT文件内容（仅在用户直接打开文件且设置项开启时执行，生成双链时跳过）
             if (
               project &&
+              options.recordRecent !== false &&
               !isTemporaryWorkspace(project) &&
               Settings.autoImportTxtFileWhenOpenPrg &&
               source !== "ReferenceBlockNode跳转打开-prg文件" &&
@@ -456,6 +477,10 @@ export async function onOpenFile(
       .unwrap();
   } catch (e) {
     finishOpeningProject(undefined);
+    store.set(
+      tabsAtom,
+      store.get(tabsAtom).filter((candidate) => candidate !== tab),
+    );
     await tab.dispose();
     if (e instanceof Error && e.message === "USER_CANCELLED") {
       return undefined; // 用户取消，静默处理

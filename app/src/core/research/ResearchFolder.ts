@@ -216,6 +216,17 @@ export async function createEmptyProjectFile(): Promise<Uint8Array> {
 }
 
 let registeredRoot: { root: string; promise: Promise<string> } | null = null;
+let settingRoot: Promise<string> | undefined;
+let rootRegistrations: Promise<unknown> = Promise.resolve();
+
+function registerRoot(path: string, restore = false): Promise<string> {
+  const task = rootRegistrations.then(() => invoke<string>("set_research_root", { path, restore }));
+  rootRegistrations = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
 
 export const ResearchFolder = {
   /** 研究文件夹的绝对路径，没选过时是 "" */
@@ -229,12 +240,23 @@ export const ResearchFolder = {
     return chooseResearchFolder();
   },
 
-  async setRoot(path: string): Promise<string> {
-    const canonical = await invoke<string>("set_research_root", { path });
-    registeredRoot = { root: canonical, promise: Promise.resolve(canonical) };
-    Settings.researchFolderPath = canonical;
-    notifyResearchFilesChanged();
-    return canonical;
+  async setRoot(path: string, restore = false): Promise<string> {
+    const promise = registerRoot(path, restore);
+    const entry = { root: path, promise };
+    registeredRoot = entry;
+    settingRoot = promise;
+    try {
+      const canonical = await promise;
+      registeredRoot = { root: canonical, promise };
+      Settings.researchFolderPath = canonical;
+      notifyResearchFilesChanged();
+      return canonical;
+    } catch (error) {
+      if (registeredRoot === entry) registeredRoot = null;
+      throw error;
+    } finally {
+      if (settingRoot === promise) settingRoot = undefined;
+    }
   },
 
   /**
@@ -242,11 +264,15 @@ export const ResearchFolder = {
    * 同一个路径只登记一次；失败会抛出，下次再试。
    */
   async ensureRootRegistered(): Promise<void> {
+    if (settingRoot) {
+      await settingRoot;
+      return;
+    }
     const root = ResearchFolder.getRoot();
     if (!root) return;
     let entry = registeredRoot;
     if (entry?.root !== root) {
-      const promise = invoke<string>("set_research_root", { path: root });
+      const promise = registerRoot(root);
       const current = { root, promise };
       entry = registeredRoot = current;
       promise.then(

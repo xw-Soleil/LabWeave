@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 const mocks = vi.hoisted(() => ({
   windows: false,
   read: vi.fn(),
@@ -25,6 +26,8 @@ vi.mock("./ResearchWorkspace", () => ({
   createResearchProject: mocks.create,
   projectName: (path: string) => path.split("/").at(-1),
   loadResearchWorkspace: async () => ({ recentProjects: ["/recent/lab"] }),
+  researchWorkspaceError: String,
+  projectPathSchema: z.string().refine((path) => path.startsWith("/") || path.startsWith("\\\\")),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 import { folderBrowserLocations, ResearchFolderBrowser } from "./ResearchFolderBrowser";
@@ -54,10 +57,11 @@ const button = (text: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === text)!;
 
 describe("in-app folder browser", () => {
-  it("can retry when the starting locations fail to load", async () => {
+  it("keeps home usable when a disk probe fails, shows the failure and can retry", async () => {
     mocks.exists.mockRejectedValueOnce(new Error("disk unavailable"));
     await act(async () => root.render(<ResearchFolderBrowser create={false} onDone={mocks.done} />));
     expect(document.querySelector('[role="alert"]')).not.toBeNull();
+    expect(button("papers")).toBeDefined();
     await act(async () => button("files.retry").click());
     expect(button("papers")).toBeDefined();
     expect(document.querySelector('[role="alert"]')).toBeNull();
@@ -68,6 +72,7 @@ describe("in-app folder browser", () => {
       home: "/home/user",
       drives: ["/Volumes"],
       recent: ["/recent/lab"],
+      errors: [],
     });
     mocks.windows = true;
     expect((await folderBrowserLocations()).drives).toEqual(["C:/", "D:/"]);
@@ -87,7 +92,7 @@ describe("in-app folder browser", () => {
   });
   it("creates at the browsed location and keeps creation errors in the dialog for correction", async () => {
     await act(async () => root.render(<ResearchFolderBrowser create onDone={mocks.done} />));
-    const input = document.querySelector("input")!;
+    const input = document.querySelector<HTMLInputElement>("label input")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "New");
       input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -107,5 +112,20 @@ describe("in-app folder browser", () => {
     expect(mocks.done).toHaveBeenCalledWith(null);
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.add).not.toHaveBeenCalled();
+  });
+
+  it("can browse a new UNC share without granting it until Use this folder is clicked", async () => {
+    await act(async () => root.render(<ResearchFolderBrowser create={false} onDone={mocks.done} />));
+    const input = document.querySelector<HTMLInputElement>('[aria-label="projectTree.path"]')!;
+    const share = "\\\\server\\share\\Research";
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, share);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("projectTree.go").click());
+    expect(mocks.read).toHaveBeenLastCalledWith(share, share, true);
+    expect(mocks.add).not.toHaveBeenCalled();
+    await act(async () => button("projectTree.useFolder").click());
+    expect(mocks.add).toHaveBeenCalledWith(share);
   });
 });

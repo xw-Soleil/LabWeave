@@ -15,7 +15,9 @@ import {
   createResearchProject,
   loadResearchWorkspace,
   projectName,
+  projectPathSchema,
   readResearchDirectory,
+  researchWorkspaceError,
   type ResearchTreeEntry,
 } from "./ResearchWorkspace";
 import { homeDir } from "@tauri-apps/api/path";
@@ -25,24 +27,38 @@ import { ArrowUp, Folder, HardDrive, Home } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-export async function folderBrowserLocations(): Promise<{ home: string; drives: string[]; recent: string[] }> {
+export async function folderBrowserLocations(): Promise<{
+  home: string;
+  drives: string[];
+  recent: string[];
+  errors: string[];
+}> {
   const [home, data] = await Promise.all([homeDir(), loadResearchWorkspace()]);
   const candidates = isWindows
     ? Array.from({ length: 26 }, (_, index) => `${String.fromCharCode(65 + index)}:/`)
     : ["/Volumes"];
-  const available = await Promise.all(candidates.map(async (path) => ((await exists(path)) ? path : null)));
-  return { home, drives: available.filter((path): path is string => path !== null), recent: data.recentProjects };
+  const results = await Promise.allSettled(candidates.map((path) => exists(path)));
+  return {
+    home,
+    drives: candidates.filter((_, index) => results[index].status === "fulfilled" && results[index].value),
+    recent: data.recentProjects,
+    errors: results.flatMap((result, index) =>
+      result.status === "rejected" ? [`${candidates[index]}: ${String(result.reason)}`] : [],
+    ),
+  };
 }
 
 export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onDone: (path: string | null) => void }) {
   const { t } = useTranslation("research");
   const [locations, setLocations] = useState<Awaited<ReturnType<typeof folderBrowserLocations>>>();
   const [path, setPath] = useState("");
+  const [address, setAddress] = useState("");
   const [entries, setEntries] = useState<ResearchTreeEntry[]>();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(200);
 
   useEffect(() => {
     if (locations) return;
@@ -55,7 +71,7 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
         }
       })
       .catch((error) => {
-        if (alive) setError(String(error));
+        if (alive) setError(researchWorkspaceError(error));
       });
     return () => {
       alive = false;
@@ -64,8 +80,10 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
 
   useEffect(() => {
     if (!path) return;
+    setAddress(path);
     let alive = true;
     setEntries(undefined);
+    setVisibleCount(200);
     setError("");
     void readResearchDirectory(path, path, true)
       .then((value) => {
@@ -87,13 +105,22 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
       setError(
         error instanceof Error && error.message === "invalidProjectName"
           ? t("projectTree.invalidProjectName")
-          : String(error),
+          : researchWorkspaceError(error),
       );
     } finally {
       setBusy(false);
     }
   };
   const parent = ResearchFolder.toAbsolute("..", path);
+  const navigate = () => {
+    const target = address.trim();
+    if (!projectPathSchema.safeParse(target).success) {
+      setError(t("projectTree.errors.projectPathNotAbsolute"));
+      return;
+    }
+    setPath(target);
+    setRetry((value) => value + 1);
+  };
 
   return (
     <Dialog
@@ -138,15 +165,28 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
               >
                 <ArrowUp />
               </Button>
-              <span className="min-w-0 truncate text-xs" title={path}>
-                {path}
-              </span>
+              <Input
+                aria-label={t("projectTree.path")}
+                value={address}
+                disabled={busy}
+                onChange={(event) => setAddress(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    navigate();
+                  }
+                }}
+              />
+              <Button variant="outline" disabled={busy || !address.trim()} onClick={navigate}>
+                {t("projectTree.go")}
+              </Button>
             </div>
             <div
               className="flex h-64 flex-col gap-1 overflow-auto rounded-md border p-1"
               aria-label={t("projectTree.folders")}
             >
-              {entries?.map((entry) => (
+              {entries?.slice(0, visibleCount).map((entry) => (
                 <Button
                   key={entry.absPath}
                   variant="ghost"
@@ -158,6 +198,11 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
                   <span className="truncate">{entry.name}</span>
                 </Button>
               ))}
+              {entries && entries.length > visibleCount && (
+                <Button variant="ghost" onClick={() => setVisibleCount((count) => count + 200)}>
+                  {t("projectTree.showMore", { count: entries.length - visibleCount })}
+                </Button>
+              )}
               {entries?.length === 0 && (
                 <p className="text-muted-foreground p-2 text-sm">{t("projectTree.noFolders")}</p>
               )}
@@ -171,10 +216,17 @@ export function ResearchFolderBrowser({ create, onDone }: { create: boolean; onD
             )}
           </div>
         </div>
-        {error && (
+        {(error || !!locations?.errors.length) && (
           <div role="alert" className="text-destructive flex flex-col gap-2 text-sm break-all">
-            <p>{t("files.loadFailed", { error })}</p>
-            <Button variant="outline" disabled={busy} onClick={() => setRetry((value) => value + 1)}>
+            <p>{t("files.loadFailed", { error: error || locations?.errors.join("\n") })}</p>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                if (locations?.errors.length) setLocations(undefined);
+                setRetry((value) => value + 1);
+              }}
+            >
               {t("files.retry")}
             </Button>
           </div>

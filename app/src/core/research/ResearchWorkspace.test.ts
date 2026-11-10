@@ -11,6 +11,12 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   readDir: vi.fn(),
   mkdir: vi.fn(),
+  web: true,
+}));
+vi.mock("@/utils/platform", () => ({
+  get isWeb() {
+    return mocks.web;
+  },
 }));
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
 vi.mock("@/state", () => ({ store: createStore() }));
@@ -30,6 +36,7 @@ import {
   createResearchProject,
   loadResearchWorkspace,
   projectPathKey,
+  projectForFile,
   readResearchDirectory,
   rememberProjectSession,
   researchWorkspaceAtom,
@@ -38,6 +45,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.web = true;
   mocks.saved = undefined;
   mocks.settings.researchFolderPath = "/research";
   store.set(researchWorkspaceAtom, null);
@@ -51,6 +59,45 @@ beforeEach(() => {
 });
 
 describe("workspace project list", () => {
+  it("does not conflate an unset project, filesystem root or case-sensitive POSIX folders", () => {
+    expect(projectPathKey("/")).not.toBe(projectPathKey(""));
+    expect(projectPathKey("/Research")).not.toBe(projectPathKey("/research"));
+  });
+
+  it("finds the most specific listed project for external board entry points", async () => {
+    await addResearchProject("/other");
+    await addResearchProject("/other/nested");
+    expect(await projectForFile("/other/nested/a.prg")).toBe("/other/nested");
+    expect(await projectForFile("/research/a.prg")).toBeUndefined();
+    expect(await projectForFile("/outside/a.prg")).toBeUndefined();
+  });
+
+  it("uses the native atomic store, propagates load errors and publishes only successful saves", async () => {
+    mocks.web = false;
+    let disk: unknown = null;
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "load_research_workspace") return structuredClone(disk);
+      expect(command).toBe("save_research_workspace");
+      expect(args.expected).toEqual(disk);
+      if (args.data.workspaces[0].name === "fail") throw new Error("disk full");
+      disk = structuredClone(args.data);
+    });
+    const initial = await loadResearchWorkspace();
+    await expect(
+      updateResearchWorkspace((data) => {
+        data.workspaces[0].name = "fail";
+      }),
+    ).rejects.toThrow("disk full");
+    expect(store.get(researchWorkspaceAtom)).toEqual(initial);
+    expect(disk).toEqual(initial);
+    store.set(researchWorkspaceAtom, null);
+    mocks.invoke.mockRejectedValueOnce(new Error("workspaceCorrupt"));
+    await expect(loadResearchWorkspace()).rejects.toThrow("workspaceCorrupt");
+    expect(disk).toEqual(initial);
+    expect(await loadResearchWorkspace()).toEqual(initial);
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
   it("migrates the current research folder once, persists the name and keeps an empty list empty after restart", async () => {
     const first = await loadResearchWorkspace();
     expect(activeResearchWorkspace(first).projects).toEqual([{ path: "/research" }]);

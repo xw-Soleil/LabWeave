@@ -30,6 +30,7 @@ import {
   projectPathKey,
   readResearchDirectory,
   researchWorkspaceAtom,
+  researchWorkspaceError,
   requestResearchProject,
   updateResearchWorkspace,
   type ResearchTreeEntry,
@@ -85,7 +86,11 @@ const FILE_ICONS: Record<ResearchFileEntry["kind"], LucideIcon> = {
 let cachedQuery = "";
 const showError = (error: unknown) =>
   toast.error(
-    i18next.t("workspace.failed", { ns: "research", message: String(error), interpolation: { escapeValue: false } }),
+    i18next.t("workspace.failed", {
+      ns: "research",
+      message: researchWorkspaceError(error),
+      interpolation: { escapeValue: false },
+    }),
   );
 
 export default function FileManagerWindow() {
@@ -94,6 +99,7 @@ export default function FileManagerWindow() {
   const data = useAtomValue(researchWorkspaceAtom);
   const workspace = data && activeResearchWorkspace(data);
   const [error, setError] = React.useState("");
+  const [workspaceError, setWorkspaceError] = React.useState("");
   const [query, setQuery] = React.useState(cachedQuery);
   const [scan, setScan] = React.useState<ResearchFolderScan>();
   const [version, setVersion] = React.useState(0);
@@ -112,7 +118,18 @@ export default function FileManagerWindow() {
     setVersion((value) => value + 1);
   }, []);
   React.useEffect(() => {
-    void loadResearchWorkspace().catch((error) => setError(String(error)));
+    let alive = true;
+    void loadResearchWorkspace(true).then(
+      () => {
+        if (alive) setWorkspaceError("");
+      },
+      (error) => {
+        if (alive) setWorkspaceError(researchWorkspaceError(error));
+      },
+    );
+    return () => {
+      alive = false;
+    };
   }, [version]);
   React.useEffect(() => {
     window.addEventListener("focus", refresh);
@@ -125,6 +142,7 @@ export default function FileManagerWindow() {
   React.useEffect(() => {
     if (!searching || !root) {
       setScan(undefined);
+      setError("");
       return;
     }
     let alive = true;
@@ -187,14 +205,7 @@ export default function FileManagerWindow() {
       ))
     )
       return;
-    if (projectPathKey(path) === projectPathKey(ResearchFolder.getRoot()) && !(await requestResearchProject("")))
-      return;
-    await updateResearchWorkspace((data) => {
-      const workspace = activeResearchWorkspace(data);
-      workspace.projects = workspace.projects.filter(
-        (project) => projectPathKey(project.path) !== projectPathKey(path),
-      );
-    });
+    await requestResearchProject("", undefined, path);
   };
 
   // Pointer events also work with the Windows native drop target, which consumes HTML5 drag events.
@@ -293,6 +304,7 @@ export default function FileManagerWindow() {
             if (event.key === "Enter") open();
             if (event.key === "F2") {
               event.preventDefault();
+              event.stopPropagation();
               void beforeModify(projectRoot)
                 .then((ready) => {
                   if (ready) return promptResearchRename(entry.absPath);
@@ -421,13 +433,14 @@ export default function FileManagerWindow() {
           </Button>
         )}
       </div>
-      {error && (
+      {(error || workspaceError) && (
         <div role="alert" className="text-destructive px-3 py-2 text-xs break-all">
-          {t("files.loadFailed", { error })}
+          {t("files.loadFailed", { error: workspaceError || error })}
           <Button
             variant="ghost"
             onClick={() => {
               setError("");
+              setWorkspaceError("");
               refresh();
             }}
           >
@@ -523,10 +536,13 @@ function DirectoryRow({
   const [expanded, setExpanded] = React.useState(false);
   const [entries, setEntries] = React.useState<ResearchTreeEntry[]>();
   const [error, setError] = React.useState("");
+  const [visibleCount, setVisibleCount] = React.useState(200);
   React.useEffect(() => {
     if (!expanded && depth !== 0) return;
     let alive = true;
     setError("");
+    setEntries(undefined);
+    setVisibleCount(200);
     if (!expanded) {
       void exists(path)
         .then((available) => {
@@ -628,20 +644,27 @@ function DirectoryRow({
           ) : entries.length === 0 ? (
             <p className="text-muted-foreground px-4 py-1 text-xs">{t("projectTree.noFiles")}</p>
           ) : (
-            entries.map((entry) =>
-              entry.directory ? (
-                <DirectoryRow
-                  key={entry.absPath}
-                  path={entry.absPath}
-                  projectRoot={projectRoot}
-                  depth={depth + 1}
-                  version={version}
-                  renderFile={renderFile}
-                />
-              ) : (
-                renderFile(entry, projectRoot, depth + 2)
-              ),
-            )
+            entries
+              .slice(0, visibleCount)
+              .map((entry) =>
+                entry.directory ? (
+                  <DirectoryRow
+                    key={entry.absPath}
+                    path={entry.absPath}
+                    projectRoot={projectRoot}
+                    depth={depth + 1}
+                    version={version}
+                    renderFile={renderFile}
+                  />
+                ) : (
+                  renderFile(entry, projectRoot, depth + 2)
+                ),
+              )
+          )}
+          {entries && entries.length > visibleCount && (
+            <Button variant="ghost" onClick={() => setVisibleCount((count) => count + 200)}>
+              {t("projectTree.showMore", { count: entries.length - visibleCount })}
+            </Button>
           )}
         </div>
       )}

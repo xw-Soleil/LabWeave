@@ -309,12 +309,12 @@ export namespace TabWorkspace {
     }
   }
 
-  export async function close(id: string) {
+  export async function close(id: string, options: { confirmed?: boolean } = {}) {
     const existingClose = closeTasks.get(id);
     if (existingClose) return existingClose;
     const tab = get(id);
     if (!tab || tab.closing) return;
-    if (tab.beforeClose) {
+    if (tab.beforeClose && !options.confirmed) {
       let check = closeChecks.get(id);
       if (!check) {
         check = tab.beforeClose().finally(() => closeChecks.delete(id));
