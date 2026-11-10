@@ -1,19 +1,19 @@
 import { Button } from "@/components/ui/button";
-import { openDocumentFile } from "@/core/research/DocumentTab";
+import { Dialog } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import ResearchFileMenu from "@/components/research-file-menu";
-import { promptResearchRename } from "@/core/research/ResearchRename";
-import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { displayWorkspaceName, FileName } from "@/components/ui/file-name";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Project } from "@/core/Project";
+import { DocumentTab, openDocumentFile } from "@/core/research/DocumentTab";
 import { dropFilesAtClientPoint } from "@/core/research/ResearchDrop";
 import {
   RESEARCH_FILES_CHANGED_EVENT,
@@ -21,9 +21,23 @@ import {
   type ResearchFileEntry,
   type ResearchFolderScan,
 } from "@/core/research/ResearchFolder";
+import { browseResearchProject } from "@/core/research/ResearchFolderBrowser";
+import {
+  activeResearchWorkspace,
+  authorizeResearchProject,
+  loadResearchWorkspace,
+  projectName,
+  projectPathKey,
+  readResearchDirectory,
+  researchWorkspaceAtom,
+  requestResearchProject,
+  updateResearchWorkspace,
+  type ResearchTreeEntry,
+} from "@/core/research/ResearchWorkspace";
+import { promptResearchRename } from "@/core/research/ResearchRename";
+import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { hidePeekForDrag } from "@/core/research/SidePanels";
-import { closeEmptyDrafts, onOpenFile } from "@/core/service/GlobalMenu";
 import { Settings } from "@/core/service/Settings";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
@@ -32,18 +46,24 @@ import { cn } from "@/utils/cn";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { exists } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { useAtomValue } from "jotai";
 import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  File,
   FileImage,
   FileText,
+  Folder,
   FolderInput,
   FolderOpen,
+  FolderPlus,
   LayoutDashboard,
+  MoreHorizontal,
   NotebookPen,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -54,261 +74,192 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { URI } from "vscode-uri";
 
-type SectionKind = ResearchFileEntry["kind"];
-
-const SECTIONS: { kind: SectionKind; icon: LucideIcon }[] = [
-  { kind: "workspace", icon: LayoutDashboard },
-  { kind: "pdf", icon: FileText },
-  { kind: "image", icon: FileImage },
-  { kind: "markdown", icon: NotebookPen },
-];
-
-const SECTION_ICONS = Object.fromEntries(SECTIONS.map((section) => [section.kind, section.icon])) as Record<
-  SectionKind,
-  LucideIcon
->;
-
-/** 按下后移动超过这个距离（像素）才算拖拽，否则是点击 */
-const DRAG_THRESHOLD = 5;
-const PANEL_ENTER_REFRESH_INTERVAL = 3000;
-/** 名字中间省略时，扩展名前面再多留几个字，`v7_final.pdf` 和 `v7_final2.pdf` 才分得出来 */
-const NAME_TAIL_CHARS = 4;
-const COLLAPSED_SECTIONS_KEY = "research.files.collapsedSections";
-
-// 面板切到同组别的标签页时组件会卸载，这些放在模块里，切回来时不用从头再读、搜索词也还在
-let cachedScan: { root: string; scan: ResearchFolderScan } | null = null;
+const FILE_ICONS: Record<ResearchFileEntry["kind"], LucideIcon> = {
+  workspace: LayoutDashboard,
+  pdf: FileText,
+  image: FileImage,
+  markdown: NotebookPen,
+  other: File,
+};
 let cachedQuery = "";
+const showError = (error: unknown) =>
+  toast.error(
+    i18next.t("workspace.failed", { ns: "research", message: String(error), interpolation: { escapeValue: false } }),
+  );
 
-function loadCollapsedSections(): Set<SectionKind> {
-  const saved = (localStorage.getItem(COLLAPSED_SECTIONS_KEY) ?? "").split(",");
-  return new Set(SECTIONS.map((section) => section.kind).filter((kind) => saved.includes(kind)));
-}
-
-function pathKey(path: string) {
-  return path.replace(/\\/g, "/").normalize("NFC").toLowerCase();
-}
-
-function folderNameOf(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
-function showError(error: unknown) {
-  toast.error(error instanceof Error ? error.message : String(error));
-}
-
-// 走事件而不是直接调 ResearchFolder.chooseRoot()：ResearchSession 收到后还会更新工作区列表和会话记录
-function chooseFolder() {
-  emitResearchEvent("chooseFolder");
-}
-
-/**
- * 文件面板：停靠在左侧，列出研究文件夹里的工作区、论文、图片和笔记。
- * 没有文件监听（fs 插件没开 watch），窗口重新获得焦点时刷新。
- */
 export default function FileManagerWindow() {
   const { t } = useTranslation("research");
   const [root] = Settings.use("researchFolderPath");
-  const [scan, setScan] = React.useState<ResearchFolderScan | null>(
-    cachedScan && cachedScan.root === root ? cachedScan.scan : null,
-  );
+  const data = useAtomValue(researchWorkspaceAtom);
+  const workspace = data && activeResearchWorkspace(data);
   const [error, setError] = React.useState("");
   const [query, setQuery] = React.useState(cachedQuery);
-  const [collapsed, setCollapsed] = React.useState(loadCollapsedSections);
-  const [selectedPath, setSelectedPath] = React.useState("");
+  const [scan, setScan] = React.useState<ResearchFolderScan>();
+  const [version, setVersion] = React.useState(0);
+  const [expanded, setExpanded] = React.useState(true);
+  const [selected, setSelected] = React.useState("");
   const [drag, setDrag] = React.useState<{ entry: ResearchFileEntry; x: number; y: number } | null>(null);
   const tabs = useAtomValue(tabsAtom);
-  const activeResourceTab = useAtomValue(activeResourceTabAtom);
+  const active = useAtomValue(activeResourceTabAtom);
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const searchRef = React.useRef<HTMLInputElement>(null);
-  const generationRef = React.useRef(0);
-  const suppressClickRef = React.useRef(false);
-  const openingRef = React.useRef(new Set<string>());
-  const lastRefreshRef = React.useRef(0);
+  const suppressClick = React.useRef(false);
+  const lastRefresh = React.useRef(0);
+  const searching = query.trim() !== "";
 
-  const refresh = React.useCallback(async () => {
-    const generation = ++generationRef.current;
-    lastRefreshRef.current = Date.now();
-    const currentRoot = ResearchFolder.getRoot();
-    if (!currentRoot) {
-      setScan(null);
-      setError("");
-      return;
-    }
-    // 换了文件夹时不要先显示旧文件夹的列表
-    if (cachedScan?.root !== currentRoot) setScan(null);
-    try {
-      const result = await ResearchFolder.scan();
-      if (generation !== generationRef.current) return;
-      cachedScan = { root: ResearchFolder.getRoot(), scan: result };
-      setScan(result);
-      setError("");
-    } catch (scanError) {
-      if (generation !== generationRef.current) return;
-      setError(scanError instanceof Error ? scanError.message : String(scanError));
-    }
+  const refresh = React.useCallback(() => {
+    lastRefresh.current = Date.now();
+    setVersion((value) => value + 1);
   }, []);
-
   React.useEffect(() => {
-    void refresh();
-  }, [root, refresh]);
-
+    void loadResearchWorkspace().catch((error) => setError(String(error)));
+  }, [version]);
   React.useEffect(() => {
-    const onChanged = () => void refresh();
-    window.addEventListener("focus", onChanged);
-    window.addEventListener(RESEARCH_FILES_CHANGED_EVENT, onChanged);
+    window.addEventListener("focus", refresh);
+    window.addEventListener(RESEARCH_FILES_CHANGED_EVENT, refresh);
     return () => {
-      window.removeEventListener("focus", onChanged);
-      window.removeEventListener(RESEARCH_FILES_CHANGED_EVENT, onChanged);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(RESEARCH_FILES_CHANGED_EVENT, refresh);
     };
   }, [refresh]);
-
-  // 草稿另存进研究文件夹之类的改动不一定伴随窗口失焦，鼠标移进面板时也顺手刷新（限频）
-  const onPanelPointerEnter = () => {
-    if (Date.now() - lastRefreshRef.current > PANEL_ENTER_REFRESH_INTERVAL) void refresh();
-  };
-
-  const openPaths = React.useMemo(
-    () =>
-      new Set(
-        tabs
-          .filter((tab): tab is Project => tab instanceof Project && !tab.closing && tab.uri.scheme === "file")
-          .map((project) => pathKey(project.uri.fsPath)),
-      ),
-    [tabs],
-  );
-
-  const activeWorkspaceKey =
-    activeResourceTab instanceof Project && activeResourceTab.uri.scheme === "file"
-      ? pathKey(activeResourceTab.uri.fsPath)
-      : "";
-
-  const grouped = React.useMemo(() => {
-    const needle = query.trim().normalize("NFC").toLowerCase();
-    const groups: Record<SectionKind, ResearchFileEntry[]> = { workspace: [], pdf: [], image: [], markdown: [] };
-    for (const entry of scan?.entries ?? []) {
-      if (needle && !entry.relPath.normalize("NFC").toLowerCase().includes(needle)) continue;
-      groups[entry.kind].push(entry);
+  React.useEffect(() => {
+    if (!searching || !root) {
+      setScan(undefined);
+      return;
     }
-    return groups;
-  }, [scan, query]);
+    let alive = true;
+    setScan(undefined);
+    setError("");
+    void ResearchFolder.scan(true)
+      .then((result) => {
+        if (alive) setScan(result);
+      })
+      .catch((error) => {
+        if (alive) setError(String(error));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [root, version, searching]);
 
   const updateQuery = (value: string) => {
     cachedQuery = value;
     setQuery(value);
   };
+  const openPaths = new Set(
+    tabs
+      .filter((tab) => !tab.closing && (tab instanceof Project || tab instanceof DocumentTab))
+      .map((tab) => projectPathKey((tab as Project | DocumentTab).uri.fsPath)),
+  );
+  const activePath =
+    active instanceof Project || active instanceof DocumentTab ? projectPathKey(active.uri.fsPath) : "";
+  const openEntry = async (entry: ResearchFileEntry, projectRoot: string) => {
+    if (entry.kind === "workspace") await requestResearchProject(projectRoot, entry.absPath);
+    else {
+      await authorizeResearchProject(projectRoot);
+      await openDocumentFile(entry.absPath);
+    }
+  };
+  const beforeModify = (projectRoot: string) => requestResearchProject(projectRoot);
 
-  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Escape") return;
-    if (!query) {
-      event.currentTarget.blur();
+  const addProject = async (create: boolean) => {
+    const path = await browseResearchProject(create);
+    if (path && !ResearchFolder.getRoot()) await requestResearchProject(path);
+  };
+  const renameWorkspace = async () => {
+    const name = await Dialog.input(t("projectTree.rename"), t("projectTree.nameHint"), {
+      defaultValue: workspace?.name || t("projectTree.defaultName"),
+    });
+    if (name === undefined) return;
+    if (!name.trim()) {
+      toast.error(t("projectTree.emptyName"));
       return;
     }
-    event.preventDefault();
-    event.stopPropagation();
-    updateQuery("");
+    await updateResearchWorkspace((data) => {
+      activeResearchWorkspace(data).name = name.trim();
+    });
+  };
+  const removeProject = async (path: string) => {
+    if (
+      !(await Dialog.confirm(
+        t("projectTree.remove"),
+        t("projectTree.removeHint", { path, interpolation: { escapeValue: false } }),
+      ))
+    )
+      return;
+    if (projectPathKey(path) === projectPathKey(ResearchFolder.getRoot()) && !(await requestResearchProject("")))
+      return;
+    await updateResearchWorkspace((data) => {
+      const workspace = activeResearchWorkspace(data);
+      workspace.projects = workspace.projects.filter(
+        (project) => projectPathKey(project.path) !== projectPathKey(path),
+      );
+    });
   };
 
-  const clearQuery = () => {
-    updateQuery("");
-    searchRef.current?.focus();
-  };
-
-  const toggleSection = (kind: SectionKind) => {
-    const next = new Set(collapsed);
-    if (next.has(kind)) next.delete(kind);
-    else next.add(kind);
-    localStorage.setItem(COLLAPSED_SECTIONS_KEY, [...next].join(","));
-    setCollapsed(next);
-  };
-
-  const revealFolder = () => {
-    shellOpen(root).catch(showError);
-  };
-
-  const openWorkspace = async (entry: ResearchFileEntry) => {
-    if (openingRef.current.has(entry.absPath)) return;
-    openingRef.current.add(entry.absPath);
-    try {
-      const project = await onOpenFile(URI.file(entry.absPath), "科研工作台-文件面板");
-      if (project) await closeEmptyDrafts(project);
-    } catch (openError) {
-      showError(openError);
-    } finally {
-      openingRef.current.delete(entry.absPath);
-    }
-  };
-
-  const onRowClick = (event: React.MouseEvent, entry: ResearchFileEntry) => {
-    if (suppressClickRef.current) return;
-    setSelectedPath(entry.absPath);
-    // 双击的第二下（detail 为 2）不再打开一次：第一下若已经打开完，openingRef 拦不住
-    if (entry.kind === "workspace" && event.detail <= 1) void openWorkspace(entry);
-  };
-
-  const onRowDoubleClick = (entry: ResearchFileEntry) => {
-    if (entry.kind === "workspace") return;
-    openDocumentFile(entry.absPath).catch(showError);
-  };
-
-  // 用指针事件而不是 HTML5 拖放：Windows 上自定义的系统拖放目标会吞掉网页里的 drag 事件
-  const onRowPointerDown = (event: React.PointerEvent<HTMLDivElement>, entry: ResearchFileEntry) => {
+  // Pointer events also work with the Windows native drop target, which consumes HTML5 drag events.
+  const onRowPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+    entry: ResearchFileEntry,
+    projectRoot: string,
+  ) => {
     if (event.button !== 0) return;
     const row = event.currentTarget;
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
     let dragging = false;
-
-    const onMove = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
+    const onMove = (move: PointerEvent) => {
+      if (move.pointerId !== pointerId) return;
       if (!dragging) {
-        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD) return;
+        if (Math.hypot(move.clientX - startX, move.clientY - startY) < 5) return;
         dragging = true;
-        // 捕获指针，拖过白板时画布不会收到这些移动和松开事件
         row.setPointerCapture(pointerId);
-        // 从临时弹出的文件面板往画布上拖：面板先收起，不挡住落点
         hidePeekForDrag("left");
       }
-      setDrag({ entry, x: moveEvent.clientX, y: moveEvent.clientY });
+      setDrag({ entry, x: move.clientX, y: move.clientY });
     };
-    const finish = (dropEvent: PointerEvent | null) => {
+    const finish = (drop: PointerEvent | null) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKeyDown, true);
       setDrag(null);
       if (!dragging) return;
-      // 在同一行上松开时浏览器还会补发一次 click，不能当成「打开」
-      suppressClickRef.current = true;
+      suppressClick.current = true;
       setTimeout(() => {
-        suppressClickRef.current = false;
+        suppressClick.current = false;
       }, 0);
-      if (!dropEvent) return;
+      if (!drop) return;
       const panel =
         rootRef.current?.closest<HTMLElement>("[data-pg-side-panel], [data-pg-tab-group-id]") ?? rootRef.current;
       const rect = panel?.getBoundingClientRect();
-      const insidePanel =
+      if (
         rect &&
-        dropEvent.clientX >= rect.left &&
-        dropEvent.clientX <= rect.right &&
-        dropEvent.clientY >= rect.top &&
-        dropEvent.clientY <= rect.bottom;
-      if (insidePanel) return;
-      dropFilesAtClientPoint([entry.absPath], dropEvent.clientX, dropEvent.clientY).catch(showError);
+        drop.clientX >= rect.left &&
+        drop.clientX <= rect.right &&
+        drop.clientY >= rect.top &&
+        drop.clientY <= rect.bottom
+      )
+        return;
+      void (
+        entry.kind === "workspace"
+          ? openEntry(entry, projectRoot)
+          : dropFilesAtClientPoint([entry.absPath], drop.clientX, drop.clientY)
+      ).catch(showError);
     };
-    const onUp = (upEvent: PointerEvent) => {
-      if (upEvent.pointerId === pointerId) finish(upEvent);
+    const onUp = (up: PointerEvent) => {
+      if (up.pointerId === pointerId) finish(up);
     };
-    const onCancel = (cancelEvent: PointerEvent) => {
-      if (cancelEvent.pointerId === pointerId) finish(null);
+    const onCancel = (cancel: PointerEvent) => {
+      if (cancel.pointerId === pointerId) finish(null);
     };
-    const onKeyDown = (keyEvent: KeyboardEvent) => {
-      if (keyEvent.key !== "Escape" || !dragging) return;
-      keyEvent.preventDefault();
-      keyEvent.stopPropagation();
-      finish(null);
+    const onKeyDown = (key: KeyboardEvent) => {
+      if (key.key === "Escape" && dragging) {
+        key.preventDefault();
+        key.stopPropagation();
+        finish(null);
+      }
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -316,195 +267,232 @@ export default function FileManagerWindow() {
     window.addEventListener("keydown", onKeyDown, true);
   };
 
-  if (!root) {
+  const renderFile = (entry: ResearchFileEntry, projectRoot: string, depth: number) => {
+    const Icon = FILE_ICONS[entry.kind];
+    const highlighted = projectPathKey(entry.absPath) === activePath || entry.absPath === selected;
+    const open = () => {
+      if (!suppressClick.current) void openEntry(entry, projectRoot).catch(showError);
+    };
     return (
-      <div className="flex h-full min-h-0 min-w-0 flex-col">
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-          <div className="text-muted-foreground flex h-7 min-w-0 items-center gap-1 px-1 text-[13px] font-medium">
-            <FolderOpen className="size-4 shrink-0" />
-            <span className="truncate">{t("files.noFolder")}</span>
-          </div>
+      <ResearchFileMenu key={entry.absPath} entry={entry} onOpen={open} beforeModify={() => beforeModify(projectRoot)}>
+        <div
+          role="button"
+          tabIndex={0}
+          title={`${entry.absPath}\n${t(entry.kind === "workspace" ? "files.workspaceRowHint" : "files.fileRowHint")}`}
+          className={cn(
+            "flex h-7 min-w-0 cursor-default items-center gap-2 rounded-md pr-2 text-[13px] select-none",
+            highlighted ? "bg-primary/10 text-primary" : "hover:bg-accent",
+          )}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          onClick={() => {
+            if (!suppressClick.current) setSelected(entry.absPath);
+          }}
+          onDoubleClick={open}
+          onPointerDown={(event) => onRowPointerDown(event, entry, projectRoot)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") open();
+            if (event.key === "F2") {
+              event.preventDefault();
+              void beforeModify(projectRoot)
+                .then((ready) => {
+                  if (ready) return promptResearchRename(entry.absPath);
+                })
+                .catch(showError);
+            }
+          }}
+        >
+          <Icon className="text-muted-foreground size-3.5 shrink-0" />
+          <FileName name={entry.kind === "workspace" ? displayWorkspaceName(entry.name) : entry.name} tailChars={4} />
+          {searching && (
+            <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{entry.relPath}</span>
+          )}
+          {openPaths.has(projectPathKey(entry.absPath)) && (
+            <span className="bg-primary ml-auto size-1.5 shrink-0 rounded-full" title={t("files.opened")} />
+          )}
         </div>
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-          <FolderOpen className="text-muted-foreground size-10" />
-          <p className="text-muted-foreground text-[13px]">{t("files.emptyHint")}</p>
-          <Button className="h-8 rounded-[6px] px-3 py-0 text-[13px] shadow-none" onClick={chooseFolder}>
-            <FolderInput />
-            {t("files.chooseResearchFolder")}
-          </Button>
-        </div>
-      </div>
+      </ResearchFileMenu>
     );
-  }
-
-  const searching = query.trim() !== "";
-  const totalShown = SECTIONS.reduce((sum, section) => sum + grouped[section.kind].length, 0);
+  };
+  const matches =
+    scan?.entries.filter((entry) =>
+      entry.relPath.normalize("NFC").toLowerCase().includes(query.trim().normalize("NFC").toLowerCase()),
+    ) ?? [];
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-0 min-w-0 flex-col" onPointerEnter={onPanelPointerEnter}>
+    <div
+      ref={rootRef}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+      onPointerEnter={() => {
+        if (Date.now() - lastRefresh.current > 3000) refresh();
+      }}
+    >
       <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          aria-label={t("projectTree.toggle")}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronRight className={cn(expanded && "rotate-90")} />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="hover:bg-accent data-[state=open]:bg-primary/10 data-[state=open]:text-primary focus-visible:ring-primary flex h-7 min-w-0 items-center gap-1 rounded-[6px] px-1 text-[13px] font-medium outline-none focus-visible:ring-1"
-            >
-              <FolderOpen className="size-4 shrink-0 opacity-70" />
-              <FileName name={folderNameOf(root)} title={root} keepExtension={false} />
-              <ChevronDown className="size-3.5 shrink-0 opacity-70" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-48">
-            <DropdownMenuItem className="h-8 text-[13px]" onSelect={chooseFolder}>
-              <FolderInput />
-              {t("files.changeFolder")}
-            </DropdownMenuItem>
-            <DropdownMenuItem className="h-8 text-[13px]" onSelect={revealFolder}>
-              <ExternalLink />
-              {t("files.revealInFinder")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="h-8 text-[13px]" onSelect={() => void refresh()}>
-              <RefreshCw />
-              {t("files.refresh")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="h-8 text-[13px]"
-              onSelect={() => {
-                restoreLastResearchFile()
-                  .then(() => toast.success(t("fileMenu.restored")))
-                  .catch(showError);
-              }}
-            >
-              {t("fileMenu.restoreLast")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger>
             <Button
               variant="ghost"
-              className="ml-auto h-7 shrink-0 gap-1 rounded-[6px] px-2 py-0 text-[12px] has-[>svg]:px-2"
-              onClick={() => emitResearchEvent("newWorkspace")}
+              className="min-w-0 flex-1 justify-start px-1"
+              title={t("projectTree.workspaceHint")}
             >
-              <Plus className="size-3.5" />
-              {t("files.new")}
+              <span className="truncate">{workspace?.name || t("projectTree.defaultName")}</span>
+              <ChevronDown />
             </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t("files.newWorkspace")}</TooltipContent>
-        </Tooltip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => void addProject(false).catch(showError)}>
+                <FolderInput />
+                {t("projectTree.add")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void addProject(true).catch(showError)}>
+                <FolderPlus />
+                {t("projectTree.create")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void renameWorkspace().catch(showError)}>
+                <Pencil />
+                {t("projectTree.rename")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={refresh}>
+                <RefreshCw />
+                {t("files.refresh")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!root}
+                onSelect={() =>
+                  void restoreLastResearchFile()
+                    .then(() => toast.success(t("fileMenu.restored")))
+                    .catch(showError)
+                }
+              >
+                {t("fileMenu.restoreLast")}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          disabled={!root}
+          title={t("files.newWorkspace")}
+          aria-label={t("files.newWorkspace")}
+          onClick={() => emitResearchEvent("newWorkspace")}
+        >
+          <Plus />
+        </Button>
       </div>
-
-      <div className="shrink-0 px-2 py-1.5">
-        <div className="relative">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-          <Input
-            ref={searchRef}
-            className="bg-muted dark:bg-muted focus-visible:border-primary h-7 rounded-[6px] border-transparent px-7 text-[12px] shadow-none focus-visible:ring-0 md:text-[12px]"
-            value={query}
-            placeholder={t("files.searchPlaceholder")}
-            onChange={(event) => updateQuery(event.target.value)}
-            onKeyDown={onSearchKeyDown}
-          />
-          {query && (
-            <button
-              type="button"
-              aria-label={t("files.clearSearch")}
-              title={t("files.clearSearch")}
-              className="text-muted-foreground hover:bg-accent hover:text-foreground absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-[6px]"
-              onClick={clearQuery}
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
+      <div className="flex shrink-0 items-center gap-1 px-2 py-1.5">
+        <Search className="text-muted-foreground size-3.5 shrink-0" />
+        <Input
+          value={query}
+          disabled={!root}
+          aria-label={t("files.searchPlaceholder")}
+          placeholder={t("files.searchPlaceholder")}
+          className="h-7 min-w-0"
+          onChange={(event) => updateQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              updateQuery("");
+            }
+          }}
+        />
+        {query && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label={t("files.clearSearch")}
+            onClick={() => updateQuery("")}
+          >
+            <X />
+          </Button>
+        )}
       </div>
-
-      {error ? (
-        <div className="flex flex-col items-center gap-3 p-4 text-center text-[13px]">
-          <p className="text-destructive break-all">{t("files.loadFailed", { error })}</p>
-          <div className="flex gap-2">
-            <Button variant="ghost" className="h-7 rounded-[6px] px-3 py-0 text-[13px]" onClick={() => void refresh()}>
-              {t("files.retry")}
-            </Button>
-            <Button className="h-7 rounded-[6px] px-3 py-0 text-[13px] shadow-none" onClick={chooseFolder}>
-              {t("files.chooseFolder")}
-            </Button>
-          </div>
-        </div>
-      ) : !scan ? (
-        <p className="text-muted-foreground px-4 py-2 text-[13px]">{t("files.loading")}</p>
-      ) : (
-        <div className="min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-1 py-1">
-          {searching && totalShown === 0 && (
-            <p className="text-muted-foreground px-2 py-1 text-[13px]">{t("files.noMatch")}</p>
-          )}
-          {SECTIONS.map(({ kind }) => {
-            const entries = grouped[kind];
-            // 工作区组没有内容时也留着，好提示用户去新建；其他空组、以及搜索时没有匹配的组都不显示
-            if (entries.length === 0 && (searching || kind !== "workspace")) return null;
-            const isCollapsed = collapsed.has(kind);
-            return (
-              <section key={kind}>
-                <button
-                  type="button"
-                  aria-expanded={!isCollapsed}
-                  className="text-muted-foreground hover:text-foreground flex h-7 w-full min-w-0 items-center gap-1 rounded-[6px] px-2 text-[11px] font-semibold tracking-wide"
-                  onClick={() => toggleSection(kind)}
-                >
-                  <ChevronRight className={cn("size-3 shrink-0 transition-transform", !isCollapsed && "rotate-90")} />
-                  <span className="truncate">{t(`files.sections.${kind}`)}</span>
-                  <span className="ml-auto shrink-0 tabular-nums">{entries.length}</span>
-                </button>
-                {!isCollapsed &&
-                  (entries.length === 0 ? (
-                    <p className="text-muted-foreground flex h-7 items-center px-2 text-[12px]">
-                      <span className="truncate">{t("files.sectionEmpty.workspace")}</span>
-                    </p>
-                  ) : (
-                    entries.map((entry) => (
-                      <FileRow
-                        key={entry.absPath}
-                        entry={entry}
-                        highlighted={
-                          entry.kind === "workspace"
-                            ? pathKey(entry.absPath) === activeWorkspaceKey
-                            : selectedPath === entry.absPath
-                        }
-                        opened={entry.kind === "workspace" && openPaths.has(pathKey(entry.absPath))}
-                        onPointerDown={(event) => onRowPointerDown(event, entry)}
-                        onClick={(event) => onRowClick(event, entry)}
-                        onDoubleClick={() => onRowDoubleClick(entry)}
-                        onOpen={() =>
-                          entry.kind === "workspace" ? void openWorkspace(entry) : onRowDoubleClick(entry)
-                        }
-                      />
-                    ))
-                  ))}
-              </section>
-            );
-          })}
-          {scan.truncated && (
-            <p className="text-muted-foreground px-2 pt-1 text-[11px]">
-              {t("files.truncated", { count: scan.entries.length })}
-            </p>
-          )}
-          {scan.unreadableDirs.length > 0 && (
-            <p className="text-muted-foreground px-2 pt-1 text-[11px]" title={scan.unreadableDirs.join("\n")}>
-              {t("files.unreadableDirs", { count: scan.unreadableDirs.length })}
-            </p>
-          )}
+      {error && (
+        <div role="alert" className="text-destructive px-3 py-2 text-xs break-all">
+          {t("files.loadFailed", { error })}
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setError("");
+              refresh();
+            }}
+          >
+            {t("files.retry")}
+          </Button>
         </div>
       )}
-
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto p-1">
+        {searching ? (
+          <>
+            <p className="text-muted-foreground px-2 text-xs">
+              {t("projectTree.searchIn", { name: projectName(root) })}
+            </p>
+            {!scan && !error && root && <p className="text-muted-foreground px-2 text-xs">{t("files.loading")}</p>}
+            {scan && matches.length === 0 && <p className="text-muted-foreground px-2 text-xs">{t("files.noMatch")}</p>}
+            {matches.map((entry) => renderFile(entry, root, 1))}
+            {scan?.truncated && (
+              <p className="text-muted-foreground px-2 text-xs">
+                {t("files.truncated", { count: scan.entries.length })}
+              </p>
+            )}
+            {!!scan?.unreadableDirs.length && (
+              <p className="text-muted-foreground px-2 text-xs" title={scan.unreadableDirs.join("\n")}>
+                {t("files.unreadableDirs", { count: scan.unreadableDirs.length })}
+              </p>
+            )}
+          </>
+        ) : (
+          expanded &&
+          workspace?.projects.map((project) => (
+            <DirectoryRow
+              key={project.path}
+              path={project.path}
+              projectRoot={project.path}
+              depth={0}
+              version={version}
+              current={projectPathKey(root) === projectPathKey(project.path)}
+              renderFile={renderFile}
+              onSelect={() => void requestResearchProject(project.path).catch(showError)}
+              onRemove={() => void removeProject(project.path).catch(showError)}
+            />
+          ))
+        )}
+        {workspace?.projects.length === 0 && (
+          <div className="flex flex-col gap-3 p-4">
+            <p className="text-muted-foreground text-sm">{t("projectTree.empty")}</p>
+            <Button variant="outline" onClick={() => void addProject(false).catch(showError)}>
+              <FolderInput />
+              {t("projectTree.add")}
+            </Button>
+            <Button variant="outline" onClick={() => void addProject(true).catch(showError)}>
+              <FolderPlus />
+              {t("projectTree.create")}
+            </Button>
+          </div>
+        )}
+      </div>
       {drag &&
         createPortal(
           <div
-            className="bg-popover text-popover-foreground pointer-events-none fixed z-[9999] flex max-w-60 items-center gap-2 rounded-[6px] border px-2 py-1 text-[12px] shadow-md"
+            className="bg-popover text-popover-foreground pointer-events-none fixed z-[9999] flex max-w-60 items-center gap-2 rounded-md border px-2 py-1 text-xs shadow-md"
             style={{ left: drag.x + 12, top: drag.y + 8 }}
           >
-            {React.createElement(SECTION_ICONS[drag.entry.kind], { className: "size-3.5 shrink-0" })}
-            <FileName name={rowNameOf(drag.entry)} tailChars={NAME_TAIL_CHARS} />
+            {React.createElement(FILE_ICONS[drag.entry.kind], { className: "size-3.5" })}
+            <FileName name={drag.entry.name} />
           </div>,
           document.body,
         )}
@@ -512,69 +500,157 @@ export default function FileManagerWindow() {
   );
 }
 
-function rowNameOf(entry: ResearchFileEntry) {
-  return entry.kind === "workspace" ? displayWorkspaceName(entry.name) : entry.name;
-}
-
-function FileRow({
-  entry,
-  highlighted,
-  opened,
-  onPointerDown,
-  onClick,
-  onDoubleClick,
-  onOpen,
+function DirectoryRow({
+  path,
+  projectRoot,
+  depth,
+  version,
+  current,
+  renderFile,
+  onSelect,
+  onRemove,
 }: {
-  entry: ResearchFileEntry;
-  /** 当前工作区，或刚点选的文件 */
-  highlighted: boolean;
-  opened: boolean;
-  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
-  onDoubleClick: () => void;
-  onOpen: () => void;
+  path: string;
+  projectRoot: string;
+  depth: number;
+  version: number;
+  current?: boolean;
+  renderFile: (entry: ResearchFileEntry, root: string, depth: number) => React.ReactNode;
+  onSelect?: () => void;
+  onRemove?: () => void;
 }) {
   const { t } = useTranslation("research");
-  const Icon = SECTION_ICONS[entry.kind];
-  const dir = entry.relPath.includes("/") ? entry.relPath.slice(0, entry.relPath.lastIndexOf("/")) : "";
-  const tooltip = `${entry.relPath}\n${t(entry.kind === "workspace" ? "files.workspaceRowHint" : "files.fileRowHint")}`;
+  const [expanded, setExpanded] = React.useState(false);
+  const [entries, setEntries] = React.useState<ResearchTreeEntry[]>();
+  const [error, setError] = React.useState("");
+  React.useEffect(() => {
+    if (!expanded && depth !== 0) return;
+    let alive = true;
+    setError("");
+    if (!expanded) {
+      void exists(path)
+        .then((available) => {
+          if (alive && !available) setError("missing");
+        })
+        .catch((error) => {
+          if (alive) setError(String(error));
+        });
+      return () => {
+        alive = false;
+      };
+    }
+    void authorizeResearchProject(projectRoot)
+      .then(() => readResearchDirectory(projectRoot, path))
+      .then((entries) => {
+        if (alive) setEntries(entries);
+      })
+      .catch((error) => {
+        if (alive) {
+          setEntries(undefined);
+          setError(String(error));
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [expanded, path, projectRoot, version, depth]);
   return (
-    <ResearchFileMenu entry={entry} onOpen={onOpen}>
+    <div>
       <div
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key === "F2") {
-            event.preventDefault();
-            event.stopPropagation();
-            void promptResearchRename(entry.absPath);
-          }
-        }}
-        title={tooltip}
         className={cn(
-          "flex h-7 min-w-0 cursor-default items-center gap-2 rounded-[6px] px-2 text-[13px] select-none",
-          highlighted ? "bg-primary/10 text-primary" : "hover:bg-accent",
+          "flex h-8 items-center gap-1 rounded-md pr-1 text-[13px]",
+          current ? "bg-primary/5" : "hover:bg-accent",
         )}
-        onPointerDown={onPointerDown}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
+        style={{ paddingLeft: depth * 14 + 4 }}
       >
-        <Icon className={cn("size-3.5 shrink-0", !highlighted && "text-muted-foreground")} />
-        <FileName name={rowNameOf(entry)} title={tooltip} tailChars={NAME_TAIL_CHARS} />
-        {/* 空间不够时子目录先缩没，名字优先；完整路径在悬停提示里 */}
-        {dir && <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{dir}</span>}
-        {opened && <span className="bg-primary ml-auto size-1.5 shrink-0 rounded-full" title={t("files.opened")} />}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-6 shrink-0"
+          aria-label={t("projectTree.expand", { name: projectName(path) })}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronRight className={cn(expanded && "rotate-90")} />
+        </Button>
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          title={path}
+          onClick={() => {
+            if (onSelect) {
+              onSelect();
+              setExpanded(true);
+            } else setExpanded(!expanded);
+          }}
+        >
+          {onSelect ? (
+            <FolderOpen className="text-muted-foreground size-4 shrink-0" />
+          ) : (
+            <Folder className="text-muted-foreground size-3.5 shrink-0" />
+          )}
+          <span className="truncate">{projectName(path)}</span>
+        </button>
+        {current && <Badge variant="secondary">{t("projectTree.current")}</Badge>}
+        {onRemove && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                aria-label={t("projectTree.actions", { name: projectName(path) })}
+              >
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => void shellOpen(path).catch(showError)}>
+                  <ExternalLink />
+                  {t("files.revealInFinder")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onRemove}>{t("projectTree.remove")}</DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
-    </ResearchFileMenu>
+      {error && (
+        <p role="status" className="text-muted-foreground px-4 py-1 text-xs" title={error}>
+          {t(onSelect ? "projectTree.missing" : "projectTree.unreadable")}
+        </p>
+      )}
+      {expanded && !error && (
+        <div>
+          {!entries ? (
+            <p className="text-muted-foreground px-4 py-1 text-xs">{t("files.loading")}</p>
+          ) : entries.length === 0 ? (
+            <p className="text-muted-foreground px-4 py-1 text-xs">{t("projectTree.noFiles")}</p>
+          ) : (
+            entries.map((entry) =>
+              entry.directory ? (
+                <DirectoryRow
+                  key={entry.absPath}
+                  path={entry.absPath}
+                  projectRoot={projectRoot}
+                  depth={depth + 1}
+                  version={version}
+                  renderFile={renderFile}
+                />
+              ) : (
+                renderFile(entry, projectRoot, depth + 2)
+              ),
+            )
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
 const fileManagerTabIds = new Set<string>();
-
-function findOpenTab() {
-  return store.get(tabsAtom).find((tab) => !tab.closing && fileManagerTabIds.has(tab.id));
-}
-
+const findOpenTab = () => store.get(tabsAtom).find((tab) => !tab.closing && fileManagerTabIds.has(tab.id));
 FileManagerWindow.open = () => {
   const existing = findOpenTab();
   if (existing) {
@@ -590,32 +666,21 @@ FileManagerWindow.open = () => {
     rect: new Rectangle(new Vector(8, 88), new Vector(300, window.innerHeight - 96)),
   });
   fileManagerTabIds.add(tab.id);
-  // ResearchSession 静态 import 了本模块，这里用动态 import 避免循环依赖
   import("@/core/research/ResearchSession")
     .then(({ markResearchPanelTab }) => markResearchPanelTab("files", tab.id))
     .catch(showError);
   return tab;
 };
-
-/**
- * 面板不在左右侧栏里时（定制设置改成了浮动、停靠在编辑区）用的开关：
- * 没打开就打开；打开了但被同一组里别的标签页挡住就切到前台；看得见就关掉。
- * 按可见性判断而不是按键盘焦点：面板看得见时焦点一般在白板上，按焦点判断的话第一下只会把焦点抢走。
- * 竖栏按钮和快捷键走 ResearchSession.toggleResearchPanel，侧栏里的面板只固定/收起，不关掉。
- */
 FileManagerWindow.toggle = async () => {
   const existing = findOpenTab();
   if (!existing) {
     FileManagerWindow.open();
     return;
   }
-  // ResearchSession 静态 import 了本模块，这里用动态 import 避免循环依赖
   const { isTabVisibleInWorkspace } = await import("@/core/research/ResearchSession");
   if (existing.closing) return;
   if (isTabVisibleInWorkspace(existing.id)) {
     fileManagerTabIds.delete(existing.id);
     await TabWorkspace.close(existing.id);
-    return;
-  }
-  TabWorkspace.focus(existing.id);
+  } else TabWorkspace.focus(existing.id);
 };

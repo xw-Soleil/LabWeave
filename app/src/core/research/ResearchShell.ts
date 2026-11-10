@@ -47,6 +47,7 @@ export const RESEARCH_EVENTS = {
   focusWorkspace: "research:focus-workspace",
   newWorkspace: "research:new-workspace",
   chooseFolder: "research:choose-folder",
+  switchProject: "research:switch-project",
 } as const;
 
 export type ResearchEventName = keyof typeof RESEARCH_EVENTS;

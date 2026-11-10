@@ -504,7 +504,7 @@ settings:
       It is recommended to enable this option.
     researchTitle: Save when closing the window
     researchDescription: |
-      Before the window closes, workspaces that were saved before and have changes are saved again. Drafts that were never saved still ask. Auto save does this too.
+      Before the window closes, boards that were saved before and have changes are saved again. Drafts that were never saved still ask. Auto save does this too.
   autoSave:
     title: Enable Auto-Save
     description: |
@@ -1224,15 +1224,15 @@ settings:
     description: |
       When a paper is placed on the board, the text of this many first pages is extracted for the AI. 0 means no text is extracted.
   researchFolderPath:
-    title: Research folder
+    title: Current project (research folder)
     description: |
-      The folder that holds your papers, images, notes and workspaces.
+      The project folder that holds your papers, images, notes and boards.
   writeAiSidecarOnSave:
     title: Write an AI-readable copy when saving
     description: |
-      When a workspace is saved, a JSON and a Markdown copy of the board are written to the .workbench folder next to it, so AI tools can read it.
+      When a board is saved, a JSON and a Markdown copy are written to the .workbench folder next to it, so AI tools can read it.
   researchSession:
-    title: Last open workspaces and panels
+    title: Last open boards and panels
   researchShowFullMenu:
     title: Show the full menu
     description: |
@@ -1264,11 +1264,11 @@ settings:
   mcpAllowEdits:
     title: Let external AI edit the board
     description: |
-      When off, external AI apps (Claude Code, Codex, …) can only read: list workspaces and read cards and connections, but cannot add, change or delete anything
+      When off, external AI apps (Claude Code, Codex, …) can only read: list boards and read cards and connections, but cannot add, change or delete anything
   mcpAllowDelete:
     title: Let external AI delete cards
     description: |
-      The tools that delete cards or clear the board. In an open workspace a deletion can be undone; in a closed one the file is changed directly and cannot be undone
+      The tools that delete cards or clear the board. In an open board a deletion can be undone; in a closed one the file is changed directly and cannot be undone
   mcpAllowNetwork:
     title: Let external AI search and recognize images online
     description: |
@@ -2761,6 +2761,40 @@ projectOwnership:
 
 # Research Workbench. Each work unit adds keys only to its own subsection.
 research:
+  projectTree:
+    defaultName: My workspace
+    workspaceHint: A workspace is a list of projects, which can live on different disks
+    toggle: Expand or collapse workspace
+    add: Add project…
+    create: New project…
+    rename: Rename workspace
+    nameHint: Name this project list. Folders on disk will not be renamed.
+    emptyName: The workspace name cannot be empty.
+    remove: Remove from workspace…
+    removeHint: "Remove {{path}} from the list? Files on disk will not be deleted. Removing the current project first handles unsaved boards and Markdown."
+    current: Current
+    empty: Add an existing folder or create a project. They can be on different disks.
+    missing: Project not found or inaccessible. Check the disk connection and folder permissions; refresh or remove it from the workspace.
+    unreadable: Folder missing or unreadable. Refresh to retry.
+    noFiles: Empty folder
+    expand: "Expand or collapse {{name}}"
+    actions: "Project menu for {{name}}"
+    searchIn: "Current project: {{name}}"
+    saveBoard: Save board changes before switching projects?
+    switchBusy: A project switch or file save is in progress. Please retry shortly.
+    locations: Folder locations
+    home: Home
+    drives: External disks / drives
+    recent: Recent projects
+    parent: Parent folder
+    folders: Subfolders
+    noFolders: No visible subfolders
+    addHint: Browse folders only. Enter your project folder and choose “Use this folder”.
+    createHint: Enter the location for your project, then give the new folder a name.
+    projectName: Project folder name
+    useFolder: Use this folder
+    createHere: Create project here
+    invalidProjectName: Enter a nonempty name without paths, hidden names, Windows reserved names or a trailing dot.
   document:
     loading: Reading…
     source: Markdown source
@@ -2799,7 +2833,7 @@ research:
     copyPath: Copy file path
     copyRelativePath: Copy relative path
     delete: Delete file…
-    deleteDescription: "Move {{name}} to the workbench trash? Open workspaces will be saved and closed first. Linked cards will show the file as missing until it is restored."
+    deleteDescription: "Move {{name}} to the workbench trash? Open boards will be saved and closed first. Linked cards will show the file as missing until it is restored."
     deleted: Moved to workbench trash
     restore: Undo deletion
     restoreLast: Restore last deleted file
@@ -2811,25 +2845,25 @@ research:
     invalidTrash: The recovery record is invalid. The file has been preserved.
   rename:
     title: Rename
-    description: Enter a new file name. File references in your workspaces will be updated.
+    description: Enter a new file name. File references in your boards will be updated.
     invalid: Enter a valid file name without path separators or special characters.
-    busy: A file is being saved or renamed. Close workspaces held by other windows and retry.
+    busy: A file is being saved or renamed. Close boards held by other windows and retry.
     outside: Only files inside the current research folder can be renamed.
     exists: A file with that name already exists.
     incompleteScan: Cannot read the entire research folder. Rename was cancelled to preserve references.
-    changed: A workspace was edited or closed during rename. Please retry.
+    changed: A board was edited or closed during rename. Please retry.
     rollbackFailed: Rename and part of its rollback failed. Keep the current files and check the error details.
     followupFailed: File renamed, but updating recent files or AI exports failed
   shell:
     title: Research Workbench
     rail:
-      workspace: Workspace
+      workspace: Boards
       ai: AI chat
-      aiNeedsWorkspace: AI chat (open a workspace first)
+      aiNeedsWorkspace: AI chat (open a board first)
       files: Files
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
-    restoreFailed: "Couldn't reopen workspace {{path}}: {{message}}"
+    restoreFailed: "Couldn't reopen board {{path}}: {{message}}"
     panelFailed: "Couldn't open the panel: {{message}}"
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
@@ -2839,7 +2873,7 @@ research:
     showSidePanel: Show the panel
   statusBar:
     outsideFolder: Outside research folder
-    outsideFolderHint: This board is not in the research folder and was opened temporarily. It saves as usual, but gets no AI text copy, stays out of recent files, is not reopened on the next launch, and external AI cannot change it. To make it a regular workspace, use Save As to store it in the research folder.
+    outsideFolderHint: This board is outside the current project and was opened temporarily. It saves as usual, but gets no AI text copy, stays out of recent files, is not reopened on the next launch, and external AI cannot change it. To include it in the current project, use Save As to store it in the research folder.
     nodes: "{{count}} nodes"
     edges: "{{count}} edges"
     selected: "{{count}} selected"
@@ -2856,7 +2890,7 @@ research:
     title: Menu
     keyBindsGroup:
       title: Research Workbench
-      description: Shortcuts for the workspace, AI chat and file panel. They also work while a side panel or a text box has focus.
+      description: Shortcuts for boards, AI chat and the file panel. They also work while a side panel or a text box has focus.
     items:
       file:
         title: File
@@ -2881,8 +2915,8 @@ research:
       quit:
         title: Quit Research Workbench
       newResearchWorkspace:
-        title: New Workspace
-        description: Create a workspace in the research folder and open it
+        title: New Board
+        description: Create a board in the current project and open it
       researchChooseFolder:
         title: Choose Research Folder…
         description: Pick the folder that holds your papers, images and notes
@@ -2891,8 +2925,8 @@ research:
       openCurrentProjectFileFolder:
         title: Show in Finder
       researchFocusWorkspace:
-        title: Workspace
-        description: Go back to the current workspace board
+        title: Boards
+        description: Go back to the current board
       researchToggleAIChat:
         title: AI Chat
         description: Show or hide the AI chat panel on the right
@@ -2914,34 +2948,34 @@ research:
     chooseFolder: Choose folder
     chooseFolderDialogTitle: Choose research folder
     refresh: Refresh
-    newWorkspace: New workspace
+    newWorkspace: New board
     new: New
     noFolder: No research folder
     changeFolder: Change research folder…
     revealInFinder: Show in Finder
-    searchPlaceholder: Search file names
+    searchPlaceholder: Search files in current project
     clearSearch: Clear search
     loading: Reading folder…
     loadFailed: "Can't read this folder: {{error}}"
     retry: Retry
     noMatch: No matching files
     opened: Opened
-    workspaceRowHint: Click to open this workspace
-    fileRowHint: Double-click to open with the default app, drag onto the board to make a card
+    workspaceRowHint: Double-click to open a board; boards in another project switch projects first
+    fileRowHint: Double-click to open (Markdown and PDF open in this app); drag onto a board to make a card
     truncated: "Too many files, only the first {{count}} are listed"
     unreadableDirs: "{{count}} subfolder(s) couldn't be read and were skipped"
     setRootFailed: "Couldn't set the research folder: {{error}}"
     noRoot: Choose a research folder first
     outsideFolder: "This file is outside the research folder and was not opened: {{path}}"
     sections:
-      workspace: Workspaces
+      workspace: Boards
       pdf: Papers
       image: Images
       markdown: Notes
     sectionEmpty:
-      workspace: No workspaces yet. Click "New" to create one
+      workspace: No boards yet. Click "New" to create one
     workspaceName:
-      empty: The workspace name can't be empty
+      empty: The board name can't be empty
       invalidChars: 'Names can''t contain any of: \ / : * ? " < > |'
       hidden: Names can't start with "." or "~$" or contain "_backup", or the file panel would hide them
       exists: '"{{name}}.prg" already exists, please pick another name'
@@ -2980,11 +3014,11 @@ research:
   drop:
     title: Place on the board
     hint: Release to place the files on the board
-    hintDetail: PDF, images and Markdown are supported; .prg files open as workspaces
+    hintDetail: PDF, images and Markdown are supported; .prg files open as boards
     unsupported: "File type not supported yet: {{names}}"
     separator: ", "
     andMore: " and others ({{count}} in total)"
-    noBoard: Open or create a workspace first, then drag the files in again
+    noBoard: Open or create a board first, then drag the files in again
     failed: "Could not place the files: {{message}}"
     cancel: Cancel
     copied: "Copied {{count}} file(s) to \"{{folder}}\" in the research folder"
@@ -3006,26 +3040,26 @@ research:
   clipboard:
     nothingToPaste: The clipboard has no text or image that can be pasted onto the board
   workspace:
-    title: Workspace
+    title: Boards
     noFolder: No research folder chosen yet
-    empty: No workspaces in the research folder yet
+    empty: No boards in the current project yet
     opened: Open
-    new: New workspace
+    new: New board
     chooseFolder: Choose research folder
     changeFolder: Change folder
-    listFailed: "Couldn't read the workspace list: {{message}}"
+    listFailed: "Couldn't read the board list: {{message}}"
     failed: "Something went wrong: {{message}}"
-    newTitle: New workspace
-    newDescription: Give the workspace a name. It is saved as a .prg file in your research folder.
+    newTitle: New board
+    newDescription: Give the board a name. It is saved as a .prg file in the current project.
     newPlaceholder: "e.g. Literature review"
     save:
-      sidecarFailed: "The workspace was saved, but its AI-readable copy (in the .workbench folder) couldn't be written: {{error}}"
-      outsideFolder: "Not saved: please save the workspace inside the research folder ({{root}}). You picked {{path}}"
+      sidecarFailed: "The board was saved, but its AI-readable copy (in the .workbench folder) couldn't be written: {{error}}"
+      outsideFolder: "Not saved: please save the board inside the current project ({{root}}). You picked {{path}}"
       autoSaveFailed: "Autosave failed, so your changes are not in the file yet: {{error}}. It will try again later, or you can save manually."
   ai:
     title: AI assistant
-    noWorkspace: Open a workspace first
-    noWorkspaceHint: The AI reads the cards, links and groups on the current board. Open a workspace and start asking.
+    noWorkspace: Open a board first
+    noWorkspaceHint: The AI reads the cards, links and groups on the current board. Open a board and start asking.
     setupTitle: Set up the AI API in Settings first
     setupDescription: "Still missing: {{missing}}. Fill these in and you can start asking."
     setupMissingSeparator: ", "
@@ -3109,21 +3143,21 @@ research:
   welcome:
     title: Welcome to Research Workbench
     subtitle: Lay out papers, images and notes on a board, sort out your ideas, then ask the AI what is still missing
-    folder: Research folder
+    folder: Current project (research folder)
     chooseFolder: Choose research folder
     changeFolder: Choose another folder
-    noFolderHint: Pick the folder that holds your papers and notes. Workspaces are saved there too.
-    workspaces: Workspaces
-    newWorkspace: New workspace
-    noWorkspaces: No workspaces in this folder yet. Create one to get started.
+    noFolderHint: Add a project folder for your boards, papers and notes.
+    workspaces: Boards
+    newWorkspace: New board
+    noWorkspaces: No boards in this project yet. Create one to get started.
     draft: Just sketch for now (temporary draft)
-    openOther: Open another workspace file
-    recent: Recently changed workspaces
-    dropHint: Once a workspace is open, drag papers, images and notes from the file panel onto the board
+    openOther: Open another board file
+    recent: Recently changed boards
+    dropHint: Once a board is open, drag papers, images and notes from the file panel onto the board
     howTo:
       title: Get started in three steps
       step1: Choose a research folder and put your papers (PDF), images and notes in it
-      step2: Create a workspace, drag files from the file panel onto the board, then connect, group and write down ideas
+      step2: Create a board, drag files from the file panel onto it, then connect, group and write down ideas
       step3: Open the AI chat and let it help you organize the board and spot gaps
   settings:
     title: Research Workbench
@@ -3203,8 +3237,8 @@ research:
         description: Which ones are installed on this computer; install or sign in to the others from a terminal
         button: Manage…
     externalAi:
-      intro: AI apps such as Claude Code and Codex can read and edit your boards over MCP. Run the command below once in a terminal; after that, just ask that app to "look at my workspace".
-      live: While a workspace is open here, the AI's changes appear on the board right away and can be undone with Cmd+Z; a closed workspace is changed in its file directly. What the AI may do is set by the three switches on the previous page and takes effect immediately.
+      intro: AI apps such as Claude Code and Codex can read and edit your boards over MCP. Run the command below once in a terminal; after that, just ask that app to "look at my board".
+      live: While a board is open here, the AI's changes appear right away and can be undone with Cmd+Z; a closed board is changed in its file directly. What the AI may do is set by the three switches on the previous page and takes effect immediately.
       claudeCode: Claude Code
       codex: Codex
       others: Other apps (Claude Desktop, Cursor, …)
@@ -3213,7 +3247,7 @@ research:
       copied: Copied
       unavailable: The installed build cannot connect external AI yet; this comes with packaging. For now, use the development build started from the repository.
       noNode: Node.js was not found. External AI apps need it to run this interface. Install Node.js, then come back and copy the command.
-      appHomeNote: "--app-home ({{home}}) in the command is where this app keeps its settings; the external AI needs it to find open workspaces. Do not remove it."
+      appHomeNote: "--app-home ({{home}}) in the command is where this app keeps its settings; the external AI needs it to find open boards. Do not remove it."
     localAgents:
       intro: Use AI apps you have installed and signed in to on this computer. Claude Code usage counts toward your subscription under Anthropic's terms.
       adapterNote: Besides the app itself, Codex and Claude Code need an adapter to connect. "Install in Terminal" opens a terminal with the command filled in; press Return. This page refreshes when you come back.

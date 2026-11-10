@@ -1,13 +1,13 @@
 #[cfg(debug_assertions)]
 mod cli_desktop_acceptance;
 mod cmd;
+#[cfg(target_os = "windows")]
+mod custom_drag_drop;
 mod local_agent;
 #[cfg(target_os = "macos")]
 mod macos_resize_cursor;
 mod project_ownership;
 pub mod project_reference_store;
-#[cfg(target_os = "windows")]
-mod custom_drag_drop;
 mod project_runtime_bridge;
 
 pub mod ownership_helper {
@@ -39,7 +39,10 @@ struct PendingOpenFilesState {
 
 #[tauri::command]
 fn take_pending_open_files(state: State<PendingOpenFiles>) -> Vec<String> {
-    let mut guard = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = state
+        .0
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     guard.taken = true;
     std::mem::take(&mut guard.files)
 }
@@ -61,7 +64,10 @@ fn handle_os_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
         .collect();
     let state = app.state::<PendingOpenFiles>();
     {
-        let mut guard = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = state
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !guard.taken {
             guard.files.extend(paths);
             return;
@@ -174,6 +180,7 @@ pub fn run() {
             project_reference_store::save_project_reference_snapshot,
             project_runtime_bridge::respond_project_runtime_bridge,
             cmd::research::set_research_root,
+            cmd::research::authorize_research_project,
             cmd::research::external_ai_mcp_launch,
             cmd::research::read_clipboard_file_paths,
             local_agent::local_agent_catalog,

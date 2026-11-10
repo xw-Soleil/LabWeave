@@ -75,6 +75,14 @@ describe("isHiddenResearchName", () => {
 });
 
 describe("scanResearchFolder", () => {
+  it("can search other file types without changing the default AI/card scan", async () => {
+    const fs = fakeFs({ "notes.docx": "file", "data.csv": "file", ".hidden.xlsx": "file" });
+    expect((await scanResearchFolder("/r", fs)).entries).toEqual([]);
+    expect((await scanResearchFolder("/r", fs, true)).entries.map((entry) => [entry.name, entry.kind])).toEqual([
+      ["data.csv", "other"],
+      ["notes.docx", "other"],
+    ]);
+  });
   it("classifies files, skips hidden entries and symlinks, and lists shallow files first", async () => {
     const fs = fakeFs({
       "b.prg": { mtime: 1 },

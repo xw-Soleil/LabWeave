@@ -1,5 +1,14 @@
 import { Dialog } from "@/components/ui/dialog";
-import { Project } from "@/core/Project";
+import { Project, ProjectState } from "@/core/Project";
+import { DocumentTab } from "./DocumentTab";
+import { browseResearchProject } from "./ResearchFolderBrowser";
+import {
+  activeResearchWorkspace,
+  authorizeResearchProject,
+  loadResearchWorkspace,
+  projectPathKey,
+  rememberProjectSession,
+} from "./ResearchWorkspace";
 import { RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
@@ -169,13 +178,86 @@ export async function openResearchWorkspace(absPath: string) {
 }
 
 export async function chooseResearchFolder(): Promise<string | null> {
-  const root = await ResearchFolder.chooseRoot();
+  const root = await browseResearchProject();
   if (root === null) return null;
-  // 换了文件夹以后会话里的相对路径要按新文件夹重算；旧文件夹里没打开的那些记录也不再适用
-  unreachableWorkspaces = [];
-  unreachableActive = "";
-  persistResearchSession();
-  return root;
+  return (await switchResearchProject(root)) ? root : null;
+}
+
+let switchingProject = false;
+
+export async function switchResearchProject(path: string, openPath?: string): Promise<boolean> {
+  if (switchingProject) throw new Error(t("projectTree.switchBusy"));
+  switchingProject = true;
+  const tracking = sessionTracking;
+  try {
+    if (path) await authorizeResearchProject(path);
+    if (openPath && (!path || !ResearchFolder.isInside(openPath, path) || !/\.prg$/i.test(openPath))) {
+      throw new Error(t("files.outsideFolder", { path: openPath }));
+    }
+    if (projectPathKey(path) !== projectPathKey(ResearchFolder.getRoot())) {
+      // Check availability before prompting or closing any tab; authorization alone may be cached.
+      if (path && !(await exists(path))) throw new Error(t("projectTree.missing"));
+      persistResearchSession();
+      await rememberProjectSession(ResearchFolder.getRoot());
+      const data = await loadResearchWorkspace();
+      const next = activeResearchWorkspace(data).projects.find(
+        (project) => projectPathKey(project.path) === projectPathKey(path),
+      )?.session;
+      const previousRoot = ResearchFolder.getRoot();
+      const previousTabs = store.get(tabsAtom);
+      const previousActive = store.get(activeResourceTabAtom);
+      sessionTracking = false;
+      for (const tab of previousTabs) {
+        if (tab.closing || !(tab instanceof Project || tab instanceof DocumentTab)) continue;
+        if (tab instanceof Project) {
+          if (tab.isSaving || tab.fileMutationInProgress) throw new Error(t("projectTree.switchBusy"));
+          if (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed) {
+            TabWorkspace.focus(tab.id);
+            const answer = await Dialog.buttons(t("projectTree.saveBoard"), tab.title, [
+              { id: "cancel", label: t("document.cancel"), variant: "ghost" },
+              { id: "discard", label: t("document.discard"), variant: "destructive" },
+              { id: "save", label: t("document.save") },
+            ]);
+            if (answer === "cancel") return false;
+            if (answer === "save") {
+              await tab.save();
+              if ((tab.projectState as ProjectState) !== ProjectState.Saved) return false;
+            }
+          }
+        }
+        if ((await TabWorkspace.close(tab.id)) === false) return false;
+      }
+      // Saving a draft in the close prompt may have given it a file path for the first time.
+      const previousBoards = previousTabs.filter(
+        (tab): tab is Project => tab instanceof Project && tab.uri.scheme === "file" && !isTemporaryWorkspace(tab),
+      );
+      await rememberProjectSession(previousRoot, {
+        openWorkspaces: [
+          ...new Set([...previousBoards.map((tab) => toStoredPath(tab.uri.fsPath)), ...unreachableWorkspaces]),
+        ],
+        active:
+          previousActive instanceof Project && previousBoards.includes(previousActive)
+            ? toStoredPath(previousActive.uri.fsPath)
+            : unreachableActive,
+      });
+      await ResearchFolder.setRoot(path);
+      unreachableWorkspaces = [];
+      unreachableActive = "";
+      store.set(activeResourceTabAtom, undefined);
+      Settings.researchSession = {
+        ...Settings.researchSession,
+        openWorkspaces: next?.openWorkspaces ?? [],
+        active: next?.active ?? "",
+      };
+      await startResearchSession();
+    }
+    if (openPath) await openResearchWorkspace(openPath);
+    return true;
+  } finally {
+    switchingProject = false;
+    sessionTracking = tracking;
+    persistResearchSession();
+  }
 }
 
 /**
@@ -382,6 +464,15 @@ export function registerResearchSession() {
     }),
     onResearchEvent("newWorkspace", handle(promptNewWorkspace)),
     onResearchEvent("chooseFolder", handle(chooseResearchFolder)),
+    onResearchEvent("switchProject", (detail) => {
+      const request = detail as {
+        path: string;
+        openPath?: string;
+        resolve: (changed: boolean) => void;
+        reject: (error: unknown) => void;
+      };
+      void switchResearchProject(request.path, request.openPath).then(request.resolve, request.reject);
+    }),
     onResearchEvent(
       "toggleFiles",
       handle(() => toggleResearchPanel("files")),

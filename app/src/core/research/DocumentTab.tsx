@@ -144,7 +144,7 @@ export async function openDocumentFile(path: string): Promise<DocumentTab | unde
     await open(path);
     return;
   }
-  await ResearchFolder.ensureRootRegistered();
+  if (ResearchFolder.isInside(path)) await ResearchFolder.ensureRootRegistered();
   const identified = await identifyDocument(path);
   const { key } = identified;
   let task = opening.get(key);

@@ -4,7 +4,6 @@ import { Settings } from "@/core/service/Settings";
 import { createDefaultMetadata } from "@/types/metadata";
 import { encode } from "@msgpack/msgpack";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { exists, readDir, stat, writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
@@ -18,7 +17,7 @@ export interface ResearchFileEntry {
   absPath: string;
   relPath: string;
   name: string;
-  kind: FileKind | "workspace";
+  kind: FileKind | "workspace" | "other";
   size?: number;
   mtime?: number;
 }
@@ -77,6 +76,7 @@ function splitSegments(path: string): string[] {
 
 function joinSegments(segments: string[], absolute: boolean): string {
   const joined = segments.join("/");
+  if (absolute && segments.length === 1 && /^[a-zA-Z]:$/.test(joined)) return `${joined}/`;
   // 盘符路径（C:/...）和 UNC 路径（//server/share/...）本身就是绝对路径，不需要再加前导 /
   if (absolute && !isRootSegment(segments[0])) return `/${joined}`;
   return joined;
@@ -121,6 +121,7 @@ function researchKindOf(name: string): ResearchFileEntry["kind"] | null {
 export async function scanResearchFolder(
   root: string,
   fs: ResearchFolderFs = { readDir, stat },
+  includeOther = false,
 ): Promise<ResearchFolderScan> {
   const entries: ResearchFileEntry[] = [];
   const unreadableDirs: string[] = [];
@@ -141,7 +142,7 @@ export async function scanResearchFolder(
           continue;
         }
         if (!child.isFile) continue;
-        const kind = researchKindOf(child.name);
+        const kind = researchKindOf(child.name) ?? (includeOther ? "other" : null);
         if (!kind) continue;
         if (entries.length >= LIST_FILES_MAX_ENTRIES) {
           truncated = true;
@@ -222,22 +223,14 @@ export const ResearchFolder = {
     return Settings.researchFolderPath;
   },
 
-  /** 弹窗选文件夹，存进设置并调用 Rust 的 set_research_root；用户取消或设置失败（已弹提示）时返回 null */
+  /** 所有选项目入口都走软件内浏览和会话切换。 */
   async chooseRoot(): Promise<string | null> {
-    const picked = await open({
-      directory: true,
-      multiple: false,
-      title: t("files.chooseFolderDialogTitle"),
-      defaultPath: ResearchFolder.getRoot() || undefined,
-    });
-    if (typeof picked !== "string") return null;
-    let canonical: string;
-    try {
-      canonical = await invoke<string>("set_research_root", { path: picked });
-    } catch (error) {
-      toast.error(t("files.setRootFailed", { error: String(error) }));
-      return null;
-    }
+    const { chooseResearchFolder } = await import("./ResearchSession");
+    return chooseResearchFolder();
+  },
+
+  async setRoot(path: string): Promise<string> {
+    const canonical = await invoke<string>("set_research_root", { path });
     registeredRoot = { root: canonical, promise: Promise.resolve(canonical) };
     Settings.researchFolderPath = canonical;
     notifyResearchFilesChanged();
@@ -271,8 +264,7 @@ export const ResearchFolder = {
     await entry.promise;
   },
 
-  isInside(absPath: string): boolean {
-    const root = ResearchFolder.getRoot();
+  isInside(absPath: string, root: string = ResearchFolder.getRoot()): boolean {
     if (!root || !isAbsolutePath(absPath)) return false;
     const rootSegments = resolveSegments(splitSegments(root));
     const pathSegments = resolveSegments(splitSegments(absPath));
@@ -310,11 +302,11 @@ export const ResearchFolder = {
   },
 
   /** 列出研究文件夹里的文件，同时告诉调用方有没有被截断、哪些子文件夹读不了；没选文件夹时返回空列表 */
-  async scan(): Promise<ResearchFolderScan> {
+  async scan(includeOther = false): Promise<ResearchFolderScan> {
     const root = ResearchFolder.getRoot();
     if (!root) return { entries: [], truncated: false, unreadableDirs: [] };
     await ResearchFolder.ensureRootRegistered();
-    return await scanResearchFolder(ResearchFolder.getRoot());
+    return await scanResearchFolder(ResearchFolder.getRoot(), { readDir, stat }, includeOther);
   },
 
   /** 跳过点开头的、符号链接、.workbench、*_backup*、临时文件；深度 ≤6，最多 5000 条 */

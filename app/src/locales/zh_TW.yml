@@ -654,7 +654,7 @@ settings:
       所以，建議開啟此選項。
     researchTitle: 關閉窗口時自動保存
     researchDescription: |
-      關閉窗口前，先把已經保存過、又有改動的工作區存一遍。還沒保存過的草稿仍會提示。打開「自動保存」時也會這樣做
+      關閉窗口前，先把已經保存過、又有改動的白板存一遍。還沒保存過的草稿仍會提示。打開「自動保存」時也會這樣做
   autoSave:
     title: 開啟自動保存
     description: |
@@ -662,7 +662,7 @@ settings:
       此功能目前僅對已有路徑的文件有效，不對草稿文件生效！
     researchTitle: 自動保存
     researchDescription: |
-      已經保存過的工作區，停手約 5 秒後自動保存，另外按下面的間隔定時再存一次。草稿還沒有保存位置，不會自動保存
+      已經保存過的白板，停手約 5 秒後自動保存，另外按下面的間隔定時再存一次。草稿還沒有保存位置，不會自動保存
   autoSaveInterval:
     title: 開啟自動保存間隔（秒）
     description: |
@@ -1256,15 +1256,15 @@ settings:
     description: |
       把論文放到白板上時，抽取前幾頁的文字給 AI 參考。填 0 表示不抽取
   researchFolderPath:
-    title: 研究文件夾
+    title: 當前項目（研究文件夾）
     description: |
-      論文、圖片、筆記和工作區都放在這個文件夾裡
+      論文、圖片、筆記和白板都放在這個項目文件夾裡
   writeAiSidecarOnSave:
     title: 保存時生成 AI 可讀的文字版
     description: |
-      保存工作區時，在旁邊的 .workbench 文件夾裡寫一份 JSON 和 Markdown，方便 AI 工具讀懂白板
+      保存白板時，在旁邊的 .workbench 文件夾裡寫一份 JSON 和 Markdown，方便 AI 工具讀懂白板
   researchSession:
-    title: 上次打開的工作區和麵板
+    title: 上次打開的白板和麵板
   researchShowFullMenu:
     title: 顯示完整菜單
     description: |
@@ -1296,11 +1296,11 @@ settings:
   mcpAllowEdits:
     title: 允許外部 AI 修改白板
     description: |
-      關掉後，外部 AI（Claude Code、Codex 等）只能讀：看有哪些工作區、讀卡片和連線，不能添加、修改或刪除任何東西
+      關掉後，外部 AI（Claude Code、Codex 等）只能讀：看有哪些白板、讀卡片和連線，不能添加、修改或刪除任何東西
   mcpAllowDelete:
     title: 允許外部 AI 刪除卡片
     description: |
-      刪除卡片、清空白板這幾個工具。工作區開著時刪了可以撤銷；沒開時直接改文件，撤銷不了
+      刪除卡片、清空白板這幾個工具。白板開著時刪了可以撤銷；沒開時直接改文件，撤銷不了
   mcpAllowNetwork:
     title: 允許外部 AI 聯網搜圖和識圖
     description: |
@@ -2880,6 +2880,40 @@ projectOwnership:
 
 # 科研工作臺。每個工作單元只往自己的小節里加鍵
 research:
+  projectTree:
+    defaultName: 我的工作區
+    workspaceHint: 工作區是一張項目清單，項目可以在磁盤的不同位置
+    toggle: 展開或摺疊工作區
+    add: 添加項目…
+    create: 新建項目…
+    rename: 重命名工作區
+    nameHint: 給這張項目清單起個名字，不會重命名磁盤上的文件夾。
+    emptyName: 工作區名字不能為空。
+    remove: 從工作區移除…
+    removeHint: "從清單裡移除 {{path}}？磁盤上的文件不會刪除。移除當前項目時，會先處理未保存的白板和 Markdown。"
+    current: 當前
+    empty: 添加已有文件夾，或新建一個項目。它們可以位於不同磁盤。
+    missing: 找不到項目或無法訪問，請檢查磁盤連接和文件夾權限；可刷新或從工作區移除。
+    unreadable: 文件夾找不到或無法讀取，請刷新後重試。
+    noFiles: 文件夾為空
+    expand: "展開或摺疊 {{name}}"
+    actions: "{{name}} 的項目菜單"
+    searchIn: "當前項目：{{name}}"
+    saveBoard: 切換項目之前，是否保存白板的更改？
+    switchBusy: 正在切換項目或保存文件，請稍後重試。
+    locations: 文件夾起點
+    home: 主目錄
+    drives: 外接磁盤 / 驅動器
+    recent: 最近用過的項目
+    parent: 上一級文件夾
+    folders: 子文件夾
+    noFolders: 沒有可顯示的子文件夾
+    addHint: 只瀏覽文件夾。進入目標文件夾後，選「就用這個文件夾」加入工作區。
+    createHint: 先進入要存放項目的位置，再填寫新項目的文件夾名。
+    projectName: 項目文件夾名
+    useFolder: 就用這個文件夾
+    createHere: 在此新建項目
+    invalidProjectName: 名字不能為空，不能使用路徑、隱藏名稱、Windows 保留名稱或以句點結尾。
   document:
     loading: 正在讀取…
     source: Markdown 源碼
@@ -2918,7 +2952,7 @@ research:
     copyPath: 複製文件路徑
     copyRelativePath: 複製相對路徑
     delete: 刪除文件…
-    deleteDescription: "將「{{name}}」移入工作臺回收站？已打開的工作區會先保存並關閉。引用此文件的卡片會顯示文件缺失，恢復後可繼續使用。"
+    deleteDescription: "將「{{name}}」移入工作臺回收站？已打開的白板會先保存並關閉。引用此文件的卡片會顯示文件缺失，恢復後可繼續使用。"
     deleted: 已移入工作臺回收站
     restore: 撤銷刪除
     restoreLast: 恢復最近刪除的文件
@@ -2932,23 +2966,23 @@ research:
     title: 重命名
     description: 輸入新文件名。白板中的文件引用會一起更新。
     invalid: 文件名不能為空，也不能包含路徑或特殊字符。
-    busy: 正在保存或重命名，請稍後重試；其他窗口打開的工作區需要先關閉。
+    busy: 正在保存或重命名，請稍後重試；其他窗口打開的白板需要先關閉。
     outside: 只能重命名當前研究文件夾內的文件。
     exists: 同名文件已存在，請換一個名字。
     incompleteScan: 無法完整讀取研究文件夾，暫未改名，以免遺漏卡片引用。
-    changed: 重命名期間工作區發生了編輯或關閉，已取消，請重試。
+    changed: 重命名期間白板發生了編輯或關閉，已取消，請重試。
     rollbackFailed: 重命名失敗，部分文件恢復也失敗，請保留當前文件並檢查錯誤信息。
     followupFailed: 文件已重命名，但更新最近記錄或 AI 文字版失敗
   shell:
     title: 科研工作臺
     rail:
-      workspace: 工作區
+      workspace: 白板
       ai: AI 對話
-      aiNeedsWorkspace: AI 對話（打開工作區後可用）
+      aiNeedsWorkspace: AI 對話（打開白板後可用）
       files: 文件
       settings: 設置
     setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
-    restoreFailed: "沒能重新打開工作區 {{path}}：{{message}}"
+    restoreFailed: "沒能重新打開白板 {{path}}：{{message}}"
     panelFailed: "沒能打開面板：{{message}}"
     autoSaveFailed: "關閉前自動保存「{{name}}」失敗：{{message}}"
     extensionsDisabled: 科研工作臺不運行擴展，數據只留在本機
@@ -2958,7 +2992,7 @@ research:
     showSidePanel: 展開面板
   statusBar:
     outsideFolder: 研究文件夾外
-    outsideFolderHint: 這塊白板不在研究文件夾裡，是臨時打開的。照常保存，但不生成 AI 文字版，不進最近文件，下次啟動不會自動打開，外部 AI 也改不了它。想變成正式的工作區，用「另存為」存進研究文件夾。
+    outsideFolderHint: 這塊白板不在當前項目裡，是臨時打開的。照常保存，但不生成 AI 文字版，不進最近文件，下次啟動不會自動打開，外部 AI 也改不了它。想納入當前項目，用「另存為」存進研究文件夾。
     nodes: "{{count}} 個節點"
     edges: "{{count}} 條連線"
     selected: "已選 {{count}} 個"
@@ -2975,7 +3009,7 @@ research:
     title: 菜單
     keyBindsGroup:
       title: 科研工作臺
-      description: 工作區、AI 對話和文件面板的快捷鍵。在側邊面板或輸入框裡也能用。
+      description: 白板、AI 對話和文件面板的快捷鍵。在側邊面板或輸入框裡也能用。
     items:
       file:
         title: 文件
@@ -3000,8 +3034,8 @@ research:
       quit:
         title: 退出科研工作臺
       newResearchWorkspace:
-        title: 新建工作區
-        description: 在研究文件夾裡新建一個工作區並打開
+        title: 新建白板
+        description: 在當前項目裡新建一個白板並打開
       researchChooseFolder:
         title: 選擇研究文件夾…
         description: 選一個放論文、圖片和筆記的文件夾
@@ -3010,8 +3044,8 @@ research:
       openCurrentProjectFileFolder:
         title: 在 Finder 中顯示
       researchFocusWorkspace:
-        title: 工作區
-        description: 回到當前工作區的白板
+        title: 白板
+        description: 回到當前白板
       researchToggleAIChat:
         title: AI 對話
         description: 打開或收起右側的 AI 對話面板
@@ -3033,34 +3067,34 @@ research:
     chooseFolder: 選擇文件夾
     chooseFolderDialogTitle: 選擇研究文件夾
     refresh: 刷新
-    newWorkspace: 新建工作區
+    newWorkspace: 新建白板
     new: 新建
     noFolder: 未選擇研究文件夾
     changeFolder: 更換研究文件夾…
     revealInFinder: 在訪達中顯示
-    searchPlaceholder: 搜索文件名
+    searchPlaceholder: 搜索當前項目的文件
     clearSearch: 清除搜索
     loading: 正在讀取文件夾…
     loadFailed: "讀不了這個文件夾：{{error}}"
     retry: 重試
     noMatch: 沒有找到匹配的文件
     opened: 已打開
-    workspaceRowHint: 單擊打開這個工作區
-    fileRowHint: 雙擊用默認程序打開，拖到白板上生成卡片
+    workspaceRowHint: 雙擊打開白板；其他項目的白板會先切換項目
+    fileRowHint: 雙擊打開，Markdown 和 PDF 在軟件內打開；拖到白板上生成卡片
     truncated: "文件太多，只列出了前 {{count}} 個"
     unreadableDirs: "有 {{count}} 個子文件夾讀不了，已跳過"
     setRootFailed: "沒能設置研究文件夾：{{error}}"
     noRoot: 請先選擇研究文件夾
     outsideFolder: "這個文件不在研究文件夾裡，沒有打開：{{path}}"
     sections:
-      workspace: 工作區
+      workspace: 白板
       pdf: 論文
       image: 圖片
       markdown: 筆記
     sectionEmpty:
-      workspace: 還沒有工作區，點「新建」建一個
+      workspace: 還沒有白板，點「新建」建一個
     workspaceName:
-      empty: 工作區名字不能為空
+      empty: 白板名字不能為空
       invalidChars: '名字裡不能有這些字符：\ / : * ? " < > |'
       hidden: 名字不能以「.」或「~$」開頭，也不能包含「_backup」，否則文件面板裡看不到它
       exists: "「{{name}}.prg」已經有了，換個名字吧"
@@ -3099,11 +3133,11 @@ research:
   drop:
     title: 放到白板上
     hint: 鬆開鼠標，把文件放到白板上
-    hintDetail: 支持 PDF、圖片和 Markdown；.prg 文件會作為工作區打開
+    hintDetail: 支持 PDF、圖片和 Markdown；.prg 文件會作為白板打開
     unsupported: 暫不支持的文件類型：{{names}}
     separator: 、
     andMore: " 等 {{count}} 個"
-    noBoard: 先打開或新建一個工作區，再把文件拖進來
+    noBoard: 先打開或新建一個白板，再把文件拖進來
     failed: 放置文件時出錯：{{message}}
     cancel: 取消
     copied: "已複製 {{count}} 個文件到研究文件夾的「{{folder}}」"
@@ -3125,26 +3159,26 @@ research:
   clipboard:
     nothingToPaste: 剪貼板裡沒有能貼到白板上的文字或圖片
   workspace:
-    title: 工作區
+    title: 白板
     noFolder: 還沒有選擇研究文件夾
-    empty: 研究文件夾裡還沒有工作區
+    empty: 當前項目裡還沒有白板
     opened: 已打開
-    new: 新建工作區
+    new: 新建白板
     chooseFolder: 選擇研究文件夾
     changeFolder: 換文件夾
-    listFailed: "讀取工作區列表失敗：{{message}}"
+    listFailed: "讀取白板列表失敗：{{message}}"
     failed: "操作失敗：{{message}}"
-    newTitle: 新建工作區
-    newDescription: 給工作區起個名字，它會保存成研究文件夾裡的一個 .prg 文件
+    newTitle: 新建白板
+    newDescription: 給白板起個名字，它會保存成當前項目裡的一個 .prg 文件
     newPlaceholder: 例如：文獻綜述
     save:
-      sidecarFailed: "工作區已保存，但給 AI 讀的文字版（.workbench 文件夾）沒能寫出來：{{error}}"
-      outsideFolder: "沒有保存：請把工作區存到研究文件夾（{{root}}）裡面。你選的位置是 {{path}}"
+      sidecarFailed: "白板已保存，但給 AI 讀的文字版（.workbench 文件夾）沒能寫出來：{{error}}"
+      outsideFolder: "沒有保存：請把白板存到當前項目（{{root}}）裡面。你選的位置是 {{path}}"
       autoSaveFailed: "自動保存失敗，改動還沒有寫進文件：{{error}}。稍後會自動再試，也可以手動保存。"
   ai:
     title: AI 助手
-    noWorkspace: 先打開一個工作區
-    noWorkspaceHint: AI 會讀當前白板上的卡片、連線和分組，打開工作區後就能問它了。
+    noWorkspace: 先打開一個白板
+    noWorkspaceHint: AI 會讀當前白板上的卡片、連線和分組，打開白板後就能問它了。
     setupTitle: 先在設置裡填 AI 接口
     setupDescription: 還沒有填：{{missing}}。填好後就可以問 AI 了。
     setupMissingSeparator: 、
@@ -3228,21 +3262,21 @@ research:
   welcome:
     title: 歡迎使用科研工作臺
     subtitle: 把論文、圖片和筆記擺到白板上，理清思路，再請 AI 幫你看看還缺什麼
-    folder: 研究文件夾
+    folder: 當前項目（研究文件夾）
     chooseFolder: 選擇研究文件夾
     changeFolder: 換一個文件夾
-    noFolderHint: 先選一個放論文和筆記的文件夾，工作區也會保存在裡面
-    workspaces: 工作區
-    newWorkspace: 新建工作區
-    noWorkspaces: 這個文件夾裡還沒有工作區，新建一個開始吧
+    noFolderHint: 先添加一個項目文件夾，白板、論文和筆記都放在裡面
+    workspaces: 白板
+    newWorkspace: 新建白板
+    noWorkspaces: 這個項目裡還沒有白板，新建一個開始吧
     draft: 先隨便畫畫（臨時草稿）
-    openOther: 打開其他工作區文件
-    recent: 最近改過的工作區
-    dropHint: 打開工作區後，從文件面板把論文、圖片、筆記拖到白板上
+    openOther: 打開其他白板文件
+    recent: 最近改過的白板
+    dropHint: 打開白板後，從文件面板把論文、圖片、筆記拖到白板上
     howTo:
       title: 三步上手
       step1: 選擇研究文件夾，把論文（PDF）、圖片和筆記放進去
-      step2: 新建工作區，從左邊的文件面板把文件拖到白板上，連線、分組、寫下想法
+      step2: 新建白板，從左邊的文件面板把文件拖到白板上，連線、分組、寫下想法
       step3: 打開 AI 對話，讓它根據白板上的內容幫你梳理思路、找出缺口
   settings:
     title: 科研工作臺
@@ -3322,8 +3356,8 @@ research:
         description: 這臺電腦上裝了哪些；沒裝的可以在終端裡一鍵安裝、登錄
         button: 管理…
     externalAi:
-      intro: Claude Code、Codex 這類 AI 軟件可以通過 MCP 讀和改你的白板。在終端裡運行一次下面的命令，以後在那個軟件裡直接讓它「看看我的工作區」就行。
-      live: 工作區開在這裡時，AI 的改動馬上出現在白板上，可以按 Cmd+Z 撤銷；沒開時直接改文件。AI 能做哪些事由上一頁的三個開關決定，改了馬上生效。
+      intro: Claude Code、Codex 這類 AI 軟件可以通過 MCP 讀和改你的白板。在終端裡運行一次下面的命令，以後在那個軟件裡直接讓它「看看我的白板」就行。
+      live: 白板開在這裡時，AI 的改動馬上出現在白板上，可以按 Cmd+Z 撤銷；沒開時直接改文件。AI 能做哪些事由上一頁的三個開關決定，改了馬上生效。
       claudeCode: Claude Code
       codex: Codex
       others: 其他軟件（Claude Desktop、Cursor 等）
@@ -3332,7 +3366,7 @@ research:
       copied: 已複製
       unavailable: 安裝包版本還不能連接外部 AI，以後打包時補上。現在請用從倉庫啟動的開發版。
       noNode: 沒找到 Node.js。外部 AI 要靠它運行這個接口，請先安裝 Node.js，再回到這裡複製命令。
-      appHomeNote: 命令裡的 --app-home（{{home}}）是這個程序存設置的位置，外部 AI 要靠它找到正開著的工作區，不要刪掉。
+      appHomeNote: 命令裡的 --app-home（{{home}}）是這個程序存設置的位置，外部 AI 要靠它找到正開著的白板，不要刪掉。
     localAgents:
       intro: 用你自己在這臺電腦上裝好、登錄好的 AI 程序。Claude Code 的用量按 Anthropic 的規則算在你的訂閱裡。
       adapterNote: Codex 和 Claude Code 除了本體，還要裝一個「轉接器」才能接進來。點「在終端中安裝」會打開終端並填好命令，按回車就行；裝好後回到這裡會自動刷新。

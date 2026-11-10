@@ -19,11 +19,33 @@ const mocks = vi.hoisted(() => ({
   openAI: vi.fn(),
   toastError: vi.fn(),
   calls: [] as string[],
+  authorize: vi.fn(),
+  setRoot: vi.fn(),
+  remember: vi.fn(),
+  buttons: vi.fn(),
+  browse: vi.fn(),
 }));
 
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
 vi.mock("@/core/service/Telemetry", () => ({ Telemetry: { event: vi.fn() } }));
-vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: vi.fn(), input: vi.fn() } }));
+vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: mocks.buttons, input: vi.fn() } }));
+vi.mock("./ResearchFolderBrowser", () => ({ browseResearchProject: mocks.browse }));
+vi.mock("./ResearchWorkspace", () => ({
+  authorizeResearchProject: mocks.authorize,
+  projectPathKey: (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
+  rememberProjectSession: mocks.remember,
+  loadResearchWorkspace: vi.fn(async () => ({})),
+  activeResearchWorkspace: () => ({
+    projects: [{ path: "/next", session: { openWorkspaces: ["restored.prg"], active: "restored.prg" } }],
+  }),
+}));
+vi.mock("./DocumentTab", () => ({
+  DocumentTab: class DocumentTab {
+    id = crypto.randomUUID();
+    closing = false;
+    beforeClose = vi.fn(async () => true);
+  },
+}));
 vi.mock("@tauri-apps/plugin-fs", () => ({ exists: mocks.exists }));
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
@@ -36,6 +58,7 @@ vi.mock("@/core/research/ResearchFolder", async (importOriginal) => {
     ResearchFolder: {
       ...actual.ResearchFolder,
       ensureRootRegistered: mocks.ensureRootRegistered,
+      setRoot: mocks.setRoot,
       listFiles: vi.fn(async () => []),
     },
   };
@@ -46,10 +69,17 @@ vi.mock("@/core/Project", () => {
     layout = "docked";
     closing = false;
     zIndex = 0;
+    projectState = "saved";
+    isSaving = false;
+    fileMutationInProgress = false;
+    title = "board";
+    save = vi.fn(async () => {
+      this.projectState = "saved";
+    });
     floatingRect = { clone: () => ({ width: 0, height: 0, left: 0, top: 0, location: { x: 0, y: 0 } }) };
     constructor(readonly uri: URI) {}
   }
-  return { Project };
+  return { Project, ProjectState: { Unsaved: "unsaved", Saved: "saved", Stashed: "stashed" } };
 });
 vi.mock("@/core/service/GlobalMenu", () => ({
   onOpenFile: mocks.onOpenFile,
@@ -57,7 +87,8 @@ vi.mock("@/core/service/GlobalMenu", () => ({
   closeEmptyDrafts: vi.fn(),
 }));
 
-import { Project } from "@/core/Project";
+import { Project, ProjectState } from "@/core/Project";
+import { DocumentTab } from "./DocumentTab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import {
   isTabVisibleInWorkspace,
@@ -65,6 +96,8 @@ import {
   persistResearchSession,
   setResearchSessionTracking,
   startResearchSession,
+  switchResearchProject,
+  chooseResearchFolder,
 } from "./ResearchSession";
 
 function addProject(uri: URI) {
@@ -75,6 +108,7 @@ function addProject(uri: URI) {
 
 describe("ResearchSession", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     mocks.calls.length = 0;
     store.set(tabsAtom, []);
@@ -96,6 +130,12 @@ describe("ResearchSession", () => {
     });
     mocks.openFiles.mockImplementation(() => mocks.calls.push("panel:files"));
     mocks.openAI.mockImplementation(() => mocks.calls.push("panel:ai"));
+    mocks.authorize.mockImplementation(async (path) => path);
+    mocks.remember.mockResolvedValue(undefined);
+    mocks.setRoot.mockImplementation(async (path) => {
+      mocks.settings.researchFolderPath = path;
+      return path;
+    });
   });
 
   it("does not overwrite the saved session before tracking starts", () => {
@@ -243,6 +283,99 @@ describe("ResearchSession", () => {
     await startResearchSession();
 
     expect(mocks.toastError).toHaveBeenCalledWith("shell.setRootFailed");
+  });
+
+  it("switches before opening another project's board, remembers the old session and restores the destination", async () => {
+    setResearchSessionTracking(true);
+    const board = addProject(URI.file("/research/old.prg"));
+    board.projectState = ProjectState.Unsaved;
+    mocks.buttons.mockResolvedValue("save");
+    const close = vi.spyOn(TabWorkspace, "close").mockImplementation(async (id) => {
+      store.set(
+        tabsAtom,
+        store.get(tabsAtom).filter((tab) => tab.id !== id),
+      );
+    });
+    mocks.onOpenFile.mockImplementation(async (uri: URI) => {
+      expect(mocks.settings.researchFolderPath).toBe("/next");
+      return addProject(uri);
+    });
+    expect(await switchResearchProject("/next", "/next/deep/new.prg")).toBe(true);
+    expect(board.save).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledWith(board.id);
+    expect(mocks.remember).toHaveBeenCalledWith("/research");
+    expect(mocks.onOpenFile.mock.calls.map(([uri]) => uri.fsPath)).toEqual([
+      "/next/restored.prg",
+      "/next/deep/new.prg",
+    ]);
+    expect(mocks.settings.researchSession.openWorkspaces).toEqual(["restored.prg", "deep/new.prg"]);
+  });
+
+  it("keeps the current root and stops opening when a board prompt is cancelled or saving leaves edits", async () => {
+    const board = addProject(URI.file("/research/a.prg"));
+    board.projectState = ProjectState.Unsaved;
+    mocks.buttons.mockResolvedValueOnce("cancel").mockResolvedValueOnce("save");
+    vi.mocked(board.save).mockResolvedValue(undefined);
+    expect(await switchResearchProject("/next", "/next/a.prg")).toBe(false);
+    expect(await switchResearchProject("/next")).toBe(false);
+    expect(mocks.setRoot).not.toHaveBeenCalled();
+    expect(mocks.onOpenFile).not.toHaveBeenCalled();
+    expect(board.closing).toBe(false);
+  });
+
+  it("remembers the file path assigned to a draft by the switch-time save prompt", async () => {
+    const board = addProject(URI.parse("draft:new"));
+    board.projectState = ProjectState.Unsaved;
+    mocks.buttons.mockResolvedValue("save");
+    vi.mocked(board.save).mockImplementation(async () => {
+      Object.defineProperty(board, "uri", { value: URI.file("/research/new.prg") });
+      board.projectState = ProjectState.Saved;
+    });
+    vi.spyOn(TabWorkspace, "close").mockImplementation(async (id) => {
+      store.set(
+        tabsAtom,
+        store.get(tabsAtom).filter((tab) => tab.id !== id),
+      );
+    });
+    expect(await switchResearchProject("/next")).toBe(true);
+    expect(mocks.remember).toHaveBeenLastCalledWith("/research", { openWorkspaces: ["new.prg"], active: "new.prg" });
+  });
+
+  it("honors Markdown close cancellation and stops on save or close errors", async () => {
+    const document = new DocumentTab("/research/a.md", "markdown");
+    store.set(tabsAtom, [document]);
+    vi.spyOn(TabWorkspace, "close").mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("save conflict"));
+    expect(await switchResearchProject("/next")).toBe(false);
+    await expect(switchResearchProject("/next")).rejects.toThrow("save conflict");
+    expect(mocks.setRoot).not.toHaveBeenCalled();
+  });
+
+  it("checks missing and unselected projects before closing anything, and rejects an escaped board path", async () => {
+    const close = vi.spyOn(TabWorkspace, "close");
+    addProject(URI.file("/research/a.prg"));
+    await expect(switchResearchProject("/missing")).rejects.toThrow("projectTree.missing");
+    mocks.authorize.mockRejectedValueOnce(new Error("unselected"));
+    await expect(switchResearchProject("/unselected")).rejects.toThrow("unselected");
+    await expect(switchResearchProject("/next", "/next/../escape.prg")).rejects.toThrow("files.outsideFolder");
+    expect(close).not.toHaveBeenCalled();
+    expect(mocks.setRoot).not.toHaveBeenCalled();
+  });
+
+  it("serializes switching and uses the in-app browser for the existing choose-folder entry", async () => {
+    let finish!: (path: string) => void;
+    mocks.browse.mockResolvedValue("/next");
+    mocks.authorize.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const choosing = chooseResearchFolder();
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await expect(switchResearchProject("/other")).rejects.toThrow("projectTree.switchBusy");
+    finish("/next");
+    expect(await choosing).toBe("/next");
+    expect(mocks.browse).toHaveBeenCalledOnce();
   });
 });
 

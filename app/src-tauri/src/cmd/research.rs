@@ -23,34 +23,62 @@ pub fn set_research_root<R: Runtime>(
     state: State<'_, ResearchRoot>,
     path: String,
 ) -> Result<String, String> {
+    if path.is_empty() {
+        *state.0.lock().map_err(|error| error.to_string())? = None;
+        return Ok(String::new());
+    }
     let canonical = resolve_research_root(&path)?;
-    let stripped = strip_windows_verbatim_prefix(&canonical);
-    let display = display_root(&canonical, &path);
+    let display = allow_research_directory(&app, &canonical, &path)?;
+    let mut guard = state
+        .0
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard = Some(canonical);
+    Ok(display)
+}
 
+/// Only called for a project explicitly added to the user's workspace (including on restore).
+#[tauri::command]
+pub fn authorize_research_project<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+) -> Result<String, String> {
+    let canonical = resolve_research_root(&path)?;
+    allow_research_directory(&app, &canonical, &path)
+}
+
+fn allow_research_directory<R: Runtime>(
+    app: &AppHandle<R>,
+    canonical: &Path,
+    path: &str,
+) -> Result<String, String> {
     let scope = app
         .try_fs_scope()
         .ok_or_else(|| "文件访问插件没有加载".to_string())?;
+    for dir in research_directory_aliases(canonical, path) {
+        scope
+            .allow_directory(&dir, true)
+            .map_err(|e| format!("无法允许访问研究文件夹 {}: {e}", dir.display()))?;
+    }
+    Ok(display_root(canonical, path))
+}
+
+fn research_directory_aliases(canonical: &Path, path: &str) -> Vec<PathBuf> {
+    let stripped = strip_windows_verbatim_prefix(canonical);
+    let display = display_root(canonical, path);
     // The scope check may see either the canonical form (\\?\C:\..., /private/var/...) or the
     // form the user picked, so allow all of them; they name the same directory.
-    let mut allowed: Vec<PathBuf> = vec![canonical.clone()];
+    let mut allowed: Vec<PathBuf> = vec![canonical.to_path_buf()];
     for candidate in [
         PathBuf::from(&stripped),
         PathBuf::from(&display),
-        PathBuf::from(&path),
+        PathBuf::from(path),
     ] {
         if candidate.is_absolute() && !allowed.contains(&candidate) {
             allowed.push(candidate);
         }
     }
-    for dir in &allowed {
-        scope
-            .allow_directory(dir, true)
-            .map_err(|e| format!("无法允许访问研究文件夹 {}: {e}", dir.display()))?;
-    }
-
-    let mut guard = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    *guard = Some(canonical);
-    Ok(display)
+    allowed
 }
 
 fn resolve_research_root(path: &str) -> Result<PathBuf, String> {
@@ -177,8 +205,8 @@ fn find_on_path(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        development_cli_script, display_root, external_ai_mcp_launch, resolve_research_root,
-        strip_windows_verbatim_prefix,
+        development_cli_script, display_root, external_ai_mcp_launch, research_directory_aliases,
+        resolve_research_root, strip_windows_verbatim_prefix,
     };
     use std::path::Path;
 
@@ -201,8 +229,9 @@ mod tests {
         let file = folder.join("note.md");
         std::fs::write(&file, "x").unwrap();
 
-        let resolved = resolve_research_root(&folder.join("..").join("论文 papers").to_string_lossy())
-            .unwrap();
+        let resolved =
+            resolve_research_root(&folder.join("..").join("论文 papers").to_string_lossy())
+                .unwrap();
         assert_eq!(resolved, std::fs::canonicalize(&folder).unwrap());
         assert!(resolve_research_root("").is_err());
         assert!(resolve_research_root("   ").is_err());
@@ -210,6 +239,29 @@ mod tests {
         assert!(resolve_research_root(&base.join("missing").to_string_lossy()).is_err());
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn grants_only_the_selected_directory_and_its_aliases_not_its_parent() {
+        let canonical = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join("selected");
+        let picked = std::env::temp_dir().join("selected");
+        let aliases = research_directory_aliases(&canonical, &picked.to_string_lossy());
+        assert!(aliases.contains(&canonical));
+        assert!(aliases.contains(&picked));
+        assert!(!aliases
+            .iter()
+            .any(|path| path == canonical.parent().unwrap()));
+        let same = research_directory_aliases(&canonical, &canonical.to_string_lossy());
+        #[cfg(not(windows))]
+        assert_eq!(same, vec![canonical.clone()]);
+        assert!(same
+            .iter()
+            .all(|path| path.file_name() == canonical.file_name()));
+        let relative = research_directory_aliases(&canonical, "relative/selected");
+        assert!(!relative.iter().any(|path| path.is_relative()));
     }
 
     #[test]
@@ -233,7 +285,10 @@ mod tests {
         let unc = Path::new(r"\\?\UNC\nas\share\papers");
         assert_eq!(display_root(unc, r"z:\papers\"), r"Z:\papers");
         assert_eq!(display_root(unc, r"Z:/lab/./x/../papers"), r"Z:\lab\papers");
-        assert_eq!(display_root(unc, r"\\nas\share\papers"), r"\\nas\share\papers");
+        assert_eq!(
+            display_root(unc, r"\\nas\share\papers"),
+            r"\\nas\share\papers"
+        );
         assert_eq!(
             display_root(Path::new(r"\\?\C:\Research"), r"c:\Research"),
             r"C:\Research"

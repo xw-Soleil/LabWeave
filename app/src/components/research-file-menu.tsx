@@ -19,10 +19,12 @@ import { URI, Utils } from "vscode-uri";
 export default function ResearchFileMenu({
   entry,
   onOpen,
+  beforeModify,
   children,
 }: {
   entry: ResearchFileEntry;
   onOpen: () => void;
+  beforeModify?: () => Promise<boolean>;
   children: ReactElement;
 }) {
   const { t } = useTranslation("research");
@@ -54,12 +56,25 @@ export default function ResearchFileMenu({
           <Copy />
           {t("fileMenu.copyRelativePath")}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => run(() => promptResearchRename(entry.absPath))}>
+        <ContextMenuItem
+          onSelect={() =>
+            run(async () => {
+              if (!beforeModify || (await beforeModify())) await promptResearchRename(entry.absPath);
+            })
+          }
+        >
           <Pencil />
           {t("rename.title")} <span className="ml-auto text-xs">F2</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onSelect={() => run(() => promptTrashResearchFile(entry.absPath))}>
+        <ContextMenuItem
+          variant="destructive"
+          onSelect={() =>
+            run(async () => {
+              if (!beforeModify || (await beforeModify())) await promptTrashResearchFile(entry.absPath);
+            })
+          }
+        >
           <Trash2 />
           {t("fileMenu.delete")}
         </ContextMenuItem>

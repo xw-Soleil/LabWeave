@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   buttons: vi.fn(),
   error: vi.fn(),
+  registerRoot: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-fs", () => ({
   stat: mocks.stat,
@@ -17,7 +18,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 vi.mock("@/core/research/ResearchFolder", () => ({
-  ResearchFolder: { ensureRootRegistered: vi.fn() },
+  ResearchFolder: { ensureRootRegistered: mocks.registerRoot, isInside: (path: string) => path.startsWith("/r/") },
   notifyResearchFilesChanged: vi.fn(),
 }));
 vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
@@ -43,12 +44,19 @@ beforeEach(() => {
     mocks.readFile.mockResolvedValue(bytes);
   });
   mocks.open.mockResolvedValue(undefined);
+  mocks.registerRoot.mockResolvedValue(undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("document tab actions", () => {
+  it("opens an authorized noncurrent document without depending on the current project's disk", async () => {
+    mocks.registerRoot.mockRejectedValue(new Error("current disk missing"));
+    expect(await openDocumentFile("/other/a.md")).toBeInstanceOf(DocumentTab);
+    expect(mocks.registerRoot).not.toHaveBeenCalled();
+    await expect(openDocumentFile("/r/a.md")).rejects.toThrow("current disk missing");
+  });
   it("deduplicates concurrent opens, aliases and subsequent double clicks", async () => {
     const [first, second] = await Promise.all([openDocumentFile("/r/a.md"), openDocumentFile("/r/./a.md")]);
     expect(first).toBe(second);

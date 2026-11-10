@@ -34,13 +34,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function openMenu() {
+async function openMenu(beforeModify?: () => Promise<boolean>) {
   const onOpen = vi.fn();
   await act(async () =>
     root.render(
       <ResearchFileMenu
         entry={{ name: "a.pdf", absPath: "/research/papers/a.pdf", relPath: "papers/a.pdf", kind: "pdf" }}
         onOpen={onOpen}
+        beforeModify={beforeModify}
       >
         <button>paper</button>
       </ResearchFileMenu>,
@@ -61,6 +62,16 @@ async function select(label: string) {
   await act(async () => item!.click());
 }
 describe("file list context menu", () => {
+  it("does not rename or delete when switching to the containing project is cancelled", async () => {
+    const switchProject = vi.fn(async () => false);
+    await openMenu(switchProject);
+    await select("rename.title");
+    expect(switchProject).toHaveBeenCalledOnce();
+    expect(mocks.rename).not.toHaveBeenCalled();
+    await openMenu(switchProject);
+    await select("fileMenu.delete");
+    expect(mocks.trash).not.toHaveBeenCalled();
+  });
   it("shows all labeled file actions on an unselected row", async () => {
     await openMenu();
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent);
