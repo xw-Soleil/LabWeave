@@ -10,9 +10,14 @@ const mocks = vi.hoisted(() => ({
   release: vi.fn(),
   confirm: vi.fn(),
   notify: vi.fn(),
+  annotations: vi.fn(),
 }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { confirm: mocks.confirm } }));
 vi.mock("@/core/Project", () => ({ Project: class {}, ProjectState: { Saved: "saved", Unsaved: "unsaved" } }));
+vi.mock("./PdfAnnotationStore", () => ({
+  moveDocumentAnnotations: mocks.annotations,
+}));
+vi.mock("./DocumentTab", () => ({ documentError: String }));
 vi.mock("@/state", () => ({ tabsAtom: {}, store: { get: () => mocks.tabs } }));
 vi.mock("@/core/TabWorkspace", () => ({ TabWorkspace: { close: mocks.close } }));
 vi.mock("@/core/ProjectOwnership", () => ({
@@ -78,6 +83,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.files.clear();
   mocks.tabs.length = 0;
+  mocks.annotations.mockImplementation(async (_from: string, _to: string, operation: () => Promise<void>) =>
+    operation(),
+  );
   mocks.files.set("/research/paper.pdf", new Uint8Array([0, 255, 17]));
   mocks.close.mockImplementation(async (id: string) => {
     const index = mocks.tabs.findIndex((tab) => (tab as Project).id === id);
@@ -91,6 +99,27 @@ beforeEach(() => {
 });
 
 describe("recoverable file deletion", () => {
+  it("routes the same annotation entry through trash and restore, and refuses a conflicting sidecar", async () => {
+    const record = await trashResearchFile("/research/paper.pdf");
+    const entryId = record.directory.split("/").at(-1);
+    expect(mocks.annotations).toHaveBeenLastCalledWith(
+      "/research/paper.pdf",
+      `${record.directory}/paper.pdf`,
+      expect.any(Function),
+      { entryId },
+    );
+    mocks.annotations.mockRejectedValueOnce(new Error("annotationDestinationExists"));
+    await expect(restoreResearchFile(record)).rejects.toThrow("annotationDestinationExists");
+    expect(mocks.files.has("/research/paper.pdf")).toBe(false);
+    expect(mocks.files.get(`${record.directory}/paper.pdf`)).toEqual(new Uint8Array([0, 255, 17]));
+    expect(mocks.annotations).toHaveBeenLastCalledWith(
+      `${record.directory}/paper.pdf`,
+      "/research/paper.pdf",
+      expect.any(Function),
+      { entryId, restoring: true },
+    );
+  });
+
   it("moves the source file and restores the exact bytes using the persisted recovery record", async () => {
     const original = mocks.files.get("/research/paper.pdf");
     await trashResearchFile("/research/paper.pdf");

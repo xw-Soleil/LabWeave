@@ -51,6 +51,17 @@ afterEach(() => {
 });
 
 describe("document tab actions", () => {
+  it("normalizes a renamed Windows PDF path without changing tab identity or reader location", () => {
+    const tab = new DocumentTab("C:/papers/old.pdf", "pdf");
+    const id = tab.id;
+    tab.pdfLocation = { page: 3, scale: 1.5 };
+    tab.rebindPath("C:\\papers\\new.pdf");
+    expect(tab.path).toBe("c:/papers/new.pdf");
+    expect(tab.title).toBe("new.pdf");
+    expect(tab.id).toBe(id);
+    expect(tab.pdfLocation).toEqual({ page: 3, scale: 1.5 });
+  });
+
   it("opens an authorized noncurrent document without depending on the current project's disk", async () => {
     mocks.registerRoot.mockRejectedValue(new Error("current disk missing"));
     expect(await openDocumentFile("/other/a.md")).toBeInstanceOf(DocumentTab);

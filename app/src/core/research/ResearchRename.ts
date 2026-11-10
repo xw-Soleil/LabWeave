@@ -15,6 +15,8 @@ import { exists, mkdir, readFile, remove, stat, writeFile } from "@tauri-apps/pl
 import i18next from "i18next";
 import { toast } from "sonner";
 import { URI, Utils } from "vscode-uri";
+import { moveDocumentAnnotations } from "./PdfAnnotationStore";
+import { documentError } from "./DocumentTab";
 
 const fs = new FileSystemProviderFile();
 let busy = false;
@@ -129,7 +131,7 @@ export async function renameResearchFile(oldPath: string, name: string): Promise
       await fs.write(URI.file(plan.path), plan.after);
     }
     checkRevisions();
-    await remove(oldPath);
+    await moveDocumentAnnotations(oldPath, newPath, () => remove(oldPath));
     committed = true;
     for (const [project, rewrite] of liveRewrites) {
       let changed = false;
@@ -191,7 +193,7 @@ export async function renameResearchFile(oldPath: string, name: string): Promise
       }
     }
     // Keep both files if rollback was incomplete: a remaining reference may still need the new path.
-    if (created && errors.length === 1) {
+    if (created && errors.length === 1 && !(error instanceof Error && error.message === "annotationRollbackFailed")) {
       try {
         await remove(newPath);
       } catch (rollback) {
@@ -237,6 +239,6 @@ export async function promptResearchRename(path: string) {
   try {
     await renameResearchFile(path, name);
   } catch (error) {
-    toast.error(String(error));
+    toast.error(documentError(error));
   }
 }

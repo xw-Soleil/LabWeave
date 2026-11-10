@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -9,6 +10,16 @@ use tauri_plugin_fs::FsExt;
 pub struct ResearchRoot(Mutex<Option<PathBuf>>, Mutex<HashMap<String, PathBuf>>);
 
 impl ResearchRoot {
+    pub(crate) fn annotation_root(&self, key: &str) -> Result<PathBuf, String> {
+        self.1
+            .lock()
+            .map_err(|_| "annotationBusy".to_string())?
+            .iter()
+            .find(|(display, _)| format!("{:x}", Sha256::digest(display.as_bytes())) == key)
+            .map(|(_, path)| path.clone())
+            .ok_or_else(|| "annotationLocation".to_string())
+    }
+
     fn restore(&self, path: &str) -> Result<String, String> {
         let canonical = self
             .1
@@ -67,10 +78,17 @@ pub fn set_research_root<R: Runtime>(
 #[tauri::command]
 pub fn authorize_research_project<R: Runtime>(
     app: AppHandle<R>,
+    state: State<'_, ResearchRoot>,
     path: String,
 ) -> Result<String, String> {
     let canonical = resolve_research_root(&path)?;
-    allow_research_directory(&app, &canonical, &path)
+    let display = allow_research_directory(&app, &canonical, &path)?;
+    state
+        .1
+        .lock()
+        .map_err(|_| "annotationBusy".to_string())?
+        .insert(display.clone(), canonical);
+    Ok(display)
 }
 
 fn allow_research_directory<R: Runtime>(

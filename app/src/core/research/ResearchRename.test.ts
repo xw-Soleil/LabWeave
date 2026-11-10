@@ -13,8 +13,13 @@ const mocks = vi.hoisted(() => ({
   scan: vi.fn(),
   recent: vi.fn(),
   session: vi.fn(),
+  annotations: vi.fn(),
 }));
 vi.mock("@/core/Project", () => ({ Project: class {}, ProjectState: { Unsaved: "unsaved" } }));
+vi.mock("./PdfAnnotationStore", () => ({
+  moveDocumentAnnotations: mocks.annotations,
+}));
+vi.mock("./DocumentTab", () => ({ documentError: String }));
 vi.mock("@/components/ui/dialog", () => ({ Dialog: { input: vi.fn() } }));
 vi.mock("@/state", () => ({ tabsAtom: {}, store: { get: () => mocks.tabs, set: vi.fn() } }));
 vi.mock("@/core/service/Settings", () => ({ Settings: { writeAiSidecarOnSave: false } }));
@@ -105,6 +110,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.files.clear();
   mocks.tabs.length = 0;
+  mocks.annotations.mockImplementation(async (_from: string, _to: string, operation: () => Promise<void>) =>
+    operation(),
+  );
   mocks.write.mockImplementation(async (p: string, bytes: Uint8Array) => {
     mocks.files.set(p, bytes);
   });
@@ -121,6 +129,27 @@ beforeEach(() => {
 });
 
 describe("research rename transaction", () => {
+  it("keeps both PDF copies for recovery when rolling annotations back fails", async () => {
+    const pdf = new Uint8Array([1, 2, 3]);
+    mocks.files.set("/research/old.pdf", pdf);
+    mocks.annotations.mockRejectedValueOnce(new Error("annotationRollbackFailed"));
+    await expect(renameResearchFile("/research/old.pdf", "new")).rejects.toThrow("annotationRollbackFailed");
+    expect(mocks.files.get("/research/old.pdf")).toEqual(pdf);
+    expect(mocks.files.get("/research/new.pdf")).toEqual(pdf);
+  });
+
+  it("rolls back reference rewrites and keeps the PDF when its annotation file conflicts", async () => {
+    const board = await archive();
+    mocks.files.set("/research/old.pdf", new Uint8Array([1, 2, 3]));
+    mocks.files.set("/research/a.prg", board);
+    mocks.annotations.mockRejectedValueOnce(new Error("annotationDestinationExists"));
+    await expect(renameResearchFile("/research/old.pdf", "new")).rejects.toThrow("annotationDestinationExists");
+    expect(mocks.annotations).toHaveBeenCalledWith("/research/old.pdf", "/research/new.pdf", expect.any(Function));
+    expect(mocks.files.get("/research/old.pdf")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(mocks.files.has("/research/new.pdf")).toBe(false);
+    expect(mocks.files.get("/research/a.prg")).toEqual(board);
+  });
+
   it("does not lock, rewrite or save open temporary workspaces when a referenced file is renamed", async () => {
     mocks.files.set("/research/old.pdf", new Uint8Array([1]));
     const card = { sourcePath: "/research/old.pdf" };

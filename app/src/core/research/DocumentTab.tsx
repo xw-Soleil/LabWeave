@@ -9,9 +9,10 @@ import { FileText, NotebookPen } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
-import { identifyDocument, documentKey, MarkdownDocument, markdownFileIO } from "./DocumentFile";
+import { identifyDocument, documentKey, documentPath, MarkdownDocument, markdownFileIO } from "./DocumentFile";
 import { notifyResearchFilesChanged, ResearchFolder } from "./ResearchFolder";
 import { fileKindOf } from "./ResearchShell";
+import { loadAnnotationStore, type PdfAnnotationStore } from "./PdfAnnotationStore";
 
 const DocumentView = lazy(() => import("./DocumentView"));
 export const documentText = (key: string, options?: Record<string, unknown>) =>
@@ -31,6 +32,16 @@ export function documentError(error: unknown): string {
     "fileClosed",
     "unsupportedLink",
     "editsDuringReload",
+    "annotationBusy",
+    "annotationLocation",
+    "annotationReadFailed",
+    "annotationWriteFailed",
+    "annotationCorrupt",
+    "annotationChanged",
+    "annotationCleanupFailed",
+    "annotationDestinationExists",
+    "annotationRollbackFailed",
+    "annotationReadOnly",
   ];
   if (known.includes(code)) return documentText(`errors.${code}`);
   if (error instanceof Error && error.name === "PasswordException") return documentText("errors.pdfLocked");
@@ -38,8 +49,12 @@ export function documentError(error: unknown): string {
 }
 
 export class DocumentTab extends Tab {
-  readonly uri: URI;
+  uri: URI;
   markdown?: MarkdownDocument;
+  annotations?: PdfAnnotationStore;
+  loadingAnnotations = false;
+  private annotationLoading?: Promise<void>;
+  private annotationSaveTimer?: ReturnType<typeof setTimeout>;
   error = "";
   saving = false;
   loadingMarkdown = false;
@@ -52,22 +67,31 @@ export class DocumentTab extends Tab {
   );
 
   constructor(
-    readonly path: string,
+    public path: string,
     readonly kind: "markdown" | "pdf",
   ) {
     super({});
     this.uri = URI.file(path);
     this.closeOnEscape = false;
     this.beforeClose = async () => {
+      if (this.annotations?.moving) return false;
       if (!this.hasUnsavedChanges && !this.saving) return true;
       TabWorkspace.focus(this.id);
-      const answer = await Dialog.buttons(documentText("closeTitle"), this.title, [
-        { id: "cancel", label: documentText("cancel"), variant: "ghost" },
-        { id: "discard", label: documentText("discard"), variant: "destructive" },
-        { id: "save", label: documentText("save") },
-      ]);
+      const answer = await Dialog.buttons(
+        documentText(this.kind === "pdf" ? "annotation.closeTitle" : "closeTitle"),
+        this.title,
+        [
+          { id: "cancel", label: documentText("cancel"), variant: "ghost" },
+          { id: "discard", label: documentText("discard"), variant: "destructive" },
+          { id: "save", label: documentText("save") },
+        ],
+      );
       if (answer === "save") return (await this.save()) && !this.hasUnsavedChanges;
-      return answer === "discard" && !this.saving;
+      if (answer === "discard" && !this.saving) {
+        clearTimeout(this.annotationSaveTimer);
+        return true;
+      }
+      return false;
     };
   }
 
@@ -78,7 +102,7 @@ export class DocumentTab extends Tab {
     return this.kind === "markdown" ? NotebookPen : FileText;
   }
   override get hasUnsavedChanges() {
-    return this.markdown?.dirty ?? false;
+    return this.markdown?.dirty ?? this.annotations?.dirty ?? false;
   }
   getComponent() {
     return this.component;
@@ -87,6 +111,50 @@ export class DocumentTab extends Tab {
   changed() {
     this.emit("state-change");
     store.set(tabsAtom, [...store.get(tabsAtom)]);
+  }
+
+  rebindPath(path: string) {
+    this.path = documentPath(path);
+    this.uri = URI.file(this.path);
+    this.changed();
+  }
+
+  override async dispose() {
+    clearTimeout(this.annotationSaveTimer);
+    await super.dispose();
+  }
+
+  loadAnnotations(reload = false): Promise<void> {
+    if (this.annotationLoading) return this.annotationLoading;
+    if (this.closing || this.saving || (this.annotations && !reload)) return Promise.resolve();
+    this.loadingAnnotations = true;
+    this.changed();
+    this.annotationLoading = (async () => {
+      if (this.annotations) await this.annotations.reload();
+      else {
+        const annotations = await loadAnnotationStore(this.path);
+        if (!this.closing) this.annotations = annotations;
+      }
+      if (!this.closing) this.error = "";
+    })()
+      .catch((error) => {
+        if (!this.closing) this.error = documentError(error);
+      })
+      .finally(() => {
+        this.annotationLoading = undefined;
+        this.loadingAnnotations = false;
+        if (!this.closing) this.changed();
+      });
+    return this.annotationLoading;
+  }
+
+  annotationsChanged() {
+    this.changed();
+    clearTimeout(this.annotationSaveTimer);
+    if (!this.error && !this.annotations?.moving)
+      this.annotationSaveTimer = setTimeout(() => {
+        if (!this.closing) void this.save();
+      }, 500);
   }
 
   loadMarkdown(reload = false): Promise<void> {
@@ -116,11 +184,13 @@ export class DocumentTab extends Tab {
   }
 
   async save(): Promise<boolean> {
-    if (!this.markdown || this.loadingMarkdown || this.closing) return false;
+    const document = this.kind === "pdf" ? this.annotations : this.markdown;
+    if (!document || this.loadingMarkdown || this.loadingAnnotations || this.closing) return false;
+    clearTimeout(this.annotationSaveTimer);
     this.saving = true;
     this.changed();
     try {
-      await this.markdown.save();
+      await document.save();
       this.error = "";
       notifyResearchFilesChanged();
       return true;

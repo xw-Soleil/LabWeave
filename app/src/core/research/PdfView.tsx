@@ -54,6 +54,14 @@ import {
   readPdfBuffer,
 } from "./PdfReader";
 import { bindPdfZoom, zoomPdf } from "./PdfZoom";
+import {
+  PdfAnnotationLayer,
+  PdfAnnotationSidebar,
+  PdfAnnotationToolbar,
+  PdfSelectionMenu,
+  usePdfAnnotations,
+  type AnnotationController,
+} from "./PdfAnnotationUI";
 
 const reportToast = (error: unknown) => toast.error(documentError(pdfReaderError(error)));
 
@@ -77,6 +85,7 @@ function PdfPage({
   onPaint,
   onError,
   onNavigate,
+  annotations,
 }: {
   document: PdfDocumentObject;
   engine: PdfReaderEngine;
@@ -85,20 +94,25 @@ function PdfPage({
   onPaint: () => void;
   onError: (error: unknown) => void;
   onNavigate: (target: PdfLinkTarget | undefined) => void;
+  annotations: AnnotationController;
 }) {
   const documentId = pdf.id;
   const [painted, setPainted] = useState(false);
   const [links, setLinks] = useState<PdfLinkAnnoObject[]>([]);
+  const receiveExternal = annotations.receiveExternal;
   useEffect(() => {
     const task = engine.getPageAnnotations(pdf, page);
     task.wait(
-      (annotations) => setLinks(annotations.filter((annotation) => annotation.type === PdfAnnotationSubtype.LINK)),
+      (annotations) => {
+        setLinks(annotations.filter((annotation) => annotation.type === PdfAnnotationSubtype.LINK));
+        receiveExternal(page, annotations);
+      },
       (error) => {
         if (error.type !== "abort") onError(pdfReaderError(error));
       },
     );
     return () => task.abort({ code: PdfErrorCode.Cancelled, message: "fileClosed" });
-  }, [engine, pdf, page, onError]);
+  }, [engine, pdf, page, onError, receiveExternal]);
   useEffect(() => {
     if (painted) return;
     const timer = setTimeout(() => onError(new Error("pdfTimeout")), PDF_READER_TIMEOUT);
@@ -153,6 +167,7 @@ function PdfPage({
             />
           );
         })}
+        <PdfAnnotationLayer controller={annotations} page={page} scale={scale} />
       </PagePointerProvider>
     </div>
   );
@@ -261,6 +276,11 @@ export function PdfReaderContent({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hasSelection, setHasSelection] = useState(false);
+  const revealAnnotations = useCallback(() => {
+    setSidebar(true);
+    setSidebarPage("annotations");
+  }, []);
+  const annotations = usePdfAnnotations(tab, pdf, engine, selection, revealAnnotations);
   const page = scrollState.currentPage;
   const pages = pdf.pages.length;
 
@@ -407,6 +427,16 @@ export function PdfReaderContent({
       className="flex min-h-0 flex-1 flex-col"
       onKeyDownCapture={(event) => {
         if (event.nativeEvent.isComposing || event.altKey || store.get(activeTabAtom) !== tab) return;
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          ["z", "y"].includes(event.key.toLowerCase()) &&
+          !(event.target as Element).closest("input, textarea, [contenteditable]")
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          annotations.history(event.key.toLowerCase() === "y" || event.shiftKey);
+          return;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
           if (!(event.target as Element).closest('.pg-document-pdf, [role="search"]')) return;
           event.preventDefault();
@@ -417,6 +447,10 @@ export function PdfReaderContent({
           event.preventDefault();
           event.stopPropagation();
           closeSearch();
+        } else if (event.key === "Escape") {
+          annotations.setMenu(false);
+          annotations.setTool("select");
+          selection?.clear();
         } else if (
           (event.ctrlKey || event.metaKey) &&
           event.key.toLowerCase() === "c" &&
@@ -511,6 +545,7 @@ export function PdfReaderContent({
           </IconButton>
         </div>
       </div>
+      <PdfAnnotationToolbar controller={annotations} />
       {searchOpen && (
         <div role="search" className="bg-card flex items-center justify-end gap-1 border-b px-3 py-2">
           <Input
@@ -557,7 +592,10 @@ export function PdfReaderContent({
       )}
       <div className="flex min-h-0 flex-1">
         {sidebar && (
-          <aside className="bg-card w-56 max-w-[40%] shrink-0 border-r" aria-label={t("pdf.sidebar")}>
+          <aside
+            className={cn("bg-card max-w-[45%] shrink-0 border-r", sidebarPage === "annotations" ? "w-80" : "w-56")}
+            aria-label={t("pdf.sidebar")}
+          >
             <Tabs value={sidebarPage} onValueChange={setSidebarPage} className="h-full min-h-0 gap-0">
               <TabsList variant="line" className="w-full shrink-0 border-b">
                 <TabsTrigger value="thumbnails">{t("pdf.thumbnails")}</TabsTrigger>
@@ -610,8 +648,18 @@ export function PdfReaderContent({
                   </p>
                 )}
               </TabsContent>
-              <TabsContent value="annotations" className="min-h-0 overflow-auto p-6">
-                <p className="text-muted-foreground text-sm">{t("pdf.annotationsPlaceholder")}</p>
+              <TabsContent value="annotations" className="min-h-0 overflow-hidden">
+                <PdfAnnotationSidebar
+                  controller={annotations}
+                  jump={(pageIndex, x, y) =>
+                    scroll?.scrollToPage({
+                      pageNumber: pageIndex + 1,
+                      pageCoordinates: { x, y },
+                      alignY: 30,
+                      behavior: "instant",
+                    })
+                  }
+                />
               </TabsContent>
             </Tabs>
           </aside>
@@ -622,6 +670,7 @@ export function PdfReaderContent({
             tabIndex={0}
             className="pg-document-pdf outline-none"
             aria-label={t("pdf.readingArea")}
+            onScrollCapture={() => annotations.setMenu(false)}
           >
             <PdfGestures tab={tab} />
             <GlobalPointerProvider documentId={tab.id}>
@@ -636,11 +685,13 @@ export function PdfReaderContent({
                     onPaint={onPaint}
                     onError={onError}
                     onNavigate={navigate}
+                    annotations={annotations}
                   />
                 )}
               />
             </GlobalPointerProvider>
           </Viewport>
+          <PdfSelectionMenu controller={annotations} copy={copy} />
         </div>
       </div>
     </div>

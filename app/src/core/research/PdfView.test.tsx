@@ -4,7 +4,27 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), error: vi.fn(), writeText: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  read: vi.fn(),
+  error: vi.fn(),
+  writeText: vi.fn(),
+  open: vi.fn(),
+  annotationLoad: vi.fn(),
+  annotationSave: vi.fn(),
+  closeAnswer: vi.fn(),
+}));
+vi.mock("./PdfAnnotationStore", async (original) => {
+  const module = await original<typeof import("./PdfAnnotationStore")>();
+  return {
+    ...module,
+    loadAnnotationStore: async () =>
+      new module.PdfAnnotationStore({ kind: "external", pathKey: "a".repeat(64) }, await mocks.annotationLoad(), {
+        load: mocks.annotationLoad,
+        save: mocks.annotationSave,
+        move: vi.fn(),
+      }),
+  };
+});
 vi.mock("./PdfReader", async (original) => ({ ...(await original<object>()), readPdfBuffer: mocks.read }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { ensureRootRegistered: vi.fn() },
@@ -12,7 +32,7 @@ vi.mock("@/core/research/ResearchFolder", () => ({
 }));
 vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
 vi.mock("@/core/service/Telemetry", () => ({ Telemetry: {} }));
-vi.mock("@/components/ui/dialog", () => ({ Dialog: {} }));
+vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: mocks.closeAnswer } }));
 vi.mock("i18next", () => ({
   default: {
     t: (key: string, options: Record<string, unknown>) =>
@@ -25,11 +45,13 @@ vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 import { activeTabAtom, store } from "@/state";
 import { DocumentTab } from "./DocumentTab";
 import DocumentView from "./DocumentView";
+import { annotationColors, newAnnotation } from "./PdfAnnotations";
 
 class TestWorker extends EventTarget {
   static instances: TestWorker[] = [];
   static heldMethods = new Set<string>();
   static ready = true;
+  static externalAnnotations = false;
   terminate = vi.fn();
   postMessage = vi.fn((request: { id: string; type: string; data: { name: string; args: any[] } }) => {
     if (request.type !== "ExecuteRequest" || this.terminate.mock.calls.length) return;
@@ -90,6 +112,18 @@ class TestWorker extends EventTarget {
               target,
             }))
           : [];
+    if (name === "getPageAnnotations" && TestWorker.externalAnnotations && args[1].index === 0)
+      value = [
+        ...(value as unknown[]),
+        {
+          type: PdfAnnotationSubtype.HIGHLIGHT,
+          id: "embedded-highlight",
+          pageIndex: 0,
+          rect: { origin: { x: 40, y: 80 }, size: { width: 40, height: 12 } },
+          color: "#ffd400",
+          contents: "A comment embedded in the original PDF",
+        },
+      ];
     if (name === "searchAllPages")
       value = {
         total: 2,
@@ -118,12 +152,20 @@ class TestWorker extends EventTarget {
 let root: Root;
 let container: HTMLDivElement;
 let resize: (() => void)[];
+let shownTabs: DocumentTab[];
 beforeEach(() => {
   vi.clearAllMocks();
   TestWorker.instances = [];
   TestWorker.heldMethods.clear();
   TestWorker.ready = true;
+  TestWorker.externalAnnotations = false;
   resize = [];
+  shownTabs = [];
+  mocks.annotationLoad.mockResolvedValue({ annotations: [], revision: null });
+  mocks.annotationSave.mockImplementation(async (_target, _revision, annotations) => ({
+    annotations,
+    revision: crypto.randomUUID(),
+  }));
   mocks.read.mockImplementation(async () => new ArrayBuffer(16));
   mocks.writeText.mockResolvedValue(undefined);
   mocks.open.mockResolvedValue(undefined);
@@ -177,6 +219,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  for (const tab of shownTabs) await tab.dispose();
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -185,6 +228,7 @@ afterEach(async () => {
 
 const button = (key: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="document.${key}"]`)!;
 async function show(tab: DocumentTab) {
+  shownTabs.push(tab);
   store.set(activeTabAtom, tab);
   await act(async () => {
     root.render(<DocumentView tab={tab} />);
@@ -231,7 +275,7 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     expect(container.textContent).toContain("180%");
   });
 
-  it("shows the outline, jumps to a bookmark, and keeps annotations as an empty placeholder", async () => {
+  it("shows the outline, jumps to a bookmark, and opens the empty annotation sidebar", async () => {
     await show(new DocumentTab("/r/a.pdf", "pdf"));
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     await act(async () => {
@@ -246,7 +290,7 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     await act(async () => {
       tabs[2].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
     });
-    expect(container.textContent).toContain("document.pdf.annotationsPlaceholder");
+    expect(container.textContent).toContain("document.annotation.empty");
     await click("pdf.toggleSidebar");
     expect(container.querySelector("aside")).toBeNull();
   });
@@ -525,5 +569,248 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     await key(input, "Enter");
     expect(input.value).toBe("1");
     expect(tab.pdfLocation.page).toBe(1);
+  });
+});
+
+describe("PDF annotation tools and persistence", () => {
+  it("allows closing while annotation JSON is loading and ignores its late result", async () => {
+    let finish!: (value: { annotations: []; revision: null }) => void;
+    mocks.annotationLoad.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    expect(tab.loadingAnnotations).toBe(true);
+    expect(await tab.beforeClose!()).toBe(true);
+    tab.closing = true;
+    await act(async () => root.render(null));
+    await act(async () => finish({ annotations: [], revision: null }));
+    expect(tab.annotations).toBeUndefined();
+    expect(mocks.annotationSave).not.toHaveBeenCalled();
+  });
+
+  async function draw(
+    tool: string,
+    points: number[][] = [
+      [100, 100],
+      [200, 140],
+    ],
+  ) {
+    await click(`annotation.${tool}`);
+    const layer = container.querySelector<SVGSVGElement>('[data-pdf-annotations="0"]')!;
+    layer.setPointerCapture = vi.fn();
+    layer.releasePointerCapture = vi.fn();
+    vi.spyOn(layer, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 600, height: 800 } as DOMRect);
+    for (const [index, point] of points.entries()) {
+      const type = index === 0 ? "pointerdown" : index === points.length - 1 ? "pointerup" : "pointermove";
+      await act(async () =>
+        layer.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, clientX: point[0], clientY: point[1], button: 0 }),
+        ),
+      );
+    }
+  }
+  const note = () =>
+    newAnnotation(
+      "note",
+      annotationColors.yellow,
+      { pageIndex: 0, rects: [[30, 600, 52, 622]] },
+      { index: 0, size: { width: 600, height: 800 }, rotation: 0, objectNumber: 1 },
+      { runs: [] },
+    );
+
+  it.each(["note", "text", "image", "ink"])(
+    "creates %s in PDF coordinates, edits comments/tags, and saves JSON without calling a PDF mutation",
+    async (tool) => {
+      const tab = new DocumentTab("/r/a.pdf", "pdf");
+      await show(tab);
+      await draw(tool, [
+        [100, 100],
+        [150, 120],
+        [200, 140],
+      ]);
+      expect(tab.annotations!.annotations).toHaveLength(1);
+      const item = tab.annotations!.annotations[0];
+      expect(item.type).toBe(tool);
+      expect(item.position.pageIndex).toBe(0);
+      if (tool === "note") expect(item.position.rects).toEqual([[189, 649, 211, 671]]);
+      if (tool === "image") expect(item.position.rects).toEqual([[100, 660, 200, 700]]);
+      if (tool === "ink") expect(item.position.paths?.[0].slice(0, 4)).toEqual([100, 700, 150, 680]);
+      const comment = container.querySelector<HTMLTextAreaElement>('[aria-label="document.annotation.comment"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(comment, "A useful result");
+        comment.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const tags = container.querySelector<HTMLInputElement>('[aria-label="document.annotation.tags"]')!;
+      await type(tags, "research");
+      await key(tags, "Enter");
+      expect(tab.annotations!.annotations[0].tags).toEqual([{ name: "research" }]);
+      expect(tab.annotations!.annotations[0].comment).toBe("A useful result");
+      await act(async () => tab.save());
+      expect(tab.hasUnsavedChanges).toBe(false);
+      expect(mocks.annotationSave).toHaveBeenCalled();
+      const methods = TestWorker.instances[0].postMessage.mock.calls.map(([request]) => request.data?.name);
+      expect(
+        methods.some((method) => /createAnnotation|updateAnnotation|removeAnnotation|saveAsCopy/.test(method)),
+      ).toBe(false);
+    },
+  );
+
+  it("keeps undo/redo on the PDF tab across switches and does not consume text-field undo", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("note");
+    const area = container.querySelector(".pg-document-pdf")!;
+    expect((await key(area, "z", { metaKey: true })).defaultPrevented).toBe(true);
+    expect(tab.annotations!.annotations).toEqual([]);
+    await key(area, "z", { metaKey: true, shiftKey: true });
+    expect(tab.annotations!.annotations).toHaveLength(1);
+    const input = container.querySelector("textarea")!;
+    expect((await key(input, "z", { ctrlKey: true })).defaultPrevented).toBe(false);
+    await show(new DocumentTab("/r/b.pdf", "pdf"));
+    await show(tab);
+    await click("annotation.undo");
+    expect(tab.annotations!.annotations).toEqual([]);
+  });
+
+  it("erases only the intersected ink across a complete gesture and undoes it in one step", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("ink", [
+      [100, 100],
+      [200, 100],
+    ]);
+    await draw("note", [
+      [150, 90],
+      [150, 100],
+    ]);
+    const before = tab.annotations!.annotations;
+    await draw("eraser", [
+      [150, 80],
+      [150, 120],
+    ]);
+    expect(tab.annotations!.annotations[0].position.paths).toHaveLength(2);
+    expect(tab.annotations!.annotations[1]).toBe(before[1]);
+    await click("annotation.undo");
+    expect(tab.annotations!.annotations).toEqual(before);
+    await click("annotation.redo");
+    expect(tab.annotations!.annotations[0].position.paths).toHaveLength(2);
+  });
+
+  it("auto-saves after editing stops and can discard a pending edit on close", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    vi.useFakeTimers();
+    await draw("note");
+    expect(mocks.annotationSave).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(mocks.annotationSave).toHaveBeenCalledOnce();
+    expect(tab.hasUnsavedChanges).toBe(false);
+    await draw("note");
+    mocks.closeAnswer.mockResolvedValue("discard");
+    expect(await tab.beforeClose!()).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(mocks.annotationSave).toHaveBeenCalledOnce();
+  });
+
+  it("filters and recolors cards and keeps failed saves dirty for close/retry", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("note");
+    const card = container.querySelector("[data-annotation-card]")!;
+    await act(async () =>
+      card.querySelector<HTMLButtonElement>('[aria-label="document.annotation.colors.blue"]')!.click(),
+    );
+    expect(tab.annotations!.annotations[0].color).toBe(annotationColors.blue);
+    const filter = container.querySelector<HTMLInputElement>('[aria-label="document.annotation.filter"]')!;
+    await type(filter, "missing");
+    expect(container.querySelector("[data-annotation-card]")).toBeNull();
+    await type(filter, "");
+    expect(container.querySelector("[data-annotation-card]")).not.toBeNull();
+    mocks.annotationSave.mockRejectedValueOnce(new Error("annotationChanged"));
+    await act(async () => tab.save());
+    expect(tab.hasUnsavedChanges).toBe(true);
+    expect(container.textContent).toContain("document.errors.annotationChanged");
+    mocks.closeAnswer.mockResolvedValue("cancel");
+    expect(await tab.beforeClose!()).toBe(false);
+    await act(async () => tab.save());
+    expect(tab.hasUnsavedChanges).toBe(false);
+  });
+
+  it.each(["highlight", "underline"])(
+    "uses a contextual selection menu to create Zotero %s with text",
+    async (type) => {
+      const tab = new DocumentTab("/r/a.pdf", "pdf");
+      tab.pdfLocation.scale = 1;
+      await show(tab);
+      const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+      for (const [type, clientX, clientY] of [
+        ["pointerdown", 41, 85],
+        ["pointermove", 79, 115],
+        ["pointerup", 79, 115],
+      ] as const) {
+        await act(async () =>
+          page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+        );
+      }
+      const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
+      expect(menu).not.toBeNull();
+      await act(async () =>
+        menu.querySelector<HTMLButtonElement>(`[aria-label="document.annotation.${type}"]`)!.click(),
+      );
+      await act(async () =>
+        menu.querySelector<HTMLButtonElement>('[aria-label="document.annotation.colors.green"]')!.click(),
+      );
+      expect(tab.annotations!.annotations[0]).toMatchObject({
+        type,
+        color: annotationColors.green,
+        text: "test\nnext",
+        position: { pageIndex: 0 },
+      });
+      expect(tab.annotations!.annotations[0].position.rects?.[0][1]).toBeGreaterThan(600);
+    },
+  );
+
+  it("lists embedded PDF annotations as external and read only without adding them to the JSON", async () => {
+    TestWorker.externalAnnotations = true;
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+      (button) => button.textContent === "document.pdf.annotations",
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      trigger.click();
+    });
+    expect(container.textContent).toContain("document.annotation.external");
+    expect(container.textContent).toContain("A comment embedded in the original PDF");
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(button("annotation.delete")).toBeNull();
+    expect(tab.annotations!.annotations).toEqual([]);
+    expect(mocks.annotationSave).not.toHaveBeenCalled();
+  });
+
+  it("loads read-only records without mutation controls and blocks editing after a load failure", async () => {
+    const record = { ...note(), readOnly: true, comment: "other author's note" };
+    mocks.annotationLoad.mockResolvedValueOnce({ annotations: [record], revision: "v1" });
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+      (button) => button.textContent === "document.pdf.annotations",
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      trigger.click();
+    });
+    expect(container.textContent).toContain("other author's note");
+    expect(container.querySelector("textarea")?.readOnly).toBe(true);
+    expect(button("annotation.delete")).toBeNull();
+    mocks.annotationLoad.mockRejectedValueOnce(new Error("annotationCorrupt"));
+    await show(new DocumentTab("/r/b.pdf", "pdf"));
+    expect(container.textContent).toContain("document.errors.annotationCorrupt");
+    expect(button("annotation.note").disabled).toBe(true);
   });
 });

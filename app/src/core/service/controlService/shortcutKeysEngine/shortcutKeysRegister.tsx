@@ -1602,7 +1602,7 @@ export const allKeyBinds: KeyBindItem[] = [
     id: "saveFile",
     defaultKey: "C-s",
     icon: Save,
-    when: (project) => activeDocumentTab()?.kind === "markdown" || !!project,
+    when: (project) => !!activeDocumentTab() || !!project,
     // 用传进来的工程：菜单传的是最近激活的白板，侧边面板有焦点时 activeTabAtom 不是工程
     onPress: async (project) => {
       const document = activeDocumentTab();

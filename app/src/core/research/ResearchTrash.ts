@@ -10,11 +10,14 @@ import { exists, mkdir, readDir, readFile, readTextFile, remove, rename, writeFi
 import i18next from "i18next";
 import { toast } from "sonner";
 import { URI, Utils } from "vscode-uri";
+import { moveDocumentAnnotations } from "./PdfAnnotationStore";
+import { documentKey } from "./DocumentFile";
+import { documentError } from "./DocumentTab";
 
 type TrashEntry = { directory: string; relativePath: string; fileName: string; deletedAt: number };
 let busy = false;
 const t = (key: string, options?: Record<string, unknown>) => i18next.t(`research:fileMenu.${key}`, options);
-const samePath = (a: string, b: string) => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
+const samePath = (a: string, b: string) => documentKey(a).normalize("NFC") === documentKey(b).normalize("NFC");
 const child = (directory: string, name: string) => Utils.joinPath(URI.file(directory), name).fsPath;
 
 function refreshReferences(path: string, missing: boolean) {
@@ -64,7 +67,12 @@ export async function trashResearchFile(path: string): Promise<TrashEntry> {
       await writeFile(child(directory, "entry.json"), new TextEncoder().encode(JSON.stringify(record)), {
         createNew: true,
       });
-      await rename(path, child(directory, record.fileName));
+      await moveDocumentAnnotations(
+        path,
+        child(directory, record.fileName),
+        () => rename(path, child(directory, record.fileName)),
+        { entryId: Utils.basename(URI.file(directory)) },
+      );
       return record;
     };
     let record: TrashEntry;
@@ -97,7 +105,7 @@ export async function restoreResearchFile(record: TrashEntry): Promise<string> {
   const trashRoot = child(ResearchFolder.getRoot(), ".workbench/trash");
   if (
     !ResearchFolder.isInside(path) ||
-    !record.directory.startsWith(trashRoot + "/") ||
+    !documentKey(record.directory).startsWith(documentKey(trashRoot) + "/") ||
     Utils.basename(URI.file(path)) !== record.fileName
   )
     throw new Error(t("outside"));
@@ -108,8 +116,15 @@ export async function restoreResearchFile(record: TrashEntry): Promise<string> {
     const payload = child(record.directory, record.fileName);
     await mkdir(Utils.dirname(URI.file(path)).fsPath, { recursive: true });
     // Exclusive creation also prevents overwriting a file created after the existence check.
-    await writeFile(path, await readFile(payload), { createNew: true });
-    await remove(payload);
+    await moveDocumentAnnotations(
+      payload,
+      path,
+      async () => {
+        await writeFile(path, await readFile(payload), { createNew: true });
+        await remove(payload);
+      },
+      { entryId: Utils.basename(URI.file(record.directory)), restoring: true },
+    );
     refreshReferences(path, false);
     return path;
   } finally {
@@ -156,11 +171,11 @@ export async function promptTrashResearchFile(path: string) {
         onClick: () => {
           restoreResearchFile(record)
             .then(() => toast.success(t("restored")))
-            .catch((error) => toast.error(String(error)));
+            .catch((error) => toast.error(documentError(error)));
         },
       },
     });
   } catch (error) {
-    toast.error(String(error));
+    toast.error(documentError(error));
   }
 }

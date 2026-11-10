@@ -13,7 +13,7 @@ import {
 import { displayWorkspaceName, FileName } from "@/components/ui/file-name";
 import { Input } from "@/components/ui/input";
 import { Project } from "@/core/Project";
-import { DocumentTab, openDocumentFile } from "@/core/research/DocumentTab";
+import { DocumentTab, documentError, openDocumentFile } from "@/core/research/DocumentTab";
 import { dropFilesAtClientPoint } from "@/core/research/ResearchDrop";
 import {
   RESEARCH_FILES_CHANGED_EVENT,
@@ -384,7 +384,7 @@ export default function FileManagerWindow() {
                 onSelect={() =>
                   void restoreLastResearchFile()
                     .then(() => toast.success(t("fileMenu.restored")))
-                    .catch(showError)
+                    .catch((error) => toast.error(documentError(error)))
                 }
               >
                 {t("fileMenu.restoreLast")}

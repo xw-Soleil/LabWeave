@@ -2838,7 +2838,6 @@ research:
       thumbnails: Thumbnails
       outline: Outline
       annotations: Annotations
-      annotationsPlaceholder: Annotations are not available yet.
       noOutline: This PDF has no built-in outline.
       untitledBookmark: Untitled bookmark
       toggleOutlineItem: Expand or collapse subheadings
@@ -2855,7 +2854,60 @@ research:
       previousResult: Previous result (Shift+Enter)
       nextResult: Next result (Enter)
       closeSearch: Close search (Esc)
+    annotation:
+      tools: PDF annotation tools
+      select: Select text or annotations
+      highlight: Highlight
+      underline: Underline
+      note: Sticky note
+      text: Text box
+      image: Select image region
+      ink: Draw
+      eraser: Eraser (ink only)
+      color: Annotation color
+      colors:
+        yellow: Yellow
+        red: Red
+        green: Green
+        blue: Blue
+        purple: Purple
+        magenta: Magenta
+        orange: Orange
+        gray: Gray
+      undo: Undo annotation (⌘/Ctrl+Z)
+      redo: Redo annotation (⌘/Ctrl+Shift+Z or Ctrl+Y)
+      selectionMenu: Selected text actions
+      addComment: Annotate and add a comment
+      comment: Annotation comment
+      commentPlaceholder: Add a comment…
+      textPlaceholder: Enter text to show on the page…
+      tags: Annotation tags
+      tagPlaceholder: Type a tag and press Enter
+      removeTag: "Remove tag: {{tag}}"
+      delete: Delete annotation
+      page: "Page {{page}}"
+      jump: Jump to annotation
+      filter: Filter text, comments or tags
+      empty: No matching annotations. Select text or use a tool above to add one.
+      external: External annotation · Read only
+      readOnly: Read-only annotation
+      noComment: This annotation has no comment.
+      scanning: Reading annotations embedded in the PDF…
+      saved: Annotations saved
+      unsaved: Unsaved annotations
+      unavailable: Annotations not loaded
+      closeTitle: Save changes to this PDF's annotations?
     errors:
+      annotationBusy: Annotations are being saved, loaded or moved. Please retry.
+      annotationLocation: Invalid annotation location or unregistered project. Reopen the project. File permissions were not changed.
+      annotationReadFailed: Cannot read annotations. Check the disk and retry.
+      annotationWriteFailed: Cannot save annotations. Your edits were kept. Check disk space and permissions, then click Save.
+      annotationCorrupt: The annotation file is invalid or larger than 16 MiB. It was not overwritten. Keep the file and check its contents.
+      annotationChanged: Another app changed the annotations. Nothing was overwritten. Copy comments you want to keep, then reload.
+      annotationCleanupFailed: The annotation operation and temporary file cleanup failed. Keep the existing files and check the disk.
+      annotationDestinationExists: An annotation file already exists at the destination. The move was cancelled without overwriting it.
+      annotationRollbackFailed: The file move and annotation rollback failed. Keep both locations and their annotation files, and check the disk.
+      annotationReadOnly: This annotation is read only.
       fileChanged: The file changed in another app and was not overwritten. Copy any edits you want to keep, then reload.
       pdfTimeout: PDF reading or rendering timed out and was stopped. Retry or open it with a system app.
       pdfWorkerFailed: The PDF worker could not start or has stopped. Retry or open it with a system app.

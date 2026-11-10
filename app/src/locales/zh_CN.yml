@@ -2957,7 +2957,6 @@ research:
       thumbnails: 缩略图
       outline: 大纲
       annotations: 批注
-      annotationsPlaceholder: 批注功能暂未开放。
       noOutline: 此 PDF 没有内置大纲。
       untitledBookmark: 未命名书签
       toggleOutlineItem: 展开或收起子目录
@@ -2974,7 +2973,60 @@ research:
       previousResult: 上一个结果（Shift+Enter）
       nextResult: 下一个结果（Enter）
       closeSearch: 关闭搜索（Esc）
+    annotation:
+      tools: PDF 批注工具栏
+      select: 选择文字或批注
+      highlight: 高亮
+      underline: 下划线
+      note: 便签
+      text: 文字框
+      image: 框选图片区域
+      ink: 手绘
+      eraser: 橡皮擦（擦除手绘）
+      color: 批注颜色
+      colors:
+        yellow: 黄色
+        red: 红色
+        green: 绿色
+        blue: 蓝色
+        purple: 紫色
+        magenta: 品红
+        orange: 橙色
+        gray: 灰色
+      undo: 撤销批注（⌘/Ctrl+Z）
+      redo: 重做批注（⌘/Ctrl+Shift+Z 或 Ctrl+Y）
+      selectionMenu: 选中文字操作
+      addComment: 添加批注并写备注
+      comment: 批注备注
+      commentPlaceholder: 添加备注…
+      textPlaceholder: 输入页面上的文字…
+      tags: 批注标签
+      tagPlaceholder: 输入标签，按 Enter 添加
+      removeTag: "移除标签：{{tag}}"
+      delete: 删除批注
+      page: "第 {{page}} 页"
+      jump: 跳到批注位置
+      filter: 筛选原文、备注或标签
+      empty: 没有符合条件的批注。选中文字或使用上方工具添加。
+      external: 外部批注 · 只读
+      readOnly: 只读批注
+      noComment: 此批注没有备注。
+      scanning: 正在读取 PDF 中的外部批注…
+      saved: 批注已保存
+      unsaved: 批注未保存
+      unavailable: 批注尚未载入
+      closeTitle: 保存此 PDF 的批注修改？
     errors:
+      annotationBusy: 批注正在保存、读取或随文件移动，请稍后重试。
+      annotationLocation: 批注位置无效或项目未登记；请重新打开项目。未修改任何文件权限。
+      annotationReadFailed: 无法读取批注文件，请检查磁盘后重试。
+      annotationWriteFailed: 无法保存批注，本地修改已保留。请检查磁盘或文件权限后点击保存。
+      annotationCorrupt: 批注文件格式无效或超过 16 MiB，未覆盖原文件。请保留文件并检查内容。
+      annotationChanged: 批注文件已被其他程序修改，未覆盖。请复制需要保留的备注，再点击重新读取。
+      annotationCleanupFailed: 批注操作失败，且临时文件清理失败。请保留现有文件并检查磁盘。
+      annotationDestinationExists: 目标位置已有批注文件，已取消移动，未覆盖。
+      annotationRollbackFailed: 文件移动失败，批注恢复也失败。请保留原位置、目标位置及其批注文件，检查磁盘后再操作。
+      annotationReadOnly: 此批注只读，不能修改。
       fileChanged: 文件已被其他程序修改，未覆盖磁盘内容。请复制需要保留的编辑，再重新读取文件。
       pdfTimeout: PDF 读取或渲染超时，已停止处理。可以重试或用系统程序打开。
       pdfWorkerFailed: PDF 解析程序无法启动或已停止。请重试或用系统程序打开。
