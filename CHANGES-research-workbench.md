@@ -440,6 +440,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - PDFium 仅在本地 Vite worker 中运行，WASM 使用本地资源。核实 2.15.1 只能完整缓冲区打开，因此通过已有 scoped 文件句柄、256 KiB 底层读取拼成整份数据，再 transfer 给 worker；标签切换和关闭直接终止 worker，打开、渲染和异常有期限、提示与重试，恢复数值缩放时等待视口尺寸就绪。
 - 禁用 EmbedPDF 的默认 CDN 字体配置。样本发现未嵌入 STSong 时会缺中文字，改为仅按需复用程序原有的 `NotoSansSC-Regular.otf`（8,331,336 字节），字体读取失败显式通知界面。没有新增字体资产或引入约 40 MB 的备用字体包，没有修改依赖、权限配置或 Rust。
 - 新增 worker 生命周期、离线资产白名单、文件取消/关闭、导航、真实插件搜索高亮、跨行拖选与复制、手势和标签恢复测试。五份只读样本各测三轮首页、翻页、放大和内存，并比较旧 pdf.js 测量；Node 数据不代表 WebView 启动、IPC 和实际屏幕绘制。中英文文案已同步，繁体由脚本生成。
+- 交付报告见 [`docs/pdf-reader-step1.md`](docs/pdf-reader-step1.md)：记录实现提交、检查结果、三轮性能/内存数字、字体对照、离线与协议结论，以及真实 WebView 的具体手测清单。
 
 ### 37. 本文件
 
