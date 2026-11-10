@@ -50,7 +50,8 @@ vi.mock("i18next", () => ({
 vi.mock("sonner", () => ({ toast: { error: mocks.error } }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: mocks.writeText }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
-import { activeTabAtom, store } from "@/state";
+import { activeTabAtom, store, tabsAtom } from "@/state";
+import { readingContextAtom } from "./ReadingContext";
 import { DocumentTab } from "./DocumentTab";
 import DocumentView from "./DocumentView";
 import { annotationColors, newAnnotation } from "./PdfAnnotations";
@@ -237,6 +238,7 @@ afterEach(async () => {
 const button = (key: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="document.${key}"]`)!;
 async function show(tab: DocumentTab) {
   shownTabs.push(tab);
+  store.set(tabsAtom, shownTabs);
   store.set(activeTabAtom, tab);
   await act(async () => {
     root.render(<DocumentView tab={tab} />);
@@ -376,6 +378,12 @@ describe("EmbedPDF reading tabs with real plugins", () => {
         });
       }
       expect(button("pdf.copy").disabled).toBe(false);
+      expect(store.get(readingContextAtom)).toMatchObject({
+        path: tab.path,
+        page: 1,
+        pageCount: 8,
+        selection: { text: "test\nnext", page: 1 },
+      });
       expect(page.querySelector('[style*="isolation: isolate"]')).not.toBeNull();
       expect((await key(page, "c", modifier)).defaultPrevented).toBe(true);
       expect(mocks.writeText).toHaveBeenLastCalledWith("test\nnext");

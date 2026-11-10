@@ -23,6 +23,7 @@ const readerMethods = new Set<PdfEngineMethodName>([
   "getPageAnnotations",
   "getPageGeometry",
   "getTextSlices",
+  "extractText",
   "searchAllPages",
   "renderPage",
   "renderPageRect",

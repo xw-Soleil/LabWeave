@@ -1,5 +1,6 @@
 import { Project, service } from "@/core/Project";
 import { Settings } from "@/core/service/Settings";
+import { formatReadingContext } from "@/core/research/ReadingContext";
 import { AIChatSessionStore, getAIChatProjectKey } from "@/core/service/dataManageService/aiEngine/AIChatSessionStore";
 import { composeAgentSystemPrompt } from "@/core/service/dataManageService/aiEngine/AIAgentRuntime";
 import {
@@ -117,6 +118,7 @@ export class AIEngine {
 
   createChatFetch(project: Project, references: AIObjectReferenceRegistry): typeof fetch {
     return async (_url, options) => {
+      const readingContext = formatReadingContext();
       const body = await this.readRequestBody(options?.body);
       const messages = Array.isArray(body.messages) ? (body.messages as UIMessage<AIMessageMetadata>[]) : [];
       const sessionId = typeof body.id === "string" && body.id.length > 0 ? body.id : undefined;
@@ -194,7 +196,9 @@ export class AIEngine {
         },
       });
       const contextWindowTokenLimit = getContextWindowTokenLimit(body.contextWindowTokenLimit);
-      const researchContext = await buildResearchContext(project, contextWindowTokenLimit);
+      const researchContext = [await buildResearchContext(project, contextWindowTokenLimit), readingContext]
+        .filter(Boolean)
+        .join("\n\n");
       const chatKey = getAIChatProjectKey(project);
       let sessionMemory = sessionId ? await AIChatSessionStore.getSessionMemory(chatKey, sessionId) : undefined;
       let workingMessages = getSessionMemoryWorkingMessages(messages, sessionMemory);

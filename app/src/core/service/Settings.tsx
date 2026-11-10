@@ -149,6 +149,7 @@ export const settingsSchema = z.object({
   aiAutoApproveMcpTools: z.boolean().default(false),
   aiApiFormat: projectToolSettingSchemas.aiApiFormat,
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
+  translateService: z.union([z.literal("google"), z.literal("bing"), z.literal("ai")]).default("google"),
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
   // 拖动卡片时显示对齐参考线

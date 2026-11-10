@@ -1208,6 +1208,13 @@ settings:
     title: AI 模型
     description: |
       要调用的模型名称，照服务商文档原样填写（区分大小写），例如 deepseek-chat、gpt-4o-mini、claude-sonnet-4-5
+  translateService:
+    title: 划词翻译服务
+    description: Google 和 Bing 失败时自动互换。AI 使用上方配置的模型接口。
+    options:
+      google: Google
+      bing: Bing
+      ai: AI
   aiCustomHeaders:
     title: AI 请求头
     description: |
@@ -2880,6 +2887,9 @@ projectOwnership:
 
 # 科研工作台。每个工作单元只往自己的小节里加键
 research:
+  reading:
+    citation: "——《{{title}}》"
+    citationPage: "——《{{title}}》第 {{page}} 页"
   projectTree:
     defaultName: 我的工作区
     workspaceHint: 工作区是一张项目清单，项目可以在磁盘的不同位置
@@ -3551,6 +3561,7 @@ research:
         source: 来源
         api: 接口
         context: 读取与用量
+        translation: 翻译
         external: 外部 AI（MCP）
       appearance:
         title: 外观

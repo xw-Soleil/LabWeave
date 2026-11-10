@@ -30,6 +30,19 @@ export function loadBuiltInToolExecutor(name: string): BuiltInToolExecutor {
   return loadExecutor();
 }
 
+for (const name of ["read_pdf_text", "search_pdf"] as const) {
+  addExecutor(name, () => async (_project, input, _references, context) => {
+    try {
+      const { readPdfText, searchPdf } = await import("@/core/research/PdfTools");
+      return await (name === "read_pdf_text" ? readPdfText : searchPdf)(input, { signal: context.abortSignal });
+    } catch (error) {
+      if (context.abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+      const code = error instanceof Error && error.message.startsWith("pdf.") ? error.message : "pdf.readFailed";
+      return { success: false, error: { code, message: code } };
+    }
+  });
+}
+
 // 工具结果里只放摘要开头
 const FILE_CARD_EXCERPT_HEAD_LENGTH = 500;
 

@@ -49,6 +49,8 @@ const researchToolNames = [
   "create_text_node_at",
   "create_section",
   "move_nodes",
+  "read_pdf_text",
+  "search_pdf",
 ] as const;
 const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
 
@@ -62,7 +64,7 @@ function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
 }
 
 describe("Built-in Tool Registry catalog", () => {
-  it("exposes the closed, ordered set of 29 upstream tools plus 5 research tools without loading executors", () => {
+  it("exposes the closed, ordered set of 29 upstream tools plus 7 research tools without loading executors", () => {
     expect(builtInToolCatalog.map(({ name }) => name)).toEqual(expectedToolNames);
     expect(new Set(expectedToolNames).size).toBe(expectedToolNames.length);
     expect(executorModule.loaded).toBe(false);
@@ -140,7 +142,7 @@ describe("Built-in Tool Registry catalog", () => {
     ]);
     expect(
       builtInToolCatalog.filter(({ cancellation }) => cancellation === "cooperative").map(({ name }) => name),
-    ).toEqual(["search_and_add_image_node"]);
+    ).toEqual(["search_and_add_image_node", "read_pdf_text", "search_pdf"]);
   });
 
   it("classifies the complete catalog into 22 closed, 6 live-selection, and 5 live-viewport tools", () => {
@@ -189,6 +191,12 @@ describe("Built-in Tool Registry catalog", () => {
       "search_and_add_image_node",
       "create_file_card",
     ]);
+    expect(namesFor("live-document")).toEqual(["read_pdf_text", "search_pdf"]);
+    for (const name of ["read_pdf_text", "search_pdf"]) {
+      const definition = builtInToolCatalog.find((definition) => definition.name === name)!;
+      expect(canClosedProjectProvideCapabilities(definition.capabilities)).toBe(false);
+      expect(definition.persistence).toBe("none");
+    }
   });
 
   it("routes a Registry-only fixture from its declared capabilities", () => {

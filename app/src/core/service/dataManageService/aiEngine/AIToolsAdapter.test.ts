@@ -92,7 +92,7 @@ describe("Built-in Tool consumer adapters", () => {
 
   it("projects the canonical catalog into the unchanged tool-window shape without loading executors", () => {
     const windowEntries = getBuiltInToolWindowEntries();
-    expect(windowEntries).toHaveLength(34);
+    expect(windowEntries).toHaveLength(36);
     expect(windowEntries.map(({ name, description, parameters }) => ({ name, description, parameters }))).toEqual(
       builtInToolCatalog.map(({ name, description, inputSchema }) => ({
         name,
@@ -103,6 +103,8 @@ describe("Built-in Tool consumer adapters", () => {
 
     const toolSet = createBuiltInToolAgentTools({} as never, {} as never) as Record<string, Record<string, unknown>>;
     expect(toolSet.get_all_nodes).not.toHaveProperty("toModelOutput");
+    expect(toolSet).toHaveProperty("read_pdf_text");
+    expect(toolSet).toHaveProperty("search_pdf");
     expect(() => windowEntries.map(({ parameters }) => z.toJSONSchema(parameters))).not.toThrow();
     expect(mocks.executorModuleLoaded).toBe(false);
   });
@@ -272,6 +274,8 @@ describe("Built-in Tool consumer adapters", () => {
       "get_nodes_in_viewport",
       "get_selected_refs",
       "dump_workspace",
+      "read_pdf_text",
+      "search_pdf",
     ]);
   });
 });

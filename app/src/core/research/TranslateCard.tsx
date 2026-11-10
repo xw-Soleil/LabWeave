@@ -56,7 +56,9 @@ export function TranslateCard({
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
         const code = reason instanceof Error ? reason.message : String(reason);
-        setError(KNOWN_ERRORS.includes(code) ? t(`translate.errors.${code.split(".")[1]}`) : t("translate.errors.failed"));
+        setError(
+          KNOWN_ERRORS.includes(code) ? t(`translate.errors.${code.split(".")[1]}`) : t("translate.errors.failed"),
+        );
       });
     return () => controller.abort();
   }, [text, t]);
@@ -93,7 +95,10 @@ export function TranslateCard({
       style={{ left: x, top: y, width }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="flex h-9 shrink-0 cursor-grab items-center gap-1.5 border-b pr-1.5 pl-3 select-none" onPointerDown={drag}>
+      <div
+        className="flex h-9 shrink-0 cursor-grab items-center gap-1.5 border-b pr-1.5 pl-3 select-none"
+        onPointerDown={drag}
+      >
         <Languages className="text-muted-foreground size-3.5" />
         <span className="text-xs font-medium">{t("translate.title")}</span>
         {result && (
@@ -126,7 +131,12 @@ export function TranslateCard({
         </button>
       </div>
       <div className="flex min-h-0 flex-col gap-2.5 overflow-y-auto px-3.5 py-3 select-text">
-        <p className={cn("text-muted-foreground line-clamp-3 text-xs leading-relaxed", isWord && "text-sm font-semibold text-foreground")}>
+        <p
+          className={cn(
+            "text-muted-foreground line-clamp-3 text-xs leading-relaxed",
+            isWord && "text-foreground text-sm font-semibold",
+          )}
+        >
           {text}
         </p>
         {error ? (
@@ -140,7 +150,9 @@ export function TranslateCard({
           </div>
         ) : result.word ? (
           <div className="flex flex-col gap-1.5 text-[13px]">
-            {result.word.phonetic && <span className="text-muted-foreground font-mono text-xs">/{result.word.phonetic}/</span>}
+            {result.word.phonetic && (
+              <span className="text-muted-foreground font-mono text-xs">/{result.word.phonetic}/</span>
+            )}
             {result.word.meanings.map((meaning) => (
               <p key={meaning.pos} className="leading-relaxed">
                 <span className="text-muted-foreground mr-1.5 text-xs italic">{meaning.pos}</span>

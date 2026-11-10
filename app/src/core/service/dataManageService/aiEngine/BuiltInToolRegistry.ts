@@ -33,6 +33,7 @@ export type BuiltInToolCapability =
   | "settings"
   | "network"
   | "model"
+  | "pdf-reader"
   | "abort-signal";
 
 export type AcquiredBuiltInToolCapabilities = Readonly<
@@ -56,6 +57,7 @@ export type AcquiredBuiltInToolCapabilities = Readonly<
     settings: true;
     network: true;
     model: true;
+    "pdf-reader": true;
     "abort-signal": AbortSignal | undefined;
   }>
 >;
@@ -628,6 +630,31 @@ const researchDefinitions: BuiltInToolDefinition[] = [
     transaction: "rollback-on-error",
     persistence: "project",
   }),
+  defineTool({
+    name: "read_pdf_text",
+    description:
+      "读取 PDF 指定页的原文，用于阅读当前论文、核对引文或理解当前页。path 必须是绝对路径；pages 为 3 或 3-5，一次最多 10 页、20000 字符，截断时返回 stoppedAt（页码及该页已返回的字符数）。只允许已打开文档或已登记项目中的 PDF，包括登记在项目中的文献库。只读，需要桌面端打开一个白板以使用阅读器；不做 OCR。",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      pages: z.string().min(1).describe("从 1 开始的页码或连续页段，例如 3、3-5；最多 10 页"),
+    }),
+    capabilities: ["project", "pdf-reader", "abort-signal"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "cooperative",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "search_pdf",
+    description:
+      "在 PDF 全文中定位术语或引文，返回命中页码和前后短文，最多 50 条；需要更多上下文时再用 read_pdf_text 读相应页。path 为绝对路径，query 是不区分大小写的普通文本（非正则）。只允许已打开文档或已登记项目中的 PDF，包括登记在项目中的文献库。只读，需要桌面端打开一个白板；扫描件不做 OCR。",
+    inputSchema: z.object({ path: z.string().min(1), query: z.string().trim().min(1).max(200) }),
+    capabilities: ["project", "pdf-reader", "abort-signal"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "cooperative",
+    transaction: "none",
+    persistence: "none",
+  }),
 ];
 
 export const builtInToolCatalog: readonly BuiltInToolDefinition[] = Object.freeze(
@@ -645,7 +672,7 @@ export function getBuiltInToolDefinition(name: string): BuiltInToolDefinition | 
   return builtInToolsByName.get(name);
 }
 
-export type BuiltInToolProjectContext = "closed-capable" | "live-selection" | "live-viewport";
+export type BuiltInToolProjectContext = "closed-capable" | "live-selection" | "live-viewport" | "live-document";
 
 export type PreparedBuiltInToolInvocation = Readonly<{
   definition: BuiltInToolDefinition;
@@ -682,6 +709,7 @@ export function classifyBuiltInToolException(error: unknown): ClassifiedBuiltInT
 }
 
 export function classifyBuiltInToolProjectContext(definition: BuiltInToolDefinition): BuiltInToolProjectContext {
+  if (definition.capabilities.includes("pdf-reader")) return "live-document";
   if (definition.capabilities.includes("selection")) return "live-selection";
   if (definition.capabilities.includes("viewport")) return "live-viewport";
   return "closed-capable";

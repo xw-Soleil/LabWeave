@@ -1176,6 +1176,13 @@ settings:
     title: AI Model
     description: |
       The name of the model to call, exactly as written in your provider's documentation (case-sensitive), e.g. deepseek-chat, gpt-4o-mini, claude-sonnet-4-5
+  translateService:
+    title: Selection translation service
+    description: Google and Bing fall back to each other on failure. AI uses the model API configured above.
+    options:
+      google: Google
+      bing: Bing
+      ai: AI
   aiCustomHeaders:
     title: AI Request Headers
     description: |
@@ -2761,6 +2768,9 @@ projectOwnership:
 
 # Research Workbench. Each work unit adds keys only to its own subsection.
 research:
+  reading:
+    citation: "— {{title}}"
+    citationPage: "— {{title}}, page {{page}}"
   projectTree:
     defaultName: My workspace
     workspaceHint: A workspace is a list of projects, which can live on different disks
@@ -3432,6 +3442,7 @@ research:
         source: Source
         api: Provider
         context: Reading and usage
+        translation: Translation
         external: External AI (MCP)
       appearance:
         title: Appearance

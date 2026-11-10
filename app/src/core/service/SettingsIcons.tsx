@@ -112,6 +112,7 @@ export const settingsIcons = {
   autoNamerTreeNodeTemplate: Tag,
   autoSaveWhenClose: HardDriveDownload,
   autoSave: HardDrive,
+  translateService: Languages,
   autoSaveInterval: Hourglass,
   autoBackup: Database,
   autoBackupInterval: Hourglass,

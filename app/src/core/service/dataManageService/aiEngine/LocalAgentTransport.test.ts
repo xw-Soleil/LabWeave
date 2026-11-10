@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import type { Project } from "@/core/Project";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
+import { formatReadingContext } from "@/core/research/ReadingContext";
 import { Settings } from "@/core/service/Settings";
 import { AIChatSessionStore, getAIChatProjectKey } from "./AIChatSessionStore";
 import { buildResearchContext } from "./ResearchContext";
@@ -70,6 +71,7 @@ vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { getRoot: vi.fn(() => "/research"), toRelative: vi.fn(() => "notes/board.prg") },
 }));
 vi.mock("./ResearchContext", () => ({ buildResearchContext: vi.fn(async () => "<whiteboard>n1 paper</whiteboard>") }));
+vi.mock("@/core/research/ReadingContext", () => ({ formatReadingContext: vi.fn(() => "") }));
 vi.mock("./AIChatSessionStore", async (original) => {
   const actual = await original<typeof import("./AIChatSessionStore")>();
   return {
@@ -134,6 +136,7 @@ beforeEach(() => {
   vi.mocked(ResearchFolder.getRoot).mockReturnValue("/research");
   vi.mocked(ResearchFolder.toRelative).mockClear();
   vi.mocked(buildResearchContext).mockClear();
+  vi.mocked(formatReadingContext).mockReturnValue("");
   vi.mocked(AIChatSessionStore.loadSession).mockReset().mockImplementation(actualStore.AIChatSessionStore.loadSession);
   vi.mocked(AIChatSessionStore.setLocalAgentSession)
     .mockReset()
@@ -276,6 +279,23 @@ async function setup(configure?: (app: AgentApp) => void, draft = false) {
 }
 
 describe("LocalAgentTransport with an in-memory SDK agent", () => {
+  it("sends the current reading context on every ordinary turn without changing visible user messages", async () => {
+    const f = await setup();
+    const message = user("explain this");
+    vi.mocked(formatReadingContext).mockReturnValue("<reading-context>paper.pdf page 2 quote</reading-context>");
+    await collect(await f.send([message]));
+    vi.mocked(formatReadingContext).mockReturnValue("<reading-context>paper.pdf page 5</reading-context>");
+    await collect(await f.send([message]));
+    expect(promptText(f.prompts[0])).toContain("page 2 quote");
+    expect(promptText(f.prompts[1])).toContain("page 5");
+    expect(promptText(f.prompts[1])).not.toContain("page 2");
+    expect(message.parts).toEqual([{ type: "text", text: "explain this" }]);
+    await collect(await f.send([user("/compact")]));
+    expect(promptText(f.prompts[2])).toBe("/compact");
+    vi.mocked(formatReadingContext).mockReturnValue("");
+    await collect(await f.send([message]));
+    expect(promptText(f.prompts[3])).not.toContain("reading-context");
+  });
   it("上下文弹层和斜杠命令排在载入之后，重放不混入结果且仍使用原会话", async () => {
     let release!: () => void;
     const load = vi.fn(

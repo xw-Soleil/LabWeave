@@ -58,6 +58,40 @@ function parse(result: Awaited<ReturnType<Client["callTool"]>>) {
 }
 
 describe("external AI MCP server", () => {
+  it("lists read-only PDF tools, forwards their parameters and returns structured read errors", async () => {
+    const client = await connect();
+    const { tools } = await client.listTools();
+    for (const name of ["read_pdf_text", "search_pdf"]) {
+      expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      });
+      expect(client.getInstructions()).toContain(name);
+    }
+    nextResult = { ok: true, value: { pages: [{ page: 3, text: "paper text" }], truncated: false } };
+    expect(
+      parse(
+        await client.callTool({
+          name: "read_pdf_text",
+          arguments: { workspace: "a", path: "/papers/a.pdf", pages: "3-5" },
+        }),
+      ).isError,
+    ).toBe(false);
+    expect(calls[0]).toMatchObject({ toolName: "read_pdf_text", input: { path: "/papers/a.pdf", pages: "3-5" } });
+    nextResult = {
+      ok: true,
+      value: { success: false, error: { code: "pdf.pathNotAllowed", message: "pdf.pathNotAllowed" } },
+    };
+    expect(
+      parse(
+        await client.callTool({
+          name: "search_pdf",
+          arguments: { workspace: "a", path: "/secret.pdf", query: "word" },
+        }),
+      ),
+    ).toMatchObject({ isError: true, value: { error: { code: "pdf.pathNotAllowed" } } });
+  });
   it("forwards cached PDF text and paths for a closed workspace", async () => {
     const card = { title: "Paper", text: "Saved PDF excerpt", file: { path: "papers/a.pdf", kind: "pdf", pages: 10 } };
     nextResult = { ok: true, value: { cards: [card] } };
@@ -73,7 +107,7 @@ describe("external AI MCP server", () => {
 
     const { tools } = await client.listTools();
     expect(tools[0].name).toBe("list_workspaces");
-    expect(tools).toHaveLength(35);
+    expect(tools).toHaveLength(37);
     const createEdges = tools.find(({ name }) => name === "create_edges")!;
     expect(createEdges.inputSchema.required).toEqual(["workspace", "edges"]);
     expect(Object.keys(createEdges.inputSchema.properties!)[0]).toBe("workspace");

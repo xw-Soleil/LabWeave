@@ -53,6 +53,7 @@ import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabsAtom } from "@/state";
+import { subscribeReadingAiDraft } from "@/core/research/ReadingContext";
 import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
@@ -134,7 +135,17 @@ function takePendingInitialInput(): string | null {
 
 export default function AIWindow({ tabId }: { tabId: string }) {
   const [tab] = useAtom(activeResourceTabAtom);
-  const project = tab instanceof Project ? tab : undefined;
+  const [tabs] = useAtom(tabsAtom);
+  const lastProject = useRef<Project | undefined>(undefined);
+  const project =
+    tab instanceof Project
+      ? tab
+      : lastProject.current && tabs.includes(lastProject.current) && !lastProject.current.closing
+        ? lastProject.current
+        : tabs
+            .filter((candidate): candidate is Project => candidate instanceof Project && !candidate.closing)
+            .sort((a, b) => b.zIndex - a.zIndex)[0];
+  lastProject.current = project;
   const { t } = useTranslation("research");
 
   if (!project) {
@@ -834,6 +845,23 @@ function AIChatPanel({
     pendingInitialTextListeners.add(consume);
     return () => {
       pendingInitialTextListeners.delete(consume);
+    };
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    const unsubscribe = subscribeReadingAiDraft((text) => {
+      setInputValue((previous) => (previous ? `${previous}\n\n${text}` : text));
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        textarea?.focus();
+        textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+      });
+    });
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(frame);
     };
   }, []);
 

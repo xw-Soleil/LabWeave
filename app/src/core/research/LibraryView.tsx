@@ -180,7 +180,10 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         confirm: t("library.import"),
       });
       if (!pdf) return;
-      const title = pdf.split(/[\\/]/).at(-1)!.replace(/\.pdf$/i, "");
+      const title = pdf
+        .split(/[\\/]/)
+        .at(-1)!
+        .replace(/\.pdf$/i, "");
       const item = await createItem(root, { title, collections: targetCollections }, pdf);
       setSelected(item.key);
     });
@@ -311,7 +314,13 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
       {layout.info && (
         <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l">
           {current ? (
-            <InfoPane key={current.key} item={current} root={root} collections={snapshot?.collections ?? []} run={run} />
+            <InfoPane
+              key={current.key}
+              item={current}
+              root={root}
+              collections={snapshot?.collections ?? []}
+              run={run}
+            />
           ) : (
             <Overview
               counts={counts}
@@ -430,7 +439,9 @@ function CollectionPane({
     });
   const remove = (path: string) =>
     run(async () => {
-      if (!(await Dialog.confirm(t("library.removeCollectionTitle", { name: path }), t("library.removeCollectionHint"))))
+      if (
+        !(await Dialog.confirm(t("library.removeCollectionTitle", { name: path }), t("library.removeCollectionHint")))
+      )
         return;
       await removeCollection(root, path);
       if (scope.kind === "collection" && (scope.path === path || scope.path.startsWith(`${path}/`)))

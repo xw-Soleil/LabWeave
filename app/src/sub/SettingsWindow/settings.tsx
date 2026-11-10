@@ -75,6 +75,7 @@ export const settingsPages: SettingsPage[] = [
       },
       { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
       { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
+      { id: "translation", items: ["translateService"] },
       {
         id: "external",
         items: ["mcpAllowEdits", "mcpAllowDelete", "mcpAllowNetwork", { subPage: "externalAi" }],

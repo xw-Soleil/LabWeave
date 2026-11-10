@@ -21,20 +21,12 @@ import {
   Save,
   type LucideIcon,
 } from "lucide-react";
-import {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type RefObject,
-} from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import PdfView from "./PdfView";
-import { askAiAboutSelection } from "./ReadingContext";
+import { askAiAboutSelection, clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
 import { fileKindOf } from "./ResearchShell";
 import { autoTranslateEnabled, selectionForTranslation, TranslateCard } from "./TranslateCard";
 
@@ -238,7 +230,15 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
 }
 
 /** Markdown 预览里选中文字：弹出翻译、问 AI、复制，和 PDF 的选区菜单一样 */
-function PreviewSelection({ area, path, title }: { area: RefObject<HTMLDivElement | null>; path: string; title: string }) {
+function PreviewSelection({
+  area,
+  path,
+  title,
+}: {
+  area: RefObject<HTMLDivElement | null>;
+  path: string;
+  title: string;
+}) {
   const [menu, setMenu] = useState<{ text: string; center: number; top: number; bottom: number }>();
   const [translation, setTranslation] = useState<{ text: string; center: number; bottom: number }>();
   useEffect(() => {
@@ -340,7 +340,16 @@ function storedMarkdownMode(): MarkdownMode {
 }
 
 export default function DocumentView({ tab }: { tab: DocumentTab }) {
+  const host = useRef<HTMLDivElement>(null);
   const [, update] = useState(0);
+  useEffect(() => {
+    const unwatch =
+      tab.kind === "markdown" && host.current ? watchMarkdownReadingSelection(tab, host.current) : undefined;
+    return () => {
+      unwatch?.();
+      clearReadingContext(tab);
+    };
+  }, [tab]);
   useEffect(() => {
     const changed = () => update((value) => value + 1);
     tab.on("state-change", changed);
@@ -350,6 +359,7 @@ export default function DocumentView({ tab }: { tab: DocumentTab }) {
   }, [tab]);
   return (
     <div
+      ref={host}
       className="bg-background flex h-full min-h-0 flex-col pt-9"
       onFocusCapture={() => {
         if (store.get(activeTabAtom) !== tab) TabWorkspace.focus(tab.id);
