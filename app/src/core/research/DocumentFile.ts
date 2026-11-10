@@ -24,9 +24,9 @@ export async function identifyDocument(path: string): Promise<{ path: string; ke
 
 export function resolveDocumentImage(path: string, source: string): string {
   // Local images use the same scoped fs API as the document; no remote tracking images or file URLs.
-  if (/^(?:[a-z][a-z\d+.-]*:|\/\/|\\\\)/i.test(source)) throw new Error("imageNotLocal");
+  if (/^(?:[a-z][a-z\d+.-]*:|[\\/])/i.test(source)) throw new Error("imageNotLocal");
   const decoded = decodeURIComponent(source.split(/[?#]/, 1)[0]);
-  if (!decoded || /^(?:[a-z][a-z\d+.-]*:|\/\/|\\\\)/i.test(decoded)) throw new Error("imageNotLocal");
+  if (!decoded || /^(?:[a-z][a-z\d+.-]*:|[\\/])/i.test(decoded)) throw new Error("imageNotLocal");
   const uri = URI.file(documentPath(path));
   return documentPath(Utils.resolvePath(Utils.dirname(uri), decoded.replace(/\\/g, "/")).fsPath);
 }
@@ -145,14 +145,23 @@ export class DocumentRangeReader {
     readonly size: number,
   ) {}
 
-  static async open(path: string) {
+  static async open(path: string, signal?: AbortSignal) {
+    if (signal?.aborted) throw new Error("fileClosed");
     const handle = await open(path, { read: true });
+    let abort: (() => void) | undefined;
     try {
-      const { size } = await handle.stat();
+      if (signal?.aborted) throw new Error("fileClosed");
+      const cancelled = new Promise<never>((_resolve, reject) => {
+        abort = () => reject(new Error("fileClosed"));
+        signal?.addEventListener("abort", abort, { once: true });
+      });
+      const { size } = await Promise.race([handle.stat(), cancelled]);
       return new DocumentRangeReader(handle, size);
     } catch (error) {
       await handle.close();
       throw error;
+    } finally {
+      if (abort) signal?.removeEventListener("abort", abort);
     }
   }
 
@@ -170,6 +179,7 @@ export class DocumentRangeReader {
         const count = await this.handle.read(
           bytes.subarray(offset, Math.min(offset + PDF_RANGE_CHUNK_SIZE, bytes.length)),
         );
+        if (this.closed) throw new Error("fileClosed");
         if (!count) throw new Error("fileChanged");
         offset += count;
         this.bytesRead += count;
@@ -187,6 +197,7 @@ export class DocumentRangeReader {
 
   close(): Promise<void> {
     this.closed = true;
-    return (this.closing ??= this.pending.then(() => this.handle.close()));
+    // Closing must reach the backend even when an outstanding seek/read never resolves.
+    return (this.closing ??= this.handle.close());
   }
 }

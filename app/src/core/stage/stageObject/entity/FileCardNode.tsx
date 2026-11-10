@@ -128,7 +128,7 @@ export class FileCardNode extends ConnectableEntity {
     }
     createImageBitmap(blob).then(
       (bitmap) => {
-        if (this.attachmentId !== attachmentId) {
+        if (this.attachmentId !== attachmentId || this.bitmapAttachmentId !== attachmentId) {
           bitmap.close();
           return;
         }

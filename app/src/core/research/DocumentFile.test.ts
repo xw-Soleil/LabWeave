@@ -26,6 +26,11 @@ describe("document paths", () => {
     "file:///private/a.png",
     "javascript:alert(1)",
     "%2F%2Fhost/a.png",
+    "/private/a.png",
+    "\\private\\a.png",
+    "%5C%2Fhost/a.png",
+    "%2Fprivate/a.png",
+    "C:\\private\\a.png",
   ])("rejects automatic remote or protocol image loads: %s", (source) => {
     expect(() => resolveDocumentImage("/r/a.md", source)).toThrow("imageNotLocal");
   });
@@ -180,5 +185,22 @@ describe("scoped PDF range reads", () => {
     await Promise.all([reader.close(), reader.close()]);
     expect(handle.close).toHaveBeenCalledOnce();
     await expect(reader.read(0, 1)).rejects.toThrow("fileClosed");
+  });
+  it("closes the handle even while an IPC read has stalled", async () => {
+    const { reader, handle } = range();
+    let finish!: (count: number) => void;
+    handle.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const reading = reader.read(0, 1);
+    await vi.waitFor(() => expect(handle.read).toHaveBeenCalledOnce());
+    const closing = reader.close();
+    expect(handle.close).toHaveBeenCalledOnce();
+    finish(1);
+    await expect(reading).rejects.toThrow("fileClosed");
+    await closing;
   });
 });

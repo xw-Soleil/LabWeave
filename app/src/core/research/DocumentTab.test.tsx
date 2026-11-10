@@ -2,13 +2,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   stat: vi.fn(),
+  exists: vi.fn(),
   readFile: vi.fn(),
   writeFile: vi.fn(),
   open: vi.fn(),
   buttons: vi.fn(),
   error: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-fs", () => ({ stat: mocks.stat, readFile: mocks.readFile, writeFile: mocks.writeFile }));
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  stat: mocks.stat,
+  exists: mocks.exists,
+  readFile: mocks.readFile,
+  writeFile: mocks.writeFile,
+}));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { ensureRootRegistered: vi.fn() },
@@ -31,6 +37,7 @@ beforeEach(() => {
   store.set(tabGroupRootAtom, null);
   store.set(activeGroupIdAtom, undefined);
   mocks.stat.mockResolvedValue({ isFile: true, mtime: new Date(1), size: 4, dev: 2, ino: 3 });
+  mocks.exists.mockResolvedValue(true);
   mocks.readFile.mockResolvedValue(new TextEncoder().encode("note"));
   mocks.writeFile.mockImplementation(async (_path, bytes) => {
     mocks.readFile.mockResolvedValue(bytes);
@@ -55,6 +62,20 @@ describe("document tab actions", () => {
     await openDocumentFile("/r/a.docx");
     expect(mocks.open.mock.calls).toEqual([["/r/a.png"], ["/r/a.docx"]]);
     expect(store.get(tabsAtom)).toHaveLength(0);
+  });
+  it("does not reuse a stale inode after the original path has been replaced", async () => {
+    const first = await openDocumentFile("/r/a.md");
+    mocks.stat.mockImplementation(async (path: string) => ({ isFile: true, dev: 2, ino: path === "/r/a.md" ? 4 : 3 }));
+    const movedOriginal = await openDocumentFile("/r/moved.md");
+    expect(movedOriginal).not.toBe(first);
+    expect(movedOriginal!.path).toBe("/r/moved.md");
+    expect(store.get(tabsAtom)).toHaveLength(2);
+  });
+  it("still deduplicates aliases after an external editor atomically replaces the file", async () => {
+    const first = await openDocumentFile("/r/a.md");
+    mocks.stat.mockResolvedValue({ isFile: true, dev: 2, ino: 4 });
+    expect(await openDocumentFile("/r/link.md")).toBe(first);
+    expect(store.get(tabsAtom)).toHaveLength(1);
   });
   it("does not open a tab when the scoped stat operation is denied", async () => {
     mocks.stat.mockRejectedValue(new Error("access denied"));

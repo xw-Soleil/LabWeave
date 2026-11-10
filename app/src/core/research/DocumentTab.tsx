@@ -2,6 +2,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabsAtom } from "@/state";
+import { exists } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
 import i18next from "i18next";
 import { FileText, NotebookPen } from "lucide-react";
@@ -18,7 +19,15 @@ export const documentText = (key: string, options?: Record<string, unknown>) =>
 
 export function documentError(error: unknown): string {
   const code = error instanceof Error ? error.message : String(error);
-  const known = ["fileChanged", "pdfTimeout", "pdfWorkerFailed", "imageNotLocal", "fileClosed"];
+  const known = [
+    "fileChanged",
+    "pdfTimeout",
+    "pdfWorkerFailed",
+    "imageNotLocal",
+    "fileClosed",
+    "unsupportedLink",
+    "editsDuringReload",
+  ];
   if (known.includes(code)) return documentText(`errors.${code}`);
   if (error instanceof Error && error.name === "PasswordException") return documentText("errors.pdfLocked");
   return documentText("errors.failed", { error: code });
@@ -29,6 +38,8 @@ export class DocumentTab extends Tab {
   markdown?: MarkdownDocument;
   error = "";
   saving = false;
+  loadingMarkdown = false;
+  pdfLocation = { page: 1, scale: "page-width" };
   private loading?: Promise<void>;
   private readonly component = () => (
     <Suspense fallback={<div className="text-muted-foreground p-6">{documentText("loading")}</div>}>
@@ -39,7 +50,6 @@ export class DocumentTab extends Tab {
   constructor(
     readonly path: string,
     readonly kind: "markdown" | "pdf",
-    readonly fileKey = documentKey(path),
   ) {
     super({});
     this.uri = URI.file(path);
@@ -75,21 +85,34 @@ export class DocumentTab extends Tab {
     store.set(tabsAtom, [...store.get(tabsAtom)]);
   }
 
-  loadMarkdown() {
-    return (this.loading ??= markdownFileIO.read(this.path).then(
-      (snapshot) => {
-        if (!this.closing) this.markdown = new MarkdownDocument(this.path, snapshot);
+  loadMarkdown(reload = false): Promise<void> {
+    if (this.loading) return this.loading;
+    if (this.closing || this.saving || (this.markdown && !reload)) return Promise.resolve();
+    const original = this.markdown;
+    const text = original?.text;
+    this.loadingMarkdown = true;
+    this.changed();
+    this.loading = markdownFileIO
+      .read(this.path)
+      .then((snapshot) => {
+        if (this.closing) return;
+        if (this.markdown !== original || this.markdown?.text !== text) throw new Error("editsDuringReload");
+        this.markdown = new MarkdownDocument(this.path, snapshot);
+        this.error = "";
+      })
+      .catch((error) => {
+        if (!this.closing) this.error = documentError(error);
+      })
+      .finally(() => {
+        this.loading = undefined;
+        this.loadingMarkdown = false;
         this.changed();
-      },
-      (error) => {
-        this.error = documentError(error);
-        this.changed();
-      },
-    ));
+      });
+    return this.loading;
   }
 
   async save(): Promise<boolean> {
-    if (!this.markdown) return false;
+    if (!this.markdown || this.loadingMarkdown || this.closing) return false;
     this.saving = true;
     this.changed();
     try {
@@ -124,26 +147,31 @@ export async function openDocumentFile(path: string): Promise<DocumentTab | unde
   await ResearchFolder.ensureRootRegistered();
   const identified = await identifyDocument(path);
   const { key } = identified;
-  const existing = store
-    .get(tabsAtom)
-    .find(
-      (tab): tab is DocumentTab =>
-        tab instanceof DocumentTab &&
-        !tab.closing &&
-        (tab.fileKey === key || documentKey(tab.path) === documentKey(identified.path)),
-    );
-  if (existing) {
-    TabWorkspace.focus(existing.id);
-    return existing;
-  }
   let task = opening.get(key);
   if (!task) {
-    task = Promise.resolve().then(() => TabWorkspace.open(new DocumentTab(identified.path, kind, key)));
+    task = Promise.resolve().then(async () => {
+      const tabs = store.get(tabsAtom).filter((tab): tab is DocumentTab => tab instanceof DocumentTab && !tab.closing);
+      let existing = tabs.find((tab) => documentKey(tab.path) === documentKey(identified.path));
+      if (!existing) {
+        for (const tab of tabs) {
+          // Atomic saves and renames can change the file behind an open path.
+          if ((await exists(tab.path)) && (await identifyDocument(tab.path)).key === key && !tab.closing) {
+            existing = tab;
+            break;
+          }
+        }
+      }
+      if (existing) {
+        TabWorkspace.focus(existing.id);
+        return existing;
+      }
+      return TabWorkspace.open(new DocumentTab(identified.path, kind));
+    });
     opening.set(key, task);
   }
   try {
     return await task;
   } finally {
-    opening.delete(key);
+    if (opening.get(key) === task) opening.delete(key);
   }
 }

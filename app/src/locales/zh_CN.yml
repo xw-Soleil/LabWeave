@@ -2908,6 +2908,8 @@ research:
       pdfWorkerFailed: PDF 解析程序无法启动或已停止。请重试或用系统程序打开。
       pdfLocked: 此 PDF 需要密码，请用系统程序打开。
       imageNotLocal: 预览仅加载有权读取的本地相对路径图片。
+      unsupportedLink: 预览只打开本地 Markdown 和 PDF 链接。其他文件请从文件面板打开。
+      editsDuringReload: 重新读取期间正文发生了变化，已保留编辑。如需放弃这些编辑，请再次重新读取。
       fileClosed: 文件已经关闭，请重新打开。
       failed: "文件操作失败：{{error}}"
   fileMenu:

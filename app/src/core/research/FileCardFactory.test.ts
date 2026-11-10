@@ -306,7 +306,7 @@ describe("createFileCards", () => {
     expect(hasPendingFileCards(project as never)).toBe(false);
   });
 
-  it("keeps the previous card when refresh cannot parse the source", async () => {
+  it.each([0, 8])("keeps the previous card when refresh fails after reading %s pages", async (pageCount) => {
     const project = savedProject();
     const card = new FileCardNode(project as never, {
       sourcePath: "paper.pdf",
@@ -318,7 +318,7 @@ describe("createFileCards", () => {
     mocks.pdfContent.mockResolvedValue({
       title: "paper",
       excerpt: "error",
-      pageCount: 0,
+      pageCount,
       thumbnail: null,
       problem: "broken",
     });
@@ -326,6 +326,38 @@ describe("createFileCards", () => {
     expect(card).toMatchObject({ excerpt: "keep me", attachmentId: "old-cover", pageCount: 10 });
     expect(project.historyManager.recordStep).not.toHaveBeenCalled();
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    expect(hasPendingFileCards(project as never)).toBe(false);
+  });
+
+  it("clears a previous AI excerpt when refreshed with text extraction disabled", async () => {
+    const project = savedProject();
+    const card = new FileCardNode(project as never, { sourcePath: "paper.pdf", excerpt: "outdated AI text" });
+    Object.assign(project.stageManager, { getFileCardNodes: () => [card] });
+    mocks.pdfContent.mockResolvedValue({ title: "Updated", excerpt: "", pageCount: 8, thumbnail: null, problem: "" });
+    await refreshFileCard(project as never, card);
+    expect(card.excerpt).toBe("");
+  });
+
+  it.each(["closed", "deleted"])("does not write back after the refresh target is %s", async (reason) => {
+    const project = savedProject();
+    const card = new FileCardNode(project as never, { sourcePath: "paper.pdf", excerpt: "old" });
+    let cards = [card];
+    Object.assign(project.stageManager, { getFileCardNodes: () => cards });
+    let finish!: (content: unknown) => void;
+    mocks.pdfContent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const refreshing = refreshFileCard(project as never, card);
+    if (reason === "closed") Object.assign(project, { closing: true });
+    else cards = [];
+    finish({ title: "new", excerpt: "new", pageCount: 1, thumbnail: new Blob(["cover"]), problem: "" });
+    await refreshing;
+    expect(card.excerpt).toBe("old");
+    expect(project.addAttachment).not.toHaveBeenCalled();
+    expect(project.historyManager.recordStep).not.toHaveBeenCalled();
     expect(hasPendingFileCards(project as never)).toBe(false);
   });
 });

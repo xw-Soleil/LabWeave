@@ -22,17 +22,22 @@ export function pdfAssetUrls() {
   };
 }
 
-export async function pdfWithTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
+export async function pdfWithTimeout<T>(promise: Promise<T>, ms = 20000, signal?: AbortSignal): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => reject(new Error("pdfTimeout")), ms);
+        abort = () => reject(new Error("fileClosed"));
+        if (signal?.aborted) abort();
+        else signal?.addEventListener("abort", abort, { once: true });
       }),
     ]);
   } finally {
     clearTimeout(timer);
+    if (abort) signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -54,7 +59,8 @@ export async function createPdfRangeTransport(
 }
 
 export async function openPdfDocument(path: string, onError: (error: unknown) => void, signal?: AbortSignal) {
-  const reader = await DocumentRangeReader.open(path);
+  const controller = new AbortController();
+  let reader: DocumentRangeReader | undefined;
   let nativeWorker: Worker | undefined;
   let worker: InstanceType<PdfJs["PDFWorker"]> | undefined;
   let loadingTask: ReturnType<PdfJs["getDocument"]> | undefined;
@@ -66,13 +72,16 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
   });
   // Failures also happen after loading, when the viewer asks for another page.
   void failure.catch((error) => {
-    if (!signal?.aborted) onError(error);
+    if (!signal?.aborted && !(error instanceof Error && error.message === "fileClosed")) onError(error);
   });
   const destroy = (): Promise<void> => {
     if (closing) return closing;
     stopped = true;
     signal?.removeEventListener("abort", abort);
+    controller.abort();
+    rejectFailure(new Error("fileClosed"));
     closing = (async () => {
+      const closeReader = reader ? pdfWithTimeout(reader.close(), 1000).catch(onError) : Promise.resolve();
       try {
         if (loadingTask) await pdfWithTimeout(loadingTask.destroy(), 1000);
       } catch (error) {
@@ -82,12 +91,10 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
         try {
           worker?.destroy();
         } finally {
+          nativeWorker?.removeEventListener("error", workerFailed);
+          nativeWorker?.removeEventListener("messageerror", workerFailed);
           nativeWorker?.terminate();
-          try {
-            await pdfWithTimeout(reader.close(), 1000);
-          } catch (error) {
-            onError(error);
-          }
+          await closeReader;
         }
       }
     })();
@@ -99,18 +106,41 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
     void destroy().catch(onError);
   };
   const abort = () => fail(new Error("fileClosed"));
+  const workerFailed = () => fail(new Error("pdfWorkerFailed"));
   signal?.addEventListener("abort", abort, { once: true });
-  const run = <T>(promise: Promise<T>, ms?: number) => pdfWithTimeout(Promise.race([promise, failure]), ms);
+  const run = async <T>(promise: Promise<T>, ms?: number): Promise<T> => {
+    try {
+      return await pdfWithTimeout(Promise.race([promise, failure]), ms);
+    } catch (error) {
+      if (error instanceof Error && error.message === "pdfTimeout") fail(error);
+      throw error;
+    }
+  };
   try {
     if (signal?.aborted) throw new Error("fileClosed");
+    const opening = DocumentRangeReader.open(path, controller.signal)
+      .then(async (opened) => {
+        if (stopped) {
+          await opened.close();
+          throw new Error("fileClosed");
+        }
+        reader = opened;
+        return opened;
+      })
+      .catch((error) => {
+        if (stopped && !(error instanceof Error && error.message === "fileClosed")) onError(error);
+        throw error;
+      });
+    const openedReader = await run(opening);
     const pdfjs = await run(loadPdfJs());
     const workerUrl = await run(import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"));
     if (signal?.aborted || stopped) throw new Error("fileClosed");
     nativeWorker = new Worker(workerUrl.default, { type: "module" });
-    nativeWorker.addEventListener("error", () => fail(new Error("pdfWorkerFailed")));
-    nativeWorker.addEventListener("messageerror", () => fail(new Error("pdfWorkerFailed")));
+    nativeWorker.addEventListener("error", workerFailed);
+    nativeWorker.addEventListener("messageerror", workerFailed);
     worker = pdfjs.PDFWorker.create({ port: nativeWorker });
-    const range = await run(createPdfRangeTransport(pdfjs, reader, fail, () => stopped));
+    const range = await run(createPdfRangeTransport(pdfjs, openedReader, fail, () => stopped));
+    if (stopped) throw new Error("fileClosed");
     loadingTask = pdfjs.getDocument({
       range,
       worker,
@@ -122,7 +152,7 @@ export async function openPdfDocument(path: string, onError: (error: unknown) =>
       isOffscreenCanvasSupported: false,
     });
     const document = await run(loadingTask.promise);
-    return { document, reader, run, destroy };
+    return { document, reader: openedReader, run, destroy, signal: controller.signal };
   } catch (error) {
     await destroy();
     throw error;

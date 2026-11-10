@@ -155,4 +155,60 @@ describe("PDF worker and range lifecycle", () => {
     expect(workers[0].terminate).toHaveBeenCalledOnce();
     expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: "pdfTimeout" }));
   });
+  it("closes a handle when cancellation arrives during stat", async () => {
+    const controller = new AbortController();
+    file.stat.mockReturnValue(new Promise(() => {}));
+    const result = expect(openPdfDocument("/a.pdf", vi.fn(), controller.signal)).rejects.toThrow("fileClosed");
+    await vi.waitFor(() => expect(file.stat).toHaveBeenCalledOnce());
+    controller.abort();
+    await vi.waitFor(() => expect(file.close).toHaveBeenCalledOnce());
+    await result;
+    expect(workers).toHaveLength(0);
+  });
+  it("does not start pdf.js after cancellation during the initial range", async () => {
+    const controller = new AbortController();
+    let finish!: (count: number) => void;
+    file.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const result = expect(openPdfDocument("/a.pdf", vi.fn(), controller.signal)).rejects.toThrow("fileClosed");
+    await vi.waitFor(() => expect(file.read).toHaveBeenCalledOnce());
+    controller.abort();
+    finish(65536);
+    await result;
+    expect(mocks.getDocument).not.toHaveBeenCalled();
+    expect(file.close).toHaveBeenCalledOnce();
+  });
+  it("stops the worker when a post-load operation times out", async () => {
+    vi.useFakeTimers();
+    const report = vi.fn();
+    const session = await openPdfDocument("/a.pdf", report);
+    const result = expect(session.run(new Promise(() => {}), 50)).rejects.toThrow("pdfTimeout");
+    await vi.advanceTimersByTimeAsync(51);
+    await result;
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(file.close).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: "pdfTimeout" }));
+  });
+  it("closes a handle that arrives after the open deadline", async () => {
+    vi.useFakeTimers();
+    let finish!: (handle: typeof file) => void;
+    mocks.open.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const result = expect(openPdfDocument("/a.pdf", vi.fn())).rejects.toThrow("pdfTimeout");
+    await vi.advanceTimersByTimeAsync(20001);
+    await result;
+    finish(file);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(file.close).toHaveBeenCalledOnce();
+    expect(file.stat).not.toHaveBeenCalled();
+    expect(workers).toHaveLength(0);
+  });
 });

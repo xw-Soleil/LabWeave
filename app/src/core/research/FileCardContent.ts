@@ -112,8 +112,10 @@ async function makeImageThumbnail(blob: Blob): Promise<{ thumbnail: Blob; width:
   }
 }
 
-async function renderPdfFirstPage(document: PdfDocument): Promise<Blob> {
-  const page = await document.getPage(1);
+async function renderPdfFirstPage(document: PdfDocument, signal: AbortSignal): Promise<Blob> {
+  const { pdfWithTimeout } = await import("./PdfDocument");
+  const page = await pdfWithTimeout(document.getPage(1), 5000, signal);
+  if (signal.aborted) throw new Error("fileClosed");
   const baseViewport = page.getViewport({ scale: 1 });
   const scale = THUMBNAIL_MAX_SIZE / Math.max(baseViewport.width, baseViewport.height);
   const viewport = page.getViewport({ scale });
@@ -121,14 +123,16 @@ async function renderPdfFirstPage(document: PdfDocument): Promise<Blob> {
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
   const task = page.render({ canvas, viewport });
-  // 渲染一直不结束时取消掉,卡片照样建,只是没有缩略图(调用方会记下原因)
-  const timer = setTimeout(() => task.cancel(), RENDER_TIMEOUT_MS);
+  const cancel = () => task.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
   try {
-    await task.promise;
+    await pdfWithTimeout(task.promise, RENDER_TIMEOUT_MS, signal);
+    return await pdfWithTimeout(canvasToBlob(canvas), 1000, signal);
   } finally {
-    clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+    task.cancel();
+    canvas.width = canvas.height = 0;
   }
-  return await canvasToBlob(canvas);
 }
 
 /** 第一页缩略图最多画这么久 */
@@ -176,11 +180,15 @@ export async function extractPdfText(
   let text = "";
   for (let pageNumber = 1; pageNumber <= pageLimit && text.length < MAX_EXCERPT_LENGTH; pageNumber++) {
     if (signal?.aborted) break;
-    const page = await pdfWithTimeout(document.getPage(pageNumber), 5000);
+    const page = await pdfWithTimeout(document.getPage(pageNumber), 5000, signal);
+    if (signal?.aborted) break;
     const reader = page.streamTextContent().getReader();
+    let cancelling: Promise<void> | undefined;
+    const cancel = () => (cancelling ??= pdfWithTimeout(reader.cancel(), 1000).catch(onProblem));
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
       let gotChunk = false;
-      while (text.length < MAX_EXCERPT_LENGTH) {
+      while (text.length < MAX_EXCERPT_LENGTH && !signal?.aborted) {
         const chunk = await readWithTimeout(
           reader,
           gotChunk ? NEXT_TEXT_CHUNK_TIMEOUT_MS : FIRST_TEXT_CHUNK_TIMEOUT_MS,
@@ -199,11 +207,9 @@ export async function extractPdfText(
         }
       }
     } finally {
-      try {
-        await pdfWithTimeout(reader.cancel(), 1000);
-      } catch (error) {
-        onProblem(error);
-      }
+      signal?.removeEventListener("abort", cancel);
+      await cancel();
+      reader.releaseLock();
     }
     text += "\n\n";
   }
@@ -237,31 +243,28 @@ export async function extractPdfCardContent(
   try {
     session = await pdfWithTimeout(openPdfDocument(path, report, controller.signal));
     const { document } = session;
+    const signal = session.signal ?? controller.signal;
     result.pageCount = document.numPages;
     await session.run(
       (async () => {
         try {
           const { info } = await session!.run(document.getMetadata(), 5000);
-          result.title = pickPdfTitle((info as { Title?: unknown } | null)?.Title, fileName);
+          if (!signal.aborted) result.title = pickPdfTitle((info as { Title?: unknown } | null)?.Title, fileName);
         } catch (error) {
           report(error);
         }
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         try {
-          result.thumbnail = await session!.run(renderPdfFirstPage(document), RENDER_TIMEOUT_MS);
+          const thumbnail = await session!.run(renderPdfFirstPage(document, signal), RENDER_TIMEOUT_MS + 6000);
+          if (!signal.aborted) result.thumbnail = thumbnail;
         } catch (error) {
           problems.push(cardText("thumbnailFailed", { error: errorMessage(error) }));
         }
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         if (textPages > 0) {
           try {
-            result.excerpt = await extractPdfText(
-              document,
-              Math.min(textPages, document.numPages),
-              report,
-              controller.signal,
-            );
-            if (!result.excerpt) result.excerpt = `（${cardText("pdfNoText")}）`;
+            const excerpt = await extractPdfText(document, Math.min(textPages, document.numPages), report, signal);
+            if (!signal.aborted) result.excerpt = excerpt || `（${cardText("pdfNoText")}）`;
           } catch (error) {
             report(error);
           }

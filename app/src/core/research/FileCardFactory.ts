@@ -183,11 +183,11 @@ export async function refreshFileCard(project: Project, card: FileCardNode): Pro
     const { content } = await parseFile(resolveFileCardPath(project, card));
     if (project.closing || !project.stageManager.getFileCardNodes().includes(card)) return;
     // Preserve the old preview if a damaged/missing source could not be parsed.
-    if (card.fileKind === "pdf" && content.pageCount === 0) return;
+    if (card.fileKind === "pdf" && (content.pageCount === 0 || content.problem)) return;
     card.title = content.title;
     card.pageCount = content.pageCount;
     if (content.thumbnail) card.attachmentId = project.addAttachment(content.thumbnail);
-    if (content.excerpt) card.excerpt = content.excerpt;
+    card.excerpt = content.excerpt;
     card.missing = false;
     card.missingCheckedAt = performance.now();
     project.historyManager.recordStep();

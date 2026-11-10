@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/core/Project", () => ({ Project: class Project {} }));
 vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
@@ -11,6 +11,30 @@ import { Rectangle } from "@graphif/shapes";
 import { FileCardNode } from "./FileCardNode";
 
 const project = { attachments: new Map<string, Blob>() };
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("releases a thumbnail that finishes decoding after the card was disposed", async () => {
+  let finish!: (bitmap: unknown) => void;
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  const target = { attachments: new Map([["cover", new Blob(["pdf cover"])]]) };
+  const card = new FileCardNode(target as never, { attachmentId: "cover" });
+  card.ensureThumbnail();
+  card.dispose();
+  const bitmap = { width: 100, height: 200, close: vi.fn() };
+  finish(bitmap);
+  await Promise.resolve();
+  expect(bitmap.close).toHaveBeenCalledOnce();
+  expect(card.bitmap).toBeUndefined();
+});
 
 describe("FileCardNode serialization", () => {
   it("round-trips every stored field and leaves runtime state behind", () => {

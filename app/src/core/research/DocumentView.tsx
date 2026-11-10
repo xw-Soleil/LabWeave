@@ -5,14 +5,17 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Markdown from "@/components/ui/markdown";
 import { Textarea } from "@/components/ui/textarea";
+import { TabWorkspace } from "@/core/TabWorkspace";
+import { activeTabAtom, store } from "@/state";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Save, ZoomIn, ZoomOut } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
-import { editorText, markdownFileIO, MarkdownDocument, resolveDocumentImage } from "./DocumentFile";
+import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import { loadPdfJs, openPdfDocument, type OpenPdfDocument } from "./PdfDocument";
+import { fileKindOf } from "./ResearchShell";
 
 function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
   const [image, setImage] = useState<{ url?: string; error?: string }>({});
@@ -56,14 +59,20 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       img: (props: ComponentProps<"img">) => <DocumentImage path={tab.path} src={props.src} alt={props.alt} />,
       a: ({ href, children }: ComponentProps<"a">) => (
         <a
-          href={href}
+          href={href?.startsWith("#") ? href : "#"}
+          onAuxClick={(event) => event.preventDefault()}
           onClick={(event) => {
             if (href?.startsWith("#")) return;
             event.preventDefault();
             void (async () => {
               if (!href) return;
               if (/^https?:\/\//i.test(href)) await open(href);
-              else await openDocumentFile(resolveDocumentImage(tab.path, href));
+              else {
+                const path = resolveDocumentImage(tab.path, href);
+                const kind = fileKindOf(path);
+                if (kind !== "markdown" && kind !== "pdf") throw new Error("unsupportedLink");
+                await openDocumentFile(path);
+              }
             })().catch((error) => toast.error(documentError(error)));
           }}
         >
@@ -85,13 +94,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       ]);
       if (answer !== "reload") return;
     }
-    try {
-      tab.markdown = new MarkdownDocument(tab.path, await markdownFileIO.read(tab.path));
-      tab.error = "";
-    } catch (error) {
-      tab.error = documentError(error);
-    }
-    tab.changed();
+    await tab.loadMarkdown(true);
   };
   return (
     <>
@@ -100,11 +103,16 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs" title={tab.path}>
           {tab.path}
         </span>
-        <Button variant="ghost" size="sm" disabled={tab.saving} onClick={() => void reload()}>
+        <Button variant="ghost" size="sm" disabled={tab.saving || tab.loadingMarkdown} onClick={() => void reload()}>
           <RefreshCw data-icon="inline-start" />
           {t("reload")}
         </Button>
-        <Button variant="outline" size="sm" disabled={!tab.markdown || tab.saving} onClick={() => void tab.save()}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!tab.markdown || tab.saving || tab.loadingMarkdown}
+          onClick={() => void tab.save()}
+        >
           <Save data-icon="inline-start" />
           {t(tab.saving ? "saving" : "save")}
         </Button>
@@ -129,6 +137,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
               className="min-h-0 flex-1 resize-none overflow-auto font-mono"
               style={{ fieldSizing: "fixed" }}
               spellCheck={false}
+              disabled={tab.loadingMarkdown}
               value={editorText(tab.markdown.text)}
               onChange={(event) => {
                 tab.markdown!.edit(event.target.value);
@@ -160,22 +169,42 @@ function PdfView({ tab }: { tab: DocumentTab }) {
     const controller = new AbortController();
     let session: OpenPdfDocument | undefined;
     let pdfViewer: Viewer | undefined;
+    let linkService:
+      | InstanceType<(typeof import("pdfjs-dist/legacy/web/pdf_viewer.mjs"))["PDFLinkService"]>
+      | undefined;
     let observer: ResizeObserver | undefined;
     const report = (error: unknown) => {
       if (controller.signal.aborted) return;
       clearTimeout(timer);
-      setState((value) => ({ ...value, loading: false, error: documentError(error) }));
+      setState((value) => ({ ...value, pages: 0, loading: false, error: documentError(error) }));
+      stop();
     };
     const stop = () => {
+      if (controller.signal.aborted) return;
       controller.abort();
-      pdfViewer?.setDocument(null as never);
-      void session?.destroy().catch((error) => toast.error(documentError(error)));
+      clearTimeout(timer);
+      observer?.disconnect();
+      viewer.current = null;
+      try {
+        pdfViewer?.setDocument(null as never);
+        linkService?.setDocument(null as never);
+      } catch (error) {
+        toast.error(documentError(error));
+      } finally {
+        void session?.destroy().catch((error) => toast.error(documentError(error)));
+      }
     };
-    const timer = setTimeout(() => {
-      report(new Error("pdfTimeout"));
-      stop();
-    }, 25000);
-    setState({ pages: 0, page: 1, scale: 1, loading: true, error: "" });
+    let timer = setTimeout(() => report(new Error("pdfTimeout")), 25000);
+    const watchCurrentPage = () => {
+      if (controller.signal.aborted || !pdfViewer) return;
+      clearTimeout(timer);
+      const page = pdfViewer.getPageView(pdfViewer.currentPageNumber - 1);
+      const loading = !page || !pdfViewer.renderingQueue?.isViewFinished(page);
+      setState((value) => ({ ...value, loading }));
+      if (loading) timer = setTimeout(() => report(new Error("pdfTimeout")), 25000);
+    };
+    setState({ pages: 0, page: tab.pdfLocation.page, scale: 1, loading: true, error: "" });
+    setJump(String(tab.pdfLocation.page));
     void (async () => {
       // The viewer bundle reads the global installed by the matching legacy API bundle.
       await loadPdfJs();
@@ -183,53 +212,100 @@ function PdfView({ tab }: { tab: DocumentTab }) {
       await import("pdfjs-dist/web/pdf_viewer.css");
       if (controller.signal.aborted) return;
       const eventBus = new EventBus();
-      const linkService = new PDFLinkService({ eventBus });
+      linkService = new PDFLinkService({ eventBus });
       linkService.externalLinkEnabled = false;
-      pdfViewer = new PDFViewer({ container: container.current!, eventBus, linkService, maxCanvasPixels: 4096 * 4096 });
+      // pdf.js reads abortSignal even though its generated PDFViewerOptions omits it.
+      const viewerOptions = {
+        container: container.current!,
+        eventBus,
+        linkService,
+        maxCanvasPixels: 4096 * 4096,
+        abortSignal: controller.signal,
+      };
+      pdfViewer = new PDFViewer(viewerOptions);
       viewer.current = pdfViewer;
       linkService.setViewer(pdfViewer);
-      eventBus.on("pagesinit", () => {
-        pdfViewer!.currentScaleValue = "page-width";
-        setState((value) => ({ ...value, pages: session!.document.numPages }));
-      });
-      eventBus.on("pagerendered", (event: { error?: unknown }) => {
-        clearTimeout(timer);
-        if (event.error) report(event.error);
-        else setState((value) => ({ ...value, loading: false }));
-      });
-      eventBus.on("pagechanging", (event: { pageNumber: number }) => {
-        setState((value) => ({ ...value, page: event.pageNumber }));
-        setJump(String(event.pageNumber));
-      });
-      eventBus.on("scalechanging", (event: { scale: number }) =>
-        setState((value) => ({ ...value, scale: event.scale })),
+      const eventOptions = { signal: controller.signal };
+      eventBus.on(
+        "pagesinit",
+        () => {
+          const location = { ...tab.pdfLocation };
+          pdfViewer!.currentScaleValue = location.scale;
+          pdfViewer!.currentPageNumber = Math.min(location.page, session!.document.numPages);
+          setJump(String(pdfViewer!.currentPageNumber));
+          tab.pdfLocation.page = pdfViewer!.currentPageNumber;
+          setState((value) => ({ ...value, pages: session!.document.numPages, page: pdfViewer!.currentPageNumber }));
+          watchCurrentPage();
+        },
+        eventOptions,
       );
-      session = await openPdfDocument(tab.path, report, controller.signal);
+      eventBus.on(
+        "pagerender",
+        (event: { pageNumber: number }) => {
+          if (event.pageNumber === pdfViewer!.currentPageNumber) watchCurrentPage();
+        },
+        eventOptions,
+      );
+      eventBus.on(
+        "pagerendered",
+        (event: { pageNumber: number; error?: unknown }) => {
+          if (event.error) report(event.error);
+          else if (event.pageNumber === pdfViewer!.currentPageNumber) watchCurrentPage();
+        },
+        eventOptions,
+      );
+      eventBus.on(
+        "pagechanging",
+        (event: { pageNumber: number }) => {
+          tab.pdfLocation.page = event.pageNumber;
+          setState((value) => ({ ...value, page: event.pageNumber }));
+          setJump(String(event.pageNumber));
+          watchCurrentPage();
+        },
+        eventOptions,
+      );
+      eventBus.on(
+        "scalechanging",
+        (event: { scale: number }) => {
+          tab.pdfLocation.scale = pdfViewer!.currentScaleValue;
+          setState((value) => ({ ...value, scale: event.scale }));
+          watchCurrentPage();
+        },
+        eventOptions,
+      );
+      session = await openPdfDocument(
+        tab.path,
+        (error) => {
+          if (controller.signal.aborted) toast.error(documentError(error));
+          else report(error);
+        },
+        controller.signal,
+      );
       if (controller.signal.aborted) {
-        await session.destroy();
+        await session.destroy().catch((error) => toast.error(documentError(error)));
         return;
       }
       linkService.setDocument(session.document);
       pdfViewer.setDocument(session.document);
       observer = new ResizeObserver(() => {
-        if (container.current?.clientWidth) pdfViewer?.update();
+        if (!controller.signal.aborted && container.current?.clientWidth && pdfViewer) {
+          if (pdfViewer.currentScaleValue === "page-width") pdfViewer.currentScaleValue = "page-width";
+          pdfViewer.update();
+        }
       });
       observer.observe(container.current!);
-    })().catch((error) => {
-      report(error);
-      stop();
-    });
+    })().catch(report);
     return () => {
       clearTimeout(timer);
-      observer?.disconnect();
       stop();
       viewer.current = null;
     };
   }, [tab, revision]);
   const go = (page: number) => {
-    if (viewer.current && Number.isInteger(page) && page >= 1 && page <= state.pages)
+    if (viewer.current && Number.isInteger(page) && page >= 1 && page <= state.pages) {
       viewer.current.currentPageNumber = page;
-    else setJump(String(state.page));
+      setJump(String(viewer.current.currentPageNumber));
+    } else setJump(String(state.page));
   };
   const zoom = (factor: number) => {
     if (viewer.current) viewer.current.currentScale = Math.max(0.25, Math.min(4, state.scale * factor));
@@ -327,7 +403,12 @@ export default function DocumentView({ tab }: { tab: DocumentTab }) {
     };
   }, [tab]);
   return (
-    <div className="bg-background flex h-full min-h-0 flex-col pt-9">
+    <div
+      className="bg-background flex h-full min-h-0 flex-col pt-9"
+      onFocusCapture={() => {
+        if (store.get(activeTabAtom) !== tab) TabWorkspace.focus(tab.id);
+      }}
+    >
       <div className="flex items-center gap-2 px-4">
         <tab.icon className="text-muted-foreground size-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={tab.path}>

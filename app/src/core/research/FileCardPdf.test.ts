@@ -106,6 +106,22 @@ describe("PDF card extraction", () => {
 });
 
 describe("bounded PDF text streams", () => {
+  it("cancels an active text stream immediately when its session is aborted", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const cancel = vi.fn();
+    const page = { streamTextContent: vi.fn(() => new ReadableStream({ cancel })) };
+    const document = { getPage: vi.fn(async () => page) };
+    const extracting = extractPdfText(document as unknown as PdfDocument, 3, vi.fn(), controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(page.streamTextContent).toHaveBeenCalledOnce();
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(await extracting).toBe("");
+    expect(document.getPage).toHaveBeenCalledOnce();
+  });
+
   it("caps a single large text item and stops before parsing unnecessary pages", async () => {
     const document = { getPage: vi.fn(async () => textPage("字".repeat(20000))) };
     const result = await extractPdfText(document as unknown as PdfDocument, 50, vi.fn());
