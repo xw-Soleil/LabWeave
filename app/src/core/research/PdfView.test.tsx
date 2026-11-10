@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { PdfZoomMode } from "@embedpdf/models";
+import { PdfActionType, PdfAnnotationSubtype, PdfZoomMode } from "@embedpdf/models";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), error: vi.fn(), writeText: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), error: vi.fn(), writeText: vi.fn(), open: vi.fn() }));
 vi.mock("./PdfReader", async (original) => ({ ...(await original<object>()), readPdfBuffer: mocks.read }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { ensureRootRegistered: vi.fn() },
@@ -21,16 +21,20 @@ vi.mock("i18next", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: mocks.error } }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: mocks.writeText }));
+vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 import { activeTabAtom, store } from "@/state";
 import { DocumentTab } from "./DocumentTab";
 import DocumentView from "./DocumentView";
 
 class TestWorker extends EventTarget {
   static instances: TestWorker[] = [];
+  static heldMethods = new Set<string>();
+  static ready = true;
   terminate = vi.fn();
   postMessage = vi.fn((request: { id: string; type: string; data: { name: string; args: any[] } }) => {
     if (request.type !== "ExecuteRequest" || this.terminate.mock.calls.length) return;
     const { name, args } = request.data;
+    if (TestWorker.heldMethods.has(name)) return;
     let value: unknown = true;
     if (name === "openDocumentBuffer")
       value = {
@@ -69,6 +73,23 @@ class TestWorker extends EventTarget {
         })),
       };
     if (name === "getTextSlices") value = ["test\nnext"];
+    if (name === "getPageAnnotations")
+      value =
+        args[1].index === 0
+          ? [
+              { type: "action", action: { type: PdfActionType.URI, uri: "https://example.com/paper" } },
+              { type: "destination", destination: { pageIndex: 2, zoom: { mode: PdfZoomMode.FitPage }, view: [] } },
+              { type: "action", action: { type: PdfActionType.URI, uri: "javascript:alert(1)" } },
+              { type: "action", action: { type: PdfActionType.URI, uri: "file:///secret.pdf" } },
+              { type: "action", action: { type: PdfActionType.LaunchAppOrOpenFile, path: "C:\\secret.pdf" } },
+            ].map((target, index) => ({
+              type: PdfAnnotationSubtype.LINK,
+              id: String(index),
+              pageIndex: 0,
+              rect: { origin: { x: 100, y: 100 + index * 20 }, size: { width: 80, height: 15 } },
+              target,
+            }))
+          : [];
     if (name === "searchAllPages")
       value = {
         total: 2,
@@ -87,7 +108,7 @@ class TestWorker extends EventTarget {
   ) {
     super();
     TestWorker.instances.push(this);
-    queueMicrotask(() => this.send({ id: "0", type: "ReadyResponse" }));
+    if (TestWorker.ready) queueMicrotask(() => this.send({ id: "0", type: "ReadyResponse" }));
   }
   send(data: unknown) {
     this.dispatchEvent(new MessageEvent("message", { data }));
@@ -96,17 +117,24 @@ class TestWorker extends EventTarget {
 
 let root: Root;
 let container: HTMLDivElement;
+let resize: (() => void)[];
 beforeEach(() => {
   vi.clearAllMocks();
   TestWorker.instances = [];
+  TestWorker.heldMethods.clear();
+  TestWorker.ready = true;
+  resize = [];
   mocks.read.mockImplementation(async () => new ArrayBuffer(16));
   mocks.writeText.mockResolvedValue(undefined);
+  mocks.open.mockResolvedValue(undefined);
   vi.stubGlobal("Worker", TestWorker);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: () => void) {}
+      constructor(private callback: () => void) {
+        resize.push(callback);
+      }
       observe() {
         queueMicrotask(this.callback);
       }
@@ -223,6 +251,39 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     expect(container.querySelector("aside")).toBeNull();
   });
 
+  it.each(["fit-width", "fit-page"])("restores %s and recalculates it on viewport resize", async (mode) => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation = { page: 3, scale: mode };
+    await show(tab);
+    const before = Number(button("pdf.zoom").textContent!.replace("%", ""));
+    vi.mocked(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")!.get!).mockReturnValue(400);
+    vi.mocked(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")!.get!).mockReturnValue(400);
+    await act(async () => {
+      resize.forEach((callback) => callback());
+    });
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(Number(button("pdf.zoom").textContent!.replace("%", ""))).toBeLessThan(before);
+    });
+    expect(tab.pdfLocation.scale).toBe(mode);
+    await show(new DocumentTab("/r/b.pdf", "pdf"));
+    await show(tab);
+    expect(tab.pdfLocation.scale).toBe(mode);
+  });
+
+  it("navigates by thumbnail, highlights the current page and resets to actual size", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    const thumbnail = container.querySelector<HTMLButtonElement>(
+      'aside button[aria-label="document.pdf.thumbnailPage"]',
+    )!;
+    await act(async () => thumbnail.click());
+    expect(thumbnail.getAttribute("aria-current")).toBe("page");
+    await key(container.querySelector(".pg-document-pdf")!, "0", { metaKey: true });
+    expect(button("pdf.zoom").textContent).toBe("100%");
+    expect(tab.pdfLocation.scale).toBe(1);
+  });
+
   it("searches through the real plugin, highlights matches, navigates and closes with Escape", async () => {
     await show(new DocumentTab("/r/a.pdf", "pdf"));
     const viewport = container.querySelector(".pg-document-pdf")!;
@@ -306,6 +367,154 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     await act(async () => worker.dispatchEvent(new Event("error")));
     expect(container.textContent).toContain("document.errors.pdfWorkerFailed");
     expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("releases page image URLs on load and every remaining URL on close", async () => {
+    let nextUrl = 0;
+    vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:test-${nextUrl++}`);
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await show(new DocumentTab(`/r/${cycle}.pdf`, "pdf"));
+      const loaded = Array.from(container.querySelectorAll("img"), (image) => image.src);
+      expect(loaded.length).toBeGreaterThan(0);
+      for (const url of loaded) expect(URL.revokeObjectURL).toHaveBeenCalledWith(url);
+      await act(async () => root.render(null));
+    }
+    const created = vi.mocked(URL.createObjectURL).mock.results.map((result) => result.value);
+    const revoked = vi.mocked(URL.revokeObjectURL).mock.calls.map(([url]) => url);
+    expect(new Set(revoked)).toEqual(new Set(created));
+    expect(TestWorker.instances.every((worker) => worker.terminate.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("surfaces tile image decoding errors", async () => {
+    await show(new DocumentTab("/r/a.pdf", "pdf"));
+    const tile = container.querySelector<HTMLImageElement>("[data-pdf-page] img:not([class])")!;
+    expect(tile).not.toBeNull();
+    await act(async () => tile.dispatchEvent(new Event("error")));
+    expect(container.textContent).toContain("document.errors.pdfRenderFailed");
+    expect(TestWorker.instances[0].terminate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps search shortcuts inside the reading area and search bar", async () => {
+    await show(new DocumentTab("/r/a.pdf", "pdf"));
+    expect((await key(button("pdf.toggleSidebar"), "f", { ctrlKey: true })).defaultPrevented).toBe(false);
+    expect(container.querySelector('[role="search"]')).toBeNull();
+    expect((await key(container.querySelector(".pg-document-pdf")!, "f", { ctrlKey: true })).defaultPrevented).toBe(
+      true,
+    );
+  });
+
+  it("opens safe external PDF links only on click and follows internal destinations", async () => {
+    await show(new DocumentTab("/r/a.pdf", "pdf"));
+    expect(mocks.open).not.toHaveBeenCalled();
+    const links = container.querySelectorAll<HTMLButtonElement>('[data-pdf-page="0"] button');
+    expect(links).toHaveLength(2);
+    await act(async () => links[0].click());
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith("https://example.com/paper");
+    mocks.open.mockRejectedValueOnce(new Error("browser failed"));
+    await act(async () => links[0].click());
+    expect(mocks.error).toHaveBeenCalledOnce();
+    await act(async () => links[1].click());
+    expect(container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!.value).toBe("3");
+    expect(
+      TestWorker.instances[0].postMessage.mock.calls.some(([request]) =>
+        /JavaScript|openDocumentUrl|saveAsCopy/.test(request.data?.name),
+      ),
+    ).toBe(false);
+  });
+
+  it("discards superseded search results, late progress and results after Escape", async () => {
+    TestWorker.heldMethods.add("searchAllPages");
+    await show(new DocumentTab("/r/a.pdf", "pdf"));
+    const worker = TestWorker.instances[0];
+    await click("pdf.search");
+    const input = container.querySelector<HTMLInputElement>('[aria-label="document.pdf.searchQuery"]')!;
+    const requests = () =>
+      worker.postMessage.mock.calls
+        .map(([request]) => request)
+        .filter((request) => request.data?.name === "searchAllPages");
+    await type(input, "old");
+    await vi.waitFor(() => expect(requests()).toHaveLength(1));
+    await type(input, "new");
+    await vi.waitFor(() => expect(requests()).toHaveLength(2));
+    const result = {
+      total: 1,
+      results: [
+        {
+          pageIndex: 1,
+          charIndex: 0,
+          charCount: 3,
+          rects: [{ origin: { x: 20, y: 20 }, size: { width: 20, height: 10 } }],
+        },
+      ],
+    };
+    await act(async () => {
+      worker.send({ id: requests()[1].id, type: "ExecuteResponse", data: { type: "result", value: result } });
+      worker.send({ id: requests()[0].id, type: "ExecuteProgress", data: { results: result.results } });
+      worker.send({
+        id: requests()[0].id,
+        type: "ExecuteResponse",
+        data: { type: "result", value: { ...result, total: 99 } },
+      });
+    });
+    expect(container.textContent).toContain("1 / 1");
+    expect(container.textContent).not.toContain("99");
+    await type(input, "closed");
+    await vi.waitFor(() => expect(requests()).toHaveLength(3));
+    await key(input, "Escape");
+    await act(async () =>
+      worker.send({ id: requests()[2].id, type: "ExecuteResponse", data: { type: "result", value: result } }),
+    );
+    await click("pdf.search");
+    expect(container.textContent).toContain("0 / 0");
+  });
+
+  it("terminates loading sessions on close and ignores a late file read", async () => {
+    let finish!: (buffer: ArrayBuffer) => void;
+    mocks.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => root.render(<DocumentView tab={new DocumentTab("/r/slow.pdf", "pdf")} />));
+    const signal = mocks.read.mock.calls[0][1] as AbortSignal;
+    await act(async () => root.render(null));
+    expect(signal.aborted).toBe(true);
+    expect(TestWorker.instances[0].terminate).toHaveBeenCalledOnce();
+    await act(async () => finish(new ArrayBuffer(1)));
+    expect(
+      TestWorker.instances[0].postMessage.mock.calls.some(([request]) => request.data?.name === "openDocumentBuffer"),
+    ).toBe(false);
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("closes a pending document open and ignores its response after switching tabs", async () => {
+    TestWorker.heldMethods.add("openDocumentBuffer");
+    await act(async () => root.render(<DocumentView tab={new DocumentTab("/r/slow.pdf", "pdf")} />));
+    const worker = TestWorker.instances[0];
+    const request = worker.postMessage.mock.calls
+      .map(([request]) => request)
+      .find((request) => request.data?.name === "openDocumentBuffer");
+    expect(request).toBeDefined();
+    TestWorker.heldMethods.clear();
+    const next = new DocumentTab("/r/next.pdf", "pdf");
+    await show(next);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    await act(async () =>
+      worker.send({ id: request!.id, type: "ExecuteResponse", data: { type: "result", value: { id: "stale" } } }),
+    );
+    expect(button("pdf.search")).not.toBeNull();
+    expect(container.textContent).toContain("next.pdf");
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("shows timeout and releases the worker if startup never finishes", async () => {
+    vi.useFakeTimers();
+    TestWorker.ready = false;
+    await act(async () => root.render(<DocumentView tab={new DocumentTab("/r/slow.pdf", "pdf")} />));
+    await act(async () => vi.advanceTimersByTime(25001));
+    expect(container.textContent).toContain("document.errors.pdfTimeout");
+    expect(TestWorker.instances[0].terminate).toHaveBeenCalledOnce();
   });
 
   it("rejects invalid page input without changing the location", async () => {

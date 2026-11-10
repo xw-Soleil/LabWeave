@@ -2847,6 +2847,7 @@ research:
       fitPage: Fit page
       actualSize: Actual size (100%)
       copy: Copy selected text
+      openLink: "Open in system browser: {{url}}"
       search: Search document (⌘/Ctrl+F)
       searchQuery: Search in this PDF
       searching: Searching…
@@ -2860,6 +2861,7 @@ research:
       pdfWorkerFailed: The PDF worker could not start or has stopped. Retry or open it with a system app.
       pdfLocked: This PDF requires a password. Open it with a system app.
       pdfEmpty: This PDF file is empty and cannot be opened.
+      pdfTooLarge: This PDF exceeds the 128 MiB reader limit. Open it with a system app.
       pdfRenderFailed: The PDF page image could not be displayed. Retry or open it with a system app.
       imageNotLocal: Preview only loads permitted local images using relative paths.
       unsupportedLink: Preview can open local Markdown and PDF links only. Open other files from the file panel.

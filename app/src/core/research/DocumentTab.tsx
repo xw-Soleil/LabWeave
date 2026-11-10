@@ -25,6 +25,7 @@ export function documentError(error: unknown): string {
     "pdfWorkerFailed",
     "pdfLocked",
     "pdfEmpty",
+    "pdfTooLarge",
     "pdfRenderFailed",
     "imageNotLocal",
     "fileClosed",

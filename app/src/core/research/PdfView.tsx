@@ -8,7 +8,15 @@ import { activeTabAtom, store } from "@/state";
 import { cn } from "@/utils/cn";
 import { createPluginRegistration } from "@embedpdf/core";
 import { EmbedPDF, useDocumentPermissions } from "@embedpdf/core/react";
-import { PdfErrorCode, PdfZoomMode, type PdfBookmarkObject, type PdfDocumentObject } from "@embedpdf/models";
+import {
+  PdfAnnotationSubtype,
+  PdfErrorCode,
+  PdfZoomMode,
+  type PdfBookmarkObject,
+  type PdfDocumentObject,
+  type PdfLinkAnnoObject,
+  type PdfLinkTarget,
+} from "@embedpdf/models";
 import { BookmarkPluginPackage, useBookmarkCapability } from "@embedpdf/plugin-bookmark/react";
 import { DocumentManagerPluginPackage } from "@embedpdf/plugin-document-manager/react";
 import {
@@ -30,14 +38,16 @@ import {
 } from "@embedpdf/plugin-viewport/react";
 import { useZoom, useZoomCapability, ZoomMode, ZoomPluginPackage } from "@embedpdf/plugin-zoom/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open } from "@tauri-apps/plugin-shell";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelLeft, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { DocumentTab, documentError, documentText as t } from "./DocumentTab";
 import {
-  bookmarkDestination,
+  pdfDestination,
   PDF_READER_TIMEOUT,
   PdfReaderEngine,
+  pdfExternalUrl,
   pdfPageNumber,
   pdfPageTransform,
   pdfReaderError,
@@ -60,19 +70,35 @@ function IconButton({
 }
 
 function PdfPage({
-  documentId,
+  document: pdf,
+  engine,
   page,
   scale,
   onPaint,
   onError,
+  onNavigate,
 }: {
-  documentId: string;
+  document: PdfDocumentObject;
+  engine: PdfReaderEngine;
   page: PdfDocumentObject["pages"][number];
   scale: number;
   onPaint: () => void;
   onError: (error: unknown) => void;
+  onNavigate: (target: PdfLinkTarget | undefined) => void;
 }) {
+  const documentId = pdf.id;
   const [painted, setPainted] = useState(false);
+  const [links, setLinks] = useState<PdfLinkAnnoObject[]>([]);
+  useEffect(() => {
+    const task = engine.getPageAnnotations(pdf, page);
+    task.wait(
+      (annotations) => setLinks(annotations.filter((annotation) => annotation.type === PdfAnnotationSubtype.LINK)),
+      (error) => {
+        if (error.type !== "abort") onError(pdfReaderError(error));
+      },
+    );
+    return () => task.abort({ code: PdfErrorCode.Cancelled, message: "fileClosed" });
+  }, [engine, pdf, page, onError]);
   useEffect(() => {
     if (painted) return;
     const timer = setTimeout(() => onError(new Error("pdfTimeout")), PDF_READER_TIMEOUT);
@@ -82,6 +108,11 @@ function PdfPage({
     <div
       className="absolute origin-top-left"
       style={{ transform: pdfPageTransform(page.rotation, page.size.width * scale, page.size.height * scale) }}
+      onLoadCapture={() => {
+        setPainted(true);
+        onPaint();
+      }}
+      onErrorCapture={() => onError(new Error("pdfRenderFailed"))}
     >
       <PagePointerProvider
         documentId={documentId}
@@ -95,15 +126,33 @@ function PdfPage({
           scale={Math.min(1, 1600 / Math.max(page.size.width, page.size.height))}
           dpr={1}
           className="pointer-events-none absolute inset-0"
-          onLoad={() => {
-            setPainted(true);
-            onPaint();
-          }}
-          onError={() => onError(new Error("pdfRenderFailed"))}
         />
         <TilingLayer documentId={documentId} pageIndex={page.index} className="pointer-events-none absolute inset-0" />
         <SearchLayer documentId={documentId} pageIndex={page.index} className="absolute inset-0" />
         <SelectionLayer documentId={documentId} pageIndex={page.index} />
+        {links.map((link) => {
+          const destination = pdfDestination(link.target);
+          const url = pdfExternalUrl(link.target);
+          if (!url && (!destination || !pdfPageNumber(destination.pageIndex + 1, pdf.pages.length))) return null;
+          const label = url ? t("pdf.openLink", { url }) : t("pdf.thumbnailPage", { page: destination!.pageIndex + 1 });
+          return (
+            <button
+              key={link.id}
+              type="button"
+              aria-label={label}
+              title={label}
+              className="focus-visible:ring-ring absolute cursor-pointer bg-transparent focus-visible:ring-2"
+              style={{
+                left: link.rect.origin.x * scale,
+                top: link.rect.origin.y * scale,
+                width: link.rect.size.width * scale,
+                height: link.rect.size.height * scale,
+              }}
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              onClick={() => onNavigate(link.target)}
+            />
+          );
+        })}
       </PagePointerProvider>
     </div>
   );
@@ -135,7 +184,8 @@ function PdfGestures({ tab }: { tab: DocumentTab }) {
 }
 
 function OutlineItem({ item, go }: { item: PdfBookmarkObject; go: (item: PdfBookmarkObject) => void }) {
-  const destination = bookmarkDestination(item);
+  const destination = pdfDestination(item.target);
+  const url = pdfExternalUrl(item.target);
   const children = item.children ?? [];
   return (
     <li>
@@ -151,7 +201,7 @@ function OutlineItem({ item, go }: { item: PdfBookmarkObject; go: (item: PdfBook
           <Button
             variant="ghost"
             className="h-auto min-w-0 flex-1 justify-start py-2 text-left whitespace-normal"
-            disabled={!destination}
+            disabled={!destination && !url}
             onClick={() => go(item)}
           >
             <span className="min-w-0 flex-1 break-words">{item.title || t("pdf.untitledBookmark")}</span>
@@ -177,11 +227,13 @@ function OutlineItem({ item, go }: { item: PdfBookmarkObject; go: (item: PdfBook
 export function PdfReaderContent({
   tab,
   document: pdf,
+  engine,
   onPaint,
   onError,
 }: {
   tab: DocumentTab;
   document: PdfDocumentObject;
+  engine: PdfReaderEngine;
   onPaint: () => void;
   onError: (error: unknown) => void;
 }) {
@@ -334,8 +386,13 @@ export function PdfReaderContent({
         zoom.getState().currentZoomLevel * factor,
       );
   };
-  const goBookmark = (item: PdfBookmarkObject) => {
-    const destination = bookmarkDestination(item);
+  const navigate = (target: PdfLinkTarget | undefined) => {
+    const url = pdfExternalUrl(target);
+    if (url) {
+      void open(url).catch(reportToast);
+      return;
+    }
+    const destination = pdfDestination(target);
     if (!destination || !pdfPageNumber(destination.pageIndex + 1, pages)) return;
     scroll?.scrollToPage({
       pageNumber: destination.pageIndex + 1,
@@ -351,6 +408,7 @@ export function PdfReaderContent({
       onKeyDownCapture={(event) => {
         if (event.nativeEvent.isComposing || event.altKey || store.get(activeTabAtom) !== tab) return;
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+          if (!(event.target as Element).closest('.pg-document-pdf, [role="search"]')) return;
           event.preventDefault();
           event.stopPropagation();
           setSearchOpen(true);
@@ -525,7 +583,12 @@ export function PdfReaderContent({
                       }}
                     >
                       <div className="bg-white shadow-sm" style={{ width: meta.width, height: meta.height }}>
-                        <ThumbImg documentId={tab.id} meta={meta} style={{ width: meta.width, height: meta.height }} />
+                        <ThumbImg
+                          documentId={tab.id}
+                          meta={meta}
+                          style={{ width: meta.width, height: meta.height }}
+                          onError={() => onError(new Error("pdfRenderFailed"))}
+                        />
                       </div>
                       <span className="text-muted-foreground text-xs tabular-nums">{meta.pageIndex + 1}</span>
                     </button>
@@ -537,7 +600,7 @@ export function PdfReaderContent({
                   <nav aria-label={t("pdf.outline")}>
                     <ul>
                       {bookmarks.map((item, index) => (
-                        <OutlineItem key={index} item={item} go={goBookmark} />
+                        <OutlineItem key={index} item={item} go={(item) => navigate(item.target)} />
                       ))}
                     </ul>
                   </nav>
@@ -566,11 +629,13 @@ export function PdfReaderContent({
                 documentId={tab.id}
                 renderPage={({ pageIndex }) => (
                   <PdfPage
-                    documentId={tab.id}
+                    document={pdf}
+                    engine={engine}
                     page={pdf.pages[pageIndex]}
                     scale={zoomState.currentZoomLevel}
                     onPaint={onPaint}
                     onError={onError}
+                    onNavigate={navigate}
                   />
                 )}
               />
@@ -637,7 +702,13 @@ function PdfSession({
     <EmbedPDF engine={engine} plugins={plugins} autoMountDomElements={false}>
       {({ activeDocument, pluginsReady }) =>
         pluginsReady && activeDocument?.document ? (
-          <PdfReaderContent tab={tab} document={activeDocument.document} onPaint={onPaint} onError={onError} />
+          <PdfReaderContent
+            tab={tab}
+            engine={engine}
+            document={activeDocument.document}
+            onPaint={onPaint}
+            onError={onError}
+          />
         ) : (
           <div role="status" className="text-muted-foreground p-6">
             {t("loading")}

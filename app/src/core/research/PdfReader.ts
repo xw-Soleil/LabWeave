@@ -1,9 +1,11 @@
 import { WebWorkerEngine, WorkerTask } from "@embedpdf/engines/worker";
-import { PdfActionType, PdfErrorCode, type PdfErrorReason, type PdfBookmarkObject } from "@embedpdf/models";
+import { PdfActionType, PdfErrorCode, TaskStage, type PdfErrorReason, type PdfLinkTarget } from "@embedpdf/models";
 import { DocumentRangeReader } from "./DocumentFile";
 import { pdfWithTimeout } from "./PdfDocument";
 
 export const PDF_READER_TIMEOUT = 25000;
+// shortcut: 2.15.1 copies the entire PDF into WASM; lift this limit when range opening is available.
+export const PDF_READER_MAX_BYTES = 128 * 1024 * 1024;
 
 export function pdfReaderError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -12,10 +14,16 @@ export function pdfReaderError(error: unknown): Error {
   return new Error(reason?.message || "pdfWorkerFailed");
 }
 
-export function bookmarkDestination(bookmark: PdfBookmarkObject) {
-  const target = bookmark.target;
+export function pdfDestination(target: PdfLinkTarget | undefined) {
   if (target?.type === "destination") return target.destination;
   if (target?.type === "action" && target.action.type === PdfActionType.Goto) return target.action.destination;
+  return undefined;
+}
+
+export function pdfExternalUrl(target: PdfLinkTarget | undefined): string | undefined {
+  if (target?.type !== "action" || target.action.type !== PdfActionType.URI) return undefined;
+  const uri = target.action.uri.trim();
+  if (/^https?:\/\/[^\s]+$/i.test(uri)) return uri;
   return undefined;
 }
 
@@ -46,7 +54,7 @@ export class PdfReaderEngine extends WebWorkerEngine {
     nativeWorker.addEventListener("error", this.workerFailed);
     nativeWorker.addEventListener("messageerror", this.workerFailed);
     nativeWorker.addEventListener("message", this.workerMessage);
-    this.watch(this.readyTask);
+    this.watch(this.readyTask, WebWorkerEngine.readyTaskId);
   }
 
   private workerFailed = () => this.fail(new Error("pdfWorkerFailed"));
@@ -60,12 +68,13 @@ export class PdfReaderEngine extends WebWorkerEngine {
     this.report(error);
   }
 
-  private watch<R>(task: WorkerTask<R>) {
+  private watch<R>(task: WorkerTask<R>, id: string) {
     this.pending.add(task as WorkerTask<unknown>);
     const timer = setTimeout(() => this.fail(new Error("pdfTimeout")), PDF_READER_TIMEOUT);
     const done = () => {
       clearTimeout(timer);
       this.pending.delete(task as WorkerTask<unknown>);
+      this.tasks.delete(id);
     };
     task.wait(done, (error) => {
       done();
@@ -81,10 +90,22 @@ export class PdfReaderEngine extends WebWorkerEngine {
       else task.abort({ code: PdfErrorCode.Cancelled, message: "fileClosed" });
       return;
     }
-    this.watch(task);
+    this.watch(task, request.id);
     // Transfer ownership so DocumentManager's retry options cannot retain another full PDF in the UI.
     const transfer = request.data.name === "openDocumentBuffer" ? [request.data.args[0].content] : [];
-    super.proxy(task, request, transfer);
+    // Upstream Task.wait swallows callback exceptions, including postMessage failures.
+    this.readyTask.wait(
+      () => {
+        if (this.stopped || task.state.stage !== TaskStage.Pending) return;
+        this.tasks.set(request.id, task);
+        try {
+          this.nativeWorker.postMessage(request, transfer);
+        } catch {
+          task.reject({ code: PdfErrorCode.Unknown, message: "pdfWorkerFailed" });
+        }
+      },
+      () => task.abort({ code: PdfErrorCode.Cancelled, message: "fileClosed" }),
+    );
   }
 
   override destroy() {
@@ -113,15 +134,23 @@ export async function readPdfBuffer(path: string, signal: AbortSignal, onCloseEr
   };
   signal.addEventListener("abort", close, { once: true });
   try {
-    const opening = DocumentRangeReader.open(path, signal).then(async (opened) => {
-      reader = opened;
-      if (signal.aborted || finished) {
-        await opened.close().catch(onCloseError);
-        throw new Error("fileClosed");
-      }
-      return opened;
-    });
+    const opening = DocumentRangeReader.open(path, signal)
+      .then(async (opened) => {
+        reader = opened;
+        if (signal.aborted || finished) {
+          await pdfWithTimeout(opened.close(), 1000).catch(onCloseError);
+          throw new Error("fileClosed");
+        }
+        return opened;
+      })
+      .catch((error) => {
+        if ((signal.aborted || finished) && !(error instanceof Error && error.message === "fileClosed"))
+          onCloseError(error);
+        throw error;
+      });
     const opened = await pdfWithTimeout(opening, PDF_READER_TIMEOUT, signal);
+    if (!Number.isSafeInteger(opened.size) || opened.size < 0 || opened.size > PDF_READER_MAX_BYTES)
+      throw new Error("pdfTooLarge");
     if (!opened.size) throw new Error("pdfEmpty");
     // EmbedPDF 2.15.1 uses FPDF_LoadMemDocument; its URL mode also reads the complete buffer.
     return (await pdfWithTimeout(opened.read(0, opened.size), PDF_READER_TIMEOUT, signal)).buffer;

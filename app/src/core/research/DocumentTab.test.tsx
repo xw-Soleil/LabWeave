@@ -57,14 +57,20 @@ describe("document tab actions", () => {
     expect(mocks.registerRoot).not.toHaveBeenCalled();
     await expect(openDocumentFile("/r/a.md")).rejects.toThrow("current disk missing");
   });
-  it("deduplicates concurrent opens, aliases and subsequent double clicks", async () => {
-    const [first, second] = await Promise.all([openDocumentFile("/r/a.md"), openDocumentFile("/r/./a.md")]);
-    expect(first).toBe(second);
-    const alias = await openDocumentFile("/r/link.md");
-    expect(alias).toBe(first);
-    expect(store.get(tabsAtom)).toHaveLength(1);
-    expect(store.get(activeResourceTabAtom)).toBe(first);
-  });
+  it.each(["md", "pdf"])(
+    "deduplicates concurrent %s opens, aliases and subsequent double clicks",
+    async (extension) => {
+      const [first, second] = await Promise.all([
+        openDocumentFile(`/r/a.${extension}`),
+        openDocumentFile(`/r/./a.${extension}`),
+      ]);
+      expect(first).toBe(second);
+      const alias = await openDocumentFile(`/r/link.${extension}`);
+      expect(alias).toBe(first);
+      expect(store.get(tabsAtom)).toHaveLength(1);
+      expect(store.get(activeResourceTabAtom)).toBe(first);
+    },
+  );
   it("preserves system opening for images and Office files", async () => {
     await openDocumentFile("/r/a.png");
     await openDocumentFile("/r/a.docx");
