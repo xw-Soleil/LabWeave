@@ -789,6 +789,44 @@ function AnnotationShape({
 }) {
   const position = item.position;
   const rects = position.pageIndex === page.index ? position.rects : position.nextPageRects;
+  if (item.type === "highlight" && rects?.length) {
+    // 照 Zotero：整条高亮作为一层统一上色，透明度加在这一层上，行与行重叠的地方不会叠深；
+    // 每行上下各放宽一点，相邻两行连成一片；不描边，选中时只在整体外面画一圈细框。
+    const boxes = rects.map((rect) => {
+      const { origin, size } = pdfRectToReader(page, rect);
+      const pad = size.height * 0.12;
+      return { x: origin.x, y: origin.y - pad, width: size.width, height: size.height + pad * 2 };
+    });
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    const right = Math.max(...boxes.map((box) => box.x + box.width));
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+    return (
+      <g data-annotation-id={item.id} onClick={onSelect} style={{ cursor: "pointer", pointerEvents: "visiblePainted" }}>
+        <g
+          className={selected ? "opacity-50" : "opacity-40 hover:opacity-50"}
+          style={{ mixBlendMode: "multiply" }}
+          fill={item.color}
+        >
+          {boxes.map((box, i) => (
+            <rect key={i} {...box} />
+          ))}
+        </g>
+        {selected && (
+          <rect
+            x={left - 2}
+            y={top - 2}
+            width={right - left + 4}
+            height={bottom - top + 4}
+            rx={2}
+            fill="none"
+            stroke={item.color}
+            strokeWidth={1}
+          />
+        )}
+      </g>
+    );
+  }
   return (
     <g data-annotation-id={item.id} onClick={onSelect} style={{ cursor: "pointer", pointerEvents: "visiblePainted" }}>
       {rects?.map((rect, i) => {
@@ -850,10 +888,8 @@ function AnnotationShape({
             width={size.width}
             height={item.type === "underline" ? 1.5 : size.height}
             fill={item.type === "image" ? "transparent" : item.color}
-            fillOpacity={item.type === "highlight" ? 0.35 : 1}
             stroke={item.type === "image" || selected ? item.color : "none"}
             strokeWidth={selected ? 1.5 : 1}
-            style={item.type === "highlight" ? { mixBlendMode: "multiply" } : undefined}
           />
         );
       })}

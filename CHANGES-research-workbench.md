@@ -465,6 +465,13 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 修正 CropBox 超出 MediaBox 时引擎的坐标原点，补充四种旋转和不同页框尺寸的真实引擎测试；统一手绘线宽、文字字号和擦除半径的 PDF 单位换算，避免大量导入矩形的边界计算触发参数栈溢出。
 - 增加目录替换、损坏记录、旧回收站迁移、恢复失败、未完成批注切换/关闭、页标签和离线元数据测试。没有变更依赖或 capabilities；Zotero 字符偏移仍依赖 PDFium 字符顺序，不能承诺与 Zotero 逐值相等，具体影响写入仓库外审查报告。
 
-### 40. 本文件
+### 40. PDF 高亮样子、选区颜色、文档时面板停靠（2026-11-10）
+
+- `app/src/core/research/PdfAnnotationUI.tsx`：高亮改为整条批注一层统一上色，透明度加在整层上（行与行重叠处不再叠深），每行上下放宽一点连成一片，不描边；选中时只在整体外面画一圈细框，悬停稍加深。下划线、便签等其他类型不变。
+- `app/src/core/research/PdfView.tsx`：选中文字的底色改为半透明浅蓝（`rgba(0, 122, 255, 0.2)`），原来是 EmbedPDF 默认的深蓝。
+- `app/src/components/docked-area.tsx`：编辑区某一组显示的不是白板（Markdown、PDF 等）时，这组内容给左边竖栏和固定住的左右面板让出位置，切换时 0.2 秒平滑滑开；白板组照旧铺满、面板浮在上面，画布尺寸不变。临时弹出的面板仍盖在上面。
+- `app/vite.config.ts`：开发版启动时预先打包 EmbedPDF，第一次打开 PDF 时不再整页刷新（开发版专用）。
+
+### 41. 本文件
 
 - `CHANGES-research-workbench.md`（新增）

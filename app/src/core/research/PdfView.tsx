@@ -143,7 +143,12 @@ function PdfPage({
         />
         <TilingLayer documentId={documentId} pageIndex={page.index} className="pointer-events-none absolute inset-0" />
         <SearchLayer documentId={documentId} pageIndex={page.index} className="absolute inset-0" />
-        <SelectionLayer documentId={documentId} pageIndex={page.index} />
+        {/* 照 macOS 原生选区的浅蓝，半透明压在页面上，字照样清楚 */}
+        <SelectionLayer
+          documentId={documentId}
+          pageIndex={page.index}
+          textStyle={{ background: "rgba(0, 122, 255, 0.2)" }}
+        />
         {links.map((link) => {
           const destination = pdfDestination(link.target);
           const url = pdfExternalUrl(link.target);

@@ -580,6 +580,19 @@ export default function DockedArea({
     const groupTabs = groupTabsOf(group);
     const activeTab = shownTabOf(group, groupTabs);
     const project = activeTab instanceof Project ? activeTab : undefined;
+    // 白板铺满窗口，左边竖栏和两边面板浮在画布上面；文档等其他页不铺画布，
+    // 给竖栏和固定住的面板让出位置（临时弹出的照旧盖在上面），切换时平滑滑开。
+    // 白板本身不跟着变宽变窄，画布的视野不会跳。
+    const dockLeft =
+      project || !edges.left
+        ? "0px"
+        : leftTabs.length > 0 && sideStates.left.pinned
+          ? `calc(${RESEARCH_SIDE_PANEL_LEFT} + ${sideWidths.left + SIDE_PANEL_GAP}px)`
+          : RESEARCH_SIDE_PANEL_LEFT;
+    const dockRight =
+      !project && edges.right && rightTabs.length > 0 && sideStates.right.pinned
+        ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
+        : "0px";
     return (
       <section
         key={group.id}
@@ -587,7 +600,13 @@ export default function DockedArea({
         className="relative size-full min-h-0 min-w-0 overflow-hidden"
         onPointerDownCapture={() => focusGroupTab(activeTab)}
       >
-        <div className={cn("absolute inset-x-0 bottom-0", project ? "top-0" : "top-10")}>
+        <div
+          className={cn(
+            "absolute bottom-0 transition-[left,right] duration-200 ease-out motion-reduce:transition-none",
+            project ? "top-0" : "top-10",
+          )}
+          style={{ left: dockLeft, right: dockRight }}
+        >
           {activeTab && React.createElement(activeTab.getComponent())}
         </div>
         <div
