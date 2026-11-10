@@ -23,6 +23,9 @@ export function documentError(error: unknown): string {
     "fileChanged",
     "pdfTimeout",
     "pdfWorkerFailed",
+    "pdfLocked",
+    "pdfEmpty",
+    "pdfRenderFailed",
     "imageNotLocal",
     "fileClosed",
     "unsupportedLink",
@@ -39,7 +42,7 @@ export class DocumentTab extends Tab {
   error = "";
   saving = false;
   loadingMarkdown = false;
-  pdfLocation = { page: 1, scale: "page-width" };
+  pdfLocation = { page: 1, scale: "fit-width" as string | number };
   private loading?: Promise<void>;
   private readonly component = () => (
     <Suspense fallback={<div className="text-muted-foreground p-6">{documentText("loading")}</div>}>

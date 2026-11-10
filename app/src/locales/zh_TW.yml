@@ -2949,11 +2949,37 @@ research:
     zoomIn: 放大
     zoomOut: 縮小
     fitWidth: 適合寬度
+    pdf:
+      toolbar: PDF 閱讀工具欄
+      readingArea: PDF 閱讀區
+      toggleSidebar: 顯示或收起閱讀側欄
+      sidebar: 閱讀側欄
+      thumbnails: 縮略圖
+      outline: 大綱
+      annotations: 批註
+      annotationsPlaceholder: 批註功能暫未開放。
+      noOutline: 此 PDF 沒有內置大綱。
+      untitledBookmark: 未命名書籤
+      toggleOutlineItem: 展開或收起子目錄
+      thumbnailPage: "第 {{page}} 頁"
+      zoom: 縮放比例與適應方式
+      fitPage: 適合整頁
+      actualSize: 實際大小（100%）
+      copy: 複製選中文字
+      search: 搜索文檔（⌘/Ctrl+F）
+      searchQuery: 在此 PDF 中搜索
+      searching: 正在搜索…
+      searchCount: "{{current}} / {{total}}"
+      previousResult: 上一個結果（Shift+Enter）
+      nextResult: 下一個結果（Enter）
+      closeSearch: 關閉搜索（Esc）
     errors:
       fileChanged: 文件已被其他程序修改，未覆蓋磁盤內容。請複製需要保留的編輯，再重新讀取文件。
       pdfTimeout: PDF 讀取或渲染超時，已停止處理。可以重試或用系統程序打開。
       pdfWorkerFailed: PDF 解析程序無法啟動或已停止。請重試或用系統程序打開。
       pdfLocked: 此 PDF 需要密碼，請用系統程序打開。
+      pdfEmpty: 此 PDF 文件為空，無法打開。
+      pdfRenderFailed: PDF 頁面圖像無法顯示。請重試或用系統程序打開。
       imageNotLocal: 預覽僅加載有權讀取的本地相對路徑圖片。
       unsupportedLink: 預覽只打開本地 Markdown 和 PDF 鏈接。其他文件請從文件面板打開。
       editsDuringReload: 重新讀取期間正文發生了變化，已保留編輯。如需放棄這些編輯，請再次重新讀取。

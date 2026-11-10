@@ -125,8 +125,28 @@ describe.skipIf(!samples)("real PDF range measurement", () => {
         }
         const renderMs = performance.now() - renderStart;
         const firstPaintMs = performance.now() - started;
+        const afterFirst = process.memoryUsage();
         const firstPaintIO = io();
         const coverRead = reader.bytesRead;
+        const turnStart = performance.now();
+        const renderAtWidth = async (pageNumber: number, width: number, capturePath?: string) => {
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+          const output = factory.create(Math.ceil(viewport.width), Math.ceil(viewport.height));
+          try {
+            await pdfWithTimeout(page.render({ canvas: output.canvas, viewport }).promise);
+            if (capturePath)
+              await writeFile(capturePath, Buffer.from(output.canvas.toDataURL("image/png").split(",")[1], "base64"));
+          } finally {
+            factory.destroy(output);
+          }
+        };
+        await renderAtWidth(Math.min(2, pdf.numPages), 1024);
+        const pageTurnMs = performance.now() - turnStart;
+        const zoomStart = performance.now();
+        await renderAtWidth(1, 2048);
+        const zoomPageMs = performance.now() - zoomStart;
+        const afterZoom = process.memoryUsage();
         const textStart = performance.now();
         let text = "";
         for (let i = 1; i <= Math.min(3, pdf.numPages) && text.length < 4000; i++) {
@@ -150,6 +170,13 @@ describe.skipIf(!samples)("real PDF range measurement", () => {
           firstPageMs,
           renderMs,
           firstPaintMs,
+          pageTurnMs,
+          zoomPageMs,
+          rssAfterFirst: afterFirst.rss,
+          rssAfterZoom: afterZoom.rss,
+          firstHeapDelta: afterFirst.heapUsed - before.heapUsed,
+          firstArrayBuffersDelta: afterFirst.arrayBuffers - before.arrayBuffers,
+          firstRssDelta: afterFirst.rss - before.rss,
           firstPaintIO,
           textMs,
           withTextIO: io(),
@@ -166,6 +193,8 @@ describe.skipIf(!samples)("real PDF range measurement", () => {
           operations,
           ranges,
         });
+        if (report && run === 1)
+          await renderAtWidth(1, 1024, path.join(path.dirname(report), `pdfjs-${path.basename(filename)}.png`));
       } finally {
         await task.destroy();
         worker.destroy();

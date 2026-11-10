@@ -20,13 +20,17 @@ beforeEach(() => {
   container = document.createElement("div");
   container.tabIndex = 0;
   document.body.append(container);
-  vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ left: 240, top: 120 } as DOMRect);
+  vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
+    left: 240,
+    top: 120,
+    width: 600,
+    height: 800,
+  } as DOMRect);
   viewer = {
     container,
-    containerTopLeft: [10, 20],
     currentScale: 1,
-    updateScale: vi.fn(({ scaleFactor }) => {
-      viewer.currentScale = Math.round(viewer.currentScale * scaleFactor! * 100) / 100;
+    requestZoom: vi.fn((scale: number) => {
+      viewer.currentScale = Math.round(scale * 100) / 100;
     }),
   } as unknown as typeof viewer;
   globalInput = vi.fn(() => true);
@@ -68,13 +72,13 @@ describe("PDF zoom input", () => {
     expect(globalInput).not.toHaveBeenCalled();
     vi.advanceTimersByTime(20);
     expect(viewer.currentScale).toBeGreaterThan(1);
-    expect(viewer.updateScale).toHaveBeenCalledWith(expect.objectContaining({ origin: [180, 190], drawingDelay: 150 }));
+    expect(viewer.requestZoom).toHaveBeenCalledWith(expect.any(Number), { vx: 160, vy: 180 });
   });
 
   it("coalesces bursts into one frame and retains fractional pinch deltas across frames", () => {
     for (let i = 0; i < 10; i++) wheel({ ctrlKey: true, deltaY: -0.1 });
     vi.advanceTimersByTime(20);
-    expect(viewer.updateScale).toHaveBeenCalledOnce();
+    expect(viewer.requestZoom).toHaveBeenCalledOnce();
     expect(viewer.currentScale).toBe(1.01);
     for (let i = 0; i < 10; i++) {
       wheel({ ctrlKey: true, deltaY: -0.1 });
@@ -117,7 +121,7 @@ describe("PDF zoom input", () => {
     const input = document.createElement("textarea");
     document.body.append(input);
     expect(key({ key: "+", metaKey: true }, input).defaultPrevented).toBe(false);
-    expect(viewer.updateScale).not.toHaveBeenCalled();
+    expect(viewer.requestZoom).not.toHaveBeenCalled();
   });
 
   it("does not take shortcuts from a sidebar, dialog or another split pane", () => {
@@ -125,7 +129,7 @@ describe("PDF zoom input", () => {
     document.body.append(button);
     expect(key({ key: "+", ctrlKey: true }, button).defaultPrevented).toBe(false);
     expect(key({ key: "0", metaKey: true }, document.body).defaultPrevented).toBe(false);
-    expect(viewer.updateScale).not.toHaveBeenCalled();
+    expect(viewer.requestZoom).not.toHaveBeenCalled();
   });
 
   it("focuses clicked page content without taking focus from an editable PDF field", () => {
@@ -150,15 +154,44 @@ describe("PDF zoom input", () => {
     vi.mocked(container.getBoundingClientRect).mockReturnValue({ left: 80, top: 50 } as DOMRect);
     wheel({ ctrlKey: true, deltaY: -10 });
     vi.advanceTimersByTime(20);
-    expect(viewer.updateScale).toHaveBeenLastCalledWith(expect.objectContaining({ origin: [340, 260] }));
+    expect(viewer.requestZoom).toHaveBeenLastCalledWith(expect.any(Number), { vx: 320, vy: 250 });
   });
 
   it("cancels pending zoom and removes listeners when the tab closes", () => {
     wheel({ ctrlKey: true, deltaY: -1 });
     controller.abort();
     vi.advanceTimersByTime(20);
-    expect(viewer.updateScale).not.toHaveBeenCalled();
+    expect(viewer.requestZoom).not.toHaveBeenCalled();
     expect(wheel({ ctrlKey: true, deltaY: -1 }).defaultPrevented).toBe(false);
     expect(key({ key: "+", metaKey: true }).defaultPrevented).toBe(false);
+  });
+
+  it("anchors keyboard zoom at the last mouse position and falls back to the center on leave", () => {
+    container.dispatchEvent(new MouseEvent("pointermove", { clientX: 400, clientY: 300 }));
+    key({ key: "+", metaKey: true });
+    expect(viewer.requestZoom).toHaveBeenLastCalledWith(1.2, { vx: 160, vy: 180 });
+    container.dispatchEvent(new MouseEvent("pointerleave"));
+    key({ key: "0", metaKey: true });
+    expect(viewer.requestZoom).toHaveBeenLastCalledWith(1, { vx: 300, vy: 400 });
+  });
+
+  it("handles WebKit pinch scale without counting synthetic ctrl-wheel a second time", () => {
+    const gesture = (type: string, scale: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.assign(event, { scale, clientX: 400, clientY: 300 });
+      container.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    };
+    gesture("gesturestart", 1);
+    gesture("gesturechange", 1.5);
+    wheel({ ctrlKey: true, deltaY: -30 });
+    vi.advanceTimersByTime(20);
+    expect(viewer.currentScale).toBe(1.5);
+    gesture("gestureend", 2);
+    vi.advanceTimersByTime(20);
+    expect(viewer.currentScale).toBe(2);
+    wheel({ ctrlKey: true, deltaY: -10 });
+    vi.advanceTimersByTime(20);
+    expect(viewer.currentScale).toBeGreaterThan(2);
   });
 });

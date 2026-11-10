@@ -4,13 +4,6 @@
 @plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 
-/* PDF text layers must override the canvas app's global selection rule. */
-.pg-document-pdf .textLayer,
-.pg-document-pdf .textLayer * {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
 @font-face {
   font-family: "Project Graph Canvas";
   src: url("../assets/fonts/NotoSansSC-Regular.otf") format("opentype");

@@ -2,20 +2,18 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import Markdown from "@/components/ui/markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store } from "@/state";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
-import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Save, ZoomIn, ZoomOut } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { ExternalLink, RefreshCw, Save } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
-import { loadPdfJs, openPdfDocument, type OpenPdfDocument } from "./PdfDocument";
-import { bindPdfZoom, zoomPdf } from "./PdfZoom";
+import PdfView from "./PdfView";
 import { fileKindOf } from "./ResearchShell";
 
 function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
@@ -158,248 +156,6 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   );
 }
 
-type Viewer = InstanceType<(typeof import("pdfjs-dist/legacy/web/pdf_viewer.mjs"))["PDFViewer"]>;
-
-function PdfView({ tab }: { tab: DocumentTab }) {
-  const container = useRef<HTMLDivElement>(null);
-  const viewer = useRef<Viewer | null>(null);
-  const [revision, setRevision] = useState(0);
-  const [state, setState] = useState({ pages: 0, page: 1, scale: 1, loading: true, error: "" });
-  const [jump, setJump] = useState("1");
-  useEffect(() => {
-    const controller = new AbortController();
-    bindPdfZoom(
-      container.current!,
-      () => viewer.current,
-      () => store.get(activeTabAtom) === tab,
-      controller.signal,
-    );
-    let session: OpenPdfDocument | undefined;
-    let pdfViewer: Viewer | undefined;
-    let linkService:
-      | InstanceType<(typeof import("pdfjs-dist/legacy/web/pdf_viewer.mjs"))["PDFLinkService"]>
-      | undefined;
-    let observer: ResizeObserver | undefined;
-    const report = (error: unknown) => {
-      if (controller.signal.aborted) return;
-      clearTimeout(timer);
-      setState((value) => ({ ...value, pages: 0, loading: false, error: documentError(error) }));
-      stop();
-    };
-    const stop = () => {
-      if (controller.signal.aborted) return;
-      controller.abort();
-      clearTimeout(timer);
-      observer?.disconnect();
-      viewer.current = null;
-      try {
-        pdfViewer?.setDocument(null as never);
-        linkService?.setDocument(null as never);
-      } catch (error) {
-        toast.error(documentError(error));
-      } finally {
-        void session?.destroy().catch((error) => toast.error(documentError(error)));
-      }
-    };
-    let timer = setTimeout(() => report(new Error("pdfTimeout")), 25000);
-    const watchCurrentPage = () => {
-      if (controller.signal.aborted || !pdfViewer) return;
-      clearTimeout(timer);
-      const page = pdfViewer.getPageView(pdfViewer.currentPageNumber - 1);
-      const loading = !page || !pdfViewer.renderingQueue?.isViewFinished(page);
-      setState((value) => ({ ...value, loading }));
-      if (loading) timer = setTimeout(() => report(new Error("pdfTimeout")), 25000);
-    };
-    setState({ pages: 0, page: tab.pdfLocation.page, scale: 1, loading: true, error: "" });
-    setJump(String(tab.pdfLocation.page));
-    void (async () => {
-      // The viewer bundle reads the global installed by the matching legacy API bundle.
-      await loadPdfJs();
-      const { PDFViewer, EventBus, PDFLinkService } = await import("pdfjs-dist/legacy/web/pdf_viewer.mjs");
-      await import("pdfjs-dist/web/pdf_viewer.css");
-      if (controller.signal.aborted) return;
-      const eventBus = new EventBus();
-      linkService = new PDFLinkService({ eventBus });
-      linkService.externalLinkEnabled = false;
-      // pdf.js reads abortSignal even though its generated PDFViewerOptions omits it.
-      const viewerOptions = {
-        container: container.current!,
-        eventBus,
-        linkService,
-        maxCanvasPixels: 4096 * 4096,
-        abortSignal: controller.signal,
-      };
-      pdfViewer = new PDFViewer(viewerOptions);
-      viewer.current = pdfViewer;
-      linkService.setViewer(pdfViewer);
-      const eventOptions = { signal: controller.signal };
-      eventBus.on(
-        "pagesinit",
-        () => {
-          const location = { ...tab.pdfLocation };
-          pdfViewer!.currentScaleValue = location.scale;
-          pdfViewer!.currentPageNumber = Math.min(location.page, session!.document.numPages);
-          setJump(String(pdfViewer!.currentPageNumber));
-          tab.pdfLocation.page = pdfViewer!.currentPageNumber;
-          setState((value) => ({ ...value, pages: session!.document.numPages, page: pdfViewer!.currentPageNumber }));
-          watchCurrentPage();
-        },
-        eventOptions,
-      );
-      eventBus.on(
-        "pagerender",
-        (event: { pageNumber: number }) => {
-          if (event.pageNumber === pdfViewer!.currentPageNumber) watchCurrentPage();
-        },
-        eventOptions,
-      );
-      eventBus.on(
-        "pagerendered",
-        (event: { pageNumber: number; error?: unknown }) => {
-          if (event.error) report(event.error);
-          else if (event.pageNumber === pdfViewer!.currentPageNumber) watchCurrentPage();
-        },
-        eventOptions,
-      );
-      eventBus.on(
-        "pagechanging",
-        (event: { pageNumber: number }) => {
-          tab.pdfLocation.page = event.pageNumber;
-          setState((value) => ({ ...value, page: event.pageNumber }));
-          setJump(String(event.pageNumber));
-          watchCurrentPage();
-        },
-        eventOptions,
-      );
-      eventBus.on(
-        "scalechanging",
-        (event: { scale: number }) => {
-          tab.pdfLocation.scale = pdfViewer!.currentScaleValue;
-          setState((value) => ({ ...value, scale: event.scale }));
-          watchCurrentPage();
-        },
-        eventOptions,
-      );
-      session = await openPdfDocument(
-        tab.path,
-        (error) => {
-          if (controller.signal.aborted) toast.error(documentError(error));
-          else report(error);
-        },
-        controller.signal,
-      );
-      if (controller.signal.aborted) {
-        await session.destroy().catch((error) => toast.error(documentError(error)));
-        return;
-      }
-      linkService.setDocument(session.document);
-      pdfViewer.setDocument(session.document);
-      observer = new ResizeObserver(() => {
-        if (!controller.signal.aborted && container.current?.clientWidth && pdfViewer) {
-          if (pdfViewer.currentScaleValue === "page-width") pdfViewer.currentScaleValue = "page-width";
-          pdfViewer.update();
-        }
-      });
-      observer.observe(container.current!);
-    })().catch(report);
-    return () => {
-      clearTimeout(timer);
-      stop();
-      viewer.current = null;
-    };
-  }, [tab, revision]);
-  const go = (page: number) => {
-    if (viewer.current && Number.isInteger(page) && page >= 1 && page <= state.pages) {
-      viewer.current.currentPageNumber = page;
-      setJump(String(viewer.current.currentPageNumber));
-    } else setJump(String(state.page));
-  };
-  const zoom = (factor: number) => {
-    if (viewer.current) zoomPdf(viewer.current, viewer.current.currentScale * factor);
-  };
-  return (
-    <>
-      <div className="flex flex-wrap items-center justify-center gap-2 px-3 py-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("previousPage")}
-          disabled={state.page <= 1}
-          onClick={() => go(state.page - 1)}
-        >
-          <ChevronLeft />
-        </Button>
-        <Input
-          className="w-16"
-          type="number"
-          min={1}
-          max={state.pages}
-          aria-label={t("page")}
-          value={jump}
-          onChange={(event) => setJump(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") go(Number(jump));
-          }}
-          onBlur={() => go(Number(jump))}
-        />
-        <span className="text-muted-foreground text-xs">/ {state.pages || "—"}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("nextPage")}
-          disabled={state.page >= state.pages}
-          onClick={() => go(state.page + 1)}
-        >
-          <ChevronRight />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("zoomOut")}
-          disabled={!state.pages}
-          onClick={() => zoom(1 / 1.2)}
-        >
-          <ZoomOut />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!state.pages}
-          onClick={() => {
-            if (viewer.current) viewer.current.currentScaleValue = "page-width";
-          }}
-          title={t("fitWidth")}
-        >
-          {Math.round(state.scale * 100)}%
-        </Button>
-        <Button variant="ghost" size="icon" aria-label={t("zoomIn")} disabled={!state.pages} onClick={() => zoom(1.2)}>
-          <ZoomIn />
-        </Button>
-      </div>
-      {state.error && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex items-center gap-2">
-            {state.error}
-            <Button variant="outline" size="sm" onClick={() => setRevision((value) => value + 1)}>
-              {t("retry")}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      <div className="bg-muted relative min-h-0 flex-1">
-        {state.loading && (
-          <div role="status" className="text-muted-foreground absolute inset-x-0 top-2 text-center text-sm">
-            {t("loading")}
-          </div>
-        )}
-        <div ref={container} tabIndex={0} className="pg-document-pdf absolute inset-0 overflow-auto">
-          <div className="pdfViewer" />
-        </div>
-      </div>
-    </>
-  );
-}
-
 export default function DocumentView({ tab }: { tab: DocumentTab }) {
   const [, update] = useState(0);
   useEffect(() => {
@@ -430,7 +186,7 @@ export default function DocumentView({ tab }: { tab: DocumentTab }) {
           {t("openSystem")}
         </Button>
       </div>
-      {tab.kind === "markdown" ? <MarkdownView tab={tab} /> : <PdfView tab={tab} />}
+      {tab.kind === "markdown" ? <MarkdownView tab={tab} /> : <PdfView key={tab.id} tab={tab} />}
     </div>
   );
 }
