@@ -71,6 +71,33 @@ export default defineConfig({
     },
   },
 
+  // PDF 阅读器是打开 PDF 时才动态加载的。开发版第一次碰到这些包会现场打包并整页刷新，
+  // 打开的标签全没了，看起来像闪退（2026-11-10），所以启动时就先打包好。
+  optimizeDeps: {
+    include: [
+      "@embedpdf/core",
+      "@embedpdf/core/react",
+      "@embedpdf/engines",
+      "@embedpdf/engines/pdfium",
+      "@embedpdf/engines/pdfium-direct-engine",
+      "@embedpdf/engines/worker",
+      "@embedpdf/models",
+      "@embedpdf/pdfium",
+      "@embedpdf/plugin-bookmark/react",
+      "@embedpdf/plugin-document-manager/react",
+      "@embedpdf/plugin-interaction-manager/react",
+      "@embedpdf/plugin-render/react",
+      "@embedpdf/plugin-scroll/react",
+      "@embedpdf/plugin-search/react",
+      "@embedpdf/plugin-selection",
+      "@embedpdf/plugin-selection/react",
+      "@embedpdf/plugin-thumbnail/react",
+      "@embedpdf/plugin-tiling/react",
+      "@embedpdf/plugin-viewport/react",
+      "@embedpdf/plugin-zoom/react",
+    ],
+  },
+
   build: {
     sourcemap: false,
     rollupOptions: {
