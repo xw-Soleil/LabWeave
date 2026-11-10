@@ -48,6 +48,13 @@ vi.mock("pdfjs-dist/legacy/web/pdf_viewer.mjs", () => ({
       return { id: index + 1 };
     }
     update = vi.fn();
+    containerTopLeft = [0, 0];
+    get container() {
+      return (this.options as TestViewer["options"] & { container: HTMLDivElement }).container;
+    }
+    updateScale({ scaleFactor }: { scaleFactor: number }) {
+      this.currentScale = Math.round(this.currentScale * scaleFactor * 100) / 100;
+    }
     setDocument = vi.fn((document: unknown) => {
       if (document) this.options.eventBus.dispatch("pagesinit", {});
     });
@@ -181,6 +188,25 @@ describe("PDF reading tabs", () => {
     expect(mocks.viewers[2].currentPageNumber).toBe(5);
     expect(mocks.viewers[2].currentScale).toBe(1.8);
     expect(container.querySelector("input")!.value).toBe("5");
+  });
+
+  it("keeps the toolbar and saved zoom in sync with wheel zoom without changing page", async () => {
+    vi.useFakeTimers();
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    const viewer = mocks.viewers[0];
+    await act(async () => {
+      viewer.currentPageNumber = 3;
+      container
+        .querySelector(".pg-document-pdf")!
+        .dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: -10, bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(viewer.currentPageNumber).toBe(3);
+    expect(tab.pdfLocation.scale).toBe("1.11");
+    expect(container.textContent).toContain("111%");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="document.zoomOut"]')!.click());
+    expect(container.textContent).toContain("93%");
   });
 
   it("stops a later page that stalls after the first page rendered", async () => {

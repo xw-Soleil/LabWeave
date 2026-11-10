@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import { loadPdfJs, openPdfDocument, type OpenPdfDocument } from "./PdfDocument";
+import { bindPdfZoom, zoomPdf } from "./PdfZoom";
 import { fileKindOf } from "./ResearchShell";
 
 function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
@@ -167,6 +168,12 @@ function PdfView({ tab }: { tab: DocumentTab }) {
   const [jump, setJump] = useState("1");
   useEffect(() => {
     const controller = new AbortController();
+    bindPdfZoom(
+      container.current!,
+      () => viewer.current,
+      () => store.get(activeTabAtom) === tab,
+      controller.signal,
+    );
     let session: OpenPdfDocument | undefined;
     let pdfViewer: Viewer | undefined;
     let linkService:
@@ -308,7 +315,7 @@ function PdfView({ tab }: { tab: DocumentTab }) {
     } else setJump(String(state.page));
   };
   const zoom = (factor: number) => {
-    if (viewer.current) viewer.current.currentScale = Math.max(0.25, Math.min(4, state.scale * factor));
+    if (viewer.current) zoomPdf(viewer.current, viewer.current.currentScale * factor);
   };
   return (
     <>
