@@ -174,6 +174,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     pickMode("edit");
   };
   const previewArea = useRef<HTMLDivElement>(null);
+  useEffect(watchReadingSelection, []);
   const wikilink = useMemo(() => documentWikilinkComponent(tab.path, components.img), [tab.path, components]);
   const liveConfig: LivePreviewConfig = {
     renderMarkdown: (block) => <Markdown source={block} components={components} document={{ path: tab.path }} />,
@@ -237,7 +238,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     tab.changed();
   };
   const preview = (
-    <article className="reading-view [&_*]:select-text">
+    <article className="reading-view">
       <h1 className="reading-title">{noteTitle(tab.title)}</h1>
       {frontmatter && <NoteProperties yaml={frontmatter.yaml} onChange={editProperties} />}
       <Markdown
@@ -431,6 +432,38 @@ function PreviewSelection({
       )}
     </>
   );
+}
+
+export const READING_SELECTION = "reading-selection";
+let selectionWatchers = 0;
+
+/** 选区落在阅读区（.reading-scroll）里时，把它放进 reading-selection 高亮，reading.css 只给文字涂色 */
+function paintReadingSelection() {
+  const selection = window.getSelection();
+  const ranges: Range[] = [];
+  for (let index = 0; selection && !selection.isCollapsed && index < selection.rangeCount; index++) {
+    const range = selection.getRangeAt(index);
+    const container = range.commonAncestorContainer;
+    const element = container instanceof Element ? container : container.parentElement;
+    if (element?.closest(".reading-scroll")) ranges.push(range.cloneRange());
+  }
+  if (ranges.length) CSS.highlights.set(READING_SELECTION, new Highlight(...ranges));
+  else CSS.highlights.delete(READING_SELECTION);
+}
+
+/**
+ * 照 Obsidian 的选中样子：只有文字上色。Mac 的网页引擎画原生选区时会把段落间、正文两侧的空白一起涂满，
+ * 所以原生选区在阅读区里是透明的（reading.css），由这里画。几篇文档同时开着也只挂一个监听。
+ */
+function watchReadingSelection() {
+  // 测试环境（jsdom）和很旧的网页引擎没有自定义高亮，这时 reading.css 也不会把原生选区设成透明
+  if (typeof Highlight === "undefined" || !globalThis.CSS?.highlights) return;
+  if (selectionWatchers++ === 0) document.addEventListener("selectionchange", paintReadingSelection);
+  return () => {
+    if (--selectionWatchers > 0) return;
+    document.removeEventListener("selectionchange", paintReadingSelection);
+    CSS.highlights.delete(READING_SELECTION);
+  };
 }
 
 /** 文件名当大标题时去掉 .md，和 Obsidian 一样 */

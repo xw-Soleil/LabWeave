@@ -309,4 +309,47 @@ describe("Markdown document view", () => {
     });
     await vi.waitFor(() => expect(store.get(readingContextAtom)?.selection?.text).toBe("note"));
   });
+
+  it("paints selections in the reading area as a text-only highlight and clears it when collapsed", async () => {
+    const highlights = new Map<string, { ranges: Range[] }>();
+    vi.stubGlobal("CSS", { highlights });
+    vi.stubGlobal(
+      "Highlight",
+      class {
+        ranges: Range[];
+        constructor(...ranges: Range[]) {
+          this.ranges = ranges;
+        }
+      },
+    );
+    mocks.readFile.mockResolvedValue(new TextEncoder().encode("first\n\nsecond"));
+    const tab = new DocumentTab("/r/a.md", "markdown");
+    await tab.loadMarkdown();
+    await act(async () => root.render(<DocumentView tab={tab} />));
+    const paragraphs = container.querySelectorAll(".reading-scroll .markdown-body p");
+    const range = document.createRange();
+    range.setStart(paragraphs[0].firstChild!, 0);
+    range.setEnd(paragraphs[1].firstChild!, 3);
+    await act(async () => {
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    expect(highlights.get("reading-selection")?.ranges[0].toString()).toBe(range.toString());
+    await act(async () => {
+      window.getSelection()!.collapseToStart();
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    expect(highlights.has("reading-selection")).toBe(false);
+    // 选区在阅读区外面时不画
+    const outside = document.createElement("p");
+    outside.textContent = "elsewhere";
+    document.body.append(outside);
+    await act(async () => {
+      window.getSelection()!.selectAllChildren(outside);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    expect(highlights.has("reading-selection")).toBe(false);
+    outside.remove();
+  });
 });

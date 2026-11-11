@@ -77,39 +77,37 @@
   font-family: var(--rv-body);
   font-size: var(--reading-font-size, 16px);
   line-height: var(--reading-line-height, 1.8);
-  -webkit-font-smoothing: antialiased;
 }
-.reading-view ::selection {
-  background: rgba(0, 122, 255, 0.2);
+
+/* 程序最外层给每个元素都设了不能选字、系统字体和箭头光标（画布和界面要的）。
+ * 阅读区里要能选字（点两侧空白处选区也立刻消失）、用阅读字体、文字上显示 I 形光标；
+ * 浮在上面的选中菜单、翻译卡片不算。:where 不加优先级，代码字体、公式字体这些规则照样生效 */
+:where(.reading-scroll, .reading-view, .reading-view *) {
+  -webkit-user-select: text;
+  user-select: text;
+  font-family: inherit;
+  cursor: auto;
 }
-/* Mac 的网页引擎跨段落选中时，会用外层块的选中色把段落之间、正文两侧的空白也涂满，
- * 整片发蓝。只装别的块、自己不直接放字的这些容器设成透明，只有文字那几行上色 */
-.reading-scroll::selection,
-.reading-view::selection,
-.reading-view
-  :is(
-    .markdown-body,
-    .callout,
-    .callout-content,
-    ul,
-    ol,
-    blockquote,
-    table,
-    thead,
-    tbody,
-    tr,
-    .math-block,
-    .katex-display,
-    .note-properties,
-    .markdown-editor,
-    .cm-editor,
-    .cm-scroller,
-    .cm-content,
-    .cm-lp-embed,
-    .cm-lp-table,
-    .cm-lp-table-scroll
-  )::selection {
-  background: transparent;
+
+/* 公式：最外层那条规则会把公式里没有单独字体的部分（正体希腊字母 Σ Ω、数字、括号、等号）
+ * 换成系统字体，和斜体字母不是一套字，看着很乱。这里让它们跟着 KaTeX 的公式字体走（AI 对话里的公式也一样） */
+:where(.katex *) {
+  font-family: inherit;
+}
+
+/* 选中：和 Obsidian 一样只给文字涂色。Mac 的网页引擎画选区时会把段落之间、正文两侧的空白也涂满，
+ * 所以原生选区设成透明，改由 DocumentView 把选区放进 reading-selection 高亮来画 */
+::highlight(reading-selection) {
+  background-color: rgba(0, 122, 255, 0.22);
+}
+@supports selector(::highlight(a)) {
+  .reading-scroll::selection,
+  .reading-scroll ::selection {
+    background: transparent;
+  }
+}
+.reading-scroll :is(input, textarea)::selection {
+  background: rgba(0, 122, 255, 0.25);
 }
 
 /* 文件名大标题：比一级标题再大一档 */
@@ -354,6 +352,10 @@
 }
 
 /* ========== 公式 ========== */
+/* KaTeX 默认把公式放大到正文的 1.21 倍，Obsidian（MathJax）的公式和正文差不多大 */
+.reading-view .katex {
+  font-size: 1.05em;
+}
 .reading-view .markdown-body .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
@@ -583,10 +585,6 @@
 }
 .markdown-editor .cm-cursor {
   border-left-color: var(--foreground);
-}
-.markdown-editor .cm-line::selection,
-.markdown-editor .cm-line ::selection {
-  background: rgba(0, 122, 255, 0.2) !important;
 }
 .markdown-editor .cm-selectionMatch {
   background: rgba(255, 196, 0, 0.25);

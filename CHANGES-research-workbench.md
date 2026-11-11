@@ -609,3 +609,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/ReadingTheme.ts`：
   - 默认预设改成用户 Obsidian 的数值：16px、1.8、50rem，标题阶梯和 headings 片段一样，表格居中；
   - 「照我的 Obsidian」在此基础上把标题换成抖音美好体（程序不带，电脑上装了才有）。
+
+### 51. 选中只给文字上色、点空白处立刻取消选中、文字不再发虚、公式字体统一（2026-11-11）
+
+- `app/src/css/index.css`：最外层给每个元素都设的规则去掉 `-webkit-font-smoothing: antialiased`（以及无效的 `font-antialiasing`、Firefox 专用的 grayscale），整个程序用系统默认的文字渲染，Mac 上字不再发虚发浅。
+- `app/src/css/reading.css`：
+  - 最外层那条规则给每个元素都设了不能选字、系统字体、箭头光标。现在阅读区（`.reading-scroll` 和 `.reading-view` 里面）改为能选字、字体跟着上一层走、文字上用 I 形光标，用 `:where` 不加优先级。这样点两侧空白处选区会立刻消失，Inter 正文字体也真正生效了。
+  - 公式（`.katex` 里面）字体跟着 KaTeX 走。原来正体希腊字母、数字、括号、等号会被换成系统字体，和斜体字母不是一套。
+  - 选中改用自定义高亮 `::highlight(reading-selection)`：阅读区里原生选区设成透明（只在支持自定义高亮的引擎里），只给文字上色，和 Obsidian（Chrome 内核）一样，不再把段落间和正文两侧的空白涂满。输入框里的选区照旧。
+  - 公式从 KaTeX 默认的正文 1.21 倍改成 1.05 倍，和 Obsidian 差不多大。
+  - 去掉阅读区单独设的 `antialiased`。
+- `app/src/core/research/DocumentView.tsx`：新增 `watchReadingSelection`，选区落在阅读区里时放进 `reading-selection` 高亮，几篇文档同时开着也只挂一个监听；文章去掉 `[&_*]:select-text`（改由 CSS 处理）。
+- 在系统 WebKit 里按帧实测：选中一大段、清掉选区、滚动都在一帧内画完；整篇样式重算 120ms。

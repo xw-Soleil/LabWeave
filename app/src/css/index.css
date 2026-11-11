@@ -134,12 +134,11 @@ html[data-theme-transition="ripple"] *::after {
 } */
 
 @layer components {
+  /* 不再强制细一号的抗锯齿（antialiased）：Mac 上字会发虚发浅，整个程序看着偏亮；
+   * 用系统默认的渲染，和 Obsidian 一样 */
   * {
     @apply box-border cursor-default select-none [-webkit-user-drag:none];
     font-family: -apple-system, BlinkMacSystemFont, system-ui, "MiSans", "Noto Sans CJK SC", sans-serif;
-    font-antialiasing: none;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
   .cursor-pointer > svg.lucide,
   .cursor-pointer > svg.lucide *,
