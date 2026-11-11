@@ -1,3 +1,4 @@
+import { redo, undo } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import { EditorState, StateField, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
@@ -5,6 +6,7 @@ import type { MarkdownConfig } from "@lezer/markdown";
 import katex from "katex";
 import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { TableEditor } from "./MarkdownTable";
 import { NoteProperties, splitFrontmatter } from "./NoteProperties";
 
 /**
@@ -57,7 +59,7 @@ class ReactWidget extends WidgetType {
     readonly block: boolean,
     readonly className: string,
     readonly interactive: boolean,
-    readonly render: (view: EditorView) => ReactNode,
+    readonly render: (view: EditorView, dom: HTMLElement) => ReactNode,
   ) {
     super();
   }
@@ -69,7 +71,7 @@ class ReactWidget extends WidgetType {
     dom.className = this.className;
     const root = createRoot(dom);
     roots.set(dom, root);
-    root.render(this.render(view));
+    root.render(this.render(view, dom));
     // React 画完以后再让编辑器量一次高度
     requestAnimationFrame(() => view.requestMeasure());
     return dom;
@@ -77,7 +79,7 @@ class ReactWidget extends WidgetType {
   updateDOM(dom: HTMLElement, view: EditorView) {
     const root = roots.get(dom);
     if (!root || dom.className !== this.className) return false;
-    root.render(this.render(view));
+    root.render(this.render(view, dom));
     requestAnimationFrame(() => view.requestMeasure());
     return true;
   }
@@ -196,6 +198,56 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+/** 表格占的整几行；按改动当时的位置找，打字让表格挪了位置也不会写错地方 */
+function tableAt(state: EditorState, at: number): Interval | undefined {
+  let found: Interval | undefined;
+  syntaxTree(state).iterate({
+    from: at,
+    to: at + 1,
+    enter(node) {
+      if (found) return false;
+      if (node.name !== "Table") return;
+      found = [state.doc.lineAt(node.from).from, state.doc.lineAt(node.to).to];
+      return false;
+    },
+  });
+  return found;
+}
+
+function tableActions(view: EditorView, dom: HTMLElement) {
+  const range = () => tableAt(view.state, view.posAtDOM(dom));
+  return {
+    edit(change: (source: string) => string) {
+      const found = range();
+      if (!found) return;
+      const before = view.state.doc.sliceString(found[0], found[1]);
+      const after = change(before);
+      if (after === before) return;
+      // 只把真正变了的那几个字交给编辑器，撤销记录和打字一样一段一段的
+      let start = 0;
+      while (start < before.length && start < after.length && before[start] === after[start]) start++;
+      let end = 0;
+      while (
+        end < before.length - start &&
+        end < after.length - start &&
+        before[before.length - 1 - end] === after[after.length - 1 - end]
+      )
+        end++;
+      view.dispatch({
+        changes: { from: found[0] + start, to: found[1] - end, insert: after.slice(start, after.length - end) },
+        userEvent: "input.table",
+      });
+    },
+    undo: () => undo(view),
+    redo: () => redo(view),
+    leave() {
+      const found = range();
+      view.focus();
+      if (found) view.dispatch({ selection: { anchor: Math.min(found[1] + 1, view.state.doc.length) } });
+    },
+  };
+}
+
 type Interval = [number, number];
 
 function touches(state: EditorState, from: number, to: number) {
@@ -271,6 +323,22 @@ function build(state: EditorState, config: () => LivePreviewConfig): DecorationS
           at = current.to + 1;
         }
         return;
+      }
+      // 正文里的表格总是显示成表格，点格子直接改；引用、列表里的表格还是光标进去露出原文
+      if (node.name === "Table" && node.node.parent?.name === "Document") {
+        const source = state.doc.sliceString(from, to);
+        block(
+          from,
+          to,
+          new ReactWidget(`table:${source}`, true, "cm-lp-table-block", true, (view, dom) => (
+            <TableEditor
+              source={source}
+              {...tableActions(view, dom)}
+              renderInline={(cell) => config().renderMarkdown(cell)}
+            />
+          )),
+        );
+        return false;
       }
       if (node.name === "Table" && !active) {
         const source = state.doc.sliceString(from, to);

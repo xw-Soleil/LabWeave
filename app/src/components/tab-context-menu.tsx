@@ -3,15 +3,19 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Tab } from "@/core/Tab";
 import { Project } from "@/core/Project";
+import { DocumentTab, documentError } from "@/core/research/DocumentTab";
 import { promptResearchRename } from "@/core/research/ResearchRename";
+import { isMac } from "@/utils/platform";
+import { open } from "@tauri-apps/plugin-shell";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { AppWindowMac, Columns2, Dock, Rows2, X } from "lucide-react";
+import { AppWindowMac, Columns2, Dock, ExternalLink, Rows2, Save, X } from "lucide-react";
 import React from "react";
 
 export default function TabContextMenu({
@@ -37,6 +41,22 @@ export default function TabContextMenu({
           >
             {t("rename.title")}
           </ContextMenuItem>
+        )}
+        {tab instanceof DocumentTab && (
+          <>
+            {tab.kind === "markdown" && (
+              <ContextMenuItem disabled={!tab.markdown || tab.saving} onSelect={() => void tab.save()}>
+                <Save />
+                {t("document.save")}
+                <ContextMenuShortcut>{isMac ? "⌘S" : "Ctrl+S"}</ContextMenuShortcut>
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem onSelect={() => void open(tab.path).catch((error) => toast.error(documentError(error)))}>
+              <ExternalLink />
+              {t("document.openSystem")}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
         )}
         {tab.layout === "docked" ? (
           <>

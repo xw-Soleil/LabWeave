@@ -550,3 +550,22 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 去掉「编辑 / 对照 / 阅读」三段切换，改成照 Obsidian 的做法：右上角书本图标切「阅读 / 编辑」，Cmd/Ctrl+E 也能切；「…」菜单里选阅读视图、实时预览、源码模式，「重新读取」也挪进这个菜单。选择记在本机，默认是实时预览。
   - 阅读模式顶上显示属性表，大标题去掉 `.md`。
 - `app/src/css/reading.css`：属性表和编辑器的样式。
+
+### 48. 代码块上色、表格逐格编辑、照 Obsidian 的窗口排法（2026-11-11）
+
+- 依赖：新增 `@codemirror/language-data`（MIT），各语言包在代码块里用到时才加载；`app/vite.config.ts` 在开发版里预先打包。
+- `app/src/core/research/CodeHighlight.tsx`（新增）：代码块按开头写的语言上色，编辑器和阅读模式共用一套颜色（深浅色各一套），`matlab` 按 Octave 认。
+- `app/src/core/research/MarkdownTable.tsx`（新增）：实时预览里的表格（正文里的，不在引用或列表里）一直显示成表格：
+  - 点哪格改哪格，改一格只重写那一行；
+  - Tab / Shift+Tab 左右跳格，回车和上下方向键上下跳，到最后一格自动加一行，Esc 回到正文；
+  - 撤销、重做走编辑器自己的历史；
+  - 右键插入、删除行列，改对齐；表格右边和下边悬停出现「+」；
+  - 输入法选词时的回车和方向键不当成跳格。
+- `app/src/core/research/MarkdownLivePreview.tsx`：接上表格编辑；整块小部件拿得到自己的 DOM，改动时按当时的位置找表格。
+- `app/src/core/research/DocumentView.tsx`：标题栏改成一行：中间「所在文件夹 / 文件名」，右边阅读/编辑切换和「…」。「保存」（⌘S）和「用系统程序打开」收进「…」，不再单独占一行。
+- `app/src/components/tab-context-menu.tsx`：Markdown 和 PDF 标签的右键菜单加「保存」和「用系统程序打开」。
+- 窗口排法：
+  - `app/src/components/activity-rail.tsx`：竖栏按钮从 32px 改成 28px。新增 `dockedChromeAtom`：主区域没有白板露在外面时（笔记、PDF、文献库、欢迎页），竖栏改成贴着左边的一整条，设置放到最下面。
+  - `app/src/components/docked-area.tsx`：这种时候顶上画一条标签栏（空白处能拖动窗口、双击放大），左右侧栏贴着竖栏和窗口边、用细线隔开，正文让开它们；不显示右下角的圆按钮。打开白板时照旧是浮着的样子。
+  - `app/src/ProjectTabs.tsx`：标签多一种「标签栏」样式，当前标签和下面的正文连成一片。
+  - `app/src/App.tsx`：右上角的深浅色按钮在标签栏里不再带浮起的边框。

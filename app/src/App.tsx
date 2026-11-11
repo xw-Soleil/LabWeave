@@ -1,4 +1,4 @@
-import ActivityRail from "@/components/activity-rail";
+import ActivityRail, { dockedChromeAtom } from "@/components/activity-rail";
 import MyContextMenuContent from "@/components/context-menu-content";
 import FloatingTabs from "@/components/floating-tabs";
 import PieMenu from "@/components/pie-menu";
@@ -35,7 +35,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { arch, platform, version } from "@tauri-apps/plugin-os";
 import { restoreStateCurrent, saveWindowState, StateFlags } from "@tauri-apps/plugin-window-state";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Copy, Minus, Square, X } from "lucide-react";
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -76,6 +76,7 @@ const MAC_TRAFFIC_LIGHTS_WIDTH = 78;
 function FloatingCorners() {
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
+  const docked = useAtomValue(dockedChromeAtom);
 
   useLayoutEffect(() => {
     const left = leftRef.current;
@@ -107,7 +108,11 @@ function FloatingCorners() {
       </div>
       <div
         ref={rightRef}
-        className="bg-background/95 border-border/60 absolute top-1 right-2 z-30 flex h-7 items-center gap-1 rounded-full border px-1 shadow-xs"
+        className={cn(
+          "absolute right-2 z-30 flex h-7 items-center gap-1 rounded-full border px-1",
+          // 贴边排法里放在顶上那一条里，不要浮起来的边框
+          docked ? "top-1.5 border-transparent" : "bg-background/95 border-border/60 top-1 shadow-xs",
+        )}
       >
         <ThemeModeSwitch />
         {!isMac && <WindowButtons />}

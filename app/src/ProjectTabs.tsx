@@ -25,6 +25,7 @@ export const ProjectTabs = memo(function ProjectTabs({
   onTabClick,
   onTabClose,
   isClassroomMode,
+  variant = "floating",
 }: {
   groupId: string;
   tabs: Tab[];
@@ -32,7 +33,10 @@ export const ProjectTabs = memo(function ProjectTabs({
   onTabClick: (tab: Tab) => void;
   onTabClose: (tab: Tab) => void;
   isClassroomMode: boolean;
+  /** floating：浮在白板上的一串圆角小药丸；strip：照 Obsidian 排在顶上那一条里，当前标签和下面的正文连成一片 */
+  variant?: "floating" | "strip";
 }) {
+  const strip = variant === "strip";
   const tabsContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionRef = useRef(0);
   const [protectingPrivacy, setProtectingPrivacy] = useState(Settings.protectingPrivacy);
@@ -171,7 +175,8 @@ export const ProjectTabs = memo(function ProjectTabs({
       data-pg-tab-bar
       data-pg-tab-group-bar-id={groupId}
       className={cn(
-        "bg-background/95 border-border/60 pointer-events-auto z-10 flex h-7 max-w-full min-w-0 rounded-full border p-0.5 shadow-xs transition-opacity hover:opacity-100",
+        "pointer-events-auto z-10 flex max-w-full min-w-0 transition-opacity hover:opacity-100",
+        strip ? "h-[34px]" : "bg-background/95 border-border/60 h-7 rounded-full border p-0.5 shadow-xs",
         isClassroomMode && "opacity-0",
       )}
     >
@@ -179,7 +184,10 @@ export const ProjectTabs = memo(function ProjectTabs({
       <div
         ref={tabsContainerRef}
         role="tablist"
-        className="scrollbar-hide relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto overflow-y-hidden rounded-full"
+        className={cn(
+          "scrollbar-hide relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto overflow-y-hidden",
+          !strip && "rounded-full",
+        )}
         style={edgeFadeMask(overflow)}
         onScroll={handleScroll}
         onWheel={(e) => {
@@ -203,8 +211,20 @@ export const ProjectTabs = memo(function ProjectTabs({
                 aria-selected={active}
                 data-pg-docked-tab-id={tab.id}
                 className={cn(
-                  "group/tab relative flex h-full max-w-[220px] min-w-24 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium whitespace-nowrap select-none",
-                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  "group/tab relative flex h-full max-w-[220px] min-w-24 cursor-pointer items-center gap-1.5 text-[12px] font-medium whitespace-nowrap select-none",
+                  strip
+                    ? cn(
+                        "rounded-t-[8px] border border-b-0 px-3",
+                        active
+                          ? "bg-background text-foreground border-border/70"
+                          : "text-muted-foreground hover:bg-background/60 hover:text-foreground border-transparent",
+                      )
+                    : cn(
+                        "rounded-full px-2.5",
+                        active
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                      ),
                 )}
                 onMouseDown={(e) => handleTabMouseDown(tab, e)}
                 onMouseEnter={() => SoundService.play.mouseEnterButton()}

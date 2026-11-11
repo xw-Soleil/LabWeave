@@ -8,12 +8,14 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Markdown from "@/components/ui/markdown";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { Settings } from "@/core/service/Settings";
 import { activeTabAtom, store } from "@/state";
+import { isMac } from "@/utils/platform";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
@@ -37,9 +39,11 @@ import {
   useState,
   type ComponentProps,
   type CSSProperties,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { toast } from "sonner";
+import { HighlightedCode } from "./CodeHighlight";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import MarkdownEditor, { type MarkdownEditMode } from "./MarkdownEditor";
@@ -102,6 +106,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   const source = useDeferredValue(editorText(tab.markdown?.text ?? ""));
   const components = useMemo(
     () => ({
+      code: HighlightedCode,
       img: (props: ComponentProps<"img">) => (
         <DocumentImage path={tab.path} src={props.src} alt={props.alt} width={props.width} />
       ),
@@ -241,41 +246,18 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         }
       }}
     >
-      <div className="flex items-center gap-1 px-3 py-1.5">
-        <span className="flex-1" />
-        {tab.hasUnsavedChanges && (
-          <span className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
-            <span className="bg-primary size-1.5 rounded-full" />
-            {t("unsaved")}
-          </span>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={!tab.markdown || tab.saving || tab.loadingMarkdown}
-          onClick={() => void tab.save()}
-        >
-          <Save data-icon="inline-start" />
-          {t(tab.saving ? "saving" : "save")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          title={t(mode === "read" ? "modes.toEdit" : "modes.toRead")}
-          aria-label={t(mode === "read" ? "modes.toEdit" : "modes.toRead")}
-          onClick={() => pickMode(mode === "read" ? "edit" : "read")}
-        >
-          {mode === "read" ? <PencilLine /> : <BookOpen />}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-7" aria-label={t("modes.more")}>
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
+      <ViewHeader
+        tab={tab}
+        actions={
+          <HeaderButton
+            label={t(mode === "read" ? "modes.toEdit" : "modes.toRead")}
+            onClick={() => pickMode(mode === "read" ? "edit" : "read")}
+          >
+            {mode === "read" ? <PencilLine /> : <BookOpen />}
+          </HeaderButton>
+        }
+        menu={
+          <>
             <DropdownMenuRadioGroup
               value={mode === "read" ? "read" : editMode}
               onValueChange={(value) => (value === "read" ? pickMode("read") : pickEditMode(value as MarkdownEditMode))}
@@ -285,13 +267,21 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
               <DropdownMenuRadioItem value="source">{t("modes.source")}</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!tab.markdown || tab.saving || tab.loadingMarkdown}
+              onSelect={() => void tab.save()}
+            >
+              <Save />
+              {t(tab.saving ? "saving" : "save")}
+              <DropdownMenuShortcut>{isMac ? "⌘S" : "Ctrl+S"}</DropdownMenuShortcut>
+            </DropdownMenuItem>
             <DropdownMenuItem disabled={tab.saving || tab.loadingMarkdown} onSelect={() => void reload()}>
               <RefreshCw />
               {t("reload")}
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+          </>
+        }
+      />
       {tab.error && (
         <Alert variant="destructive">
           <AlertDescription>{tab.error}</AlertDescription>
@@ -302,7 +292,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           {tab.error ? t("retryHint") : t("loading")}
         </div>
       ) : mode === "edit" ? (
-        <div ref={previewArea} className="relative min-h-0 flex-1 overflow-auto border-t px-8 pt-8">
+        <div ref={previewArea} className="relative min-h-0 flex-1 overflow-auto px-8 pt-6">
           <div className="reading-view">
             <h1 className="reading-title">{noteTitle(tab.title)}</h1>
             <MarkdownEditor
@@ -322,7 +312,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       ) : (
         <div
           ref={previewArea}
-          className="relative min-h-0 flex-1 overflow-auto border-t px-8 pt-8 pb-24"
+          className="relative min-h-0 flex-1 overflow-auto px-8 pt-6 pb-24"
           aria-label={t("preview")}
         >
           {preview}
@@ -464,26 +454,77 @@ export default function DocumentView({ tab }: { tab: DocumentTab }) {
   return (
     <div
       ref={host}
-      className="bg-background flex h-full min-h-0 flex-col pt-9"
+      className="bg-background flex h-full min-h-0 flex-col"
       onFocusCapture={() => {
         if (store.get(activeTabAtom) !== tab) TabWorkspace.focus(tab.id);
       }}
     >
-      <div className="flex items-center gap-2 px-4">
-        <tab.icon className="text-muted-foreground size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={tab.path}>
-          {tab.title}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void open(tab.path).catch((error) => toast.error(documentError(error)))}
-        >
-          <ExternalLink data-icon="inline-start" />
-          {t("openSystem")}
-        </Button>
-      </div>
-      {tab.kind === "markdown" ? <MarkdownView tab={tab} /> : <PdfView key={tab.id} tab={tab} />}
+      {tab.kind === "markdown" ? (
+        <MarkdownView tab={tab} />
+      ) : (
+        <>
+          <ViewHeader tab={tab} />
+          <PdfView key={tab.id} tab={tab} />
+        </>
+      )}
     </div>
   );
 }
+
+function HeaderButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="text-muted-foreground hover:text-foreground size-7 [&_svg:not([class*='size-'])]:size-4"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+/**
+ * 照 Obsidian 的标题栏：一行，中间是「所在文件夹 / 文件名」，右边是切换按钮和「…」。
+ * 保存走 ⌘S，「用系统程序打开」收进「…」，标签和文件栏的右键菜单里也有。
+ */
+function ViewHeader({ tab, actions, menu }: { tab: DocumentTab; actions?: ReactNode; menu?: ReactNode }) {
+  const folder = tab.path.split(/[\\/]/).at(-2);
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-2 px-2">
+      <span className="flex-1" />
+      <div className="min-w-0 truncate text-[13px]" title={tab.path}>
+        {folder && <span className="text-muted-foreground">{folder} / </span>}
+        <span>{noteTitle(tab.title)}</span>
+      </div>
+      <div className="flex flex-1 items-center justify-end gap-0.5">
+        {actions}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground size-7 [&_svg:not([class*='size-'])]:size-4"
+              aria-label={t("modes.more")}
+              title={t("modes.more")}
+            >
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            {menu}
+            {menu && <DropdownMenuSeparator />}
+            <DropdownMenuItem onSelect={() => void openWithSystem(tab.path)}>
+              <ExternalLink />
+              {t("openSystem")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+const openWithSystem = (path: string) => open(path).catch((error) => toast.error(documentError(error)));

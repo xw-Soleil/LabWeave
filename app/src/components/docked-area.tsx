@@ -26,11 +26,20 @@ import {
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
 import { FolderOutput, MessageSquareText, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { RESEARCH_FLOAT_TOP, RESEARCH_SIDE_PANEL_LEFT, useShortcutText, withShortcut } from "./activity-rail";
+import {
+  DOCKED_TOP,
+  dockedChromeAtom,
+  RESEARCH_FLOAT_TOP,
+  RESEARCH_SIDE_PANEL_LEFT,
+  RIBBON_WIDTH,
+  useShortcutText,
+  withShortcut,
+} from "./activity-rail";
 import ResearchWelcome from "./research-welcome";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -368,6 +377,7 @@ function SidePanelOverlay({
   onTabClick,
   onTabClose,
   isClassroomMode,
+  docked,
 }: {
   edge: FixedSideEdge;
   group: TabGroup;
@@ -380,6 +390,8 @@ function SidePanelOverlay({
   onTabClick: (tab: Tab) => void;
   onTabClose: (tab: Tab) => void;
   isClassroomMode: boolean;
+  /** 贴边排法：没有白板露在外面时，侧栏贴着竖栏和窗口边，不再是浮着的圆角卡片 */
+  docked: boolean;
 }) {
   const { t } = useTranslation("research");
   const ref = useRef<HTMLDivElement>(null);
@@ -432,11 +444,13 @@ function SidePanelOverlay({
         isClassroomMode && "opacity-0",
       )}
       style={{
-        top: RESEARCH_FLOAT_TOP,
-        bottom: SIDE_PANEL_GAP,
+        top: docked ? DOCKED_TOP : RESEARCH_FLOAT_TOP,
+        bottom: docked ? 0 : SIDE_PANEL_GAP,
         width,
         maxWidth: "calc(100% - 6rem)",
-        ...(edge === "left" ? { left: RESEARCH_SIDE_PANEL_LEFT } : { right: SIDE_PANEL_GAP }),
+        ...(edge === "left"
+          ? { left: docked ? RIBBON_WIDTH : RESEARCH_SIDE_PANEL_LEFT }
+          : { right: docked ? 0 : SIDE_PANEL_GAP }),
       }}
       onPointerEnter={() => enterSidePanel(edge)}
       onPointerLeave={() => leaveSidePeekArea(edge)}
@@ -444,7 +458,19 @@ function SidePanelOverlay({
         if (activeTab && store.get(activeTabAtom) !== activeTab) TabWorkspace.focus(activeTab.id);
       }}
     >
-      <section className="bg-background border-border/70 flex size-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[12px] border shadow-lg">
+      <section
+        className={cn(
+          "flex size-full min-h-0 min-w-0 flex-col overflow-hidden",
+          docked
+            ? cn(
+                "bg-sidebar border-border/70",
+                edge === "left" ? "border-r" : "border-l",
+                // 临时弹出来盖在正文上时才要阴影
+                !state.pinned && "shadow-lg",
+              )
+            : "bg-background border-border/70 rounded-[12px] border shadow-lg",
+        )}
+      >
         {/* 只有面板自己这一页时不要标签行；放进了多页时才显示，能切换、关闭，也能拖到编辑区 */}
         {tabs.length > 1 && (
           <div className="flex shrink-0 px-1.5 pt-1.5">
@@ -467,7 +493,8 @@ function SidePanelOverlay({
         aria-orientation="vertical"
         aria-label={t("shell.resizeSidePanel")}
         className={cn(
-          "group/resize absolute inset-y-3 w-2 cursor-col-resize touch-none",
+          "group/resize absolute w-2 cursor-col-resize touch-none",
+          docked ? "inset-y-0" : "inset-y-3",
           edge === "left" ? "-right-1" : "-left-1",
         )}
         onPointerDown={startResize}
@@ -479,20 +506,23 @@ function SidePanelOverlay({
           )}
         />
       </div>
-      {/* 图钉在卡片外侧，不和面板自己的标题栏按钮挤在一起；临时弹出时一直显示，固定以后悬停才显示 */}
-      <button
-        type="button"
-        aria-label={pinLabel}
-        title={pinLabel}
-        className={cn(
-          "bg-background border-border/70 text-muted-foreground hover:text-foreground absolute top-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full border shadow-xs transition-opacity",
-          edge === "left" ? "left-[calc(100%+0.375rem)]" : "right-[calc(100%+0.375rem)]",
-          state.pinned && "opacity-0 group-hover/side:opacity-100 focus-visible:opacity-100",
-        )}
-        onClick={() => setSidePanelPinned(edge, !state.pinned)}
-      >
-        {state.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-      </button>
+      {/* 图钉在卡片外侧，不和面板自己的标题栏按钮挤在一起；临时弹出时一直显示，固定以后悬停才显示。
+          贴边排法里固定着的侧栏不放图钉（会压在正文标题栏上），点竖栏按钮收起 */}
+      {!(docked && state.pinned) && (
+        <button
+          type="button"
+          aria-label={pinLabel}
+          title={pinLabel}
+          className={cn(
+            "bg-background border-border/70 text-muted-foreground hover:text-foreground absolute top-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full border shadow-xs transition-opacity",
+            edge === "left" ? "left-[calc(100%+0.375rem)]" : "right-[calc(100%+0.375rem)]",
+            state.pinned && "opacity-0 group-hover/side:opacity-100 focus-visible:opacity-100",
+          )}
+          onClick={() => setSidePanelPinned(edge, !state.pinned)}
+        >
+          {state.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+        </button>
+      )}
     </div>
   );
 }
@@ -501,15 +531,30 @@ function SidePanelOverlay({
  * 贴住窗口左右边缘的一条细感应区：鼠标停一会儿弹出收着的侧栏。拖着东西经过时不算。
  * 宽 10px：Windows 上最外面 6px 是调窗口大小的把手（WindowResizeHandles），里面还剩 4px 能感应
  */
-function SideEdgeTrigger({ edge, onPeek }: { edge: FixedSideEdge; onPeek: () => void }) {
+function SideEdgeTrigger({ edge, onPeek, docked }: { edge: FixedSideEdge; onPeek: () => void; docked: boolean }) {
   return (
     <div
       aria-hidden="true"
       data-pg-side-trigger={edge}
       className={cn("absolute bottom-0 z-20 w-2.5", edge === "left" ? "left-0" : "right-0")}
-      style={{ top: RESEARCH_FLOAT_TOP }}
+      style={{ top: docked ? DOCKED_TOP : RESEARCH_FLOAT_TOP }}
       onPointerEnter={(event) => event.buttons === 0 && onPeek()}
       onPointerLeave={() => leaveSidePeekArea(edge)}
+    />
+  );
+}
+
+/** 贴边排法顶上那一条，照 Obsidian 放标签；空白处按住能拖动窗口，双击放大 */
+function TabStrip() {
+  return (
+    <div
+      aria-hidden="true"
+      className="bg-sidebar border-border/70 absolute inset-x-0 top-0 h-10 border-b"
+      onMouseDown={(event) => {
+        if (event.buttons !== 1) return;
+        if (event.detail === 2) void getCurrentWindow().toggleMaximize();
+        else void getCurrentWindow().startDragging();
+      }}
     />
   );
 }
@@ -542,6 +587,7 @@ export default function DockedArea({
 }) {
   const root = useAtomValue(tabGroupRootAtom);
   const tabs = useAtomValue(tabsAtom);
+  const docked = useAtomValue(dockedChromeAtom);
   const sideStates = useSidePanelStates();
   const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
   const changeSideWidth = (edge: FixedSideEdge, width: number) =>
@@ -575,6 +621,12 @@ export default function DockedArea({
       ? `calc(${RESEARCH_SIDE_PANEL_LEFT} + ${sideWidths.left + SIDE_PANEL_GAP}px)`
       : `${SIDE_PANEL_GAP}px`;
 
+  const leftPinned = leftTabs.length > 0 && sideStates.left.pinned;
+  const rightPinned = rightTabs.length > 0 && sideStates.right.pinned;
+  // 贴边排法：正文让开竖栏和固定住的侧栏，中间没有空隙
+  const dockedLeft = leftPinned ? `calc(${RIBBON_WIDTH} + ${sideWidths.left}px)` : RIBBON_WIDTH;
+  const dockedRight = rightPinned ? `${sideWidths.right}px` : "0px";
+
   // 标签和状态条都浮在白板上；白板铺满分组，其他页（设置等）从标签下面开始
   const renderGroup = (group: TabGroup, edges: GroupEdges) => {
     const groupTabs = groupTabsOf(group);
@@ -586,13 +638,27 @@ export default function DockedArea({
     const dockLeft =
       project || !edges.left
         ? "0px"
-        : leftTabs.length > 0 && sideStates.left.pinned
-          ? `calc(${RESEARCH_SIDE_PANEL_LEFT} + ${sideWidths.left + SIDE_PANEL_GAP}px)`
-          : RESEARCH_SIDE_PANEL_LEFT;
+        : docked
+          ? dockedLeft
+          : leftPinned
+            ? `calc(${RESEARCH_SIDE_PANEL_LEFT} + ${sideWidths.left + SIDE_PANEL_GAP}px)`
+            : RESEARCH_SIDE_PANEL_LEFT;
     const dockRight =
-      !project && edges.right && rightTabs.length > 0 && sideStates.right.pinned
-        ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
-        : "0px";
+      project || !edges.right
+        ? "0px"
+        : docked
+          ? dockedRight
+          : rightPinned
+            ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
+            : "0px";
+    // 贴边时标签从正文左边开始，和 Obsidian 一样排在正文正上方；挨着窗口上边时还要让开红绿灯
+    const tabsLeft = docked
+      ? edges.top && edges.left
+        ? `max(var(--pg-top-left-inset, 8px), calc(${dockLeft} + 6px))`
+        : `calc(${dockLeft} + 6px)`
+      : edges.top && edges.left
+        ? "var(--pg-top-left-inset, 8px)"
+        : `${SIDE_PANEL_GAP}px`;
     return (
       <section
         key={group.id}
@@ -600,6 +666,7 @@ export default function DockedArea({
         className="relative size-full min-h-0 min-w-0 overflow-hidden"
         onPointerDownCapture={() => focusGroupTab(activeTab)}
       >
+        {docked && <TabStrip />}
         <div
           className={cn(
             "absolute bottom-0 transition-[left,right] duration-200 ease-out motion-reduce:transition-none",
@@ -610,9 +677,12 @@ export default function DockedArea({
           {activeTab && React.createElement(activeTab.getComponent())}
         </div>
         <div
-          className="pointer-events-none absolute inset-x-0 top-1 z-30 flex"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 z-30 flex transition-[padding] duration-200 ease-out motion-reduce:transition-none",
+            docked ? "top-0 h-10 items-end" : "top-1",
+          )}
           style={{
-            paddingLeft: edges.top && edges.left ? "var(--pg-top-left-inset, 8px)" : `${SIDE_PANEL_GAP}px`,
+            paddingLeft: tabsLeft,
             paddingRight: edges.top && edges.right ? "var(--pg-top-right-inset, 8px)" : `${SIDE_PANEL_GAP}px`,
           }}
         >
@@ -623,6 +693,7 @@ export default function DockedArea({
             onTabClick={onTabClick}
             onTabClose={onTabClose}
             isClassroomMode={isClassroomMode}
+            variant={docked ? "strip" : "floating"}
           />
         </div>
         {project && (
@@ -654,7 +725,19 @@ export default function DockedArea({
 
   return (
     <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
-      {main && mainHasTabs ? renderNode(main, WINDOW_EDGES) : <ResearchWelcome />}
+      {main && mainHasTabs ? (
+        renderNode(main, WINDOW_EDGES)
+      ) : (
+        <>
+          <TabStrip />
+          <div
+            className="absolute bottom-0 transition-[left,right] duration-200 ease-out motion-reduce:transition-none"
+            style={{ top: DOCKED_TOP, left: dockedLeft, right: dockedRight }}
+          >
+            <ResearchWelcome />
+          </div>
+        </>
+      )}
       {(
         [
           ["left", sides.left, leftTabs],
@@ -675,14 +758,16 @@ export default function DockedArea({
             onTabClick={onTabClick}
             onTabClose={onTabClose}
             isClassroomMode={isClassroomMode}
+            docked={docked}
           />
         ) : null,
       )}
-      {!sideStates.left.pinned && <SideEdgeTrigger edge="left" onPeek={peekLeftSide} />}
+      {!sideStates.left.pinned && <SideEdgeTrigger edge="left" onPeek={peekLeftSide} docked={docked} />}
       {rightTabs.length > 0 && !sideStates.right.pinned && (
-        <SideEdgeTrigger edge="right" onPeek={() => enterSidePeekTrigger("right")} />
+        <SideEdgeTrigger edge="right" onPeek={() => enterSidePeekTrigger("right")} docked={docked} />
       )}
-      {rightTabs.length > 0 && !isSidePanelShown(sideStates.right) && (
+      {/* 贴边排法里不要右下角的圆按钮，从竖栏的 AI 按钮打开 */}
+      {!docked && rightTabs.length > 0 && !isSidePanelShown(sideStates.right) && (
         <SideBubble isAI={rightActive !== undefined && rightActive === aiTab} />
       )}
     </div>

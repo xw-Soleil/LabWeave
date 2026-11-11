@@ -78,6 +78,8 @@ export default defineConfig({
       "@codemirror/commands",
       "@codemirror/lang-markdown",
       "@codemirror/language",
+      // 各语言包是代码块里用到时才加载的，一起预先打包，免得开发版第一次碰到时整页刷新
+      "@codemirror/language-data",
       "@codemirror/search",
       "@codemirror/state",
       "@codemirror/view",

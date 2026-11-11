@@ -17,14 +17,14 @@ import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelStates } from "@/core/research/SidePanels";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
-import { findTabGroupByTabId, type FixedSideEdge } from "@/core/TabGroup";
+import { findTabGroupByTabId, getTabGroups, separateFixedSideGroups, type FixedSideEdge } from "@/core/TabGroup";
 import { LibraryTab, openLibraryTab } from "@/core/research/LibraryTab";
 import { activeTabAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { cn } from "@/utils/cn";
 import { formatKeyBindSequenceToString } from "@/utils/keyDisplay";
 import { isMac } from "@/utils/platform";
-import { useAtom, useAtomValue } from "jotai";
+import { atom, useAtom, useAtomValue } from "jotai";
 import {
   FolderOpen,
   FolderSearch,
@@ -44,8 +44,25 @@ import { toast } from "sonner";
  * 最上面一行（约 36px）留给红绿灯、标签和右上角的按钮；竖栏和侧栏从它下面开始。
  */
 export const RESEARCH_FLOAT_TOP = "calc(2.75rem * var(--pg-ui-scale, 1))";
-/** 竖栏离窗口左边 8px、宽 2.5rem；左侧栏紧挨在它右边，再空 8px */
-export const RESEARCH_SIDE_PANEL_LEFT = "calc(1rem + 2.5rem * var(--pg-ui-scale, 1))";
+/** 竖栏离窗口左边 8px、宽 2.25rem；左侧栏紧挨在它右边，再空 8px */
+export const RESEARCH_SIDE_PANEL_LEFT = "calc(1rem + 2.25rem * var(--pg-ui-scale, 1))";
+
+/*
+ * 没有白板露在外面时（笔记、PDF、文献库、欢迎页）照 Obsidian 排：
+ * 顶上一条放标签，竖栏、左右侧栏都贴着窗口边，彼此用细线隔开，不再浮着。
+ */
+export const DOCKED_TOP = "2.5rem";
+export const RIBBON_WIDTH = "calc(2.5rem * var(--pg-ui-scale, 1))";
+
+/** 主编辑区里有没有白板露在外面；没有就用贴边的排法 */
+export const dockedChromeAtom = atom((get) => {
+  const tabs = get(tabsAtom);
+  const { main } = separateFixedSideGroups(get(tabGroupRootAtom));
+  return !getTabGroups(main).some((group) => {
+    const groupTabs = group.tabIds.flatMap((id) => tabs.filter((tab) => tab.id === id && tab.layout === "docked"));
+    return (groupTabs.find((tab) => tab.id === group.activeTabId) ?? groupTabs.at(-1)) instanceof Project;
+  });
+});
 
 /** 快捷键的显示文本（macOS 上写成「⌘2」）；没绑或停用时为空。改键后自动更新 */
 export function useShortcutText(keyBindId: string): string {
@@ -106,7 +123,7 @@ function RailButton({
           onPointerEnter={onPeek ? (event) => event.buttons === 0 && onPeek() : undefined}
           onPointerLeave={peekEdge ? () => leaveSidePeekArea(peekEdge) : undefined}
           className={cn(
-            "size-[calc(2rem*var(--pg-ui-scale,1))] rounded-[8px] p-0 [&_svg:not([class*='size-'])]:size-[calc(1rem*var(--pg-ui-scale,1))]",
+            "size-[calc(1.75rem*var(--pg-ui-scale,1))] rounded-[6px] p-0 [&_svg:not([class*='size-'])]:size-[calc(1rem*var(--pg-ui-scale,1))]",
             unavailable
               ? "text-muted-foreground hover:text-muted-foreground cursor-default opacity-40 hover:bg-transparent dark:hover:bg-transparent"
               : active
@@ -259,16 +276,21 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   // 没打开工作区时 AI 对话收起（见 DockedArea），按钮也变灰
   const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
   const activeTab = useAtomValue(activeTabAtom);
+  const docked = useAtomValue(dockedChromeAtom);
 
   return (
     <nav
       aria-label={t("shell.title")}
+      data-pg-rail={docked ? "docked" : "floating"}
       className={cn(
-        "bg-background/95 border-border/60 absolute left-2 z-30 flex flex-col items-center gap-[calc(0.25rem*var(--pg-ui-scale,1))] rounded-[12px] border p-[calc(0.25rem*var(--pg-ui-scale,1))] shadow-xs",
-        "transition-opacity hover:opacity-100",
+        "absolute z-30 flex flex-col items-center gap-[calc(0.25rem*var(--pg-ui-scale,1))] transition-opacity hover:opacity-100",
+        // 贴边时和 Obsidian 的竖栏一样：一整条贴着左边，设置沉到最下面
+        docked
+          ? "bg-sidebar border-border/70 bottom-0 left-0 border-r py-[calc(0.375rem*var(--pg-ui-scale,1))]"
+          : "bg-background/95 border-border/60 left-2 rounded-[10px] border p-[calc(0.1875rem*var(--pg-ui-scale,1))] shadow-xs",
         isClassroomMode && "opacity-0",
       )}
-      style={{ top: RESEARCH_FLOAT_TOP }}
+      style={docked ? { top: DOCKED_TOP, width: RIBBON_WIDTH } : { top: RESEARCH_FLOAT_TOP }}
     >
       {/* 共用一个 Provider：在相邻按钮之间移动时提示框立刻切换，不用每个都再等一次 */}
       <TooltipProvider>
@@ -329,8 +351,10 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         >
           <Library />
         </RailButton>
-        <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
-        <div>
+        {!docked && (
+          <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
+        )}
+        <div className={cn(docked && "mt-auto")}>
           <RailButton
             label={t("shell.rail.settings")}
             keyBindId="clickAppMenuSettingsButton"

@@ -3139,6 +3139,19 @@ research:
     remove: "Remove property {{key}}"
     removeValue: "Remove {{value}}"
     saveFailed: Couldn't apply the change; the note is unchanged
+  markdownTable:
+    cell: "Row {{row}}, column {{column}}"
+    rowAbove: Insert row above
+    rowBelow: Insert row below
+    columnLeft: Insert column left
+    columnRight: Insert column right
+    alignLeft: Align left
+    alignCenter: Align center
+    alignRight: Align right
+    deleteRow: Delete row
+    deleteColumn: Delete column
+    addRow: Add row
+    addColumn: Add column
   library:
     title: Library
     emptyTitle: No library folder yet

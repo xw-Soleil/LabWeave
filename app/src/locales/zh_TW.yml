@@ -3258,6 +3258,19 @@ research:
     remove: "刪除屬性 {{key}}"
     removeValue: "去掉 {{value}}"
     saveFailed: 沒能改好，原文沒有變
+  markdownTable:
+    cell: "第 {{row}} 行第 {{column}} 列"
+    rowAbove: 在上方插入行
+    rowBelow: 在下方插入行
+    columnLeft: 在左側插入列
+    columnRight: 在右側插入列
+    alignLeft: 左對齊
+    alignCenter: 居中
+    alignRight: 右對齊
+    deleteRow: 刪除這一行
+    deleteColumn: 刪除這一列
+    addRow: 加一行
+    addColumn: 加一列
   library:
     title: 文獻庫
     emptyTitle: 還沒有指定文獻庫

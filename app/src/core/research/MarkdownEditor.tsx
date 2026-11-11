@@ -6,6 +6,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
+import { codeHighlighter, findCodeLanguage } from "./CodeHighlight";
 import { frontmatterSyntax, livePreview, type LivePreviewConfig } from "./MarkdownLivePreview";
 
 export type MarkdownEditMode = "live" | "source";
@@ -66,8 +67,10 @@ export default function MarkdownEditor({
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
-          markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }),
+          // 代码块按开头写的语言上色，用到哪种语言才加载哪种
+          markdown({ base: markdownLanguage, codeLanguages: findCodeLanguage, extensions: [frontmatterSyntax] }),
           syntaxHighlighting(highlight),
+          syntaxHighlighting(codeHighlighter),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": label }),
