@@ -43,7 +43,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import i18next from "i18next";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { documentError, openDocumentFile } from "./DocumentTab";
@@ -100,6 +100,19 @@ function storedLayout(): { tree: boolean; info: boolean } {
   return { tree: parsed.tree ?? true, info: parsed.info ?? true };
 }
 
+/**
+ * 文献库页的文案。React 显示文字时自己会转义，这里关掉 i18next 那一层转义，
+ * 否则路径里的 / 会显示成 &#x2F;。
+ */
+function useLibraryText() {
+  const { t } = useTranslation("research");
+  return useCallback(
+    (key: string, options?: Record<string, unknown>): string =>
+      t(key, { ...options, interpolation: { escapeValue: false } }) as string,
+    [t],
+  );
+}
+
 /** 文献库的错误代码（library.xxx）翻成中文，其他的交给文档的错误翻译 */
 function libraryError(error: unknown): string {
   const code = error instanceof Error ? error.message : String(error);
@@ -116,7 +129,7 @@ const PANE_IDLE = "text-foreground/80 hover:bg-foreground/[0.05]";
 const PANE_ACTIVE = "bg-foreground/[0.08] text-foreground";
 
 export default function LibraryView() {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const [root, setRoot] = Settings.use("literatureLibraryPath");
   const chooseRoot = async () => {
     const path = await browseLocalPath({
@@ -145,7 +158,7 @@ export default function LibraryView() {
 }
 
 function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: () => void }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const library = useLibrary(root);
   const { loading, error, refresh, reloadAll } = library;
   const snapshot = library.snapshot ?? undefined;
@@ -225,9 +238,11 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         <Library className="text-muted-foreground/60 size-12" strokeWidth={1.25} />
         <div className="flex max-w-md flex-col gap-1.5">
           <h2 className="text-base font-semibold">{t("library.notLibraryTitle")}</h2>
-          <p className="text-muted-foreground text-sm break-all">{t("library.notLibraryHint", { path: root })}</p>
+          <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">
+            {t("library.notLibraryHint", { path: root })}
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           <Button onClick={() => run(() => createLibrary(root))}>
             <FolderPlus data-icon="inline-start" />
             {t("library.createHere")}
@@ -468,7 +483,7 @@ function CollectionPane({
   run: (task: () => Promise<unknown>) => void;
   onChangeRoot: () => void;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const tree = useMemo(() => collectionTree(snapshot?.collections ?? []), [snapshot]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const add = (parent?: string) =>
@@ -674,7 +689,7 @@ function TagPane({
   selected: string[];
   onChange: (tags: string[]) => void;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const [filter, setFilter] = useState("");
   const tags = useMemo(
     () =>
@@ -741,7 +756,7 @@ function ItemTable({
   run: (task: () => Promise<unknown>) => void;
   empty: string;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const body = useRef<HTMLDivElement>(null);
   const grid = "grid grid-cols-[minmax(0,1fr)_minmax(0,12rem)_3.5rem_4.5rem_4.5rem] items-center gap-3";
   useEffect(() => {
@@ -938,7 +953,7 @@ function ItemMenu({
   run: (task: () => Promise<unknown>) => void;
   children: ReactNode;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const [position, setPosition] = useState<{ x: number; y: number }>();
   return (
     <div
@@ -1002,7 +1017,7 @@ function Overview({
   status?: ReadStatus;
   onStatus: (status: ReadStatus) => void;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   return (
     <div className="flex flex-col items-center gap-5 px-5 py-14">
       <BookOpen className="text-muted-foreground/50 size-10" strokeWidth={1.25} />
@@ -1039,7 +1054,7 @@ function InfoPane({
   collections: string[];
   run: (task: () => Promise<unknown>) => void;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const save = (patch: Parameters<typeof updateItem>[2]) => run(() => updateItem(root, item.key, patch));
   const links: { label: string; value: string; url: string }[] = [];
   if (item.doi) links.push({ label: "DOI", value: item.doi, url: `https://doi.org/${item.doi}` });
@@ -1228,7 +1243,7 @@ function ChipEditor({
   prefix?: string;
   onChange: (values: string[]) => void;
 }) {
-  const { t } = useTranslation("research");
+  const t = useLibraryText();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const listId = useMemo(() => `chips-${Math.random().toString(36).slice(2)}`, []);
