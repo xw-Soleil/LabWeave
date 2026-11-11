@@ -54,7 +54,12 @@ export const settingsPages: SettingsPage[] = [
   {
     id: "folder",
     icon: FolderOpen,
-    sections: [{ id: "main", items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"] }],
+    sections: [
+      {
+        id: "main",
+        items: ["researchFolderPath", "literatureLibraryPath", "researchOutsideFileMode", "writeAiSidecarOnSave"],
+      },
+    ],
   },
   {
     id: "save",

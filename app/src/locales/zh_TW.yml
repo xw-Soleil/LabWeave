@@ -1266,6 +1266,9 @@ settings:
     title: 當前項目（研究文件夾）
     description: |
       論文、圖片、筆記和白板都放在這個項目文件夾裡
+  literatureLibraryPath:
+    title: 文獻庫文件夾
+    description: 填包含 .litlib 文件和「條目」文件夾的絕對路徑。留空時不啟用文獻庫。
   writeAiSidecarOnSave:
     title: 保存時生成 AI 可讀的文字版
     description: |
@@ -3241,7 +3244,30 @@ research:
     emptyHint: 文獻庫是一個單獨的文件夾，每篇文獻一個子文件夾，放筆記、PDF 和圖片。可以直接選 Obsidian 文獻庫插件用的那個文件夾，兩邊讀的是同一份。
     chooseFolder: 選擇文獻庫文件夾
     chooseTitle: 選擇文獻庫文件夾
-    chooseHint: 選中文獻庫所在的文件夾（有 .litlib 文件的那一層）；還沒有的話選一個空文件夾，會在裡面新建。
+    chooseHint: 選中文獻庫所在的文件夾（有 .litlib 文件的那一層）。還沒有文獻庫的話，選好文件夾後可以在裡面新建。
+    notLibraryTitle: 這個文件夾還不是文獻庫
+    notLibraryHint: "{{path}} 裡沒有 .litlib 文件。可以在這裡新建一個文獻庫，或者換一個文件夾。"
+    createHere: 在這裡新建文獻庫
+    untitled: 未命名文獻
+    noteTemplate: "\n# 研究筆記\n\n## 研究問題\n\n\n## 方法\n\n\n## 結論與啟發\n\n"
+    skipped: "有 {{count}} 篇讀不了，已跳過"
+    errors:
+      notConfigured: 請先設置文獻庫文件夾。
+      pathNotAllowed: 路徑不在已設置的文獻庫中，或包含符號鏈接、不安全的文件名。
+      unavailable: 文獻庫文件夾無法訪問，請檢查路徑和文件權限。
+      manifestMissing: 文件夾中沒有 .litlib 文件。
+      manifestAmbiguous: 文件夾中有多個 .litlib 文件，無法確定用哪一個。
+      invalidManifest: .litlib 文件損壞或格式不受支持，原文件已保留。
+      invalidFrontmatter: 筆記開頭的 YAML 損壞或不是支持的文獻條目，已跳過。
+      invalidFields: 文獻字段的值或類型不正確。
+      invalidCollection: 分類路徑無效，請用 / 分隔非空的分類名稱。
+      collectionExists: 已有同名分類。
+      collectionNotFound: 分類不存在，請刷新後重試。
+      itemsHaveErrors: 文獻庫中有讀不了的條目，先修好它們，再改名或刪除分類。
+      readFailed: 無法讀取文獻條目，請檢查文件和權限。
+      writeFailed: 保存失敗，未完成寫入的原文件已保留，請檢查磁盤和權限後重試。
+      fileChanged: 文件已被其他程序修改，請刷新後重試。
+      partialWrite: 分類修改中途失敗，部分條目沒能改回原樣。請刷新後檢查，不要覆蓋外部修改。
     useFolder: 用這個文件夾
     changeFolder: 換一個文獻庫文件夾
     libraryActions: 文獻庫操作

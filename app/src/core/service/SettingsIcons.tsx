@@ -113,6 +113,7 @@ export const settingsIcons = {
   autoSaveWhenClose: HardDriveDownload,
   autoSave: HardDrive,
   translateService: Languages,
+  literatureLibraryPath: Folder,
   autoSaveInterval: Hourglass,
   autoBackup: Database,
   autoBackupInterval: Hourglass,

@@ -42,6 +42,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import i18next from "i18next";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ import {
   addCollection,
   countLibrary,
   createItem,
+  createLibrary,
   queryLibrary,
   removeCollection,
   renameCollection,
@@ -98,7 +100,17 @@ function storedLayout(): { tree: boolean; info: boolean } {
   return { tree: parsed.tree ?? true, info: parsed.info ?? true };
 }
 
-const reportError = (error: unknown) => toast.error(documentError(error));
+/** 文献库的错误代码（library.xxx）翻成中文，其他的交给文档的错误翻译 */
+function libraryError(error: unknown): string {
+  const code = error instanceof Error ? error.message : String(error);
+  return code.startsWith("library.")
+    ? i18next.t(`library.errors.${code.slice("library.".length)}`, {
+        ns: "research",
+        defaultValue: i18next.t("library.errors.readFailed", { ns: "research" }),
+      })
+    : documentError(error);
+}
+const reportError = (error: unknown) => toast.error(libraryError(error));
 const PANE_ROW = "group flex h-7 min-w-0 items-center gap-1.5 rounded-md pr-1.5 text-[13px] select-none";
 const PANE_IDLE = "text-foreground/80 hover:bg-foreground/[0.05]";
 const PANE_ACTIVE = "bg-foreground/[0.08] text-foreground";
@@ -134,7 +146,10 @@ export default function LibraryView() {
 
 function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: () => void }) {
   const { t } = useTranslation("research");
-  const { snapshot, loading, error, refresh } = useLibrary(root);
+  const library = useLibrary(root);
+  const { loading, error, refresh, reloadAll } = library;
+  const snapshot = library.snapshot ?? undefined;
+  const lastEnter = useRef(0);
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState<ReadStatus>();
@@ -155,11 +170,12 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         ? queryLibrary(
             snapshot,
             {
-              text,
+              search: text,
               tags,
               status,
               trashed: scope.kind === "trash",
-              collection: scope.kind === "collection" ? scope.path : scope.kind === "unfiled" ? null : undefined,
+              unfiled: scope.kind === "unfiled",
+              collection: scope.kind === "collection" ? scope.path : undefined,
             },
             sort,
           )
@@ -203,8 +219,35 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           ? t("library.trash")
           : scope.path.split("/").join(" / ");
 
+  if (error?.message === "library.manifestMissing" && !snapshot)
+    return (
+      <div className="bg-background flex h-full flex-col items-center justify-center gap-4 p-8 pt-9 text-center">
+        <Library className="text-muted-foreground/60 size-12" strokeWidth={1.25} />
+        <div className="flex max-w-md flex-col gap-1.5">
+          <h2 className="text-base font-semibold">{t("library.notLibraryTitle")}</h2>
+          <p className="text-muted-foreground text-sm break-all">{t("library.notLibraryHint", { path: root })}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => run(() => createLibrary(root))}>
+            <FolderPlus data-icon="inline-start" />
+            {t("library.createHere")}
+          </Button>
+          <Button variant="outline" onClick={onChangeRoot}>
+            {t("library.changeFolder")}
+          </Button>
+        </div>
+      </div>
+    );
+
   return (
-    <div className="bg-background flex h-full min-h-0 pt-9 text-[13px]">
+    <div
+      className="bg-background flex h-full min-h-0 pt-9 text-[13px]"
+      onPointerEnter={() => {
+        if (Date.now() - lastEnter.current < 1500) return;
+        lastEnter.current = Date.now();
+        void refresh();
+      }}
+    >
       {layout.tree && (
         <aside className="bg-foreground/[0.02] flex w-56 shrink-0 flex-col border-r">
           <CollectionPane
@@ -236,7 +279,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           <ToolButton
             icon={RefreshCw}
             label={t("library.refresh")}
-            onClick={refresh}
+            onClick={() => void reloadAll()}
             className={cn(loading && "[&_svg]:animate-spin")}
           />
           <ToolButton
@@ -301,14 +344,23 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
             loading && !snapshot
               ? t("library.loading")
               : error
-                ? t("library.loadFailed", { error: documentError(error) })
+                ? t("library.loadFailed", { error: libraryError(error) })
                 : snapshot?.items.length
                   ? t("library.noMatch")
                   : t("library.noItems")
           }
         />
-        <div className="text-muted-foreground flex h-7 shrink-0 items-center border-t px-4 text-xs">
+        <div className="text-muted-foreground flex h-7 shrink-0 items-center gap-3 border-t px-4 text-xs">
           {t("library.footer", { count: items.length })}
+          {!!snapshot?.errors.length && (
+            <span
+              className="text-destructive/80"
+              title={snapshot.errors.map((item) => `${item.key}: ${libraryError(new Error(item.code))}`).join("\n")}
+            >
+              {t("library.skipped", { count: snapshot.errors.length })}
+            </span>
+          )}
+          {error && snapshot && <span className="text-destructive/80 truncate">{libraryError(error)}</span>}
         </div>
       </section>
       {layout.info && (

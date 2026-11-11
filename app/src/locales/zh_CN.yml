@@ -1266,6 +1266,9 @@ settings:
     title: 当前项目（研究文件夹）
     description: |
       论文、图片、笔记和白板都放在这个项目文件夹里
+  literatureLibraryPath:
+    title: 文献库文件夹
+    description: 填包含 .litlib 文件和「条目」文件夹的绝对路径。留空时不启用文献库。
   writeAiSidecarOnSave:
     title: 保存时生成 AI 可读的文字版
     description: |
@@ -3241,7 +3244,30 @@ research:
     emptyHint: 文献库是一个单独的文件夹，每篇文献一个子文件夹，放笔记、PDF 和图片。可以直接选 Obsidian 文献库插件用的那个文件夹，两边读的是同一份。
     chooseFolder: 选择文献库文件夹
     chooseTitle: 选择文献库文件夹
-    chooseHint: 选中文献库所在的文件夹（有 .litlib 文件的那一层）；还没有的话选一个空文件夹，会在里面新建。
+    chooseHint: 选中文献库所在的文件夹（有 .litlib 文件的那一层）。还没有文献库的话，选好文件夹后可以在里面新建。
+    notLibraryTitle: 这个文件夹还不是文献库
+    notLibraryHint: "{{path}} 里没有 .litlib 文件。可以在这里新建一个文献库，或者换一个文件夹。"
+    createHere: 在这里新建文献库
+    untitled: 未命名文献
+    noteTemplate: "\n# 研究笔记\n\n## 研究问题\n\n\n## 方法\n\n\n## 结论与启发\n\n"
+    skipped: "有 {{count}} 篇读不了，已跳过"
+    errors:
+      notConfigured: 请先设置文献库文件夹。
+      pathNotAllowed: 路径不在已设置的文献库中，或包含符号链接、不安全的文件名。
+      unavailable: 文献库文件夹无法访问，请检查路径和文件权限。
+      manifestMissing: 文件夹中没有 .litlib 文件。
+      manifestAmbiguous: 文件夹中有多个 .litlib 文件，无法确定用哪一个。
+      invalidManifest: .litlib 文件损坏或格式不受支持，原文件已保留。
+      invalidFrontmatter: 笔记开头的 YAML 损坏或不是支持的文献条目，已跳过。
+      invalidFields: 文献字段的值或类型不正确。
+      invalidCollection: 分类路径无效，请用 / 分隔非空的分类名称。
+      collectionExists: 已有同名分类。
+      collectionNotFound: 分类不存在，请刷新后重试。
+      itemsHaveErrors: 文献库中有读不了的条目，先修好它们，再改名或删除分类。
+      readFailed: 无法读取文献条目，请检查文件和权限。
+      writeFailed: 保存失败，未完成写入的原文件已保留，请检查磁盘和权限后重试。
+      fileChanged: 文件已被其他程序修改，请刷新后重试。
+      partialWrite: 分类修改中途失败，部分条目没能改回原样。请刷新后检查，不要覆盖外部修改。
     useFolder: 用这个文件夹
     changeFolder: 换一个文献库文件夹
     libraryActions: 文献库操作
