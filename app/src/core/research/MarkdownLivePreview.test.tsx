@@ -71,4 +71,52 @@ describe("live preview block widgets", () => {
     await act(async () => view.destroy());
     expect(drawn.childElementCount).toBe(0);
   });
+
+  const open = (doc: string, at = doc.length) =>
+    new EditorView({
+      parent: host,
+      state: EditorState.create({
+        doc,
+        selection: { anchor: at },
+        extensions: [markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }), livePreview(() => config)],
+      }),
+    });
+
+  it("shows formula source in code colours with the drawn formula kept underneath", () => {
+    const doc = "Text\n\n$$\n\\sum_k x^2\n$$\n\nEnd";
+    const view = open(doc);
+    expect(host.querySelectorAll(".cm-lp-math-block")).toHaveLength(1);
+    expect(host.querySelector(".cm-lp-math-mark")).toBeNull();
+
+    view.dispatch({ selection: { anchor: doc.indexOf("x^2") } });
+    expect([...host.querySelectorAll(".cm-lp-math-mark")].map((mark) => mark.textContent)).toEqual(["$$", "$$"]);
+    expect(host.querySelector(".cm-math-command")?.textContent).toBe("\\sum");
+    expect([...host.querySelectorAll(".cm-math-letter")].map((mark) => mark.textContent)).toEqual(["k", "x"]);
+    expect(host.querySelector(".cm-math-number")?.textContent).toBe("2");
+    expect(host.querySelector(".cm-lp-math-preview .katex")).not.toBeNull();
+    view.destroy();
+  });
+
+  it("selects the whole formula source when a drawn formula is clicked", () => {
+    const doc = "a $x+1$ b\n\nEnd";
+    const view = open(doc);
+    host.querySelector(".cm-lp-math")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("x+1");
+    expect(host.querySelector(".cm-lp-math-tex")?.textContent).toBe("x+1");
+    view.destroy();
+  });
+
+  it("keeps the layout while the mouse is held and reveals the selection on release", () => {
+    const view = open("**bold** text\n\nEnd");
+    const line = () => host.querySelector(".cm-line")!.textContent;
+    expect(line()).toBe("bold text");
+
+    host.querySelector(".cm-line")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    view.dispatch({ selection: { anchor: 2, head: 11 } });
+    expect(line()).toBe("bold text");
+
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    expect(line()).toBe("**bold** text");
+    view.destroy();
+  });
 });

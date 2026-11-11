@@ -711,6 +711,45 @@
   overflow-x: auto;
   text-align: center;
 }
+/* 快速滚动时还没排的公式：原文占位、不显示 */
+.markdown-editor .cm-lp-math-pending {
+  color: transparent;
+}
+.markdown-editor .cm-lp-math-block.cm-lp-math-pending {
+  min-height: 3em;
+  white-space: pre-wrap;
+}
+.markdown-editor .cm-lp-math-preview {
+  padding: 0.4em 0 0.2em;
+}
+/* 光标在公式里：$ 和 $$ 变浅，公式原文用等宽字，照 Obsidian 按 LaTeX 分词上色 */
+.markdown-editor :is(.cm-lp-math-tex, .cm-lp-math-mark) {
+  font-family: var(--rv-code);
+  font-size: var(--rv-code-size);
+}
+.markdown-editor .cm-lp-math-mark {
+  color: var(--rv-muted);
+}
+/* \, 这类写法在 Markdown 里也算转义，公式里按 LaTeX 的颜色走 */
+.markdown-editor .cm-lp-math-tex .cm-code-string {
+  color: inherit;
+}
+.markdown-editor .cm-math-command {
+  color: light-dark(#d04255, #fb7185);
+}
+.markdown-editor .cm-math-letter {
+  color: light-dark(#17929a, #5ccfc9);
+}
+.markdown-editor .cm-math-number {
+  color: light-dark(#7852ee, #a882ff);
+}
+.markdown-editor .cm-math-comment {
+  color: var(--rv-muted);
+  font-style: italic;
+}
+.markdown-editor .cm-lp-ordered-mark {
+  color: var(--rv-accent);
+}
 .markdown-editor .cm-lp-hr hr {
   margin: var(--rv-hr-gap) 0;
   border: 0;
@@ -724,6 +763,11 @@
 }
 .markdown-editor .cm-lp-embed {
   cursor: text;
+}
+/* 编辑器按原文保留换行；排好版贴进来的块（提示框、表格、属性、公式）里夹着的换行符不能当成空行 */
+.markdown-editor
+  :is(.cm-lp-embed, .cm-lp-properties, .cm-lp-table-block, .cm-lp-image, .cm-lp-math, .cm-lp-math-block) {
+  white-space: normal;
 }
 .markdown-editor .cm-lp-properties {
   padding-bottom: 0.4em;
