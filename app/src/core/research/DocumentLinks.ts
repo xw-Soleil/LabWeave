@@ -113,7 +113,8 @@ export function createDocumentLinkResolver(document: string): (target: string) =
           documentKey(root).replace(/\/$/, "").length,
         );
         const queue = [root];
-        for (let index = 0; index < queue.length && !found; index++) {
+        // 超大项目里只翻前几千个文件夹，找不到就当没有，免得一个坏链接卡住预览
+        for (let index = 0; index < queue.length && index < 3000 && !found; index++) {
           const directory = queue[index];
           const children = (await entries(root, directory)).slice().sort((a, b) => a.name.localeCompare(b.name));
           for (const child of children) {

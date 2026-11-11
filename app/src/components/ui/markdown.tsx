@@ -24,6 +24,13 @@ export default function Markdown({
   components?: Record<string, ComponentType<any>>;
   document?: { path: string };
 }) {
+  // 双链组件只随文档路径变：边打字边预览时不重新挂载、不重新去磁盘上找链接目标
+  const documentPath = document?.path;
+  const image = components?.img;
+  const wikilink = useMemo(
+    () => (documentPath ? documentWikilinkComponent(documentPath, image) : undefined),
+    [documentPath, image],
+  );
   const content = useMemo(() => {
     const processor = unified()
       .use(remarkParse)
@@ -31,7 +38,7 @@ export default function Markdown({
       .use(remarkBreaks)
       .use(remarkMath)
       .use(remarkRehype)
-      .use(rehypeObsidian, { document: !!document })
+      .use(rehypeObsidian, { document: !!wikilink })
       .use(rehypeKatex)
       .use(rehypeReact, {
         ...production,
@@ -47,11 +54,11 @@ export default function Markdown({
           ),
           ...components,
           "reading-callout": MarkdownCallout,
-          ...(document ? { "reading-wikilink": documentWikilinkComponent(document.path, components?.img) } : {}),
+          ...(wikilink ? { "reading-wikilink": wikilink } : {}),
         },
       });
     return processor.processSync(source).result;
-  }, [source, components, document?.path]);
+  }, [source, components, wikilink]);
 
   return (
     <div
