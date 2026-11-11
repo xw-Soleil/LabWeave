@@ -334,3 +334,302 @@
 .reading-view .callout:is([data-callout="quote"], [data-callout="cite"]) {
   --callout: 158, 158, 158;
 }
+
+/* 笔记属性：照 Obsidian，一项一行，左边图标和名字，右边是值 */
+.note-properties {
+  margin: 0 0 1.8em;
+  padding-bottom: 1em;
+  border-bottom: 1px solid var(--rv-line);
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+.note-properties-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0 0 0.5em -0.15em;
+  color: var(--foreground);
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.note-properties-heading svg {
+  color: var(--rv-muted);
+}
+.note-property {
+  display: grid;
+  grid-template-columns: minmax(7.5em, 10.5em) minmax(0, 1fr);
+  align-items: start;
+  border-radius: 6px;
+}
+.note-property:hover {
+  background: var(--rv-faint);
+}
+.note-property-key {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.45em 0.6em;
+  color: var(--rv-muted);
+}
+.note-property-remove {
+  margin-left: auto;
+  opacity: 0;
+}
+.note-property:hover .note-property-remove {
+  opacity: 0.6;
+}
+.note-property-remove:hover {
+  opacity: 1 !important;
+}
+.note-property-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  min-height: 2.1em;
+  padding: 0.25em 0.6em;
+}
+.note-property-input {
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  padding: 0.1em 0.25em;
+}
+.note-property-input:focus {
+  background: var(--background);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--rv-accent) 45%, transparent);
+}
+.note-property-input::placeholder,
+.note-property-empty {
+  color: var(--rv-muted);
+  opacity: 0.75;
+}
+.note-property-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  padding: 0.05em 0.45em;
+}
+.note-property-chip.is-tag {
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--rv-accent) 12%, transparent);
+  color: var(--rv-accent);
+}
+.note-property-chip button {
+  opacity: 0.5;
+}
+.note-property-chip button:hover {
+  opacity: 1;
+}
+.note-property-link {
+  color: var(--rv-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+}
+.note-property-edit {
+  flex-shrink: 0;
+  color: var(--rv-muted);
+  font-size: 0.85em;
+  opacity: 0;
+}
+.note-property:hover .note-property-edit {
+  opacity: 1;
+}
+.note-properties-add {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  border-radius: 6px;
+  color: var(--rv-muted);
+  padding: 0.45em 0.6em;
+}
+.note-properties-add:hover {
+  background: var(--rv-faint);
+  color: var(--foreground);
+}
+.note-properties-raw {
+  border-radius: 6px;
+  background: var(--rv-faint);
+  font-family: var(--rv-code);
+  font-size: 0.9em;
+  padding: 0.6em 0.8em;
+  white-space: pre-wrap;
+}
+
+/* Markdown 编辑器（CodeMirror）：实时预览沿用阅读排版，源码模式用等宽字 */
+.markdown-editor .cm-editor {
+  background: transparent;
+  color: inherit;
+}
+.markdown-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.markdown-editor .cm-scroller {
+  overflow: visible;
+  font-family: inherit;
+  line-height: inherit;
+}
+.markdown-editor .cm-content {
+  padding: 0 0 40vh;
+  caret-color: var(--foreground);
+}
+.markdown-editor .cm-line {
+  padding: 0;
+}
+.markdown-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}
+.markdown-editor .cm-selectionBackground,
+.markdown-editor .cm-content ::selection {
+  background: rgba(0, 122, 255, 0.2) !important;
+}
+.markdown-editor .cm-selectionMatch {
+  background: rgba(255, 196, 0, 0.25);
+}
+.markdown-editor[data-mode="source"] .cm-content {
+  font-family: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+.markdown-editor .cm-md-mark,
+.markdown-editor .cm-md-url {
+  color: var(--rv-muted);
+}
+.markdown-editor .cm-md-link {
+  color: var(--rv-accent);
+}
+.markdown-editor .cm-md-code {
+  font-family: var(--rv-code);
+  font-size: 0.9em;
+}
+.markdown-editor[data-mode="live"] .cm-md-code {
+  border-radius: 4px;
+  background: var(--rv-faint);
+  padding: 0.1em 0.3em;
+}
+.markdown-editor .cm-md-quote {
+  color: var(--rv-muted);
+}
+
+/* 实时预览：标题、引用、代码块、链接、公式、图片和整块嵌入 */
+.markdown-editor .cm-lp-h {
+  font-family: var(--rv-heading);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding-top: 0.8em !important;
+  padding-bottom: 0.2em !important;
+}
+.markdown-editor .cm-lp-h1 {
+  font-size: calc(var(--reading-h1, 1.5) * 1em);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.markdown-editor .cm-lp-h2 {
+  font-size: calc(var(--reading-h2, 1.3) * 1em);
+  line-height: 1.35;
+}
+.markdown-editor .cm-lp-h3 {
+  font-size: calc(var(--reading-h3, 1.15) * 1em);
+  line-height: 1.4;
+}
+.markdown-editor .cm-lp-h4 {
+  font-size: calc(var(--reading-h4, 1.05) * 1em);
+}
+.markdown-editor .cm-lp-h5 {
+  font-size: calc(var(--reading-h5, 1) * 1em);
+}
+.markdown-editor .cm-lp-h6 {
+  font-size: calc(var(--reading-h6, 1) * 1em);
+  color: var(--rv-muted);
+}
+.markdown-editor .cm-lp-quote {
+  border-left: 2px solid var(--rv-line);
+  padding-left: 1em !important;
+  color: var(--rv-muted);
+}
+.markdown-editor .cm-lp-callout-raw {
+  border-left-color: rgba(8, 109, 221, 0.55);
+  background: rgba(8, 109, 221, 0.06);
+}
+.markdown-editor .cm-lp-codeblock {
+  background: var(--rv-faint);
+  font-family: var(--rv-code);
+  font-size: 0.86em;
+  padding: 0 1em !important;
+}
+.markdown-editor .cm-lp-codeblock-first {
+  border-radius: 8px 8px 0 0;
+  padding-top: 0.5em !important;
+}
+.markdown-editor .cm-lp-codeblock-last {
+  border-radius: 0 0 8px 8px;
+  padding-bottom: 0.5em !important;
+}
+.markdown-editor .cm-lp-codeblock-first.cm-lp-codeblock-last {
+  border-radius: 8px;
+}
+.markdown-editor .cm-lp-codeblock-fence {
+  color: var(--rv-muted);
+}
+.markdown-editor .cm-lp-link {
+  color: var(--rv-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--rv-accent) 35%, transparent);
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.markdown-editor .cm-lp-bullet {
+  display: inline-block;
+  width: 0.9em;
+  color: var(--rv-muted);
+  text-align: center;
+}
+.markdown-editor .cm-lp-task {
+  margin: 0 0.35em 0 0;
+  vertical-align: -0.1em;
+  accent-color: var(--rv-accent);
+}
+.markdown-editor .cm-lp-math-block {
+  overflow-x: auto;
+  padding: 0.4em 0;
+  text-align: center;
+}
+.markdown-editor .cm-lp-hr hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--rv-line);
+}
+.markdown-editor .cm-lp-image img {
+  display: block;
+  max-width: 100%;
+  margin: 0.6em auto;
+  border-radius: 6px;
+}
+.markdown-editor .cm-lp-embed {
+  padding: 0.2em 0;
+  cursor: text;
+}
+.markdown-editor .cm-lp-embed .prose > :first-child {
+  margin-top: 0;
+}
+.markdown-editor .cm-lp-embed .prose > :last-child {
+  margin-bottom: 0;
+}
+.markdown-editor .cm-lp-properties {
+  padding-bottom: 0.4em;
+}
+.markdown-editor .cm-panels {
+  border-color: var(--rv-line);
+  background: var(--background);
+  color: var(--foreground);
+}

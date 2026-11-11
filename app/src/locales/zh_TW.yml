@@ -2947,11 +2947,13 @@ research:
     loading: 正在讀取…
     source: Markdown 源碼
     preview: 實時預覽
-    mode: 顯示方式
     modes:
-      edit: 編輯
-      split: 對照
-      read: 閱讀
+      read: 閱讀視圖
+      live: 實時預覽
+      source: 源碼模式
+      toEdit: 切到編輯（⌘E）
+      toRead: 切到閱讀（⌘E）
+      more: 更多選項
     unsaved: 未保存
     selection:
       menu: 選中文字的操作
@@ -3244,6 +3246,18 @@ research:
       rateLimited: 翻譯服務暫時限流了，稍等一會兒再試
       aiNotConfigured: 設置裡選了用 AI 翻譯，但還沒有配好 AI 模型
       failed: 翻譯失敗，再試一次
+  noteProperties:
+    title: 筆記屬性
+    invalid: 筆記開頭的屬性格式有誤，先按原文顯示。可以切到源碼模式修改。
+    add: 添加筆記屬性
+    newName: 屬性名
+    exists: 已經有同名的屬性了
+    empty: 沒有值
+    edit: 改
+    addValue: 添加一項
+    remove: "刪除屬性 {{key}}"
+    removeValue: "去掉 {{value}}"
+    saveFailed: 沒能改好，原文沒有變
   library:
     title: 文獻庫
     emptyTitle: 還沒有指定文獻庫

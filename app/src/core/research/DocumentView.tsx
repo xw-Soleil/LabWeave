@@ -1,28 +1,35 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Markdown from "@/components/ui/markdown";
-import { Textarea } from "@/components/ui/textarea";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { Settings } from "@/core/service/Settings";
 import { activeTabAtom, store } from "@/state";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
-import { cn } from "@/utils/cn";
 import {
   BookOpen,
   Bot,
-  Columns2,
   Copy,
   ExternalLink,
   Languages,
+  MoreHorizontal,
   PencilLine,
   RefreshCw,
   Save,
-  type LucideIcon,
 } from "lucide-react";
 import {
+  createElement,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -35,6 +42,10 @@ import {
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
+import MarkdownEditor, { type MarkdownEditMode } from "./MarkdownEditor";
+import type { LivePreviewConfig } from "./MarkdownLivePreview";
+import { NoteProperties, splitFrontmatter } from "./NoteProperties";
+import { documentWikilinkComponent } from "./ObsidianMarkdown";
 import PdfView from "./PdfView";
 import { askAiAboutSelection, clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
 import { readingThemeVars, resolveReadingTheme } from "./ReadingTheme";
@@ -133,8 +144,41 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     }
     await tab.loadMarkdown(true);
   };
-  const [mode, setMode] = useState<MarkdownMode>(storedMarkdownMode);
+  const [mode, setMode] = useState<MarkdownMode>(() => stored(MODE_KEY, ["read", "edit"], "edit"));
+  const [editMode, setEditMode] = useState<MarkdownEditMode>(() => stored(EDIT_MODE_KEY, ["live", "source"], "live"));
+  const pickMode = (value: MarkdownMode) => {
+    setMode(value);
+    globalThis.localStorage?.setItem(MODE_KEY, value);
+  };
+  const pickEditMode = (value: MarkdownEditMode) => {
+    setEditMode(value);
+    globalThis.localStorage?.setItem(EDIT_MODE_KEY, value);
+    pickMode("edit");
+  };
   const previewArea = useRef<HTMLDivElement>(null);
+  const wikilink = useMemo(() => documentWikilinkComponent(tab.path, components.img), [tab.path, components]);
+  const liveConfig: LivePreviewConfig = {
+    renderMarkdown: (block) => <Markdown source={block} components={components} document={{ path: tab.path }} />,
+    renderImage: (src, alt) => <DocumentImage path={tab.path} src={src} alt={alt} />,
+    renderEmbed: (target, width) =>
+      createElement(wikilink, { "data-target": target, "data-embed": "1", "data-width": width }, target),
+    openLink: (href) =>
+      void (async () => {
+        if (/^https?:\/\//i.test(href)) return open(href);
+        const path = resolveDocumentImage(tab.path, href);
+        const kind = fileKindOf(path);
+        if (kind !== "markdown" && kind !== "pdf") throw new Error("unsupportedLink");
+        await openDocumentFile(path);
+      })().catch((error) => toast.error(documentError(error))),
+    openWikilink: (target) =>
+      void (async () => {
+        const { createDocumentLinkResolver } = await import("./DocumentLinks");
+        const link = await createDocumentLinkResolver(tab.path)(target);
+        if (!link) throw new Error("noteNotFound");
+        if (!/\.(md|pdf)$/i.test(link.path)) throw new Error("unsupportedLink");
+        await openDocumentFile(link.path, { heading: link.heading });
+      })().catch((error) => toast.error(documentError(error))),
+  };
   useEffect(() => {
     const heading = tab.markdownHeading;
     if (!heading || !tab.markdown || tab.loadingMarkdown || source !== editorText(tab.markdown.text)) return;
@@ -166,57 +210,38 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       return () => cancelAnimationFrame(frame);
     }
   }, [tab, tab.markdownHeading, tab.loadingMarkdown, source, mode]);
-  const pickMode = (value: MarkdownMode) => {
-    setMode(value);
-    globalThis.localStorage?.setItem(MARKDOWN_MODE_KEY, value);
+  const frontmatter = splitFrontmatter(source);
+  const editProperties = (yaml: string) => {
+    // 以最新原文为准重拼，预览用的是稍慢一拍的文字，不能拿它覆盖刚打的字
+    const current = splitFrontmatter(editorText(tab.markdown!.text));
+    if (!current) return;
+    tab.markdown!.edit(current.opening + yaml + current.closing + current.body);
+    tab.changed();
   };
-  const editor = tab.markdown && (
-    <Textarea
-      id={`source-${tab.id}`}
-      aria-label={t("source")}
-      className="reading-source min-h-0 flex-1 resize-none overflow-auto rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-      style={{ fieldSizing: "fixed" }}
-      spellCheck={false}
-      disabled={tab.loadingMarkdown}
-      value={editorText(tab.markdown.text)}
-      onChange={(event) => {
-        tab.markdown!.edit(event.target.value);
-        tab.changed();
-      }}
-    />
-  );
   const preview = (
     <article className="reading-view [&_*]:select-text">
-      <h1 className="reading-title">{tab.title}</h1>
-      <Markdown source={source} components={components} document={{ path: tab.path }} />
+      <h1 className="reading-title">{noteTitle(tab.title)}</h1>
+      {frontmatter && <NoteProperties yaml={frontmatter.yaml} onChange={editProperties} />}
+      <Markdown
+        source={frontmatter ? frontmatter.body : source}
+        components={components}
+        document={{ path: tab.path }}
+      />
     </article>
   );
   return (
-    <div className="flex min-h-0 flex-1 flex-col" style={readingThemeVars(resolveReadingTheme(theme)) as CSSProperties}>
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      style={readingThemeVars(resolveReadingTheme(theme)) as CSSProperties}
+      onKeyDownCapture={(event) => {
+        // Cmd/Ctrl+E 在阅读和编辑之间切换，和 Obsidian 一样
+        if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "e") {
+          event.preventDefault();
+          pickMode(mode === "read" ? "edit" : "read");
+        }
+      }}
+    >
       <div className="flex items-center gap-1 px-3 py-1.5">
-        <div
-          role="radiogroup"
-          aria-label={t("mode")}
-          className="bg-foreground/[0.05] flex items-center gap-0.5 rounded-md p-0.5"
-        >
-          {MARKDOWN_MODES.map(({ id, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={mode === id}
-              title={t(`modes.${id}`)}
-              className={cn(
-                "text-muted-foreground hover:text-foreground flex h-6 items-center gap-1 rounded px-2 text-xs",
-                mode === id && "bg-background text-foreground shadow-xs",
-              )}
-              onClick={() => pickMode(id)}
-            >
-              <Icon className="size-3.5" />
-              {t(`modes.${id}`)}
-            </button>
-          ))}
-        </div>
         <span className="flex-1" />
         {tab.hasUnsavedChanges && (
           <span className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
@@ -228,22 +253,44 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           variant="ghost"
           size="sm"
           className="h-7 text-xs"
-          disabled={tab.saving || tab.loadingMarkdown}
-          onClick={() => void reload()}
-        >
-          <RefreshCw data-icon="inline-start" />
-          {t("reload")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs"
           disabled={!tab.markdown || tab.saving || tab.loadingMarkdown}
           onClick={() => void tab.save()}
         >
           <Save data-icon="inline-start" />
           {t(tab.saving ? "saving" : "save")}
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          title={t(mode === "read" ? "modes.toEdit" : "modes.toRead")}
+          aria-label={t(mode === "read" ? "modes.toEdit" : "modes.toRead")}
+          onClick={() => pickMode(mode === "read" ? "edit" : "read")}
+        >
+          {mode === "read" ? <PencilLine /> : <BookOpen />}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-7" aria-label={t("modes.more")}>
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuRadioGroup
+              value={mode === "read" ? "read" : editMode}
+              onValueChange={(value) => (value === "read" ? pickMode("read") : pickEditMode(value as MarkdownEditMode))}
+            >
+              <DropdownMenuRadioItem value="read">{t("modes.read")}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="live">{t("modes.live")}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="source">{t("modes.source")}</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={tab.saving || tab.loadingMarkdown} onSelect={() => void reload()}>
+              <RefreshCw />
+              {t("reload")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {tab.error && (
         <Alert variant="destructive">
@@ -254,21 +301,23 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         <div role="status" className="text-muted-foreground p-6">
           {tab.error ? t("retryHint") : t("loading")}
         </div>
-      ) : mode === "split" ? (
-        <div className="grid min-h-0 flex-1 grid-rows-2 border-t md:grid-cols-2 md:grid-rows-1">
-          <section className="flex min-h-0 min-w-0 flex-col px-6 py-5 max-md:border-b md:border-r">{editor}</section>
-          <section
-            ref={previewArea}
-            className="relative min-h-0 min-w-0 overflow-auto px-8 py-6"
-            aria-label={t("preview")}
-          >
-            {preview}
-            <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
-          </section>
-        </div>
       ) : mode === "edit" ? (
-        <div className="flex min-h-0 flex-1 flex-col border-t px-8 py-6">
-          <div className="reading-view flex min-h-0 flex-1 flex-col">{editor}</div>
+        <div ref={previewArea} className="relative min-h-0 flex-1 overflow-auto border-t px-8 pt-8">
+          <div className="reading-view">
+            <h1 className="reading-title">{noteTitle(tab.title)}</h1>
+            <MarkdownEditor
+              value={editorText(tab.markdown.text)}
+              mode={editMode}
+              config={liveConfig}
+              disabled={tab.loadingMarkdown}
+              label={t("source")}
+              onChange={(text) => {
+                tab.markdown!.edit(text);
+                tab.changed();
+              }}
+            />
+          </div>
+          <PreviewSelection key={`${mode}-${editMode}`} area={previewArea} path={tab.path} title={tab.title} />
         </div>
       ) : (
         <div
@@ -381,17 +430,17 @@ function PreviewSelection({
   );
 }
 
-type MarkdownMode = "edit" | "split" | "read";
-const MARKDOWN_MODE_KEY = "labweave.markdownMode";
-const MARKDOWN_MODES: { id: MarkdownMode; icon: LucideIcon }[] = [
-  { id: "edit", icon: PencilLine },
-  { id: "split", icon: Columns2 },
-  { id: "read", icon: BookOpen },
-];
-function storedMarkdownMode(): MarkdownMode {
+/** 文件名当大标题时去掉 .md，和 Obsidian 一样 */
+const noteTitle = (name: string) => name.replace(/\.(md|markdown)$/i, "");
+
+/** 照 Obsidian：阅读，或者编辑（编辑又分实时预览和源码），都记在本机 */
+type MarkdownMode = "read" | "edit";
+const MODE_KEY = "labweave.markdownView";
+const EDIT_MODE_KEY = "labweave.markdownEditMode";
+function stored<T extends string>(key: string, values: T[], fallback: T): T {
   // 测试环境里 localStorage 可能是 undefined
-  const value = globalThis.localStorage?.getItem(MARKDOWN_MODE_KEY);
-  return MARKDOWN_MODES.some(({ id }) => id === value) ? (value as MarkdownMode) : "split";
+  const value = globalThis.localStorage?.getItem(key);
+  return values.includes(value as T) ? (value as T) : fallback;
 }
 
 export default function DocumentView({ tab }: { tab: DocumentTab }) {

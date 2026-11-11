@@ -2947,11 +2947,13 @@ research:
     loading: 正在读取…
     source: Markdown 源码
     preview: 实时预览
-    mode: 显示方式
     modes:
-      edit: 编辑
-      split: 对照
-      read: 阅读
+      read: 阅读视图
+      live: 实时预览
+      source: 源码模式
+      toEdit: 切到编辑（⌘E）
+      toRead: 切到阅读（⌘E）
+      more: 更多选项
     unsaved: 未保存
     selection:
       menu: 选中文字的操作
@@ -3244,6 +3246,18 @@ research:
       rateLimited: 翻译服务暂时限流了，稍等一会儿再试
       aiNotConfigured: 设置里选了用 AI 翻译，但还没有配好 AI 模型
       failed: 翻译失败，再试一次
+  noteProperties:
+    title: 笔记属性
+    invalid: 笔记开头的属性格式有误，先按原文显示。可以切到源码模式修改。
+    add: 添加笔记属性
+    newName: 属性名
+    exists: 已经有同名的属性了
+    empty: 没有值
+    edit: 改
+    addValue: 添加一项
+    remove: "删除属性 {{key}}"
+    removeValue: "去掉 {{value}}"
+    saveFailed: 没能改好，原文没有变
   library:
     title: 文献库
     emptyTitle: 还没有指定文献库

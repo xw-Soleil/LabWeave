@@ -33,9 +33,21 @@ import { editorText } from "./DocumentFile";
 
 let root: Root;
 let container: HTMLDivElement;
+let storage: Map<string, string>;
+/** 打开文档时用阅读还是编辑，记在本机；测试里大多先用阅读视图看渲染结果 */
+const viewMode = (mode: "read" | "edit", editMode: "live" | "source" = "live") => {
+  storage.set("labweave.markdownView", mode);
+  storage.set("labweave.markdownEditMode", editMode);
+};
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.theme = { preset: "default" };
+  storage = new Map();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => void storage.set(key, value),
+  });
+  viewMode("read");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   URL.createObjectURL = vi.fn(() => "blob:local-image");
   URL.revokeObjectURL = vi.fn();
@@ -59,13 +71,39 @@ describe("Markdown document view", () => {
     await act(async () => root.render(<DocumentView tab={tab} />));
     const host = container.querySelector<HTMLElement>('[style*="--reading-font-size"]')!;
     expect(host.style.getPropertyValue("--reading-font-size")).toBe("15px");
-    expect(host.contains(container.querySelector("textarea"))).toBe(true);
     expect(host.contains(container.querySelector(".prose"))).toBe(true);
     expect(container.querySelector(".prose")?.getAttribute("style")).toBeNull();
     mocks.theme = { preset: "obsidian" };
     await act(async () => root.render(<DocumentView tab={tab} />));
     expect(host.style.getPropertyValue("--reading-font-size")).toBe("16px");
     expect(host.style.getPropertyValue("--reading-table-margin")).toBe("auto");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="document.modes.toEdit"]')!.click(),
+    );
+    const editorHost = container.querySelector<HTMLElement>('[style*="--reading-font-size"]')!;
+    expect(editorHost.contains(container.querySelector(".cm-content"))).toBe(true);
+    expect(storage.get("labweave.markdownView")).toBe("edit");
+  });
+
+  it("edits in live preview and source mode without changing untouched text, and shows properties as a table", async () => {
+    viewMode("edit", "live");
+    const text = "---\ntitle: 笔记\ntags:\n  - pde\n---\n# 标题\n\n正文 **加粗**\n";
+    mocks.readFile.mockResolvedValue(new TextEncoder().encode(text));
+    const tab = new DocumentTab("/r/a.md", "markdown");
+    await tab.loadMarkdown();
+    await act(async () => root.render(<DocumentView tab={tab} />));
+    expect(container.querySelector(".markdown-editor")?.getAttribute("data-mode")).toBe("live");
+    expect(container.querySelector(".note-properties")?.textContent).toContain("noteProperties.title");
+    expect(container.querySelector(".cm-lp-h1")).not.toBeNull();
+    expect(container.querySelector(".cm-content")?.textContent).not.toContain("title: 笔记");
+    viewMode("edit", "source");
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<DocumentView tab={tab} />));
+    expect(container.querySelector(".markdown-editor")?.getAttribute("data-mode")).toBe("source");
+    expect(container.querySelector(".cm-content")?.textContent).toContain("title: 笔记");
+    expect(editorText(tab.markdown!.text)).toBe(text);
+    expect(tab.hasUnsavedChanges).toBe(false);
   });
 
   it("uses DocumentImage and releases its URL for local wikilink images with a width", async () => {
@@ -216,7 +254,14 @@ describe("Markdown document view", () => {
         }),
     );
     await act(async () =>
-      [...container.querySelectorAll("button")].find((button) => button.textContent === "document.reload")!.click(),
+      container
+        .querySelector('button[aria-label="document.modes.more"]')!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    await act(async () =>
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === "document.reload")!
+        .click(),
     );
     tab.markdown!.edit("new edits");
     await act(async () => finish(new TextEncoder().encode("disk")));
@@ -240,13 +285,19 @@ describe("Markdown document view", () => {
         </>,
       ),
     );
-    await act(async () => container.querySelectorAll("textarea")[1].focus());
+    // 阅读视图里没有能获得焦点的输入框，用标题旁的书本按钮代替键盘焦点
+    await act(async () =>
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label="document.modes.toEdit"]')[1].focus(),
+    );
     expect(activeDocumentTab()).toBe(second);
     expect(store.get(readingContextAtom)).toMatchObject({ path: second.path, kind: "markdown", title: "b" });
     await act(async () => {
-      const textarea = container.querySelectorAll("textarea")[1];
-      textarea.setSelectionRange(0, 4);
-      textarea.dispatchEvent(new Event("select", { bubbles: true }));
+      const paragraph = container.querySelectorAll(".prose p")[1];
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
     });
     expect(store.get(readingContextAtom)?.selection?.text).toBe("note");
   });

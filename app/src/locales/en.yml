@@ -2828,11 +2828,13 @@ research:
     loading: Reading…
     source: Markdown source
     preview: Live preview
-    mode: View mode
     modes:
-      edit: Edit
-      split: Side by side
-      read: Read
+      read: Reading view
+      live: Live preview
+      source: Source mode
+      toEdit: Switch to editing (⌘E)
+      toRead: Switch to reading (⌘E)
+      more: More options
     unsaved: Unsaved
     selection:
       menu: Selection actions
@@ -3125,6 +3127,18 @@ research:
       rateLimited: The translation service is busy. Try again in a moment.
       aiNotConfigured: AI translation is selected in Settings, but no AI model is set up yet.
       failed: Translation failed. Try again.
+  noteProperties:
+    title: Properties
+    invalid: The properties at the top of this note are malformed, so they're shown as written. Switch to source mode to fix them.
+    add: Add property
+    newName: Property name
+    exists: A property with this name already exists
+    empty: Empty
+    edit: Edit
+    addValue: Add an item
+    remove: "Remove property {{key}}"
+    removeValue: "Remove {{value}}"
+    saveFailed: Couldn't apply the change; the note is unchanged
   library:
     title: Library
     emptyTitle: No library folder yet

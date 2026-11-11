@@ -75,6 +75,14 @@ export default defineConfig({
   // 打开的标签全没了，看起来像闪退（2026-11-10），所以启动时就先打包好。
   optimizeDeps: {
     include: [
+      "@codemirror/commands",
+      "@codemirror/lang-markdown",
+      "@codemirror/language",
+      "@codemirror/search",
+      "@codemirror/state",
+      "@codemirror/view",
+      "@lezer/highlight",
+      "@lezer/markdown",
       "@embedpdf/core",
       "@embedpdf/core/react",
       "@embedpdf/engines",
