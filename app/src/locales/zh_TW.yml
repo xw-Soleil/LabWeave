@@ -3171,6 +3171,8 @@ research:
         title: 全選
       quit:
         title: 退出科研工作臺
+      closeTab:
+        title: 關閉標籤頁
       newResearchWorkspace:
         title: 新建白板
         description: 在當前項目裡新建一個白板並打開

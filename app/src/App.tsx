@@ -28,8 +28,12 @@ import {
   isClassroomModeAtom,
   isClickThroughEnabledAtom,
   isWindowMaxsizedAtom,
+  store,
+  tabGroupRootAtom,
   tabsAtom,
 } from "@/state";
+import { findTabGroupByTabId, isFixedSideGroupId } from "@/core/TabGroup";
+import { CLOSE_ACTIVE_TAB_EVENT } from "@/components/native-macos-menu";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -443,6 +447,24 @@ export default function App() {
     },
     [closeTab],
   );
+
+  // ⌘W：关当前标签页；焦点在侧栏面板上时关主区域正在看的文件，侧栏面板不动。没有可关的就什么也不做
+  useEffect(() => {
+    const onCloseActiveTab = () => {
+      const focused = store.get(activeTabAtom);
+      const inSide =
+        focused && isFixedSideGroupId(findTabGroupByTabId(store.get(tabGroupRootAtom), focused.id)?.id ?? "");
+      const tab = focused && !inSide ? focused : store.get(activeResourceTabAtom);
+      if (!tab || !tab.closable || tab.closing) return;
+      if (tab instanceof Project && tab.isSaving) {
+        toast.warning(tResearch("tabs.savingWait"));
+        return;
+      }
+      void handleTabClose(tab);
+    };
+    window.addEventListener(CLOSE_ACTIVE_TAB_EVENT, onCloseActiveTab);
+    return () => window.removeEventListener(CLOSE_ACTIVE_TAB_EVENT, onCloseActiveTab);
+  }, [handleTabClose, tResearch]);
 
   const zoomStyle = uiScalePercent !== 100 ? ({ zoom: `${uiScalePercent / 100}` } as React.CSSProperties) : undefined;
 

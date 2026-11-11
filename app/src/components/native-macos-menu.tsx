@@ -30,6 +30,9 @@ export const nativeMacosMenuIds = new Set([
   "about",
 ]);
 
+/** 菜单里的「关闭标签页」（⌘W）只发这个事件，由 App 走和标签栏 × 一样的关闭流程 */
+export const CLOSE_ACTIVE_TAB_EVENT = "pg-close-active-tab";
+
 // 只放系统自带的剪贴板命令：没有「编辑」菜单时 WKWebView 的文本框里 Cmd+C/V/X/A 不起作用。
 // 不放撤销/重做：白板的 Cmd+Z 走自己的快捷键，系统的撤销会顺带改掉之前在文本框里打的字。
 const researchEditItems = [
@@ -141,16 +144,38 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
       );
     };
 
+    // 系统「窗口」菜单里的「关闭窗口」占着 ⌘W，可主窗口只有一个，一按整个程序就退了；
+    // 换成关当前标签页，和 Obsidian 一样
+    const replaceCloseWindow = async (items: NativeMenuEntry[]) => {
+      const result: NativeMenuEntry[] = [];
+      for (const item of items) {
+        own(item);
+        if ((await item.text()).replaceAll("&", "") !== "Close Window") {
+          result.push(item);
+          continue;
+        }
+        result.push(
+          own(
+            await MenuItem.new({
+              text: t(researchMenuTitleKey("closeTab"), "Close Tab"),
+              accelerator: "CmdOrCtrl+W",
+              action: () => {
+                window.dispatchEvent(new Event(CLOSE_ACTIVE_TAB_EVENT));
+              },
+            }),
+          ),
+        );
+      }
+      return result;
+    };
+
     // 科研菜单：应用菜单里是「关于」「设置…」，然后是 文件、编辑、视图、窗口，都用文字标题。
     const installResearchMenu = async (menu: Menu, defaults: NativeMenuEntry[]): Promise<Submenu> => {
       let systemWindowItems: NativeMenuEntry[] = [];
       for (const entry of defaults) {
         if (!(entry instanceof Submenu)) continue;
         const title = await entry.text();
-        if (title === "Window") {
-          systemWindowItems = await entry.items();
-          systemWindowItems.forEach(own);
-        }
+        if (title === "Window") systemWindowItems = await replaceCloseWindow(await entry.items());
         if (["File", "Edit", "View", "Help", "Window"].includes(title)) await menu.remove(entry);
       }
       const applicationMenu = defaults[0];
@@ -234,8 +259,7 @@ export default function NativeMacosMenu({ onReady }: { onReady: (ready: boolean)
               // Tauri's default menu uses the English title, independently of the app locale.
               for (const entry of defaults) {
                 if (entry instanceof Submenu && (await entry.text()) === "Window") {
-                  const systemItems = await entry.items();
-                  systemItems.forEach(own);
+                  const systemItems = await replaceCloseWindow(await entry.items());
                   await built.prepend(own(await PredefinedMenuItem.new({ item: "Separator" })));
                   await built.prepend(systemItems);
                   await menu.remove(entry);

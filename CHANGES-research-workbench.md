@@ -640,3 +640,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 新文件 `app/src/core/research/SidePanelDrag.ts`，`TabWorkspace.dockToSide`、`ProjectTabs.tsx`、`docked-area.tsx`：侧栏面板（大纲、文件、AI）按住标题或标签拖到窗口另一边就换到那一侧，拖动时那一边亮一块。
 - `app/src/components/activity-rail.tsx`：竖栏按钮的快捷键改为可选。
 - 在系统 WebKit 里用真编辑器和一篇 987 行、460 多个公式的笔记实测快速滚动（每帧 150px）：超过 40ms 的帧从 18 个降到 11 个，九成的帧在 45ms 以内（原来 70ms）；剩下的时间主要花在公式的样式计算上。
+
+### 53. ⌘W 关当前标签页，不再退出整个程序（2026-11-11）
+
+- `app/src/components/native-macos-menu.tsx`：Tauri 默认菜单「窗口」里的「关闭窗口」（⌘W）会关掉唯一的主窗口，等于退出程序。科研菜单和完整菜单都把它换成「关闭标签页」（⌘W），只发 `pg-close-active-tab` 事件。
+- `app/src/App.tsx`：收到这个事件就关当前标签页，走和标签栏 × 一样的流程（没保存的白板会问要不要保存，正在保存时提示稍后再关）；焦点在侧栏面板上时关主区域正在看的文件，侧栏面板不动；没有可关的标签页时什么也不做。
+- 文案 `menu.items.closeTab`。

@@ -3052,6 +3052,8 @@ research:
         title: Select All
       quit:
         title: Quit Research Workbench
+      closeTab:
+        title: Close Tab
       newResearchWorkspace:
         title: New Board
         description: Create a board in the current project and open it

@@ -65,12 +65,12 @@ vi.mock("@tauri-apps/api/menu", () => {
     static async new(options: any) {
       return new this(options);
     }
+    async text() {
+      return this.options.text ?? this.options.item;
+    }
     async close() {}
   }
   class Submenu extends MenuItem {
-    async text() {
-      return this.options.text;
-    }
     async items() {
       return this.options.items ?? [];
     }
@@ -104,7 +104,10 @@ vi.mock("@tauri-apps/api/menu", () => {
           new Submenu({ text: "Edit" }),
           new Submenu({ text: "View" }),
           new Submenu({ text: "Help" }),
-          new Submenu({ text: "Window", items: [new MenuItem({ text: "Minimize" })] }),
+          new Submenu({
+            text: "Window",
+            items: [new MenuItem({ text: "Minimize" }), new MenuItem({ text: "C&lose Window" })],
+          }),
         ],
       });
     }
@@ -129,7 +132,7 @@ vi.mock("@tauri-apps/api/menu", () => {
   };
 });
 
-import NativeMacosMenu from "./native-macos-menu";
+import NativeMacosMenu, { CLOSE_ACTIVE_TAB_EVENT } from "./native-macos-menu";
 import { Project } from "@/core/Project";
 
 beforeEach(() => {
@@ -321,6 +324,20 @@ describe("macOS system menus (research menu)", () => {
     const quit = state.installed.options.items[0].options.items.at(-1);
     expect(quit.options.accelerator).toBe("CmdOrCtrl+Q");
     expect(typeof quit.options.action).toBe("function");
+  });
+
+  it.each([false, true])("turns ⌘W into Close Tab instead of closing the only window (full menu: %s)", async (full) => {
+    state.settings.researchShowFullMenu = full;
+    const ready = vi.fn();
+    NativeMacosMenu({ onReady: ready });
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+    const windowMenu = state.installed.options.items.at(-1);
+    const texts = windowMenu.options.items.map((item: any) => item.options.text);
+    expect(texts).not.toContain("C&lose Window");
+    const closeTab = windowMenu.options.items.find((item: any) => item.options.text === "Close Tab");
+    expect(closeTab.options.accelerator).toBe("CmdOrCtrl+W");
+    closeTab.options.action();
+    expect(state.errors).toHaveBeenCalledWith(expect.objectContaining({ type: CLOSE_ACTIVE_TAB_EVENT }));
   });
 
   it("lists recent files inside the research folder and opens them on click", async () => {
