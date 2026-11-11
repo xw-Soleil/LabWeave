@@ -217,7 +217,7 @@ export const ProjectTabs = memo(function ProjectTabs({
                         "rounded-t-[8px] border border-b-0 px-3",
                         active
                           ? "bg-background text-foreground border-border/70"
-                          : "text-muted-foreground hover:bg-background/60 hover:text-foreground border-transparent",
+                          : "text-muted-foreground hover:bg-accent/70 hover:text-foreground border-transparent",
                       )
                     : cn(
                         "rounded-full px-2.5",

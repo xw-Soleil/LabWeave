@@ -1,5 +1,10 @@
 import { cn } from "@/utils/cn";
-import { documentWikilinkComponent, MarkdownCallout, rehypeObsidian } from "@/core/research/ObsidianMarkdown";
+import {
+  documentWikilinkComponent,
+  MarkdownCallout,
+  rehypeMathCompat,
+  rehypeObsidian,
+} from "@/core/research/ObsidianMarkdown";
 import { open } from "@tauri-apps/plugin-shell";
 import { useMemo, type ComponentType } from "react";
 import production from "react/jsx-runtime";
@@ -39,6 +44,7 @@ export default function Markdown({
       .use(remarkMath)
       .use(remarkRehype)
       .use(rehypeObsidian, { document: !!wikilink })
+      .use(rehypeMathCompat)
       .use(rehypeKatex)
       .use(rehypeReact, {
         ...production,

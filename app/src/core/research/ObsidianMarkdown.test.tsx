@@ -8,6 +8,7 @@ vi.mock("./DocumentTab", () => ({ openDocumentFile: mocks.open }));
 vi.mock("sonner", () => ({ toast: { error: mocks.error } }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 import Markdown from "@/components/ui/markdown";
+import { katexCompatible } from "./ObsidianMarkdown";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -163,5 +164,14 @@ describe("Obsidian Markdown display", () => {
     expect(container.querySelector("img")?.getAttribute("src")).toBe("../assets/50%25%20%E5%9B%BE.png");
     expect(container.querySelector("img")?.getAttribute("width")).toBe("300");
     expect(container.querySelector("a.wikilink")?.textContent).toBe("note.md");
+  });
+
+  it("accepts operators written straight after _ or ^ the way Obsidian's MathJax does", async () => {
+    expect(katexCompatible(String.raw`h_\max \le V^\sup + \text_\mathrm{x} + \maxima_\maxima`)).toBe(
+      String.raw`h_{\max} \le V^{\sup} + \text_\mathrm{x} + \maxima_\maxima`,
+    );
+    await render(String.raw`约束 $h(x_0) \le h_\max$，以及 $$V_\max$$`);
+    expect(container.querySelectorAll(".katex")).toHaveLength(2);
+    expect(container.querySelector(".katex-error")).toBeNull();
   });
 });

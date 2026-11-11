@@ -286,7 +286,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         "absolute z-30 flex flex-col items-center gap-[calc(0.25rem*var(--pg-ui-scale,1))] transition-opacity hover:opacity-100",
         // 贴边时和 Obsidian 的竖栏一样：一整条贴着左边，设置沉到最下面
         docked
-          ? "bg-sidebar border-border/70 bottom-0 left-0 border-r py-[calc(0.375rem*var(--pg-ui-scale,1))]"
+          ? "bg-background border-border/70 bottom-0 left-0 border-r py-[calc(0.375rem*var(--pg-ui-scale,1))]"
           : "bg-background/95 border-border/60 left-2 rounded-[10px] border p-[calc(0.1875rem*var(--pg-ui-scale,1))] shadow-xs",
         isClassroomMode && "opacity-0",
       )}

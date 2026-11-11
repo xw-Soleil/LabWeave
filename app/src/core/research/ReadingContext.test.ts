@@ -17,6 +17,7 @@ import {
   readingContextAtom,
   subscribeReadingAiDraft,
   updateReadingContext,
+  SELECTION_SETTLE_MS,
   watchMarkdownReadingSelection,
 } from "./ReadingContext";
 
@@ -90,11 +91,13 @@ describe("active reading context", () => {
     const host = document.createElement("div");
     host.innerHTML = "<textarea>source text</textarea><p>preview words</p>";
     document.body.append(host);
+    vi.useFakeTimers();
     const stop = watchMarkdownReadingSelection(markdown, host);
     const input = host.querySelector("textarea")!;
     input.focus();
     input.setSelectionRange(0, 6);
     input.dispatchEvent(new Event("select", { bubbles: true }));
+    vi.advanceTimersByTime(SELECTION_SETTLE_MS);
     expect(store.get(readingContextAtom)?.selection?.text).toBe("source");
     input.blur();
     const range = document.createRange();
@@ -102,12 +105,17 @@ describe("active reading context", () => {
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
+    // 拖动选区时不立刻取文字，停手以后才取
+    expect(store.get(readingContextAtom)?.selection?.text).toBe("source");
+    vi.advanceTimersByTime(SELECTION_SETTLE_MS);
     expect(store.get(readingContextAtom)?.selection?.text).toBe("preview words");
     window.getSelection()!.collapse(host.querySelector("p")!, 0);
     document.dispatchEvent(new Event("selectionchange"));
+    vi.advanceTimersByTime(SELECTION_SETTLE_MS);
     expect(store.get(readingContextAtom)?.selection).toBeUndefined();
     stop();
     host.remove();
+    vi.useRealTimers();
   });
 
   it("bounds quoted context, escapes markup and emits nothing without a document", () => {

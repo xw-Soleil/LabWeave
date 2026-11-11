@@ -1,13 +1,14 @@
 import { redo, undo } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import { EditorState, StateField, type Extension, type Range } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import type { MarkdownConfig } from "@lezer/markdown";
 import katex from "katex";
 import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TableEditor } from "./MarkdownTable";
 import { NoteProperties, splitFrontmatter } from "./NoteProperties";
+import { katexCompatible } from "./ObsidianMarkdown";
 
 /**
  * 照 Obsidian 把开头 `---` 之间那段当成「笔记属性」块。
@@ -46,12 +47,41 @@ export interface LivePreviewConfig {
   openWikilink: (target: string) => void;
 }
 
-const roots = new WeakMap<HTMLElement, Root>();
+interface Mounted {
+  root: Root;
+  observer: ResizeObserver;
+  view: EditorView;
+  id: string;
+}
+const mounted = new WeakMap<HTMLElement, Mounted>();
+/**
+ * 滚出视野的小部件先留着（每个编辑器最多 PARKED_LIMIT 个），滚回来直接拿来用，
+ * 提示框、公式、表格不用每次重新排版。编辑器关掉或换成源码模式时全部卸掉。
+ */
+const parked = new WeakMap<EditorView, Map<string, HTMLElement>>();
+const PARKED_LIMIT = 150;
+/** 画过的小部件有多高；还没画到的时候按这个估，滚动条和跳转不会忽长忽短。表格每改一个字就换一个 key，所以只记最近的 */
+const heights = new Map<string, number>();
+const HEIGHTS_LIMIT = 500;
+function rememberHeight(id: string, height: number) {
+  heights.delete(id);
+  heights.set(id, height);
+  if (heights.size > HEIGHTS_LIMIT) heights.delete(heights.keys().next().value!);
+}
+
+function unmount(dom: HTMLElement) {
+  const entry = mounted.get(dom);
+  if (!entry) return;
+  mounted.delete(dom);
+  entry.observer.disconnect();
+  // 编辑器可能在 React 渲染途中销毁小部件，推迟卸载
+  queueMicrotask(() => entry.root.unmount());
+}
 
 /**
  * 把一段 React 画进编辑器；key 相同就不重画。
- * interactive：里面有输入框（笔记属性），编辑器不接管里面的鼠标和键盘；
- * 否则点一下就把光标放进去、露出原文（提示框、表格）。
+ * interactive：里面有输入框（笔记属性、表格），编辑器不接管里面的鼠标和键盘；
+ * 否则点一下就把光标放进去、露出原文（提示框）。
  */
 class ReactWidget extends WidgetType {
   constructor(
@@ -63,36 +93,76 @@ class ReactWidget extends WidgetType {
   ) {
     super();
   }
+  get id() {
+    return `${this.className}\n${this.key}`;
+  }
+  get estimatedHeight() {
+    return heights.get(this.id) ?? -1;
+  }
   eq(other: ReactWidget) {
     return other.key === this.key && other.className === this.className;
   }
   toDOM(view: EditorView) {
+    const pool = parked.get(view);
+    const reused = pool?.get(this.id);
+    if (reused) {
+      pool!.delete(this.id);
+      mounted.get(reused)!.root.render(this.render(view, reused));
+      return reused;
+    }
     const dom = document.createElement(this.block ? "div" : "span");
     dom.className = this.className;
+    // 图片读完、提示框展开这类自己变高的情况，编辑器不知道，要告诉它重新量
+    const observer = new ResizeObserver(() => {
+      const entry = mounted.get(dom);
+      if (!entry || !dom.isConnected) return;
+      if (dom.offsetHeight > 0) rememberHeight(entry.id, dom.offsetHeight);
+      entry.view.requestMeasure();
+    });
+    observer.observe(dom);
     const root = createRoot(dom);
-    roots.set(dom, root);
+    mounted.set(dom, { root, observer, view, id: this.id });
     root.render(this.render(view, dom));
-    // React 画完以后再让编辑器量一次高度
-    requestAnimationFrame(() => view.requestMeasure());
     return dom;
   }
   updateDOM(dom: HTMLElement, view: EditorView) {
-    const root = roots.get(dom);
-    if (!root || dom.className !== this.className) return false;
-    root.render(this.render(view, dom));
-    requestAnimationFrame(() => view.requestMeasure());
+    const entry = mounted.get(dom);
+    if (!entry || dom.className !== this.className) return false;
+    entry.id = this.id;
+    entry.root.render(this.render(view, dom));
     return true;
   }
   destroy(dom: HTMLElement) {
-    const root = roots.get(dom);
-    roots.delete(dom);
-    // 编辑器可能在 React 渲染途中销毁小部件，推迟卸载
-    queueMicrotask(() => root?.unmount());
+    const entry = mounted.get(dom);
+    if (!entry) return;
+    const pool = parked.get(entry.view);
+    if (!pool || pool.has(entry.id)) {
+      unmount(dom);
+      return;
+    }
+    pool.set(entry.id, dom);
+    if (pool.size > PARKED_LIMIT) {
+      const [oldest, element] = pool.entries().next().value!;
+      pool.delete(oldest);
+      unmount(element);
+    }
   }
   ignoreEvent() {
     return this.interactive;
   }
 }
+
+/** 实时预览开着的这段时间才留小部件；关掉时把留着的全部卸掉 */
+const widgetPool = ViewPlugin.define((view) => {
+  parked.set(view, new Map());
+  return {
+    destroy() {
+      const pool = parked.get(view);
+      parked.delete(view);
+      pool?.forEach(unmount);
+    },
+  };
+});
 
 class TextWidget extends WidgetType {
   constructor(
@@ -166,7 +236,7 @@ class MathWidget extends WidgetType {
     const dom = document.createElement(this.display ? "div" : "span");
     dom.className = this.display ? "cm-lp-math-block" : "cm-lp-math";
     // KaTeX 默认不信任输入（trust 关着），只生成排版用的标签
-    dom.innerHTML = katex.renderToString(this.tex, { displayMode: this.display, throwOnError: false });
+    dom.innerHTML = katex.renderToString(katexCompatible(this.tex), { displayMode: this.display, throwOnError: false });
     return dom;
   }
   ignoreEvent() {
@@ -513,6 +583,7 @@ export function livePreview(config: () => LivePreviewConfig): Extension {
     provide: (field) => EditorView.decorations.from(field),
   });
   return [
+    widgetPool,
     field,
     EditorView.domEventHandlers({
       mousedown(event) {

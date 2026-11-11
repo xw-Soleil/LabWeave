@@ -65,6 +65,13 @@ describe("Markdown table in live preview", () => {
 
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
     host = document.createElement("div");
     document.body.append(host);
     await act(async () => {

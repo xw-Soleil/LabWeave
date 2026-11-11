@@ -569,3 +569,17 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - `app/src/components/docked-area.tsx`：这种时候顶上画一条标签栏（空白处能拖动窗口、双击放大），左右侧栏贴着竖栏和窗口边、用细线隔开，正文让开它们；不显示右下角的圆按钮。打开白板时照旧是浮着的样子。
   - `app/src/ProjectTabs.tsx`：标签多一种「标签栏」样式，当前标签和下面的正文连成一片。
   - `app/src/App.tsx`：右上角的深浅色按钮在标签栏里不再带浮起的边框。
+
+### 49. 长笔记选中和滚动卡、部分公式不显示、贴边配色（2026-11-11）
+
+- `app/src/css/reading.css`：
+  - Mac 的网页引擎跨段落选中时，会把段落之间、正文两侧的空白也涂成选中色。只装别的块、自己不放字的容器（正文外框、提示框、列表、表格、编辑器外层等）选中色设成透明，只有文字那几行上色。
+  - 阅读模式里正文的每个顶层块加 `content-visibility: auto`：屏幕外的先不排版、不绘制，画过的记住高度。
+- `app/src/core/research/ReadingContext.ts`：Markdown 选区变化时，停手 150ms 再取选中的文字交给 AI，拖动过程中不再每次都取整段。
+- `app/src/core/research/ObsidianMarkdown.tsx`：新增 `katexCompatible` 和 `rehypeMathCompat`。上下标直接跟 `\max`、`\min`、`\sup`、`\lim`、`\log` 这类运算符时（如 `h_\max`，Obsidian 的 MathJax 认这种写法），交给 KaTeX 之前补上花括号，不再显示成红字。阅读模式（`components/ui/markdown.tsx`）和实时预览的公式都走这一步。
+- `app/src/core/research/MarkdownLivePreview.tsx`：
+  - 整块小部件（提示框、表格、公式块、图片）滚出视野后留着，每个编辑器最多 150 个，滚回来直接用，不再重新排版。
+  - 用 `ResizeObserver` 在小部件自己变高（图片读完等）时通知编辑器重新量高度，并记住高度作为下次的估计值。
+  - 编辑器关闭或切到源码模式时全部卸载。
+- `app/src/core/research/DocumentView.tsx`：笔记里的图片 `decoding="async"`，在后台解码。
+- `app/src/components/activity-rail.tsx`、`docked-area.tsx`、`app/src/ProjectTabs.tsx`：贴边排法的竖栏、标签栏、侧栏底色改成和画布时一样的纯白。

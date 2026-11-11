@@ -38,6 +38,38 @@ const element = (tagName: string, children: HtmlNode[], properties: Record<strin
 });
 const nodeText = (node: HtmlNode): string => node.value ?? node.children?.map(nodeText).join("") ?? "";
 
+const OPERATORS =
+  "max|min|sup|inf|lim|liminf|limsup|log|ln|lg|exp|sin|cos|tan|cot|sec|csc|sinh|cosh|tanh|coth|arcsin|arccos|arctan|det|dim|ker|arg|deg|gcd|hom|Pr";
+const BARE_OPERATOR_SCRIPT = new RegExp(String.raw`([_^])\s*(\\(?:${OPERATORS}))(?![a-zA-Z])`, "g");
+
+/**
+ * Obsidian 用 MathJax，认 `h_\max`、`x^\sin` 这种上下标直接跟运算符的写法；
+ * KaTeX 不认，会显示成红字。交给 KaTeX 之前替它补上花括号。
+ */
+export function katexCompatible(tex: string): string {
+  return tex.replace(BARE_OPERATOR_SCRIPT, "$1{$2}");
+}
+
+/** 阅读模式里公式交给 KaTeX 之前先过一遍 katexCompatible */
+export function rehypeMathCompat() {
+  return (tree: HtmlNode) => {
+    const visit = (node: HtmlNode) => {
+      const classes = node.properties?.className;
+      if (
+        node.tagName === "code" &&
+        Array.isArray(classes) &&
+        classes.some((name) => name === "math-inline" || name === "math-display")
+      ) {
+        for (const child of node.children ?? [])
+          if (child.type === "text") child.value = katexCompatible(child.value ?? "");
+        return;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 export function rehypeObsidian(options: { document: boolean }) {
   return (tree: HtmlNode, file: { value: unknown }) => {
     const source = String(file.value);

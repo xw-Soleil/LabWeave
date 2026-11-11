@@ -45,6 +45,8 @@ export function clearReadingContext(tab: DocumentTab): void {
   });
 }
 
+export const SELECTION_SETTLE_MS = 150;
+
 export function watchMarkdownReadingSelection(tab: DocumentTab, host: HTMLElement): () => void {
   const changed = () => {
     const active = document.activeElement;
@@ -61,11 +63,18 @@ export function watchMarkdownReadingSelection(tab: DocumentTab, host: HTMLElemen
     const text = selection.focusNode && host.contains(selection.focusNode) ? selection.toString().trim() : "";
     updateReadingContext(tab, { selection: text ? { text } : undefined });
   };
-  document.addEventListener("selectionchange", changed);
-  host.addEventListener("select", changed, true);
+  // 拖着选的时候选区一直在变，长笔记里每次都取一遍整段文字会卡；停手一小会儿再取
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    clearTimeout(timer);
+    timer = setTimeout(changed, SELECTION_SETTLE_MS);
+  };
+  document.addEventListener("selectionchange", settle);
+  host.addEventListener("select", settle, true);
   return () => {
-    document.removeEventListener("selectionchange", changed);
-    host.removeEventListener("select", changed, true);
+    clearTimeout(timer);
+    document.removeEventListener("selectionchange", settle);
+    host.removeEventListener("select", settle, true);
   };
 }
 

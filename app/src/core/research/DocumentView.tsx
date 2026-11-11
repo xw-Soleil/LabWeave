@@ -95,7 +95,14 @@ function DocumentImage({
       </span>
     );
   return image.url ? (
-    <img src={image.url} alt={alt ?? ""} width={width} onError={() => setImage({ error: t("imageFailed") })} />
+    // 大图在后台解码，滚到图片时不卡一下
+    <img
+      src={image.url}
+      alt={alt ?? ""}
+      width={width}
+      decoding="async"
+      onError={() => setImage({ error: t("imageFailed") })}
+    />
   ) : (
     <span>{t("loading")}</span>
   );
@@ -292,7 +299,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           {tab.error ? t("retryHint") : t("loading")}
         </div>
       ) : mode === "edit" ? (
-        <div ref={previewArea} className="relative min-h-0 flex-1 overflow-auto px-8 pt-6">
+        <div ref={previewArea} className="reading-scroll relative min-h-0 flex-1 overflow-auto px-8 pt-6">
           <div className="reading-view">
             <h1 className="reading-title">{noteTitle(tab.title)}</h1>
             <MarkdownEditor
@@ -312,7 +319,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       ) : (
         <div
           ref={previewArea}
-          className="relative min-h-0 flex-1 overflow-auto px-8 pt-6 pb-24"
+          className="reading-scroll relative min-h-0 flex-1 overflow-auto px-8 pt-6 pb-24"
           aria-label={t("preview")}
         >
           {preview}

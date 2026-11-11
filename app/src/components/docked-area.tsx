@@ -463,7 +463,7 @@ function SidePanelOverlay({
           "flex size-full min-h-0 min-w-0 flex-col overflow-hidden",
           docked
             ? cn(
-                "bg-sidebar border-border/70",
+                "bg-background border-border/70",
                 edge === "left" ? "border-r" : "border-l",
                 // 临时弹出来盖在正文上时才要阴影
                 !state.pinned && "shadow-lg",
@@ -549,7 +549,7 @@ function TabStrip() {
   return (
     <div
       aria-hidden="true"
-      className="bg-sidebar border-border/70 absolute inset-x-0 top-0 h-10 border-b"
+      className="bg-background border-border/70 absolute inset-x-0 top-0 h-10 border-b"
       onMouseDown={(event) => {
         if (event.buttons !== 1) return;
         if (event.detail === 2) void getCurrentWindow().toggleMaximize();

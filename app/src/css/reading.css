@@ -73,6 +73,34 @@
 .reading-source::selection {
   background: rgba(0, 122, 255, 0.2);
 }
+/* Mac 的网页引擎跨段落选中时，会用外层块的选中色把段落之间、正文两侧的空白也涂满，
+ * 整片发蓝。只装别的块、自己不直接放字的这些容器设成透明，只有文字那几行上色 */
+.reading-scroll::selection,
+.reading-view::selection,
+.reading-view
+  :is(
+    .prose,
+    .callout,
+    .callout-content,
+    ul,
+    ol,
+    blockquote,
+    table,
+    thead,
+    tbody,
+    tr,
+    .note-properties,
+    .markdown-editor,
+    .cm-editor,
+    .cm-scroller,
+    .cm-content,
+    .cm-lp-embed,
+    .cm-lp-table,
+    .cm-lp-table-scroll,
+    .katex-display
+  )::selection {
+  background: transparent;
+}
 
 .reading-view .reading-title {
   margin: 0 0 0.9em;
@@ -82,6 +110,13 @@
   line-height: 1.25;
   letter-spacing: -0.015em;
   overflow-wrap: anywhere;
+}
+
+/* 长笔记（公式多的一篇能有上万个元素）：屏幕外的段落先不排版、不绘制，滚到附近才画；
+ * 画过的记住高度，来回滚不跳 */
+.reading-view > .prose > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.6em;
 }
 
 /* prose 自带的字号、颜色和间距统一让给上面的变量 */
@@ -489,8 +524,8 @@
 .markdown-editor .cm-cursor {
   border-left-color: var(--foreground);
 }
-.markdown-editor .cm-selectionBackground,
-.markdown-editor .cm-content ::selection {
+.markdown-editor .cm-line::selection,
+.markdown-editor .cm-line ::selection {
   background: rgba(0, 122, 255, 0.2) !important;
 }
 .markdown-editor .cm-selectionMatch {

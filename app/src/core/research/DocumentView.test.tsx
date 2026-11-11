@@ -49,6 +49,13 @@ beforeEach(() => {
   });
   viewMode("read");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   URL.createObjectURL = vi.fn(() => "blob:local-image");
   URL.revokeObjectURL = vi.fn();
   mocks.stat.mockResolvedValue({ mtime: new Date(1), size: 10 });
@@ -299,6 +306,6 @@ describe("Markdown document view", () => {
       window.getSelection()!.addRange(range);
       document.dispatchEvent(new Event("selectionchange"));
     });
-    expect(store.get(readingContextAtom)?.selection?.text).toBe("note");
+    await vi.waitFor(() => expect(store.get(readingContextAtom)?.selection?.text).toBe("note"));
   });
 });
