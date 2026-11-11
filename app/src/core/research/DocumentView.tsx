@@ -661,19 +661,24 @@ function PreviewSelection({
 
 export const READING_SELECTION = "reading-selection";
 let selectionWatchers = 0;
+let readingHighlight: Highlight | undefined;
 
-/** 选区落在阅读区（.reading-scroll）里时，把它放进 reading-selection 高亮，reading.css 只给文字涂色 */
+/**
+ * 选区落在阅读区（.reading-scroll）里时，把它放进 reading-selection 高亮，reading.css 只给文字涂色。
+ * 一直用同一个高亮，往里 clear / add：Mac 的网页引擎在 CSS.highlights.delete、set 时不重画
+ * （实测旧的蓝色要等别的东西触发重画才消失，看着像卡了一秒），clear / add 会马上重画。
+ */
 function paintReadingSelection() {
   const selection = window.getSelection();
-  const ranges: Range[] = [];
+  const highlight = (readingHighlight ??= new Highlight());
+  if (CSS.highlights.get(READING_SELECTION) !== highlight) CSS.highlights.set(READING_SELECTION, highlight);
+  highlight.clear();
   for (let index = 0; selection && !selection.isCollapsed && index < selection.rangeCount; index++) {
     const range = selection.getRangeAt(index);
     const container = range.commonAncestorContainer;
     const element = container instanceof Element ? container : container.parentElement;
-    if (element?.closest(".reading-scroll")) ranges.push(range.cloneRange());
+    if (element?.closest(".reading-scroll")) highlight.add(range.cloneRange());
   }
-  if (ranges.length) CSS.highlights.set(READING_SELECTION, new Highlight(...ranges));
-  else CSS.highlights.delete(READING_SELECTION);
 }
 
 /**
@@ -687,6 +692,7 @@ function watchReadingSelection() {
   return () => {
     if (--selectionWatchers > 0) return;
     document.removeEventListener("selectionchange", paintReadingSelection);
+    readingHighlight?.clear();
     CSS.highlights.delete(READING_SELECTION);
   };
 }

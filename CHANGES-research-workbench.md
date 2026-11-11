@@ -646,3 +646,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/components/native-macos-menu.tsx`：Tauri 默认菜单「窗口」里的「关闭窗口」（⌘W）会关掉唯一的主窗口，等于退出程序。科研菜单和完整菜单都把它换成「关闭标签页」（⌘W），只发 `pg-close-active-tab` 事件。
 - `app/src/App.tsx`：收到这个事件就关当前标签页，走和标签栏 × 一样的流程（没保存的白板会问要不要保存，正在保存时提示稍后再关）；焦点在侧栏面板上时关主区域正在看的文件，侧栏面板不动；没有可关的标签页时什么也不做。
 - 文案 `menu.items.closeTab`。
+
+### 54. 点空白处选区的蓝色立刻消失；实时预览的表格能用鼠标拖选（2026-11-11）
+
+- `app/src/core/research/DocumentView.tsx`：阅读区的选区高亮改成一直用同一个 `Highlight`，每次 `clear()` 再 `add()`。在系统 WebKit 里实测（截窗口取像素）：`CSS.highlights.delete()` 和用新的 `Highlight` 去 `set()` 都不触发重画，旧的蓝色要等别的东西引起重画才消失；`clear()` / `add()` 会马上重画。一万五千个元素的整篇选区，`clear()` 加 `add()` 约 5ms。
+- `app/src/core/research/MarkdownTable.tsx`：格子不再按下鼠标就进编辑，改成松手（click）且没有选中文字时才进；按下时把焦点放到格子上。这样按着拖过几个格子是原生选字，和阅读模式一样能复制、弹出翻译 / 问 AI / 复制。实测：焦点在格子上时编辑器不会动表格里的选区，焦点留在编辑器上时下一次更新会把它收走。
+- 顺带实测：987 行的笔记中间连续打字，每个字处理 4～5ms，没有掉帧。

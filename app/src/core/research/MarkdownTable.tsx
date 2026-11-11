@@ -287,10 +287,13 @@ export function TableEditor({
         tabIndex={-1}
         aria-label={label}
         className="cm-lp-table-cell"
-        onMouseDown={(event) => {
+        // 松手时才进编辑：按着拖过几个格子是选字（和阅读模式一样能复制、翻译、问 AI），拖过以后不进编辑。
+        // 焦点要先落在格子上：焦点还在编辑器上时，编辑器下一次更新会把表格里的选区收走（实测）
+        onMouseDown={(event) => event.button === 0 && event.currentTarget.focus({ preventScroll: true })}
+        onClick={(event) => {
           // 点在链接上就打开链接，不进编辑
-          if (event.button !== 0 || (event.target as Element).closest("a")) return;
-          event.preventDefault();
+          if ((event.target as Element).closest("a")) return;
+          if (window.getSelection()?.isCollapsed === false) return;
           setEditing(cell);
         }}
       >

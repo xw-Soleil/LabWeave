@@ -311,17 +311,9 @@ describe("Markdown document view", () => {
   });
 
   it("paints selections in the reading area as a text-only highlight and clears it when collapsed", async () => {
-    const highlights = new Map<string, { ranges: Range[] }>();
+    const highlights = new Map<string, Set<Range>>();
     vi.stubGlobal("CSS", { highlights });
-    vi.stubGlobal(
-      "Highlight",
-      class {
-        ranges: Range[];
-        constructor(...ranges: Range[]) {
-          this.ranges = ranges;
-        }
-      },
-    );
+    vi.stubGlobal("Highlight", Set);
     mocks.readFile.mockResolvedValue(new TextEncoder().encode("first\n\nsecond"));
     const tab = new DocumentTab("/r/a.md", "markdown");
     await tab.loadMarkdown();
@@ -335,12 +327,15 @@ describe("Markdown document view", () => {
       window.getSelection()!.addRange(range);
       document.dispatchEvent(new Event("selectionchange"));
     });
-    expect(highlights.get("reading-selection")?.ranges[0].toString()).toBe(range.toString());
+    const highlight = highlights.get("reading-selection")!;
+    expect([...highlight][0].toString()).toBe(range.toString());
     await act(async () => {
       window.getSelection()!.collapseToStart();
       document.dispatchEvent(new Event("selectionchange"));
     });
-    expect(highlights.has("reading-selection")).toBe(false);
+    // 清空同一个高亮（WebKit 里删掉、换掉高亮都不会重画，蓝色会留在屏幕上）
+    expect(highlights.get("reading-selection")).toBe(highlight);
+    expect(highlight.size).toBe(0);
     // 选区在阅读区外面时不画
     const outside = document.createElement("p");
     outside.textContent = "elsewhere";
@@ -349,7 +344,7 @@ describe("Markdown document view", () => {
       window.getSelection()!.selectAllChildren(outside);
       document.dispatchEvent(new Event("selectionchange"));
     });
-    expect(highlights.has("reading-selection")).toBe(false);
+    expect(highlight.size).toBe(0);
     outside.remove();
   });
 });

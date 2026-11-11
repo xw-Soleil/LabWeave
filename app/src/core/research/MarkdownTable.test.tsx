@@ -107,8 +107,19 @@ describe("Markdown table in live preview", () => {
   it("edits a cell in place, keeps focus there, and moves with Tab and Enter", async () => {
     expect(host.querySelector(".cm-content")?.textContent).not.toContain("|:--|");
     const first = host.querySelector<HTMLElement>(".cm-lp-table th [role=button]")!;
+    // 按着拖过格子选了字：松手不进编辑，选区留着
+    const cells = host.querySelectorAll<HTMLElement>(".cm-lp-table td [role=button]");
     await act(async () => {
       first.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      window.getSelection()!.setBaseAndExtent(first.firstChild!, 0, cells[1], cells[1].childNodes.length);
+      first.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    });
+    expect(document.activeElement).toBe(first);
+    expect(host.querySelector(".cm-lp-table-input")).toBeNull();
+    expect(window.getSelection()!.toString()).toContain("Name");
+    window.getSelection()!.removeAllRanges();
+    await act(async () => {
+      first.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
     });
     const header = input();
     expect(header.textContent).toBe("Name");
