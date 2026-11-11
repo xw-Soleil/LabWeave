@@ -31,6 +31,9 @@ export function documentError(error: unknown): string {
     "imageNotLocal",
     "fileClosed",
     "unsupportedLink",
+    "noteNotFound",
+    "linkReadFailed",
+    "headingNotFound",
     "editsDuringReload",
     "annotationBusy",
     "annotationLocation",
@@ -60,6 +63,7 @@ export class DocumentTab extends Tab {
   error = "";
   saving = false;
   loadingMarkdown = false;
+  markdownHeading?: string;
   pdfLocation = { page: 1, scale: "fit-width" as string | number };
   private loading?: Promise<void>;
   private readonly component = () => (
@@ -255,7 +259,7 @@ export function activeDocumentTab(): DocumentTab | undefined {
 
 const opening = new Map<string, Promise<DocumentTab>>();
 
-export async function openDocumentFile(path: string): Promise<DocumentTab | undefined> {
+export async function openDocumentFile(path: string, options?: { heading?: string }): Promise<DocumentTab | undefined> {
   const kind = fileKindOf(path);
   if (kind !== "markdown" && kind !== "pdf") {
     await open(path);
@@ -287,7 +291,12 @@ export async function openDocumentFile(path: string): Promise<DocumentTab | unde
     opening.set(key, task);
   }
   try {
-    return await task;
+    const tab = await task;
+    if (options?.heading && tab.kind === "markdown") {
+      tab.markdownHeading = options.heading;
+      tab.changed();
+    }
+    return tab;
   } finally {
     if (opening.get(key) === task) opening.delete(key);
   }

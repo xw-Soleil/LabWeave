@@ -1210,11 +1210,14 @@ settings:
       要调用的模型名称，照服务商文档原样填写（区分大小写），例如 deepseek-chat、gpt-4o-mini、claude-sonnet-4-5
   translateService:
     title: 划词翻译服务
-    description: Google 和 Bing 失败时自动互换。AI 使用上方配置的模型接口。
+    description: Google 和 Bing 失败时自动互换。AI 使用「AI」页配置的模型接口。
     options:
       google: Google
       bing: Bing
       ai: AI
+  readingTheme:
+    title: 阅读外观
+    description: 阅读预设以及自定义的字体、字号、行高和正文宽度。
   aiCustomHeaders:
     title: AI 请求头
     description: |
@@ -3060,6 +3063,9 @@ research:
       pdfRenderFailed: PDF 页面图像无法显示。请重试或用系统程序打开。
       imageNotLocal: 预览仅加载有权读取的本地相对路径图片。
       unsupportedLink: 预览只打开本地 Markdown 和 PDF 链接。其他文件请从文件面板打开。
+      noteNotFound: 找不到这个笔记。
+      linkReadFailed: 无法读取笔记链接，请检查项目或文献库文件夹是否可用。
+      headingNotFound: 找不到这个标题。
       editsDuringReload: 重新读取期间正文发生了变化，已保留编辑。如需放弃这些编辑，请再次重新读取。
       fileClosed: 文件已经关闭，请重新打开。
       failed: "文件操作失败：{{error}}"
@@ -3577,6 +3583,8 @@ research:
     pages:
       folder:
         title: 研究文件夹
+      reading:
+        title: 阅读与文献
       save:
         title: 保存与备份
         save: 保存
@@ -3587,7 +3595,6 @@ research:
         source: 来源
         api: 接口
         context: 读取与用量
-        translation: 翻译
         external: 外部 AI（MCP）
       appearance:
         title: 外观
@@ -3615,6 +3622,10 @@ research:
       privacy:
         title: 隐私
     subPages:
+      readingTheme:
+        title: 阅读外观
+        description: 选择阅读预设，调整字体、字号、行高和正文宽度
+        button: 设置…
       themes:
         title: 主题
         description: 浅色模式和深色模式各用哪套配色

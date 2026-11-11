@@ -1,4 +1,5 @@
 import { cn } from "@/utils/cn";
+import { documentWikilinkComponent, MarkdownCallout, rehypeObsidian } from "@/core/research/ObsidianMarkdown";
 import { open } from "@tauri-apps/plugin-shell";
 import { useMemo, type ComponentType } from "react";
 import production from "react/jsx-runtime";
@@ -16,10 +17,12 @@ export default function Markdown({
   source,
   className = "",
   components,
+  document,
 }: {
   source: string;
   className?: string;
   components?: Record<string, ComponentType<any>>;
+  document?: { path: string };
 }) {
   const content = useMemo(() => {
     const processor = unified()
@@ -28,6 +31,7 @@ export default function Markdown({
       .use(remarkBreaks)
       .use(remarkMath)
       .use(remarkRehype)
+      .use(rehypeObsidian, { document: !!document })
       .use(rehypeKatex)
       .use(rehypeReact, {
         ...production,
@@ -42,10 +46,12 @@ export default function Markdown({
             />
           ),
           ...components,
+          "reading-callout": MarkdownCallout,
+          ...(document ? { "reading-wikilink": documentWikilinkComponent(document.path, components?.img) } : {}),
         },
       });
     return processor.processSync(source).result;
-  }, [source, components]);
+  }, [source, components, document?.path]);
 
   return (
     <div

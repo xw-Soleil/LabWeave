@@ -4,6 +4,7 @@ import { Settings } from "@/core/service/Settings";
 import { cn } from "@/utils/cn";
 import _ from "lodash";
 import {
+  BookOpen,
   Brain,
   ChevronLeft,
   EyeOff,
@@ -29,12 +30,13 @@ import EffectsPage from "./customization/effects";
 import SoundEffectsPage from "./customization/sounds";
 import ExternalAiPage from "./ExternalAiPage";
 import LocalAgentsPage from "./LocalAgentsPage";
+import ReadingThemePage from "./ReadingThemePage";
 import ThemesTab from "./themes";
 
 export type SettingsDialogTab = "settings" | "keybinds" | "menus" | "about";
 
 /** 主题、画布动画、音效各有自己的整页界面，从「外观」里点进去 */
-export type SettingsSubPageId = "themes" | "effects" | "sounds" | "externalAi" | "localAgents";
+export type SettingsSubPageId = "themes" | "effects" | "sounds" | "externalAi" | "localAgents" | "readingTheme";
 
 type SettingsItem = keyof Settings | { subPage: SettingsSubPageId };
 
@@ -57,9 +59,14 @@ export const settingsPages: SettingsPage[] = [
     sections: [
       {
         id: "main",
-        items: ["researchFolderPath", "literatureLibraryPath", "researchOutsideFileMode", "writeAiSidecarOnSave"],
+        items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"],
       },
     ],
+  },
+  {
+    id: "reading",
+    icon: BookOpen,
+    sections: [{ id: "main", items: ["translateService", "literatureLibraryPath", { subPage: "readingTheme" }] }],
   },
   {
     id: "save",
@@ -80,7 +87,6 @@ export const settingsPages: SettingsPage[] = [
       },
       { id: "api", items: ["aiApiFormat", "aiApiBaseUrl", "aiApiKey", "aiModel", "aiCustomHeaders"] },
       { id: "context", items: ["aiPdfTextPages", "aiContextWindow", "aiShowTokenCount"] },
-      { id: "translation", items: ["translateService"] },
       {
         id: "external",
         items: ["mcpAllowEdits", "mcpAllowDelete", "mcpAllowNetwork", { subPage: "externalAi" }],
@@ -227,6 +233,7 @@ const subPages: Record<SettingsSubPageId, { icon: LucideIcon; component: Compone
   sounds: { icon: Volume2, component: SoundEffectsPage, padded: true },
   externalAi: { icon: Plug, component: ExternalAiPage, padded: true },
   localAgents: { icon: Terminal, component: LocalAgentsPage, padded: true },
+  readingTheme: { icon: BookOpen, component: ReadingThemePage, padded: true },
 };
 
 /** 每页里的设置项（不含点进去的子页面），搜索和测试用 */

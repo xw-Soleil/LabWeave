@@ -1178,11 +1178,14 @@ settings:
       The name of the model to call, exactly as written in your provider's documentation (case-sensitive), e.g. deepseek-chat, gpt-4o-mini, claude-sonnet-4-5
   translateService:
     title: Selection translation service
-    description: Google and Bing fall back to each other on failure. AI uses the model API configured above.
+    description: Google and Bing fall back to each other on failure. AI uses the model API configured on the AI page.
     options:
       google: Google
       bing: Bing
       ai: AI
+  readingTheme:
+    title: Reading appearance
+    description: Reading preset and custom fonts, text size, line spacing and reading width.
   aiCustomHeaders:
     title: AI Request Headers
     description: |
@@ -2941,6 +2944,9 @@ research:
       pdfRenderFailed: The PDF page image could not be displayed. Retry or open it with a system app.
       imageNotLocal: Preview only loads permitted local images using relative paths.
       unsupportedLink: Preview can open local Markdown and PDF links only. Open other files from the file panel.
+      noteNotFound: Could not find this note.
+      linkReadFailed: Could not read note links. Check that the project or library folder is available.
+      headingNotFound: Could not find this heading.
       editsDuringReload: The text changed while reloading. Your edits were kept; reload again if you want to discard them.
       fileClosed: This file is closed. Open it again.
       failed: "File operation failed: {{error}}"
@@ -3458,6 +3464,8 @@ research:
     pages:
       folder:
         title: Research folder
+      reading:
+        title: Reading and literature
       save:
         title: Saving and backups
         save: Saving
@@ -3468,7 +3476,6 @@ research:
         source: Source
         api: Provider
         context: Reading and usage
-        translation: Translation
         external: External AI (MCP)
       appearance:
         title: Appearance
@@ -3496,6 +3503,10 @@ research:
       privacy:
         title: Privacy
     subPages:
+      readingTheme:
+        title: Reading appearance
+        description: Choose a preset and adjust fonts, text size, line spacing and reading width
+        button: Configure…
       themes:
         title: Theme
         description: Which color scheme to use in light mode and in dark mode

@@ -62,6 +62,13 @@ afterEach(() => {
 });
 
 describe("document tab actions", () => {
+  it("passes headings to both new and already open Markdown tabs", async () => {
+    const tab = (await openDocumentFile("/r/a.md", { heading: "Methods" }))!;
+    expect(tab.markdownHeading).toBe("Methods");
+    expect(await openDocumentFile("/r/a.md", { heading: "Results" })).toBe(tab);
+    expect(tab.markdownHeading).toBe("Results");
+    expect(store.get(tabsAtom)).toHaveLength(1);
+  });
   it("reads actual PDF page labels once, falls back only when absent, and closes the metadata reader", async () => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     expect(await Promise.all([tab.pdfPageLabel(0), tab.pdfPageLabel(1)])).toEqual(["i", "ii"]);

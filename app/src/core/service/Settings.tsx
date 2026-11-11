@@ -1,4 +1,5 @@
 import { Dialog } from "@/components/ui/dialog";
+import { readingThemeSchema } from "@/core/research/ReadingTheme";
 import {
   createProjectToolSettingSchemas,
   DEFAULT_FONT_FAMILY,
@@ -150,6 +151,7 @@ export const settingsSchema = z.object({
   aiApiFormat: projectToolSettingSchemas.aiApiFormat,
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
   translateService: z.union([z.literal("google"), z.literal("bing"), z.literal("ai")]).default("google"),
+  readingTheme: readingThemeSchema.default({ preset: "default" }),
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),
   // 拖动卡片时显示对齐参考线

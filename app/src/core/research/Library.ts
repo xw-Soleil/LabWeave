@@ -130,7 +130,7 @@ function itemPaths(root: string, key: string) {
   return { dir, notePath: `${dir}/${key}.md` };
 }
 
-async function authorizeLibrary(root: string): Promise<string> {
+export async function authorizeLibrary(root: string): Promise<string> {
   const setting = Settings.literatureLibraryPath;
   if (!setting) throw new Error("library.notConfigured");
   const input = absolutePath(root);

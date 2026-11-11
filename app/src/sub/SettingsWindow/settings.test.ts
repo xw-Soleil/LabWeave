@@ -16,6 +16,16 @@ vi.mock("./customization/sounds", () => ({ default: () => null }));
 const shownKeys = settingsPages.flatMap(settingKeysOf);
 
 describe("settings pages", () => {
+  it("groups translation, library location and the existing theme page under reading", () => {
+    const reading = settingsPages.find((page) => page.id === "reading")!;
+    expect(reading.sections.flatMap((section) => section.items)).toEqual([
+      "translateService",
+      "literatureLibraryPath",
+      { subPage: "readingTheme" },
+    ]);
+    expect(settingKeysOf(settingsPages.find((page) => page.id === "folder")!)).not.toContain("literatureLibraryPath");
+    expect(settingKeysOf(settingsPages.find((page) => page.id === "ai")!)).not.toContain("translateService");
+  });
   it("lists every setting on exactly one page", () => {
     const duplicated = shownKeys.filter((key, index) => shownKeys.indexOf(key) !== index);
     expect(duplicated).toEqual([]);

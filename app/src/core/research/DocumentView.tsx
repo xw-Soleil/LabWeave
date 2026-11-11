@@ -4,6 +4,7 @@ import { Dialog } from "@/components/ui/dialog";
 import Markdown from "@/components/ui/markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { TabWorkspace } from "@/core/TabWorkspace";
+import { Settings } from "@/core/service/Settings";
 import { activeTabAtom, store } from "@/state";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -21,16 +22,36 @@ import {
   Save,
   type LucideIcon,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import { toast } from "sonner";
 import { editorText, resolveDocumentImage } from "./DocumentFile";
 import { DocumentTab, documentError, documentText as t, openDocumentFile } from "./DocumentTab";
 import PdfView from "./PdfView";
 import { askAiAboutSelection, clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
+import { readingThemeVars, resolveReadingTheme } from "./ReadingTheme";
 import { fileKindOf } from "./ResearchShell";
 import { autoTranslateEnabled, selectionForTranslation, TranslateCard } from "./TranslateCard";
 
-function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: string }) {
+function DocumentImage({
+  path,
+  src,
+  alt,
+  width,
+}: {
+  path: string;
+  src?: string;
+  alt?: string;
+  width?: number | string;
+}) {
   const [image, setImage] = useState<{ url?: string; error?: string }>({});
   useEffect(() => {
     let disposed = false;
@@ -59,17 +80,20 @@ function DocumentImage({ path, src, alt }: { path: string; src?: string; alt?: s
       </span>
     );
   return image.url ? (
-    <img src={image.url} alt={alt ?? ""} onError={() => setImage({ error: t("imageFailed") })} />
+    <img src={image.url} alt={alt ?? ""} width={width} onError={() => setImage({ error: t("imageFailed") })} />
   ) : (
     <span>{t("loading")}</span>
   );
 }
 
 function MarkdownView({ tab }: { tab: DocumentTab }) {
+  const [theme] = Settings.use("readingTheme");
   const source = useDeferredValue(editorText(tab.markdown?.text ?? ""));
   const components = useMemo(
     () => ({
-      img: (props: ComponentProps<"img">) => <DocumentImage path={tab.path} src={props.src} alt={props.alt} />,
+      img: (props: ComponentProps<"img">) => (
+        <DocumentImage path={tab.path} src={props.src} alt={props.alt} width={props.width} />
+      ),
       a: ({ href, children }: ComponentProps<"a">) => (
         <a
           href={href?.startsWith("#") ? href : "#"}
@@ -111,6 +135,37 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   };
   const [mode, setMode] = useState<MarkdownMode>(storedMarkdownMode);
   const previewArea = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const heading = tab.markdownHeading;
+    if (!heading || !tab.markdown || tab.loadingMarkdown || source !== editorText(tab.markdown.text)) return;
+    if (mode === "edit") {
+      setMode("read");
+      return;
+    }
+    const normalize = (value: string) => value.trim().normalize("NFC").toLowerCase();
+    const target = [
+      ...(previewArea.current?.querySelectorAll<HTMLElement>(
+        ".prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6",
+      ) ?? []),
+    ].find((element) => normalize(element.textContent ?? "") === normalize(heading));
+    tab.markdownHeading = undefined;
+    if (!target) {
+      toast.error(t("errors.headingNotFound"));
+      return;
+    }
+    let revealed = false;
+    for (let parent = target.parentElement; parent && parent !== previewArea.current; parent = parent.parentElement) {
+      if (parent.matches(".callout-content[hidden]")) {
+        parent.parentElement?.querySelector<HTMLElement>(":scope > .callout-title")?.click();
+        revealed = true;
+      }
+    }
+    if (!revealed) target.scrollIntoView({ block: "start" });
+    else {
+      const frame = requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [tab, tab.markdownHeading, tab.loadingMarkdown, source, mode]);
   const pickMode = (value: MarkdownMode) => {
     setMode(value);
     globalThis.localStorage?.setItem(MARKDOWN_MODE_KEY, value);
@@ -133,11 +188,11 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   const preview = (
     <article className="reading-view [&_*]:select-text">
       <h1 className="reading-title">{tab.title}</h1>
-      <Markdown source={source} components={components} />
+      <Markdown source={source} components={components} document={{ path: tab.path }} />
     </article>
   );
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col" style={readingThemeVars(resolveReadingTheme(theme)) as CSSProperties}>
       <div className="flex items-center gap-1 px-3 py-1.5">
         <div
           role="radiogroup"
@@ -225,7 +280,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
         </div>
       )}
-    </>
+    </div>
   );
 }
 

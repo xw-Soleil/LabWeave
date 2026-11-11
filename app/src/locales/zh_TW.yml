@@ -1210,11 +1210,14 @@ settings:
       要調用的模型名稱，照服務商文檔原樣填寫（區分大小寫），例如 deepseek-chat、gpt-4o-mini、claude-sonnet-4-5
   translateService:
     title: 劃詞翻譯服務
-    description: Google 和 Bing 失敗時自動互換。AI 使用上方配置的模型接口。
+    description: Google 和 Bing 失敗時自動互換。AI 使用「AI」頁配置的模型接口。
     options:
       google: Google
       bing: Bing
       ai: AI
+  readingTheme:
+    title: 閱讀外觀
+    description: 閱讀預設以及自定義的字體、字號、行高和正文寬度。
   aiCustomHeaders:
     title: AI 請求頭
     description: |
@@ -3060,6 +3063,9 @@ research:
       pdfRenderFailed: PDF 頁面圖像無法顯示。請重試或用系統程序打開。
       imageNotLocal: 預覽僅加載有權讀取的本地相對路徑圖片。
       unsupportedLink: 預覽只打開本地 Markdown 和 PDF 鏈接。其他文件請從文件面板打開。
+      noteNotFound: 找不到這個筆記。
+      linkReadFailed: 無法讀取筆記鏈接，請檢查項目或文獻庫文件夾是否可用。
+      headingNotFound: 找不到這個標題。
       editsDuringReload: 重新讀取期間正文發生了變化，已保留編輯。如需放棄這些編輯，請再次重新讀取。
       fileClosed: 文件已經關閉，請重新打開。
       failed: "文件操作失敗：{{error}}"
@@ -3577,6 +3583,8 @@ research:
     pages:
       folder:
         title: 研究文件夾
+      reading:
+        title: 閱讀與文獻
       save:
         title: 保存與備份
         save: 保存
@@ -3587,7 +3595,6 @@ research:
         source: 來源
         api: 接口
         context: 讀取與用量
-        translation: 翻譯
         external: 外部 AI（MCP）
       appearance:
         title: 外觀
@@ -3615,6 +3622,10 @@ research:
       privacy:
         title: 隱私
     subPages:
+      readingTheme:
+        title: 閱讀外觀
+        description: 選擇閱讀預設，調整字體、字號、行高和正文寬度
+        button: 設置…
       themes:
         title: 主題
         description: 淺色模式和深色模式各用哪套配色
