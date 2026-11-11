@@ -677,3 +677,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/ResearchFolder.ts`：新增 `listFolders`（研究文件夹里所有能放文件的文件夹）、`duplicateFile`（同一文件夹里复制一份，名字加「 1」「 2」…，不覆盖）。
 - 文件夹右键菜单加「在文件夹中查找」（搜索框填上这个文件夹的相对路径）和「复制路径」子菜单。
 - 文案：`fileMenu` 下新增若干项，去掉不再用的 `copyPath`、`copyRelativePath`。
+
+### 58. 修正：实时预览的提示框里真的能拖选文字了（2026-11-12）
+
+- `app/src/core/research/MarkdownLivePreview.tsx`：上一版在编辑器的 mousedown 处理里接管提示框，但编辑器在处理函数返回 true 时会顺手取消这次按下，网页自己的选字因此根本没开始（真机上一个字也选不中）。现在提示框这类整块显示的内容（`cm-lp-embed`）里按下鼠标时，`ignoreEvent` 让编辑器不接，由挂在这一块上的 `selectInsideBlock` 处理（挪焦点、松手没选到字才露出原文），不取消按下。
+- 用 Mac 系统的网页引擎、往测试窗口直接发真实的鼠标按下 / 拖动 / 松开事件（不动你的鼠标）在 `Huang2024DiffusionPDE.md` 上验证：改前按下被取消、一个字没选中、提示框被展开；改后拖动选中了提示框里的一段字，提示框不展开、光标不动；只点一下则光标进到提示框、露出原文。
+- 单元测试加了一条：在提示框里按下鼠标不能被取消。

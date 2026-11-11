@@ -112,10 +112,13 @@ class ReactWidget extends WidgetType {
       mounted.get(reused)!.root.render(this.render(view, reused));
       return reused;
     }
-    const dom = document.createElement(this.block ? "div" : "span");
+    const dom: HTMLElement = document.createElement(this.block ? "div" : "span");
     dom.className = this.className;
-    // 提示框这类整块显示的内容要能拿到焦点：在里面拖选文字时焦点放在这一块上，编辑器才不会改动选区（见 mousedown）
-    if (this.block && !this.interactive) dom.tabIndex = -1;
+    if (this.block && !this.interactive) {
+      // 提示框这类整块显示的内容要能拿到焦点：在里面拖选文字时焦点放在这一块上，编辑器才不会改动选区
+      dom.tabIndex = -1;
+      dom.addEventListener("mousedown", selectInsideBlock);
+    }
     // 图片读完、提示框展开这类自己变高的情况，编辑器不知道，要告诉它重新量
     const observer = new ResizeObserver(() => {
       const entry = mounted.get(dom);
@@ -152,9 +155,36 @@ class ReactWidget extends WidgetType {
       unmount(element);
     }
   }
-  ignoreEvent() {
-    return this.interactive;
+  ignoreEvent(event: Event) {
+    // 整块显示的内容里按下鼠标，编辑器不接（它一接就会取消网页自己的选字），由 selectInsideBlock 处理
+    return this.interactive || (this.block && event.type === "mousedown");
   }
+}
+
+/**
+ * 提示框、引用里的表格这类整块显示的内容，照阅读模式：按着拖是选里面的字（能复制、翻译、问 AI），
+ * 松手时没选到字才进编辑、露出原文。焦点先挪到这一块上：焦点留在编辑器里时，编辑器会把选区改成整块的位置
+ */
+function selectInsideBlock(event: MouseEvent) {
+  const dom = event.currentTarget as HTMLElement;
+  const entry = mounted.get(dom);
+  const target = event.target instanceof Element ? event.target : null;
+  if (
+    !entry ||
+    event.button !== 0 ||
+    event.shiftKey ||
+    target?.closest("a, button, input, [data-fold] > .callout-title")
+  )
+    return;
+  const view = entry.view;
+  dom.focus({ preventScroll: true });
+  const up = () => {
+    window.removeEventListener("mouseup", up, true);
+    if (!dom.isConnected || window.getSelection()?.isCollapsed === false) return;
+    view.focus();
+    view.dispatch({ selection: { anchor: view.posAtDOM(dom) }, userEvent: "select.pointer" });
+  };
+  window.addEventListener("mouseup", up, true);
 }
 
 /** 实时预览开着的这段时间才留小部件；关掉时把留着的全部卸掉 */
@@ -843,20 +873,6 @@ export function livePreview(config: () => LivePreviewConfig): Extension {
           event.preventDefault();
           view.focus();
           view.dispatch({ selection: EditorSelection.single(source[0], source[1]), userEvent: "select.pointer" });
-          return true;
-        }
-        // 提示框、引用里的表格这类整块显示的内容，照阅读模式：按着拖是选里面的字（能复制、翻译、问 AI），
-        // 松手时没选到字才进编辑、露出原文。焦点先挪到这一块上：焦点留在编辑器里时，编辑器会把选区改成整块的位置
-        const embed = target?.closest<HTMLElement>(".cm-lp-embed");
-        if (embed && !event.shiftKey && !target!.closest("a, button, input, [data-fold] > .callout-title")) {
-          embed.focus({ preventScroll: true });
-          const up = () => {
-            window.removeEventListener("mouseup", up, true);
-            if (!embed.isConnected || window.getSelection()?.isCollapsed === false) return;
-            view.focus();
-            view.dispatch({ selection: { anchor: view.posAtDOM(embed) }, userEvent: "select.pointer" });
-          };
-          window.addEventListener("mouseup", up, true);
           return true;
         }
         view.dispatch({ effects: pointerSelecting.of(true) });

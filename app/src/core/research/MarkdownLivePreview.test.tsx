@@ -126,9 +126,11 @@ describe("live preview block widgets", () => {
     const text = callout()!.querySelector(".rendered")!.firstChild!;
     const before = view.state.selection.main.head;
 
-    callout()!
+    // 按下鼠标不能被取消：一取消，网页自己就不会开始选字（上一版就是这样，真机上一个字也选不中）
+    const notPrevented = callout()!
       .querySelector(".rendered")!
-      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    expect(notPrevented).toBe(true);
     expect(document.activeElement).toBe(callout());
     window.getSelection()!.setBaseAndExtent(text, 3, text, 8);
     window.dispatchEvent(new MouseEvent("mouseup"));
