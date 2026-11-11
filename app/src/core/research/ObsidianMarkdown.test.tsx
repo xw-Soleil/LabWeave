@@ -166,6 +166,24 @@ describe("Obsidian Markdown display", () => {
     expect(container.querySelector("a.wikilink")?.textContent).toBe("note.md");
   });
 
+  it("marks blank source lines above blocks and list items like the user's spacing-sync plugin", async () => {
+    await render("# A\n\n## B\n\n\npara\n$$\nx\n$$\n\n- one\n\n- two\n\n![p](x.png)\n\n*cap*", true);
+    const body = container.querySelector(".markdown-body")!;
+    expect(body.classList.contains("prose")).toBe(false);
+    expect(body.querySelector("h1")?.getAttribute("data-blank")).toBeNull();
+    expect(body.querySelector("h2")?.getAttribute("data-blank")).toBe("1");
+    expect(body.querySelector("h2")?.getAttribute("data-after-heading")).toBe("true");
+    expect(body.querySelector("p")?.getAttribute("data-blank")).toBe("2");
+    // 整行公式紧跟在段落后面，没有空行；KaTeX 换掉的是里面那层，标记留在外面
+    expect(body.querySelector(".math-block")?.getAttribute("data-blank")).toBeNull();
+    expect(body.querySelector(".math-block > .katex-display")).not.toBeNull();
+    expect(body.querySelector(".katex-mathml")).toBeNull();
+    const items = body.querySelectorAll("li");
+    expect(items[0].getAttribute("data-blank")).toBeNull();
+    expect(items[1].getAttribute("data-blank")).toBe("1");
+    expect(body.querySelector(".reading-caption")?.textContent).toBe("cap");
+  });
+
   it("accepts operators written straight after _ or ^ the way Obsidian's MathJax does", async () => {
     expect(katexCompatible(String.raw`h_\max \le V^\sup + \text_\mathrm{x} + \maxima_\maxima`)).toBe(
       String.raw`h_{\max} \le V^{\sup} + \text_\mathrm{x} + \maxima_\maxima`,

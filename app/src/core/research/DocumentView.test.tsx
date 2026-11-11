@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   stat: vi.fn(),
   writeFile: vi.fn(),
   open: vi.fn(),
-  theme: { preset: "default" },
+  theme: { preset: "default" } as { preset: string; fontSize?: number },
 }));
 vi.mock("@tauri-apps/plugin-fs", () => ({ readFile: mocks.readFile, stat: mocks.stat, writeFile: mocks.writeFile }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
@@ -77,13 +77,14 @@ describe("Markdown document view", () => {
     await tab.loadMarkdown();
     await act(async () => root.render(<DocumentView tab={tab} />));
     const host = container.querySelector<HTMLElement>('[style*="--reading-font-size"]')!;
-    expect(host.style.getPropertyValue("--reading-font-size")).toBe("15px");
-    expect(host.contains(container.querySelector(".prose"))).toBe(true);
-    expect(container.querySelector(".prose")?.getAttribute("style")).toBeNull();
-    mocks.theme = { preset: "obsidian" };
-    await act(async () => root.render(<DocumentView tab={tab} />));
     expect(host.style.getPropertyValue("--reading-font-size")).toBe("16px");
     expect(host.style.getPropertyValue("--reading-table-margin")).toBe("auto");
+    expect(host.contains(container.querySelector(".markdown-body"))).toBe(true);
+    expect(container.querySelector(".markdown-body")?.getAttribute("style")).toBeNull();
+    mocks.theme = { preset: "notion", fontSize: 18 };
+    await act(async () => root.render(<DocumentView tab={tab} />));
+    expect(host.style.getPropertyValue("--reading-font-size")).toBe("18px");
+    expect(host.style.getPropertyValue("--reading-table-margin")).toBe("0");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('button[aria-label="document.modes.toEdit"]')!.click(),
     );
@@ -140,7 +141,7 @@ describe("Markdown document view", () => {
     HTMLElement.prototype.scrollIntoView = scroll;
     await act(async () => root.render(<DocumentView tab={tab} />));
     expect(scroll).toHaveBeenCalledWith({ block: "start" });
-    expect(scroll.mock.instances[0]).toBe(container.querySelector(".prose h2"));
+    expect(scroll.mock.instances[0]).toBe(container.querySelector(".markdown-body h2"));
     expect(tab.markdownHeading).toBeUndefined();
   });
 
@@ -189,7 +190,7 @@ describe("Markdown document view", () => {
     await act(async () => root.render(<DocumentView tab={tab} />));
     expect(container.querySelectorAll(".callout-content[hidden]")).toHaveLength(0);
     await act(async () => frame(0));
-    expect(scroll.mock.instances[0]).toBe(container.querySelector(".prose h2"));
+    expect(scroll.mock.instances[0]).toBe(container.querySelector(".markdown-body h2"));
     expect(tab.hasUnsavedChanges).toBe(false);
   });
   it("renders inline/block math, tables and scoped relative images; disposes image URLs", async () => {
@@ -299,7 +300,7 @@ describe("Markdown document view", () => {
     expect(activeDocumentTab()).toBe(second);
     expect(store.get(readingContextAtom)).toMatchObject({ path: second.path, kind: "markdown", title: "b" });
     await act(async () => {
-      const paragraph = container.querySelectorAll(".prose p")[1];
+      const paragraph = container.querySelectorAll(".markdown-body p")[1];
       const range = document.createRange();
       range.selectNodeContents(paragraph);
       window.getSelection()!.removeAllRanges();

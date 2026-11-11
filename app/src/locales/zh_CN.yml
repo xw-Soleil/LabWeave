@@ -3193,8 +3193,8 @@ research:
       obsidian: 照我的 Obsidian
       notion: Notion 风
     descriptions:
-      default: 程序自带的样子，系统字体，紧凑一些
-      obsidian: Minimal 主题加你的标题、表格、图注片段，正文用 Inter
+      default: 和你的 Obsidian 一样：正文 Inter、行高 1.8，源码里空一行就留 16px
+      obsidian: 和默认一样，标题换成抖音美好体（电脑上装了这个字体才有）
       notion: 宽松留白，标题大一号，系统字体
     sampleHeading: 研究笔记
     sampleText: 扩散模型在训练时加入物理残差，生成结果更贴合方程。

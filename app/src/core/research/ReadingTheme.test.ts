@@ -34,8 +34,8 @@ describe("reading themes", () => {
     expect(resolveReadingTheme(reloaded.Settings.readingTheme).lineWidth).toBe(44);
   });
   it.each([
-    ["default", 15, 1.6, 46, [1.5, 1.3, 1.15, 1.05, 1, 1]],
-    ["obsidian", 16, 1.5, 50, [1.6, 1.4, 1.25, 1.15, 1.08, 1.02]],
+    ["default", 16, 1.8, 50, [1.6, 1.4, 1.25, 1.15, 1.08, 1.02]],
+    ["obsidian", 16, 1.8, 50, [1.6, 1.4, 1.25, 1.15, 1.08, 1.02]],
     ["notion", 16, 1.5, 44, [1.875, 1.5, 1.25, 1.1, 1, 1]],
   ] as const)("resolves the %s preset", (preset, fontSize, lineHeight, lineWidth, headingScale) => {
     expect(resolveReadingTheme({ preset })).toMatchObject({ fontSize, lineHeight, lineWidth, headingScale });
@@ -54,7 +54,7 @@ describe("reading themes", () => {
     };
     const saved = JSON.stringify(theme);
     const resolved = resolveReadingTheme(readingThemeSchema.parse(JSON.parse(saved)));
-    expect(resolved).toEqual({ ...theme, fontBody: '"Inter", system-ui', fontCode: '"JetBrains Mono", ui-monospace' });
+    expect(resolved).toEqual({ ...theme, fontBody: "", fontCode: "" });
     resolved.headingScale[0] = 8;
     expect(JSON.stringify(theme)).toBe(saved);
     expect(resolveReadingTheme({ preset: "obsidian" }).headingScale[0]).toBe(1.6);
@@ -62,10 +62,9 @@ describe("reading themes", () => {
 
   it("uses exactly the CSS variable names and units consumed by reading.css", () => {
     expect(readingThemeVars(resolveReadingTheme({ preset: "obsidian" }))).toEqual({
-      "--reading-font-body": '"Inter", system-ui',
-      "--reading-font-code": '"JetBrains Mono", ui-monospace',
+      "--reading-font-heading": '"DOUYINSANSBOLD-GB", "Douyin Sans"',
       "--reading-font-size": "16px",
-      "--reading-line-height": "1.5",
+      "--reading-line-height": "1.8",
       "--reading-line-width": "50rem",
       "--reading-h1": "1.6",
       "--reading-h2": "1.4",
@@ -75,9 +74,12 @@ describe("reading themes", () => {
       "--reading-h6": "1.02",
       "--reading-table-margin": "auto",
     });
-    for (const preset of ["default", "notion"] as const) {
+    for (const [preset, margin] of [
+      ["default", "auto"],
+      ["notion", "0"],
+    ] as const) {
       const vars = readingThemeVars(resolveReadingTheme({ preset }));
-      expect(vars["--reading-table-margin"]).toBe("0");
+      expect(vars["--reading-table-margin"]).toBe(margin);
       for (const font of ["body", "heading", "code"]) expect(vars).not.toHaveProperty(`--reading-font-${font}`);
     }
     expect(

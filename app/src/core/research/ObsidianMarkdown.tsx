@@ -26,7 +26,7 @@ interface HtmlNode {
   value?: string;
   properties?: Record<string, unknown>;
   children?: HtmlNode[];
-  position?: { start: { offset?: number }; end: { offset?: number } };
+  position?: { start: { offset?: number; line?: number }; end: { offset?: number; line?: number } };
 }
 
 const text = (value: string): HtmlNode => ({ type: "text", value });
@@ -69,6 +69,67 @@ export function rehypeMathCompat() {
     visit(tree);
   };
 }
+
+const isBlankLine = (line: string | undefined) => line !== undefined && line.trim() === "";
+const MAX_BLANK = 4;
+
+/**
+ * 照用户 Obsidian 里自己写的「间距同步」插件排间距：每一块（每个列表项）上面源码里空了几行，
+ * 就标上 data-blank，reading.css 按「一个空行 = 一个段落间距」排，块本身不带上下边距，
+ * 阅读模式和实时预览的间距就一样了。「标题 + 一个空行 + 标题」的第二个标题标 data-after-heading，上方不多留。
+ * 顺带把图注（图片后面单独一段的整行斜体）标成 reading-caption，CSS 里不用 :has()（Mac 的网页引擎里很慢）。
+ */
+export function rehypeReadingLayout(options: { enabled: boolean }) {
+  return (tree: HtmlNode, file: { value: unknown }) => {
+    if (!options.enabled || !tree.children) return;
+    const lines = String(file.value).split("\n");
+    /** 第 line 行（从 1 数）上面紧挨着几个空行，往上最多数到第 stop 行（不含） */
+    const blanksBefore = (line: number, stop = 0) => {
+      let count = 0;
+      for (let index = line - 2; index >= stop && isBlankLine(lines[index]); index--) count++;
+      return Math.min(count, MAX_BLANK);
+    };
+    const mark = (node: HtmlNode, blank: number) => {
+      if (blank) node.properties = { ...node.properties, dataBlank: String(blank) };
+    };
+    const markListItems = (node: HtmlNode, stop: number) => {
+      for (const child of node.children ?? []) {
+        if (child.type !== "element") continue;
+        if (child.tagName === "li" && child.position) mark(child, blanksBefore(child.position.start.line!, stop));
+        markListItems(child, stop);
+      }
+    };
+    const elements = tree.children.filter((child) => child.type === "element");
+    tree.children = tree.children.map((child) => {
+      if (child.type !== "element" || !child.position) return child;
+      const start = child.position.start.line!;
+      const blank = blanksBefore(start);
+      // 整行公式会被 KaTeX 整个换掉，标记要打在外面包的一层上
+      const math =
+        child.tagName === "pre" &&
+        child.children?.some((code) => (code.properties?.className as string[] | undefined)?.includes("math-display"));
+      const target = math ? element("div", [child], { className: ["math-block"] }) : child;
+      mark(target, blank);
+      if (/^h[1-6]$/.test(child.tagName ?? "") && blank === 1 && /^#{1,6}\s/.test(lines[start - 3] ?? ""))
+        target.properties = { ...target.properties, dataAfterHeading: "true" };
+      if (child.tagName === "ul" || child.tagName === "ol") markListItems(child, start - 1);
+      const previous = elements[elements.indexOf(child) - 1];
+      if (child.tagName === "p" && previous && isImageParagraph(previous) && isCaption(child))
+        target.properties = { ...target.properties, className: ["reading-caption"] };
+      return target;
+    });
+  };
+}
+
+const isImageParagraph = (node: HtmlNode) =>
+  node.tagName === "p" &&
+  !!node.children?.some(
+    (child) => child.tagName === "img" || (child.tagName === "reading-wikilink" && child.properties?.["data-embed"]),
+  );
+const isCaption = (node: HtmlNode) => {
+  const content = node.children?.filter((child) => child.type === "element" || nodeText(child).trim()) ?? [];
+  return content.length === 1 && content[0].tagName === "em";
+};
 
 export function rehypeObsidian(options: { document: boolean }) {
   return (tree: HtmlNode, file: { value: unknown }) => {

@@ -3074,8 +3074,8 @@ research:
       obsidian: Like my Obsidian
       notion: Notion-like
     descriptions:
-      default: The app's own look with system fonts, a little denser
-      obsidian: Minimal theme plus your heading, table and caption snippets, Inter for body text
+      default: Same as your Obsidian. Inter body text, line height 1.8, 16px per blank line in the source
+      obsidian: Same as default, with Douyin Sans headings (only if the font is installed)
       notion: Roomy spacing, larger headings, system fonts
     sampleHeading: Research notes
     sampleText: Adding a physics residual during training keeps diffusion samples close to the equation.

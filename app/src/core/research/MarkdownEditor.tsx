@@ -12,8 +12,8 @@ import { frontmatterSyntax, livePreview, type LivePreviewConfig } from "./Markdo
 export type MarkdownEditMode = "live" | "source";
 
 const highlight = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: "650" },
-  { tag: tags.strong, fontWeight: "650" },
+  { tag: tags.heading, fontWeight: "600" },
+  { tag: tags.strong, class: "cm-md-strong" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
   { tag: tags.link, class: "cm-md-link" },

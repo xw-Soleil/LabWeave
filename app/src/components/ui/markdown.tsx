@@ -4,6 +4,7 @@ import {
   MarkdownCallout,
   rehypeMathCompat,
   rehypeObsidian,
+  rehypeReadingLayout,
 } from "@/core/research/ObsidianMarkdown";
 import { open } from "@tauri-apps/plugin-shell";
 import { useMemo, type ComponentType } from "react";
@@ -45,7 +46,9 @@ export default function Markdown({
       .use(remarkRehype)
       .use(rehypeObsidian, { document: !!wikilink })
       .use(rehypeMathCompat)
-      .use(rehypeKatex)
+      .use(rehypeReadingLayout, { enabled: !!wikilink })
+      // 只要看得见的那一份；KaTeX 默认还会附一份隐藏的 MathML，公式多的笔记里元素多出三成
+      .use(rehypeKatex, { output: "html" })
       .use(rehypeReact, {
         ...production,
         components: {
@@ -66,7 +69,10 @@ export default function Markdown({
     return processor.processSync(source).result;
   }, [source, components, wikilink]);
 
-  return (
+  // 文档（笔记、文献）的排版全在 reading.css 里，不用 Tailwind 的 prose（长笔记里它的选择器很慢）
+  return documentPath ? (
+    <div className={cn(className, "markdown-body cursor-text select-text")}>{content}</div>
+  ) : (
     <div
       className={cn(
         className,

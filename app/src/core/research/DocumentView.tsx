@@ -95,12 +95,18 @@ function DocumentImage({
       </span>
     );
   return image.url ? (
-    // 大图在后台解码，滚到图片时不卡一下
+    // 大图在后台解码，滚到图片时不卡一下。
+    // 没写宽度的图和用户的 Obsidian（博客）一样当二倍图，显示成原图一半，最宽到正文宽度
     <img
       src={image.url}
       alt={alt ?? ""}
       width={width}
       decoding="async"
+      onLoad={(event) => {
+        const element = event.currentTarget;
+        if (width === undefined && element.naturalWidth && !/\.svg$/i.test(src ?? ""))
+          element.style.width = `${element.naturalWidth / 2}px`;
+      }}
       onError={() => setImage({ error: t("imageFailed") })}
     />
   ) : (
@@ -201,7 +207,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     const normalize = (value: string) => value.trim().normalize("NFC").toLowerCase();
     const target = [
       ...(previewArea.current?.querySelectorAll<HTMLElement>(
-        ".prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6",
+        ".markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6",
       ) ?? []),
     ].find((element) => normalize(element.textContent ?? "") === normalize(heading));
     tab.markdownHeading = undefined;

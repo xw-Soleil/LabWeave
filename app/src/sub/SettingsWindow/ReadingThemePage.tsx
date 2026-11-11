@@ -52,7 +52,7 @@ export default function ReadingThemePage() {
                   className="reading-view bg-background pointer-events-none h-24 overflow-hidden rounded-md border px-3 py-2"
                   style={{ ...(readingThemeVars(sample) as CSSProperties), fontSize: 11 }}
                 >
-                  <div className="prose">
+                  <div className="markdown-body">
                     <h2 style={{ marginTop: 0 }}>{t("readingTheme.sampleHeading")}</h2>
                     <p>{t("readingTheme.sampleText")}</p>
                   </div>

@@ -583,3 +583,29 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 编辑器关闭或切到源码模式时全部卸载。
 - `app/src/core/research/DocumentView.tsx`：笔记里的图片 `decoding="async"`，在后台解码。
 - `app/src/components/activity-rail.tsx`、`docked-area.tsx`、`app/src/ProjectTabs.tsx`：贴边排法的竖栏、标签栏、侧栏底色改成和画布时一样的纯白。
+
+### 50. 阅读排版照用户 Obsidian 重写，长笔记不再卡（2026-11-11）
+
+- 在系统 WebKit 里实测长笔记（`Bastek2024Physics.md`，渲染后 1.2 万个元素）：
+  - 整篇样式重算原来要 590ms，主要花在 Tailwind 排版插件 `prose` 的选择器上（每条都要往上翻所有祖先找 `not-prose`）；
+  - 上一节加的 `content-visibility` 让选中要 257ms、选中后点别处要 433ms。
+  - 改完后：样式重算 125ms，选中和点别处都是 0ms，元素少了 26%。
+- `app/src/components/ui/markdown.tsx`：
+  - 文档（笔记、文献）不再用 `prose`，改用 `markdown-body`，排版全在 `reading.css`；AI 对话照旧。
+  - KaTeX 只输出看得见的 HTML，不再附隐藏的 MathML。
+- `app/src/core/research/ObsidianMarkdown.tsx`：新增 `rehypeReadingLayout`，照用户 Obsidian 里自己写的「间距同步」插件：
+  - 每一块、每个列表项按源码里上面空了几行标 `data-blank`；
+  - 「标题 + 一个空行 + 标题」的第二个标题标 `data-after-heading`；
+  - 整行公式外面包一层 `math-block` 以保留标记；
+  - 图注标成 `reading-caption`，CSS 里不用 `:has()`。
+- `app/src/css/reading.css`：整体重写，数值取自用户的 Obsidian（Minimal 设置，blog-style、headings、inline-title、tables、image-caption、center-images 片段，间距同步插件）：
+  - 正文 16px、行高 1.8、宽 50rem；一个空行 16px，标题上方多 14px，引用里一个空行半个字高；
+  - 标题字号 1.6 / 1.4 / 1.25 / 1.15 / 1.08 / 1.02 倍，文件名标题 2.1 倍；
+  - 粗体底部浅蓝荧光笔；链接蓝字细下划线；行内代码细边框；代码块、引用浅灰底；
+  - 提示框改成博客卡片样式和配色；表格默认居中。
+  - 去掉 `content-visibility`、`text-rendering: optimizeLegibility` 和字形特性设置。
+- `app/src/core/research/MarkdownLivePreview.tsx`、`MarkdownEditor.tsx`：实时预览里空行标 `cm-lp-blank`（16px 高），引用里只有 `>` 的行标 `cm-lp-blank-inner`（半个字高），「标题 + 空行 + 标题」的第二个标题标 `cm-lp-h-after`；粗体加荧光笔。两种模式的间距一样。
+- `app/src/core/research/DocumentView.tsx`：没写宽度的图片和用户的 Obsidian 一样按原图一半显示（SVG 除外）。
+- `app/src/core/research/ReadingTheme.ts`：
+  - 默认预设改成用户 Obsidian 的数值：16px、1.8、50rem，标题阶梯和 headings 片段一样，表格居中；
+  - 「照我的 Obsidian」在此基础上把标题换成抖音美好体（程序不带，电脑上装了才有）。

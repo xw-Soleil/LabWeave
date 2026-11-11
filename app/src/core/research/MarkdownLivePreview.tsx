@@ -449,7 +449,13 @@ function build(state: EditorState, config: () => LivePreviewConfig): DecorationS
       const active = touches(state, node.from, node.to);
       const heading = /^ATXHeading(\d)$/.exec(name);
       if (heading) {
-        line(state.doc.lineAt(node.from).from, `cm-lp-h cm-lp-h${heading[1]}`);
+        // 「标题 + 一个空行 + 标题」时第二个标题上方不多留，和阅读模式一样
+        const current = state.doc.lineAt(node.from);
+        const afterHeading =
+          current.number > 2 &&
+          !state.doc.line(current.number - 1).text.trim() &&
+          /^#{1,6}\s/.test(state.doc.line(current.number - 2).text);
+        line(current.from, `cm-lp-h cm-lp-h${heading[1]}${afterHeading ? " cm-lp-h-after" : ""}`);
         if (!active)
           for (let child = node.node.firstChild; child; child = child.nextSibling)
             if (child.name === "HeaderMark") hide(child.from, text[child.to] === " " ? child.to + 1 : child.to);
@@ -531,6 +537,14 @@ function build(state: EditorState, config: () => LivePreviewConfig): DecorationS
       }
     },
   });
+
+  // 空行照用户 Obsidian 的「间距同步」：正文里一个空行 16px，引用里只有「>」的空行半个字高，和阅读模式一样
+  for (let number = 1; number <= state.doc.lines; number++) {
+    const current = state.doc.line(number);
+    if (inCode(current.from, current.to)) continue;
+    if (!current.text.trim()) line(current.from, "cm-lp-blank");
+    else if (/^\s*>\s*$/.test(current.text)) line(current.from, "cm-lp-blank-inner");
+  }
 
   // 双链、嵌入、行内公式：语法树里没有，按文字找，跳过代码
   const patterns: [RegExp, "wikilink" | "math"][] = [

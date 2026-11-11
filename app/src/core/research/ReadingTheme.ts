@@ -23,24 +23,29 @@ export const readingThemeSchema = z.object({
   headingScale: z.tuple([scale, scale, scale, scale, scale, scale]).optional(),
 });
 
+/**
+ * 默认就是用户 Obsidian 的样子（Minimal 设置：16px、50rem；blog-style：行高 1.8；headings 片段的标题阶梯），
+ * 字体留空时用 reading.css 里的 Inter + 苹方、JetBrains Mono。
+ * 「照我的 Obsidian」再把标题换成抖音美好体：程序不带这个字体，电脑上装了才有，没装就和默认一样。
+ */
 const presets: Record<ReadingTheme["preset"], Required<ReadingTheme>> = {
   default: {
     preset: "default",
     fontBody: "",
     fontHeading: "",
     fontCode: "",
-    fontSize: 15,
-    lineHeight: 1.6,
-    lineWidth: 46,
-    headingScale: [1.5, 1.3, 1.15, 1.05, 1, 1],
+    fontSize: 16,
+    lineHeight: 1.8,
+    lineWidth: 50,
+    headingScale: [1.6, 1.4, 1.25, 1.15, 1.08, 1.02],
   },
   obsidian: {
     preset: "obsidian",
-    fontBody: '"Inter", system-ui',
-    fontHeading: "",
-    fontCode: '"JetBrains Mono", ui-monospace',
+    fontBody: "",
+    fontHeading: '"DOUYINSANSBOLD-GB", "Douyin Sans"',
+    fontCode: "",
     fontSize: 16,
-    lineHeight: 1.5,
+    lineHeight: 1.8,
     lineWidth: 50,
     headingScale: [1.6, 1.4, 1.25, 1.15, 1.08, 1.02],
   },
@@ -75,7 +80,8 @@ export function readingThemeVars(resolved: Required<ReadingTheme>): Record<`--re
     "--reading-font-size": `${resolved.fontSize}px`,
     "--reading-line-height": String(resolved.lineHeight),
     "--reading-line-width": `${resolved.lineWidth}rem`,
-    "--reading-table-margin": resolved.preset === "obsidian" ? "auto" : "0",
+    // 用户的 Obsidian 里表格默认居中；Notion 风贴左
+    "--reading-table-margin": resolved.preset === "notion" ? "0" : "auto",
   };
   if (resolved.fontBody) vars["--reading-font-body"] = resolved.fontBody;
   if (resolved.fontHeading) vars["--reading-font-heading"] = resolved.fontHeading;

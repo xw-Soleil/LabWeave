@@ -1,5 +1,11 @@
-/* Markdown 文档的阅读外观。数值来自「阅读外观」设置挂上的 --reading-* 变量，没有时用默认值。
- * 这里的规则不放进 @layer，才能盖过 prose 和 text-sm 这些工具类。 */
+/* Markdown 文档的阅读外观，照用户的 Obsidian：Minimal 主题加 blog-style、headings、inline-title、tables、
+ * image-caption、center-images 几个片段，再加「间距同步」插件。
+ *   正文 16px、行高 1.8、宽 50rem；
+ *   段落之间按源码里空了几行留几个 16px，块本身不带上下边距，阅读和实时预览的间距一样；
+ *   标题上方多留 14px，「标题 + 一个空行 + 标题」时第二个不留。
+ * 数值来自「阅读外观」设置挂上的 --reading-* 变量，没有时用上面这些默认值。
+ * 不用 Tailwind 的 prose：它每条规则都要往上翻所有祖先找 not-prose，公式多的长笔记（上万个元素）
+ * 在 Mac 的网页引擎里样式重算慢三十倍。也不用 :has()，同样慢。 */
 
 @font-face {
   font-family: "Inter";
@@ -40,37 +46,40 @@
 .reading-view {
   --rv-body: var(
     --reading-font-body,
+    "Inter",
     -apple-system,
     BlinkMacSystemFont,
     system-ui,
     "PingFang SC",
-    "Noto Sans CJK SC",
+    "Noto Sans SC",
     sans-serif
   );
   --rv-heading: var(--reading-font-heading, var(--rv-body));
-  --rv-code: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  --rv-code: var(--reading-font-code, "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace);
   --rv-muted: color-mix(in oklab, var(--foreground) 58%, transparent);
   --rv-faint: color-mix(in oklab, var(--foreground) 5%, transparent);
   --rv-line: color-mix(in oklab, var(--foreground) 12%, transparent);
-  --rv-accent: var(--reading-accent, var(--primary));
+  /* 博客的浅灰底（代码块、引用）、边框和中性色，按当前背景混出来，深浅色都适用 */
+  --rv-bg-2: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  --rv-border: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  --rv-neutral: color-mix(in srgb, var(--foreground) 85%, transparent);
+  --rv-accent: var(--reading-accent, light-dark(hsl(220 100% 55%), hsl(220 100% 70%)));
+  --rv-accent-soft: color-mix(in srgb, var(--rv-accent) 16%, transparent);
+  --rv-gap: var(--reading-paragraph-gap, 1rem);
+  --rv-inner-gap: 0.5em;
+  --rv-heading-gap: 0.875rem;
+  --rv-code-size: 0.85em;
+  --rv-hr-gap: calc(var(--reading-font-size, 16px) * var(--reading-line-height, 1.8) / 2);
   width: 100%;
-  max-width: var(--reading-line-width, 46rem);
+  max-width: var(--reading-line-width, 50rem);
   margin-inline: auto;
   color: var(--foreground);
   font-family: var(--rv-body);
-  font-size: var(--reading-font-size, 15px);
-  line-height: var(--reading-line-height, 1.6);
-  font-feature-settings: "cv11", "ss01";
-  text-rendering: optimizeLegibility;
+  font-size: var(--reading-font-size, 16px);
+  line-height: var(--reading-line-height, 1.8);
   -webkit-font-smoothing: antialiased;
 }
-.reading-source {
-  font-family: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
-  font-size: 13.5px;
-  line-height: 1.75;
-}
-.reading-view ::selection,
-.reading-source::selection {
+.reading-view ::selection {
   background: rgba(0, 122, 255, 0.2);
 }
 /* Mac 的网页引擎跨段落选中时，会用外层块的选中色把段落之间、正文两侧的空白也涂满，
@@ -79,7 +88,7 @@
 .reading-view::selection,
 .reading-view
   :is(
-    .prose,
+    .markdown-body,
     .callout,
     .callout-content,
     ul,
@@ -89,6 +98,8 @@
     thead,
     tbody,
     tr,
+    .math-block,
+    .katex-display,
     .note-properties,
     .markdown-editor,
     .cm-editor,
@@ -96,235 +107,277 @@
     .cm-content,
     .cm-lp-embed,
     .cm-lp-table,
-    .cm-lp-table-scroll,
-    .katex-display
+    .cm-lp-table-scroll
   )::selection {
   background: transparent;
 }
 
+/* 文件名大标题：比一级标题再大一档 */
 .reading-view .reading-title {
-  margin: 0 0 0.9em;
+  margin: 0 0 0.4em;
   font-family: var(--rv-heading);
-  font-size: calc(var(--reading-h1, 1.5) * 1.15em);
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.015em;
+  font-size: calc(var(--reading-h1, 1.6) * 1.3125em);
+  font-weight: 600;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
-/* 长笔记（公式多的一篇能有上万个元素）：屏幕外的段落先不排版、不绘制，滚到附近才画；
- * 画过的记住高度，来回滚不跳 */
-.reading-view > .prose > * {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 1.6em;
+/* ========== 间距：按源码里的空行排（data-blank 由 rehypeReadingLayout 标上） ========== */
+.reading-view .markdown-body {
+  overflow-wrap: break-word;
+}
+.reading-view .markdown-body :where(p, ul, ol, li, blockquote, pre, table, hr, dl, dd, figure, h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+}
+.reading-view .markdown-body > *,
+.reading-view .markdown-body li {
+  --blank: 0;
+}
+.reading-view .markdown-body [data-blank="1"] {
+  --blank: 1;
+}
+.reading-view .markdown-body [data-blank="2"] {
+  --blank: 2;
+}
+.reading-view .markdown-body [data-blank="3"] {
+  --blank: 3;
+}
+.reading-view .markdown-body [data-blank="4"] {
+  --blank: 4;
+}
+.reading-view .markdown-body > *,
+.reading-view .markdown-body li {
+  margin-block: calc(var(--blank) * var(--rv-gap)) 0;
+}
+.reading-view .markdown-body > :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: calc(var(--blank) * var(--rv-gap) + var(--rv-heading-gap));
+}
+.reading-view .markdown-body > [data-after-heading] {
+  margin-top: calc(var(--blank) * var(--rv-gap));
+}
+.reading-view .markdown-body > table {
+  margin-block: calc(var(--blank) * var(--rv-gap) + 16px) 16px;
+}
+.reading-view .markdown-body > hr {
+  margin-block: calc(var(--blank) * var(--rv-gap) + var(--rv-hr-gap)) var(--rv-hr-gap);
 }
 
-/* prose 自带的字号、颜色和间距统一让给上面的变量 */
-.reading-view .prose {
-  max-width: none;
-  color: inherit;
-  font-size: inherit;
-  line-height: inherit;
-}
-.reading-view .prose :where(p) {
-  margin: 0.85em 0;
-}
-.reading-view .prose > :first-child {
-  margin-top: 0;
-}
-.reading-view .prose :where(h1, h2, h3, h4, h5, h6) {
-  margin: 1.6em 0 0.55em;
+/* ========== 标题 ========== */
+.reading-view .markdown-body :is(h1, h2, h3, h4, h5, h6) {
   color: var(--foreground);
   font-family: var(--rv-heading);
-  letter-spacing: -0.01em;
+  font-weight: 600;
 }
-.reading-view .prose :where(h1) {
-  font-size: calc(var(--reading-h1, 1.5) * 1em);
-  font-weight: 700;
-  line-height: 1.3;
-}
-.reading-view .prose :where(h2) {
-  font-size: calc(var(--reading-h2, 1.3) * 1em);
-  font-weight: 650;
+.reading-view .markdown-body h1 {
+  font-size: calc(var(--reading-h1, 1.6) * 1em);
   line-height: 1.35;
 }
-.reading-view .prose :where(h3) {
-  font-size: calc(var(--reading-h3, 1.15) * 1em);
-  font-weight: 600;
+.reading-view .markdown-body h2 {
+  font-size: calc(var(--reading-h2, 1.4) * 1em);
+  line-height: 1.35;
+}
+.reading-view .markdown-body h3 {
+  font-size: calc(var(--reading-h3, 1.25) * 1em);
   line-height: 1.4;
 }
-.reading-view .prose :where(h4) {
-  font-size: calc(var(--reading-h4, 1.05) * 1em);
-  font-weight: 600;
+.reading-view .markdown-body h4 {
+  font-size: calc(var(--reading-h4, 1.15) * 1em);
   line-height: 1.4;
 }
-.reading-view .prose :where(h5) {
-  font-size: calc(var(--reading-h5, 1) * 1em);
-  font-weight: 600;
+.reading-view .markdown-body h5 {
+  font-size: calc(var(--reading-h5, 1.08) * 1em);
   line-height: 1.45;
 }
-.reading-view .prose :where(h6) {
-  font-size: calc(var(--reading-h6, 1) * 1em);
-  font-weight: 600;
+.reading-view .markdown-body h6 {
+  font-size: calc(var(--reading-h6, 1.02) * 1em);
   line-height: 1.45;
-  color: var(--rv-muted);
 }
 
-.reading-view .prose :where(a) {
+/* ========== 文字 ========== */
+/* 粗体：底部 30% 的浅蓝荧光笔；标题里本来就粗，不加 */
+.reading-view .markdown-body strong {
+  font-weight: 600;
+  background: linear-gradient(var(--rv-accent-soft), var(--rv-accent-soft)) no-repeat center bottom / 100% 30%;
+}
+.reading-view .markdown-body :is(h1, h2, h3, h4, h5, h6) strong {
+  background: none;
+}
+.reading-view .markdown-body mark {
+  background-color: var(--rv-accent-soft);
   color: var(--rv-accent);
-  font-weight: inherit;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--rv-accent) 35%, transparent);
-  text-underline-offset: 0.2em;
+}
+/* 链接：蓝字加底部细线，悬停时整块浅蓝 */
+.reading-view .markdown-body a {
+  border-radius: 0.3em;
+  color: var(--rv-accent);
+  text-decoration-line: underline;
+  text-decoration-color: var(--rv-accent-soft);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.25em;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
-.reading-view .prose :where(a):hover {
-  text-decoration-color: var(--rv-accent);
+.reading-view .markdown-body a:hover {
+  background-color: var(--rv-accent-soft);
 }
-.reading-view .prose .wikilink.is-unresolved {
+.reading-view .markdown-body .wikilink.is-unresolved {
   color: var(--rv-muted);
-  text-decoration-style: dashed;
   text-decoration-color: var(--rv-line);
 }
 
-.reading-view .prose :where(strong) {
-  color: inherit;
-  font-weight: 650;
+/* ========== 列表：圆点、序号用主色 ========== */
+.reading-view .markdown-body :is(ul, ol) {
+  padding-left: 1.6em;
 }
-.reading-view .prose :where(ul, ol) {
-  margin: 0.6em 0;
-  padding-left: 1.5em;
+.reading-view .markdown-body ul {
+  list-style: disc;
 }
-.reading-view .prose :where(li) {
-  margin: 0.2em 0;
+.reading-view .markdown-body ul ul {
+  list-style: circle;
 }
-.reading-view .prose :where(li > p) {
-  margin: 0.2em 0;
+.reading-view .markdown-body ul ul ul {
+  list-style: square;
 }
-.reading-view .prose :where(ul > li)::marker,
-.reading-view .prose :where(ol > li)::marker {
-  color: var(--rv-muted);
+.reading-view .markdown-body ol {
+  list-style: decimal;
 }
-.reading-view .prose :where(hr) {
-  margin: 2em 0;
-  border-color: var(--rv-line);
+.reading-view .markdown-body li::marker {
+  color: var(--rv-accent);
 }
-
-.reading-view .prose :where(blockquote) {
-  margin: 1em 0;
-  padding: 0.1em 0 0.1em 1em;
-  border-left: 2px solid var(--rv-line);
-  color: var(--rv-muted);
-  font-style: normal;
-  font-weight: inherit;
-  quotes: none;
+.reading-view .markdown-body li > pre {
+  margin-block: var(--rv-gap);
 }
-.reading-view .prose :where(blockquote p)::before,
-.reading-view .prose :where(blockquote p)::after {
-  content: none;
+.reading-view .markdown-body .contains-task-list {
+  list-style: none;
+}
+.reading-view .markdown-body .task-list-item > input {
+  margin: 0 0.45em 0 -1.35em;
+  vertical-align: -0.1em;
+  accent-color: var(--rv-accent);
 }
 
-.reading-view .prose :where(code) {
-  padding: 0.12em 0.36em;
+/* ========== 代码 ========== */
+.reading-view .markdown-body :not(pre) > code {
+  padding: 0.1em 0.255em;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 4px;
-  background: var(--rv-faint);
-  color: inherit;
+  background-color: color-mix(in srgb, var(--foreground) 5%, transparent);
   font-family: var(--rv-code);
-  font-size: 0.86em;
-  font-weight: 400;
+  font-size: var(--rv-code-size);
 }
-.reading-view .prose :where(code)::before,
-.reading-view .prose :where(code)::after {
-  content: none;
+/* 代码块：浅灰底大圆角，上下留白和编辑模式里 ``` 那一行一样高 */
+.reading-view .markdown-body pre {
+  overflow-x: auto;
+  padding: calc(var(--rv-code-size) * var(--reading-line-height, 1.8)) 1em;
+  border-radius: 0.5em;
+  background-color: var(--rv-bg-2);
+  line-height: 1.4;
 }
-.reading-view .prose :where(pre) {
-  margin: 1em 0;
-  padding: 0.9em 1.1em;
-  border: 1px solid var(--rv-line);
-  border-radius: 8px;
-  background: var(--rv-faint);
-  color: inherit;
-  font-size: 0.86em;
-  line-height: 1.55;
-}
-.reading-view .prose :where(pre code) {
-  padding: 0;
-  background: none;
-  font-size: inherit;
+.reading-view .markdown-body pre code {
+  font-family: var(--rv-code);
+  font-size: var(--rv-code-size);
 }
 
-/* 表格：照用户 Obsidian 的 tables.css，表头有底色、四周有边框、隔行浅色、悬停高亮 */
-.reading-view .prose :where(table) {
-  width: auto;
-  margin: 1.2em var(--reading-table-margin, 0);
+/* ========== 引用：左边 4px 灰条加浅灰底，字小一号；里面每空一行半个字高 ========== */
+.reading-view .markdown-body blockquote {
+  padding: 0 0.8rem;
+  border-left: 4px solid var(--rv-border);
+  border-radius: 4px;
+  background-color: var(--rv-bg-2);
+  font-size: 0.9em;
+}
+.reading-view .markdown-body blockquote > * {
+  margin-block: var(--rv-inner-gap);
+}
+.reading-view .markdown-body blockquote > :first-child {
+  margin-top: 0;
+}
+.reading-view .markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.reading-view .markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--rv-line);
+}
+
+/* ========== 表格：默认居中，表头有底色、四周有边框、隔行浅色、悬停高亮 ========== */
+.reading-view .markdown-body table {
+  margin-inline: var(--reading-table-margin, auto);
   border-collapse: collapse;
-  font-size: 0.92em;
+  font-size: 0.875em;
   line-height: 1.55;
 }
-.reading-view .prose :where(th, td) {
+.reading-view .markdown-body :is(th, td) {
   padding: 7px 12px;
   border: 1px solid var(--rv-line);
 }
-.reading-view .prose :where(th) {
-  background: var(--rv-faint);
-  color: inherit;
+.reading-view .markdown-body th {
+  background-color: color-mix(in srgb, var(--foreground) 3.5%, var(--background));
   font-weight: 600;
 }
-.reading-view .prose :where(tbody tr:nth-child(even)) {
-  background: color-mix(in oklab, var(--foreground) 2.5%, transparent);
+.reading-view .markdown-body tbody tr:nth-child(even) {
+  background-color: color-mix(in srgb, var(--foreground) 2%, var(--background));
 }
-.reading-view .prose :where(tbody tr:hover) {
-  background: color-mix(in oklab, var(--foreground) 6%, transparent);
+.reading-view .markdown-body tbody tr:hover {
+  background-color: color-mix(in srgb, var(--foreground) 5%, var(--background));
 }
 
-/* 图片居中；紧跟在图片后面的整行斜体当图注（和用户 Obsidian 的 image-caption.css 同一种写法） */
-.reading-view .prose :where(img) {
+/* ========== 图片：居中、圆角；图注（图片后面整行斜体）居中、灰色、小一号、不倾斜 ========== */
+.reading-view .markdown-body img {
   display: block;
   max-width: 100%;
-  margin: 1.2em auto 0.6em;
-  border-radius: 6px;
+  margin-inline: auto;
+  border-radius: 0.5rem;
 }
-.reading-view .prose p:has(> img) + p:has(> em:only-child) {
-  margin-top: -0.4em;
+.reading-view .markdown-body .reading-caption {
+  margin-top: -0.6em;
   color: var(--rv-muted);
   font-size: 0.82em;
   line-height: 1.45;
   text-align: center;
 }
-.reading-view .prose p:has(> img) + p > em:only-child {
+.reading-view .markdown-body .reading-caption > em,
+.reading-view .markdown-body p > img ~ em:last-child {
   font-style: normal;
 }
-.reading-view .prose p > img ~ em:last-child {
+.reading-view .markdown-body p > img ~ em:last-child {
   display: block;
   margin-top: 0.35em;
   color: var(--rv-muted);
   font-size: 0.82em;
-  font-style: normal;
   line-height: 1.45;
   text-align: center;
 }
+.reading-view .markdown-body p > img + br {
+  display: none;
+}
 
-.reading-view .prose .katex-display {
+/* ========== 公式 ========== */
+.reading-view .markdown-body .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.2em 0;
 }
 
-/* 提示框：照 Obsidian 的配色，一种类型一种颜色 */
+/* ========== 提示框：博客的提示卡片，圆角、轻阴影，顶部晕开一层这一类的颜色 ========== */
 .reading-view .callout {
-  --callout: 8, 109, 221;
-  margin: 1em 0;
-  padding: 0.7em 1em;
-  border-radius: 6px;
-  background: rgba(var(--callout), 0.08);
-  border-left: 3px solid rgba(var(--callout), 0.55);
+  --callout-color: var(--rv-neutral);
+  padding: 0.4em 0.9em 0.3em;
+  border-radius: 0.5em;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 4em -25em, var(--callout-color), transparent 30em),
+    linear-gradient(var(--callout-color) -2000%, transparent);
+  box-shadow: 0 0.1em 0.2em light-dark(hsl(220 20% 20% / 10%), hsl(220 10% 10% / 50%));
+  font-size: 0.9em;
 }
 .reading-view .callout-title {
   display: flex;
   align-items: center;
-  gap: 0.45em;
-  color: rgb(var(--callout));
-  font-weight: 600;
+  gap: 0.5em;
+  padding: 0.4em 0;
+  font-weight: 700;
 }
 .reading-view .callout[data-fold="+"] > .callout-title,
 .reading-view .callout[data-fold="-"] > .callout-title {
@@ -334,46 +387,53 @@
 .reading-view .callout-icon {
   display: inline-flex;
   flex-shrink: 0;
+  color: var(--callout-color);
 }
 .reading-view .callout-icon svg {
   width: 1em;
   height: 1em;
 }
-.reading-view .callout-content {
-  margin-top: 0.35em;
+/* 提示框里段落上下只留 0.5em */
+.reading-view .callout .callout-content > * {
+  margin-block: 0.5em;
 }
-.reading-view .callout-content > :first-child {
-  margin-top: 0;
+.reading-view .callout .callout-content > :first-child {
+  margin-top: 0.1em;
 }
-.reading-view .callout-content > :last-child {
-  margin-bottom: 0;
+.reading-view .callout .callout-content > :last-child {
+  margin-bottom: 0.6em;
 }
-.reading-view .callout:is([data-callout="abstract"], [data-callout="summary"], [data-callout="tldr"]),
-.reading-view .callout:is([data-callout="tip"], [data-callout="hint"], [data-callout="important"]) {
-  --callout: 0, 168, 172;
+.reading-view .callout li::marker {
+  color: var(--callout-color);
 }
-.reading-view .callout:is([data-callout="success"], [data-callout="check"], [data-callout="done"]) {
-  --callout: 8, 185, 78;
+.reading-view .callout:is([data-callout="tip"], [data-callout="hint"], [data-callout="important"]),
+.reading-view .callout:is([data-callout="success"], [data-callout="check"], [data-callout="done"]),
+.reading-view .callout[data-callout="answer"] {
+  --callout-color: #3a7;
 }
-.reading-view .callout:is([data-callout="question"], [data-callout="help"], [data-callout="faq"]),
+.reading-view .callout:is([data-callout="question"], [data-callout="help"], [data-callout="faq"]) {
+  --callout-color: #3af;
+}
 .reading-view .callout:is([data-callout="warning"], [data-callout="caution"], [data-callout="attention"]) {
-  --callout: 236, 117, 0;
+  --callout-color: #f80;
 }
 .reading-view .callout:is([data-callout="failure"], [data-callout="fail"], [data-callout="missing"]),
 .reading-view .callout:is([data-callout="danger"], [data-callout="error"], [data-callout="bug"]) {
-  --callout: 233, 49, 71;
+  --callout-color: #f33;
 }
-.reading-view .callout[data-callout="example"] {
-  --callout: 120, 82, 238;
-}
+/* quote 类提示框和普通引用一个样子 */
 .reading-view .callout:is([data-callout="quote"], [data-callout="cite"]) {
-  --callout: 158, 158, 158;
+  border-left: 4px solid var(--rv-border);
+  border-radius: 4px;
+  background-color: var(--rv-bg-2);
+  background-image: none;
+  box-shadow: none;
 }
 
 /* 笔记属性：照 Obsidian，一项一行，左边图标和名字，右边是值 */
 .note-properties {
-  margin: 0 0 1.8em;
-  padding-bottom: 1em;
+  margin: 0 0 1em;
+  padding-bottom: 0.8em;
   border-bottom: 1px solid var(--rv-line);
   font-size: 0.875em;
   line-height: 1.5;
@@ -501,7 +561,7 @@
   white-space: pre-wrap;
 }
 
-/* Markdown 编辑器（CodeMirror）：实时预览沿用阅读排版，源码模式用等宽字 */
+/* Markdown 编辑器（CodeMirror）：实时预览和阅读模式同一套排版、同一套间距，源码模式用等宽字 */
 .markdown-editor .cm-editor {
   background: transparent;
   color: inherit;
@@ -532,7 +592,7 @@
   background: rgba(255, 196, 0, 0.25);
 }
 .markdown-editor[data-mode="source"] .cm-content {
-  font-family: var(--reading-font-code, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-family: var(--rv-code);
   font-size: 13.5px;
   line-height: 1.75;
 }
@@ -545,88 +605,103 @@
 }
 .markdown-editor .cm-md-code {
   font-family: var(--rv-code);
-  font-size: 0.9em;
+  font-size: var(--rv-code-size);
 }
 .markdown-editor[data-mode="live"] .cm-md-code {
+  padding: 0.1em 0.255em;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 4px;
-  background: var(--rv-faint);
-  padding: 0.1em 0.3em;
+  background-color: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.markdown-editor .cm-md-strong {
+  font-weight: 600;
+}
+.markdown-editor[data-mode="live"] .cm-md-strong {
+  background: linear-gradient(var(--rv-accent-soft), var(--rv-accent-soft)) no-repeat center bottom / 100% 30%;
 }
 .markdown-editor .cm-md-quote {
-  color: var(--rv-muted);
+  color: inherit;
 }
 
-/* 实时预览：标题、引用、代码块、链接、公式、图片和整块嵌入 */
+/* 实时预览：空行和阅读模式一样高（正文里一个空行 16px，引用里半个字高） */
+.markdown-editor[data-mode="live"] .cm-lp-blank {
+  line-height: var(--rv-gap);
+}
+.markdown-editor[data-mode="live"] .cm-lp-blank-inner {
+  line-height: var(--rv-inner-gap);
+}
 .markdown-editor .cm-lp-h {
+  color: var(--foreground);
   font-family: var(--rv-heading);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  padding-top: 0.8em !important;
-  padding-bottom: 0.2em !important;
+  font-weight: 600;
+  padding-top: var(--rv-heading-gap) !important;
+}
+.markdown-editor .cm-lp-h-after {
+  padding-top: 0 !important;
 }
 .markdown-editor .cm-lp-h1 {
-  font-size: calc(var(--reading-h1, 1.5) * 1em);
-  font-weight: 700;
-  line-height: 1.3;
+  font-size: calc(var(--reading-h1, 1.6) * 1em);
+  line-height: 1.35;
 }
 .markdown-editor .cm-lp-h2 {
-  font-size: calc(var(--reading-h2, 1.3) * 1em);
+  font-size: calc(var(--reading-h2, 1.4) * 1em);
   line-height: 1.35;
 }
 .markdown-editor .cm-lp-h3 {
-  font-size: calc(var(--reading-h3, 1.15) * 1em);
+  font-size: calc(var(--reading-h3, 1.25) * 1em);
   line-height: 1.4;
 }
 .markdown-editor .cm-lp-h4 {
-  font-size: calc(var(--reading-h4, 1.05) * 1em);
+  font-size: calc(var(--reading-h4, 1.15) * 1em);
+  line-height: 1.4;
 }
 .markdown-editor .cm-lp-h5 {
-  font-size: calc(var(--reading-h5, 1) * 1em);
+  font-size: calc(var(--reading-h5, 1.08) * 1em);
+  line-height: 1.45;
 }
 .markdown-editor .cm-lp-h6 {
-  font-size: calc(var(--reading-h6, 1) * 1em);
-  color: var(--rv-muted);
+  font-size: calc(var(--reading-h6, 1.02) * 1em);
+  line-height: 1.45;
 }
 .markdown-editor .cm-lp-quote {
-  border-left: 2px solid var(--rv-line);
-  padding-left: 1em !important;
-  color: var(--rv-muted);
+  border-left: 4px solid var(--rv-border);
+  background-color: var(--rv-bg-2);
+  font-size: 0.9em;
+  padding-left: 0.8rem !important;
 }
 .markdown-editor .cm-lp-callout-raw {
-  border-left-color: rgba(8, 109, 221, 0.55);
-  background: rgba(8, 109, 221, 0.06);
+  border-left-color: color-mix(in srgb, var(--rv-accent) 45%, transparent);
 }
 .markdown-editor .cm-lp-codeblock {
-  background: var(--rv-faint);
+  background-color: var(--rv-bg-2);
   font-family: var(--rv-code);
-  font-size: 0.86em;
+  font-size: var(--rv-code-size);
   padding: 0 1em !important;
 }
 .markdown-editor .cm-lp-codeblock-first {
-  border-radius: 8px 8px 0 0;
-  padding-top: 0.5em !important;
+  border-radius: 0.5em 0.5em 0 0;
 }
 .markdown-editor .cm-lp-codeblock-last {
-  border-radius: 0 0 8px 8px;
-  padding-bottom: 0.5em !important;
+  border-radius: 0 0 0.5em 0.5em;
 }
 .markdown-editor .cm-lp-codeblock-first.cm-lp-codeblock-last {
-  border-radius: 8px;
+  border-radius: 0.5em;
 }
 .markdown-editor .cm-lp-codeblock-fence {
   color: var(--rv-muted);
 }
 .markdown-editor .cm-lp-link {
   color: var(--rv-accent);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--rv-accent) 35%, transparent);
-  text-underline-offset: 0.2em;
+  text-decoration-line: underline;
+  text-decoration-color: var(--rv-accent-soft);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.25em;
   cursor: pointer;
 }
 .markdown-editor .cm-lp-bullet {
   display: inline-block;
   width: 0.9em;
-  color: var(--rv-muted);
+  color: var(--rv-accent);
   text-align: center;
 }
 .markdown-editor .cm-lp-task {
@@ -636,48 +711,40 @@
 }
 .markdown-editor .cm-lp-math-block {
   overflow-x: auto;
-  padding: 0.4em 0;
   text-align: center;
 }
 .markdown-editor .cm-lp-hr hr {
-  margin: 1em 0;
+  margin: var(--rv-hr-gap) 0;
   border: 0;
   border-top: 1px solid var(--rv-line);
 }
 .markdown-editor .cm-lp-image img {
   display: block;
   max-width: 100%;
-  margin: 0.6em auto;
-  border-radius: 6px;
+  margin: 0 auto;
+  border-radius: 0.5rem;
 }
 .markdown-editor .cm-lp-embed {
-  padding: 0.2em 0;
   cursor: text;
-}
-.markdown-editor .cm-lp-embed .prose > :first-child {
-  margin-top: 0;
-}
-.markdown-editor .cm-lp-embed .prose > :last-child {
-  margin-bottom: 0;
 }
 .markdown-editor .cm-lp-properties {
   padding-bottom: 0.4em;
 }
 
-/* 实时预览里能直接改的表格：样子和阅读模式一样，右边和下边悬停时出现「+」 */
+/* 实时预览里能直接改的表格：样子和阅读模式一样，上下各留 16px，右边和下边悬停时出现「+」 */
 .cm-lp-table {
   position: relative;
   width: fit-content;
   max-width: 100%;
-  margin: 0.6em 0;
-  padding: 0 18px 18px 0;
+  margin: 16px var(--reading-table-margin, auto);
+  padding: 0 18px 18px;
 }
 .cm-lp-table-scroll {
   overflow-x: auto;
 }
 .cm-lp-table table {
   border-collapse: collapse;
-  font-size: 0.92em;
+  font-size: 0.875em;
   line-height: 1.55;
 }
 .cm-lp-table :is(th, td) {
@@ -687,11 +754,11 @@
   vertical-align: top;
 }
 .cm-lp-table th {
-  background: var(--rv-faint);
+  background-color: color-mix(in srgb, var(--foreground) 3.5%, var(--background));
   font-weight: 600;
 }
 .cm-lp-table tbody tr:nth-child(even) {
-  background: color-mix(in oklab, var(--foreground) 2.5%, transparent);
+  background-color: color-mix(in srgb, var(--foreground) 2%, var(--background));
 }
 .cm-lp-table-cell {
   min-height: calc(1.55em + 14px);
@@ -699,13 +766,6 @@
   cursor: text;
   outline: none;
   white-space: pre-wrap;
-}
-.cm-lp-table-cell .prose {
-  font-size: inherit;
-  line-height: inherit;
-}
-.cm-lp-table-cell .prose :where(p) {
-  margin: 0;
 }
 .cm-lp-table-input {
   box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--rv-accent) 55%, transparent);
@@ -743,7 +803,7 @@
 .cm-lp-table-add-row {
   right: 18px;
   bottom: 0;
-  left: 0;
+  left: 18px;
   height: 14px;
 }
 .markdown-editor .cm-panels {
