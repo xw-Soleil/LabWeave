@@ -521,3 +521,8 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - `components/ui/markdown.tsx`：双链组件只随文档路径重建，边打字边预览时不再反复去磁盘上找链接目标。
   - `DocumentLinks.ts`：按文件名全项目找笔记时最多翻 3000 个文件夹。
 - `CLAUDE.md`：写明划词翻译默认调 Google、Bing 是用户定的例外。
+
+### 46. 文献库页开错位置、路径显示乱码（2026-11-11）
+
+- `app/src/core/research/LibraryTab.tsx`：文献库标签带上 `labweave:library` 这个 uri，算作资源标签。和白板、文档一样总是开在中间主区域，不会被塞进当时选中的侧栏。
+- `app/src/core/research/LibraryView.tsx`：文案插值关掉 i18next 自己的转义（React 显示时已经转义），路径里的 `/` 不再显示成 `&#x2F;`。「不是文献库」提示里的长路径自动换行，按钮放不下时也换行。
