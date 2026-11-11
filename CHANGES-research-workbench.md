@@ -662,3 +662,8 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/NoteProperties.tsx`、`DocumentView.tsx`：新增 `noteStats`，笔记右下角显示词数和字符数，照 Obsidian 的数法（汉字、假名一个字算一个词，字母数字连着的一串算一个词，字符数是正文长度，都不算笔记属性）。同一篇笔记和 Obsidian 对比：字符数一样，词数差 2。
 - `app/src/core/research/ResearchFolder.ts`：新增 `createEntry`（在研究文件夹的某个文件夹里建空笔记或文件夹，不覆盖已有的）、`checkEntryName`；`createWorkspace` 多一个参数，可以建在子文件夹里。
 - `app/src/sub/FileManagerWindow.tsx`：顶上的「+」改成菜单（新建笔记、新建白板、新建文件夹），建在选中的文件所在的文件夹里，没选就建在项目最外层；右键文件夹有同样三项，另有「在访达中显示」「复制路径」。建好以后文件栏定位到新建的那一项，笔记和白板直接打开。别的项目（不是当前项目）里的文件夹，这三项是灰的。
+
+### 56. 阅读模式里选中、取消选中不再让整篇笔记重算样式（2026-11-12）
+
+- `app/src/core/research/DocumentView.tsx`：选中文字后弹出的工具条和翻译卡片改放进一层一直存在的容器（`data-selection-layer`）。原来它们直接跟在正文后面，一出现、一消失，正文就不再是、又变回「最后一个子元素」；样式表里有不少不限定元素的「最后一个子元素」规则，WebKit 因此把整篇正文的样式重算一遍。
+- 在系统 WebKit 里用一篇 980 行的笔记（阅读模式一万两千多个元素）实测：工具条出现、消失各 250ms → 2ms。阅读模式滚动本来就顺（平均每帧 14ms，没有超过 40ms 的帧）。

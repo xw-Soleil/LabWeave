@@ -616,8 +616,11 @@ function PreviewSelection({
     };
   }, [area]);
   const width = area.current?.clientWidth ?? 600;
+  // 这一层一直留着，工具条和翻译卡片放在它里面。要是直接跟在正文后面，它们一出现、一消失，
+  // 正文就不再是、又变回「最后一个子元素」，Mac 的网页引擎会把整篇正文的样式重算一遍
+  // （四万字的笔记每次 250ms，实测；放进这一层以后 2ms）
   return (
-    <>
+    <div data-selection-layer>
       {menu && (
         <div
           data-selection-ui
@@ -666,7 +669,7 @@ function PreviewSelection({
           onClose={() => setTranslation(undefined)}
         />
       )}
-    </>
+    </div>
   );
 }
 
