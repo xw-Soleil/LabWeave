@@ -2968,9 +2968,19 @@ research:
       failed: "File operation failed: {{error}}"
   fileMenu:
     open: Open
+    openRight: Open in a split on the right
+    duplicate: Make a copy
+    moveTo: Move to…
+    moveTitle: Move to which folder
+    movePlaceholder: Type to filter folders
+    moveEmpty: No folders found
+    moved: "Moved to “{{name}}”"
+    findInFolder: Search in folder
+    copyPathMenu: Copy path
+    copyAbsolute: Full path
+    copyRelative: Relative path (from the project folder)
+    copyWikilink: Wikilink ([[name]])
     reveal: Open containing folder
-    copyPath: Copy file path
-    copyRelativePath: Copy relative path
     delete: Delete file…
     deleteDescription: "Move {{name}} to the workbench trash? Open boards will be saved and closed first. Linked cards will show the file as missing until it is restored."
     deleted: Moved to workbench trash
@@ -2984,6 +2994,7 @@ research:
     invalidTrash: The recovery record is invalid. The file has been preserved.
   rename:
     title: Rename
+    moveBoard: Boards can't be moved. Their card paths are stored relative to where the board is
     description: Enter a new file name. File references in your boards will be updated.
     invalid: Enter a valid file name without path separators or special characters.
     busy: A file is being saved or renamed. Close boards held by other windows and retry.
@@ -3295,6 +3306,7 @@ research:
         newTitle: New folder
         newDescription: Name the folder
         newPlaceholder: "e.g. Experiments"
+    duplicateRefused: This file can't be copied (boards and files outside the project can't, or there are too many copies already)
     entryName:
       empty: The name can't be empty
       exists: "“{{name}}” already exists. Pick another name"

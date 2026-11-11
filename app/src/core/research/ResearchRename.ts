@@ -40,7 +40,20 @@ type WritePlan = { path: string; before: Uint8Array; after: Uint8Array; project?
 
 export async function renameResearchFile(oldPath: string, name: string): Promise<string> {
   if (busy) throw new Error(text("busy"));
-  const newPath = renamedPath(oldPath, name);
+  return relocateResearchFile(oldPath, renamedPath(oldPath, name));
+}
+
+/**
+ * 把文件挪进研究文件夹里的另一个文件夹，白板里指向它的卡片跟着改（和改名同一套流程）。
+ * 白板（.prg）不能挪：它里面卡片的路径是按它自己所在的位置存的，挪了会全部对不上
+ */
+export async function moveResearchFile(oldPath: string, directory: string): Promise<string> {
+  if (busy) throw new Error(text("busy"));
+  if (/\.prg$/i.test(oldPath)) throw new Error(text("moveBoard"));
+  return relocateResearchFile(oldPath, Utils.joinPath(URI.file(directory), Utils.basename(URI.file(oldPath))).fsPath);
+}
+
+async function relocateResearchFile(oldPath: string, newPath: string): Promise<string> {
   if (newPath === oldPath) return oldPath;
   if (!ResearchFolder.isInside(oldPath) || !ResearchFolder.isInside(newPath)) throw new Error(text("outside"));
   busy = true;

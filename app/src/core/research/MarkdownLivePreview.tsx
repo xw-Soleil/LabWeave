@@ -114,6 +114,8 @@ class ReactWidget extends WidgetType {
     }
     const dom = document.createElement(this.block ? "div" : "span");
     dom.className = this.className;
+    // 提示框这类整块显示的内容要能拿到焦点：在里面拖选文字时焦点放在这一块上，编辑器才不会改动选区（见 mousedown）
+    if (this.block && !this.interactive) dom.tabIndex = -1;
     // 图片读完、提示框展开这类自己变高的情况，编辑器不知道，要告诉它重新量
     const observer = new ResizeObserver(() => {
       const entry = mounted.get(dom);
@@ -841,6 +843,20 @@ export function livePreview(config: () => LivePreviewConfig): Extension {
           event.preventDefault();
           view.focus();
           view.dispatch({ selection: EditorSelection.single(source[0], source[1]), userEvent: "select.pointer" });
+          return true;
+        }
+        // 提示框、引用里的表格这类整块显示的内容，照阅读模式：按着拖是选里面的字（能复制、翻译、问 AI），
+        // 松手时没选到字才进编辑、露出原文。焦点先挪到这一块上：焦点留在编辑器里时，编辑器会把选区改成整块的位置
+        const embed = target?.closest<HTMLElement>(".cm-lp-embed");
+        if (embed && !event.shiftKey && !target!.closest("a, button, input, [data-fold] > .callout-title")) {
+          embed.focus({ preventScroll: true });
+          const up = () => {
+            window.removeEventListener("mouseup", up, true);
+            if (!embed.isConnected || window.getSelection()?.isCollapsed === false) return;
+            view.focus();
+            view.dispatch({ selection: { anchor: view.posAtDOM(embed) }, userEvent: "select.pointer" });
+          };
+          window.addEventListener("mouseup", up, true);
           return true;
         }
         view.dispatch({ effects: pointerSelecting.of(true) });

@@ -667,3 +667,13 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `app/src/core/research/DocumentView.tsx`：选中文字后弹出的工具条和翻译卡片改放进一层一直存在的容器（`data-selection-layer`）。原来它们直接跟在正文后面，一出现、一消失，正文就不再是、又变回「最后一个子元素」；样式表里有不少不限定元素的「最后一个子元素」规则，WebKit 因此把整篇正文的样式重算一遍。
 - 在系统 WebKit 里用一篇 980 行的笔记（阅读模式一万两千多个元素）实测：工具条出现、消失各 250ms → 2ms。阅读模式滚动本来就顺（平均每帧 14ms，没有超过 40ms 的帧）。
+
+### 57. 实时预览里提示框能拖选文字；拖文件不再选中正文；文件、文件夹右键菜单照 Obsidian 补齐（2026-11-12）
+
+- `app/src/core/research/MarkdownLivePreview.tsx`、`reading.css`：提示框、引用里的表格这类整块显示的内容（`cm-lp-embed`）能拿到焦点。在里面按下鼠标时焦点挪到这一块上，按着拖就是原生选字（能复制、弹出翻译 / 问 AI / 复制），编辑器不再把选区改成整块；松手时没选到字才把光标放到这一块开头、露出原文。链接、按钮、可折叠提示框的标题照旧。
+- `app/src/sub/FileManagerWindow.tsx`：文件行按下鼠标时不开始选字（焦点照样落在这一行，F2 改名照常）。原来从文件栏拖文件，划过正文时 WebKit 会顺手选中正文里的字。
+- `app/src/components/research-file-menu.tsx`：文件右键菜单照 Obsidian 排：打开、在右侧分屏打开（笔记、PDF、图片）、创建副本、移动到…（列出研究文件夹里的文件夹，打字筛选）、复制路径（子菜单：完整路径、相对路径、双链）、用系统程序打开、打开所在文件夹、重命名、删除。白板不能创建副本和移动（副本会和原来的白板共用同一个 AI 对话记录的编号；挪了以后里面卡片的相对路径全对不上）。
+- `app/src/core/research/ResearchRename.ts`：新增 `moveResearchFile`，和改名走同一套流程（白板里指向这个文件的卡片跟着改）。
+- `app/src/core/research/ResearchFolder.ts`：新增 `listFolders`（研究文件夹里所有能放文件的文件夹）、`duplicateFile`（同一文件夹里复制一份，名字加「 1」「 2」…，不覆盖）。
+- 文件夹右键菜单加「在文件夹中查找」（搜索框填上这个文件夹的相对路径）和「复制路径」子菜单。
+- 文案：`fileMenu` 下新增若干项，去掉不再用的 `copyPath`、`copyRelativePath`。

@@ -3087,9 +3087,19 @@ research:
       failed: "文件操作失败：{{error}}"
   fileMenu:
     open: 打开
+    openRight: 在右侧分屏打开
+    duplicate: 创建副本
+    moveTo: 移动到…
+    moveTitle: 移动到哪个文件夹
+    movePlaceholder: 输入文件夹名筛选
+    moveEmpty: 没有找到文件夹
+    moved: "已移动到「{{name}}」"
+    findInFolder: 在文件夹中查找
+    copyPathMenu: 复制路径
+    copyAbsolute: 完整路径
+    copyRelative: 相对路径（从项目文件夹算起）
+    copyWikilink: 双链（[[名字]]）
     reveal: 打开所在文件夹
-    copyPath: 复制文件路径
-    copyRelativePath: 复制相对路径
     delete: 删除文件…
     deleteDescription: "将「{{name}}」移入工作台回收站？已打开的白板会先保存并关闭。引用此文件的卡片会显示文件缺失，恢复后可继续使用。"
     deleted: 已移入工作台回收站
@@ -3103,6 +3113,7 @@ research:
     invalidTrash: 回收记录损坏，文件已保留，请检查回收记录。
   rename:
     title: 重命名
+    moveBoard: 白板不能移动：它里面卡片的路径是按它所在的位置存的，挪了会对不上
     description: 输入新文件名。白板中的文件引用会一起更新。
     invalid: 文件名不能为空，也不能包含路径或特殊字符。
     busy: 正在保存或重命名，请稍后重试；其他窗口打开的白板需要先关闭。
@@ -3414,6 +3425,7 @@ research:
         newTitle: 新建文件夹
         newDescription: 给文件夹起个名字
         newPlaceholder: 例如：实验记录
+    duplicateRefused: 不能复制这个文件（白板、项目外的文件不能复制，或者同名副本太多了）
     entryName:
       empty: 名字不能为空
       exists: "「{{name}}」已经有了，换个名字吧"

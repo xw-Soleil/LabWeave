@@ -119,4 +119,32 @@ describe("live preview block widgets", () => {
     expect(line()).toBe("**bold** text");
     view.destroy();
   });
+
+  it("lets a drag inside a callout select its text, and a plain click open its source", () => {
+    const view = open(`Intro\n\n${CALLOUT}\n\nEnd`);
+    const callout = () => host.querySelector<HTMLElement>(".cm-lp-embed");
+    const text = callout()!.querySelector(".rendered")!.firstChild!;
+    const before = view.state.selection.main.head;
+
+    callout()!
+      .querySelector(".rendered")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    expect(document.activeElement).toBe(callout());
+    window.getSelection()!.setBaseAndExtent(text, 3, text, 8);
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    // 拖选了字：选区留在提示框里，编辑器的光标不动，提示框也不展开
+    expect(window.getSelection()!.toString()).toBe(CALLOUT.slice(3, 8));
+    expect(view.state.selection.main.head).toBe(before);
+    expect(callout()).not.toBeNull();
+
+    callout()!
+      .querySelector(".rendered")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    window.getSelection()!.collapse(text, 2);
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    // 只是点了一下：光标进到提示框开头，露出原文
+    expect(view.state.selection.main.head).toBe("Intro\n\n".length);
+    expect(callout()).toBeNull();
+    view.destroy();
+  });
 });

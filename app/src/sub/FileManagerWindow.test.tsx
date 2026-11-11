@@ -34,6 +34,7 @@ vi.mock("@/core/research/ResearchFolder", () => ({
     getRoot: () => "/current",
     scan: mocks.scan,
     isInside: (path: string) => path.startsWith("/current"),
+    toRelative: (path: string) => path.replace(/^\/current\/?/, ""),
   },
 }));
 vi.mock("@/core/research/ResearchFolderBrowser", () => ({ browseResearchProject: mocks.browse }));

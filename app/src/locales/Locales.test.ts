@@ -33,8 +33,6 @@ describe("application locale resources", () => {
     for (const key of [
       "open",
       "reveal",
-      "copyPath",
-      "copyRelativePath",
       "delete",
       "deleteDescription",
       "deleted",

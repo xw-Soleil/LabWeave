@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   exists: vi.fn(),
   writeFile: vi.fn(),
   mkdir: vi.fn(),
+  readFile: vi.fn(),
+  readDir: vi.fn(),
   onOpenFile: vi.fn(),
   closeEmptyDrafts: vi.fn(),
   toastError: vi.fn(),
@@ -19,7 +21,8 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   exists: mocks.exists,
   writeFile: mocks.writeFile,
   mkdir: mocks.mkdir,
-  readDir: vi.fn(),
+  readFile: mocks.readFile,
+  readDir: mocks.readDir,
   stat: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
@@ -162,5 +165,42 @@ describe("ResearchFolder.createEntry", () => {
 
     expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(mocks.mkdir).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResearchFolder.duplicateFile and listFolders", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.settings.researchFolderPath = "/research";
+    mocks.invoke.mockImplementation(async (_command: string, args: { path: string }) => args.path);
+    mocks.writeFile.mockResolvedValue(undefined);
+  });
+
+  it("copies next to the original with the first free number and refuses boards", async () => {
+    const bytes = new Uint8Array([1, 2]);
+    mocks.readFile.mockResolvedValue(bytes);
+    mocks.exists.mockImplementation(async (path: string) => path === "/research/笔记/a 1.md");
+    expect(await ResearchFolder.duplicateFile("/research/笔记/a.md")).toBe("/research/笔记/a 2.md");
+    expect(mocks.writeFile).toHaveBeenCalledWith("/research/笔记/a 2.md", bytes, { createNew: true });
+    await expect(ResearchFolder.duplicateFile("/research/白板.prg")).rejects.toThrow("files.duplicateRefused");
+  });
+
+  it("lists visible folders under the research folder, sorted, without hidden ones", async () => {
+    const dirs: Record<string, { name: string; isDirectory: boolean; isSymlink: boolean }[]> = {
+      "/research": [
+        { name: "笔记", isDirectory: true, isSymlink: false },
+        { name: ".workbench", isDirectory: true, isSymlink: false },
+        { name: "a.md", isDirectory: false, isSymlink: false },
+        { name: "图片", isDirectory: true, isSymlink: false },
+      ],
+      "/research/笔记": [{ name: "实验", isDirectory: true, isSymlink: false }],
+    };
+    mocks.readDir.mockImplementation(async (path: string) => dirs[path] ?? []);
+    expect(await ResearchFolder.listFolders()).toEqual([
+      "/research",
+      "/research/笔记",
+      "/research/笔记/实验",
+      "/research/图片",
+    ]);
   });
 });

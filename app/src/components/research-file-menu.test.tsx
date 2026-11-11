@@ -2,8 +2,23 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ rename: vi.fn(), trash: vi.fn(), write: vi.fn(), open: vi.fn() }));
-vi.mock("@/core/research/ResearchRename", () => ({ promptResearchRename: mocks.rename }));
+const mocks = vi.hoisted(() => ({
+  rename: vi.fn(),
+  trash: vi.fn(),
+  write: vi.fn(),
+  open: vi.fn(),
+  duplicate: vi.fn(),
+  reveal: vi.fn(),
+}));
+vi.mock("@/core/research/ResearchRename", () => ({ promptResearchRename: mocks.rename, moveResearchFile: vi.fn() }));
+vi.mock("@/core/research/DocumentTab", () => ({ documentError: String, openDocumentFile: vi.fn() }));
+vi.mock("@/core/research/ResearchFolder", () => ({
+  ResearchFolder: { duplicateFile: mocks.duplicate, listFolders: vi.fn(), toRelative: (path: string) => path },
+}));
+vi.mock("@/core/TabWorkspace", () => ({ TabWorkspace: { moveTab: vi.fn() } }));
+vi.mock("@/core/TabGroup", () => ({ findTabGroupByTabId: vi.fn() }));
+vi.mock("@/state", () => ({ store: { get: vi.fn() }, tabGroupRootAtom: {} }));
+vi.mock("@/sub/FileManagerWindow", () => ({ default: { reveal: mocks.reveal } }));
 vi.mock("@/core/research/ResearchTrash", () => ({ promptTrashResearchFile: mocks.trash }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: mocks.write }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
@@ -77,13 +92,28 @@ describe("file list context menu", () => {
     const labels = [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent);
     expect(labels).toEqual([
       "fileMenu.open",
+      "fileMenu.openRight",
+      "fileMenu.duplicate",
+      "fileMenu.moveTo",
+      "fileMenu.copyPathMenu",
       "document.openSystem",
       "fileMenu.reveal",
-      "fileMenu.copyPath",
-      "fileMenu.copyRelativePath",
       "rename.title F2",
       "fileMenu.delete",
     ]);
+  });
+  it("makes a copy next to the file and shows it in the file panel", async () => {
+    mocks.duplicate.mockResolvedValue("/research/papers/a 1.pdf");
+    await openMenu();
+    await select("fileMenu.duplicate");
+    expect(mocks.duplicate).toHaveBeenCalledWith("/research/papers/a.pdf");
+    await vi.waitFor(() => expect(mocks.reveal).toHaveBeenCalledWith("/research/papers/a 1.pdf"));
+  });
+  it("copies a wikilink from the copy-path submenu", async () => {
+    await openMenu();
+    await select("fileMenu.copyPathMenu");
+    await select("fileMenu.copyWikilink");
+    expect(mocks.write).toHaveBeenCalledWith("[[a.pdf]]");
   });
   it("opens the clicked row", async () => {
     const open = await openMenu();
@@ -97,12 +127,14 @@ describe("file list context menu", () => {
   });
   it("copies the exact relative path", async () => {
     await openMenu();
-    await select("fileMenu.copyRelativePath");
+    await select("fileMenu.copyPathMenu");
+    await select("fileMenu.copyRelative");
     expect(mocks.write).toHaveBeenCalledWith("papers/a.pdf");
   });
   it("copies the absolute path", async () => {
     await openMenu();
-    await select("fileMenu.copyPath");
+    await select("fileMenu.copyPathMenu");
+    await select("fileMenu.copyAbsolute");
     expect(mocks.write).toHaveBeenCalledWith("/research/papers/a.pdf");
   });
   it("renames the clicked file", async () => {

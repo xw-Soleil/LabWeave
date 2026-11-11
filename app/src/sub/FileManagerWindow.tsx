@@ -52,6 +52,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { exists } from "@tauri-apps/plugin-fs";
@@ -163,6 +166,8 @@ const REVEAL_FILE_EVENT = "pg-reveal-research-file";
 let pendingReveal: string | undefined;
 
 let cachedQuery = "";
+/** 文件夹右键「在文件夹中查找」：detail 是它相对研究文件夹的路径 */
+const FIND_IN_FOLDER_EVENT = "pg-find-in-folder";
 const showError = (error: unknown) =>
   toast.error(
     i18next.t("workspace.failed", {
@@ -292,6 +297,14 @@ export default function FileManagerWindow() {
     cachedQuery = value;
     setQuery(value);
   };
+  React.useEffect(() => {
+    const find = (event: Event) => {
+      cachedQuery = `${(event as CustomEvent<string>).detail}/`;
+      setQuery(cachedQuery);
+    };
+    window.addEventListener(FIND_IN_FOLDER_EVENT, find);
+    return () => window.removeEventListener(FIND_IN_FOLDER_EVENT, find);
+  }, []);
   const reveal = React.useCallback(
     (path: string) => {
       const key = projectPathKey(path);
@@ -457,6 +470,13 @@ export default function FileManagerWindow() {
             if (!suppressClick.current) setSelected(entry.absPath);
           }}
           onDoubleClick={open}
+          // 从这里按住拖文件，划过正文时 Mac 的网页引擎会顺手选中正文里的字；不让按下鼠标开始选字，
+          // 焦点照样落在这一行上（F2 改名要用）
+          onMouseDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
+          }}
           onPointerDown={(event) => onRowPointerDown(event, entry, projectRoot)}
           onKeyDown={(event) => {
             if (event.key === "Enter") open();
@@ -847,13 +867,37 @@ function DirectoryRow({
         <ContextMenuContent>
           <CreateItems Item={ContextMenuItem} directory={path} />
           <ContextMenuSeparator />
+          {/* 搜索框只搜当前项目：填上这个文件夹的相对路径，列出它里面的文件 */}
+          <ContextMenuItem
+            disabled={!ResearchFolder.isInside(path) || ResearchFolder.toRelative(path) === ""}
+            onSelect={() =>
+              window.dispatchEvent(new CustomEvent(FIND_IN_FOLDER_EVENT, { detail: ResearchFolder.toRelative(path) }))
+            }
+          >
+            <Search />
+            {t("fileMenu.findInFolder")}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Copy />
+              {t("fileMenu.copyPathMenu")}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem onSelect={() => void writeText(path).catch(showError)}>
+                {t("fileMenu.copyAbsolute")}
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={!ResearchFolder.isInside(path)}
+                onSelect={() => void writeText(ResearchFolder.toRelative(path)).catch(showError)}
+              >
+                {t("fileMenu.copyRelative")}
+              </ContextMenuItem>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
           <ContextMenuItem onSelect={() => void shellOpen(path).catch(showError)}>
             <ExternalLink />
             {t("files.revealInFinder")}
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void writeText(path).catch(showError)}>
-            <Copy />
-            {t("fileMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

@@ -763,6 +763,7 @@
 }
 .markdown-editor .cm-lp-embed {
   cursor: text;
+  outline: none;
 }
 /* 编辑器按原文保留换行；排好版贴进来的块（提示框、表格、属性、公式）里夹着的换行符不能当成空行 */
 .markdown-editor

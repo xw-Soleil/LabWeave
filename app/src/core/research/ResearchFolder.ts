@@ -4,7 +4,7 @@ import { Settings } from "@/core/service/Settings";
 import { createDefaultMetadata } from "@/types/metadata";
 import { encode } from "@msgpack/msgpack";
 import { invoke } from "@tauri-apps/api/core";
-import { exists, mkdir, readDir, stat, writeFile } from "@tauri-apps/plugin-fs";
+import { exists, mkdir, readDir, readFile, stat, writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
 import { toast } from "sonner";
@@ -374,6 +374,46 @@ export const ResearchFolder = {
     const project = await onOpenFile(URI.file(absPath), "科研工作台-新建工作区");
     if (project) await closeEmptyDrafts(project);
     return absPath;
+  },
+
+  /** 研究文件夹里所有能放文件的文件夹（含最外层），按路径排好；跳过文件面板也隐藏的、符号链接，深度 ≤6，最多 2000 个 */
+  async listFolders(): Promise<string[]> {
+    const root = ResearchFolder.getRoot();
+    if (!root) return [];
+    await ResearchFolder.ensureRootRegistered();
+    const folders = [root];
+    const walk = async (directory: string, depth: number) => {
+      if (depth >= 6) return;
+      for (const entry of await readDir(directory)) {
+        if (folders.length >= 2000) return;
+        if (!entry.isDirectory || entry.isSymlink || isHiddenResearchName(entry.name)) continue;
+        const path = joinPath(directory, entry.name);
+        folders.push(path);
+        await walk(path, depth + 1);
+      }
+    };
+    await walk(root, 0);
+    const relative = (path: string) => ResearchFolder.toRelative(path);
+    return folders.sort((a, b) => relative(a).localeCompare(relative(b), "zh-Hans-CN"));
+  },
+
+  /** 在同一个文件夹里复制一份，名字后面加「 1」「 2」…，不覆盖已有的；返回新文件的绝对路径 */
+  async duplicateFile(path: string): Promise<string> {
+    if (!ResearchFolder.isInside(path) || /\.prg$/i.test(path)) throw new Error(t("files.duplicateRefused"));
+    await ResearchFolder.ensureRootRegistered();
+    const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const directory = path.slice(0, slash);
+    const name = path.slice(slash + 1);
+    const dot = name.lastIndexOf(".");
+    const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+    for (let n = 1; n < 100; n++) {
+      const copy = joinPath(directory, `${stem} ${n}${extension}`);
+      if (await exists(copy)) continue;
+      await writeFile(copy, await readFile(path), { createNew: true });
+      notifyResearchFilesChanged();
+      return copy;
+    }
+    throw new Error(t("files.duplicateRefused"));
   },
 
   /**
