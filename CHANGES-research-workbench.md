@@ -526,3 +526,27 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `app/src/core/research/LibraryTab.tsx`：文献库标签带上 `labweave:library` 这个 uri，算作资源标签。和白板、文档一样总是开在中间主区域，不会被塞进当时选中的侧栏。
 - `app/src/core/research/LibraryView.tsx`：文案插值关掉 i18next 自己的转义（React 显示时已经转义），路径里的 `/` 不再显示成 `&#x2F;`。「不是文献库」提示里的长路径自动换行，按钮放不下时也换行。
+
+### 47. Markdown 编辑器照 Obsidian：笔记属性表、实时预览、源码模式（2026-11-11）
+
+- 依赖：新增 CodeMirror 6（`@codemirror/state`、`view`、`commands`、`language`、`lang-markdown`、`search`，`@lezer/highlight`、`@lezer/markdown`，MIT 许可）；`app/vite.config.ts` 在开发版里预先打包它们。
+- `app/src/core/research/NoteProperties.tsx`（新增）：
+  - 笔记开头 `---` 之间的属性显示成表格，按值的类型配图标：文字、列表、标签、数字、日期、勾选、网址；
+  - 可以直接改、加一项、删一项；
+  - 写回时只替换改动的那一项，其他行的写法、注释、引号和 CRLF 都不动；
+  - 格式坏了就按原文显示，并给出提示。
+- `app/src/core/research/MarkdownEditor.tsx`、`MarkdownLivePreview.tsx`（新增）：
+  - 基于 CodeMirror 6 的编辑器，有「实时预览」和「源码模式」两种，原文不会被编辑器改写。
+  - 开头的 `---` 区块按 Obsidian 规则当成属性块，不会被误认成标题。
+  - 实时预览中，光标所在的地方露出原文，其他地方显示成排好版的样子，包括：
+    - 标题、加粗斜体删除线、行内代码、链接、双链；
+    - 列表圆点和勾选框，勾选框可以点；
+    - 引用、分隔线、代码块底色；
+    - 图片和 `![[图片]]`（和阅读模式一样按文件名找）；
+    - 行内和整行公式（KaTeX）；
+    - 提示框和表格：光标不在里面时用阅读模式同一个组件画出来；
+    - 属性表。
+- `app/src/core/research/DocumentView.tsx`：
+  - 去掉「编辑 / 对照 / 阅读」三段切换，改成照 Obsidian 的做法：右上角书本图标切「阅读 / 编辑」，Cmd/Ctrl+E 也能切；「…」菜单里选阅读视图、实时预览、源码模式，「重新读取」也挪进这个菜单。选择记在本机，默认是实时预览。
+  - 阅读模式顶上显示属性表，大标题去掉 `.md`。
+- `app/src/css/reading.css`：属性表和编辑器的样式。
