@@ -37,7 +37,6 @@ import {
 } from "@/core/research/ResearchWorkspace";
 import { promptResearchRename } from "@/core/research/ResearchRename";
 import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
-import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { hidePeekForDrag } from "@/core/research/SidePanels";
 import { Settings } from "@/core/service/Settings";
 import { createSubWindow } from "@/core/subWindowOpen";
@@ -47,6 +46,14 @@ import { cn } from "@/utils/cn";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { exists } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { useAtomValue } from "jotai";
@@ -58,6 +65,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   Database,
+  Copy,
   ExternalLink,
   File,
   FileArchive,
@@ -164,6 +172,49 @@ const showError = (error: unknown) =>
     }),
   );
 
+type CreateKind = "note" | "folder" | "workspace";
+const CREATE_KINDS: [CreateKind, LucideIcon][] = [
+  ["note", NotebookPen],
+  ["workspace", LayoutDashboard],
+  ["folder", FolderPlus],
+];
+
+/** 问名字，在研究文件夹的某个文件夹里新建笔记、白板或文件夹；笔记和白板建好就打开，文件栏里定位到新建的那一项 */
+async function createInFolder(kind: CreateKind, directory: string) {
+  const text = (key: string) => i18next.t(key, { ns: "research" });
+  const prefix = kind === "workspace" ? "workspace.new" : `files.create.${kind}.new`;
+  const input = await Dialog.input(text(`${prefix}Title`), text(`${prefix}Description`), {
+    placeholder: text(`${prefix}Placeholder`),
+  });
+  if (!input?.trim()) return;
+  const path =
+    kind === "workspace"
+      ? await ResearchFolder.createWorkspace(input, directory)
+      : await ResearchFolder.createEntry(kind, input, directory);
+  if (!path) return;
+  if (kind === "note") await openDocumentFile(path);
+  FileManagerWindow.reveal(path);
+}
+
+/** 「新建笔记 / 新建白板 / 新建文件夹」三项，顶上的「+」菜单和文件夹的右键菜单共用 */
+function CreateItems({
+  Item,
+  directory,
+}: {
+  Item: typeof DropdownMenuItem | typeof ContextMenuItem;
+  directory: string;
+}) {
+  const { t } = useTranslation("research");
+  // 只能建在当前项目里：别的项目没有写入权限
+  const allowed = ResearchFolder.isInside(directory);
+  return CREATE_KINDS.map(([kind, Icon]) => (
+    <Item key={kind} disabled={!allowed} onSelect={() => void createInFolder(kind, directory).catch(showError)}>
+      <Icon />
+      {t(kind === "workspace" ? "files.newWorkspace" : `files.create.${kind}.newTitle`)}
+    </Item>
+  ));
+}
+
 export default function FileManagerWindow() {
   const { t } = useTranslation("research");
   const [root] = Settings.use("researchFolderPath");
@@ -184,6 +235,11 @@ export default function FileManagerWindow() {
   const suppressClick = React.useRef(false);
   const lastRefresh = React.useRef(0);
   const searching = query.trim() !== "";
+  // 顶上「+」建在哪：选中的是文件就建在它所在的文件夹，是文件夹就建在里面；没选或选的不在当前项目里，建在项目最外层
+  const createTarget = () => {
+    if (!selected || !ResearchFolder.isInside(selected)) return root;
+    return /\.[^./\\]+$/.test(selected) ? selected.replace(/[\\/][^\\/]+$/, "") : selected;
+  };
 
   const refresh = React.useCallback(() => {
     lastRefresh.current = Date.now();
@@ -495,17 +551,23 @@ export default function FileManagerWindow() {
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          disabled={!root}
-          title={t("files.newWorkspace")}
-          aria-label={t("files.newWorkspace")}
-          onClick={() => emitResearchEvent("newWorkspace")}
-        >
-          <Plus />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={!root}
+              title={t("files.create.menu")}
+              aria-label={t("files.create.menu")}
+            >
+              <Plus />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <CreateItems Item={DropdownMenuItem} directory={createTarget()} />
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="flex shrink-0 items-center gap-1 px-2 py-1.5">
         <Search className="text-muted-foreground size-3.5 shrink-0" />
@@ -721,62 +783,80 @@ function DirectoryRow({
   const notePadding = { paddingLeft: treeIndent(depth + 1) + 22 };
   return (
     <div>
-      <div
-        className={cn(TREE_ROW, current ? TREE_ACTIVE : TREE_IDLE, onSelect && "font-medium")}
-        style={{ paddingLeft: treeIndent(depth) }}
-      >
-        <button
-          type="button"
-          className="text-muted-foreground/70 hover:text-foreground flex size-4 shrink-0 items-center justify-center rounded-sm"
-          aria-label={t("projectTree.expand", { name: projectName(path) })}
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <ChevronRight className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-90")} />
-        </button>
-        <button
-          type="button"
-          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-          title={path}
-          onClick={() => {
-            if (onSelect) {
-              onSelect();
-              setExpanded(true);
-            } else setExpanded(!expanded);
-          }}
-        >
-          <Icon className="text-muted-foreground size-4 shrink-0" strokeWidth={1.75} />
-          <span className="truncate">{projectName(path)}</span>
-        </button>
-        {current && (
-          <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
-            {t("projectTree.current")}
-          </Badge>
-        )}
-        {onRemove && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                aria-label={t("projectTree.actions", { name: projectName(path) })}
-              >
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuGroup>
-                <DropdownMenuItem onSelect={() => void shellOpen(path).catch(showError)}>
-                  <ExternalLink />
-                  {t("files.revealInFinder")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onRemove}>{t("projectTree.remove")}</DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+      {/* 右键文件夹：在里面新建笔记、白板、文件夹 */}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            data-file-key={projectPathKey(path)}
+            className={cn(TREE_ROW, current ? TREE_ACTIVE : TREE_IDLE, onSelect && "font-medium")}
+            style={{ paddingLeft: treeIndent(depth) }}
+          >
+            <button
+              type="button"
+              className="text-muted-foreground/70 hover:text-foreground flex size-4 shrink-0 items-center justify-center rounded-sm"
+              aria-label={t("projectTree.expand", { name: projectName(path) })}
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+            >
+              <ChevronRight className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-90")} />
+            </button>
+            <button
+              type="button"
+              className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
+              title={path}
+              onClick={() => {
+                if (onSelect) {
+                  onSelect();
+                  setExpanded(true);
+                } else setExpanded(!expanded);
+              }}
+            >
+              <Icon className="text-muted-foreground size-4 shrink-0" strokeWidth={1.75} />
+              <span className="truncate">{projectName(path)}</span>
+            </button>
+            {current && (
+              <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
+                {t("projectTree.current")}
+              </Badge>
+            )}
+            {onRemove && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                    aria-label={t("projectTree.actions", { name: projectName(path) })}
+                  >
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onSelect={() => void shellOpen(path).catch(showError)}>
+                      <ExternalLink />
+                      {t("files.revealInFinder")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={onRemove}>{t("projectTree.remove")}</DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <CreateItems Item={ContextMenuItem} directory={path} />
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void shellOpen(path).catch(showError)}>
+            <ExternalLink />
+            {t("files.revealInFinder")}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void writeText(path).catch(showError)}>
+            <Copy />
+            {t("fileMenu.copyPath")}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       {error && (
         <p role="status" className={note} style={notePadding} title={error}>
           {t(onSelect ? "projectTree.missing" : "projectTree.unreadable")}

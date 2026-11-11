@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNoteProperties, setNoteProperty, splitFrontmatter } from "./NoteProperties";
+import { noteStats, parseNoteProperties, setNoteProperty, splitFrontmatter } from "./NoteProperties";
 
 const note = [
   "---",
@@ -22,6 +22,12 @@ const note = [
 ].join("\n");
 
 describe("note properties", () => {
+  it("counts words and characters like Obsidian, without the frontmatter", () => {
+    // 汉字一个字一个词；字母和数字连着的一串算一个；标点、空白不算词，但算字符
+    expect(noteStats("---\na: 1\n---\n模型 EDM-2 用了 5,400 万参数。")).toEqual({ words: 9, characters: 22 });
+    expect(noteStats("")).toEqual({ words: 0, characters: 0 });
+  });
+
   it("splits the frontmatter off and keeps BOM, CRLF and an empty block intact", () => {
     const parts = splitFrontmatter(note)!;
     expect(parts.opening + parts.yaml + parts.closing + parts.body).toBe(note);

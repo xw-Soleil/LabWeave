@@ -4,7 +4,7 @@ import { Settings } from "@/core/service/Settings";
 import { createDefaultMetadata } from "@/types/metadata";
 import { encode } from "@msgpack/msgpack";
 import { invoke } from "@tauri-apps/api/core";
-import { exists, readDir, stat, writeFile } from "@tauri-apps/plugin-fs";
+import { exists, mkdir, readDir, stat, writeFile } from "@tauri-apps/plugin-fs";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
 import { toast } from "sonner";
@@ -190,11 +190,16 @@ export type WorkspaceNameCheck =
 
 /** 和「在当前目录新建文件」的规则一致，另外不能取会被文件面板隐藏的名字 */
 export function checkWorkspaceName(input: string): WorkspaceNameCheck {
+  return checkEntryName(input, ".prg");
+}
+
+/** 新建白板（.prg）、笔记（.md）、文件夹（没有后缀）时的名字检查；用户自己打了后缀就去掉 */
+export function checkEntryName(input: string, extension: string): WorkspaceNameCheck {
   let name = input.trim();
-  if (name.toLowerCase().endsWith(".prg")) name = name.slice(0, -4).trim();
+  if (extension && name.toLowerCase().endsWith(extension)) name = name.slice(0, -extension.length).trim();
   if (name === "") return { ok: false, reason: "empty" };
   if (/[\\/:*?"<>|]/.test(name)) return { ok: false, reason: "invalidChars" };
-  if (isHiddenResearchName(`${name}.prg`)) return { ok: false, reason: "hidden" };
+  if (isHiddenResearchName(`${name}${extension}`)) return { ok: false, reason: "hidden" };
   return { ok: true, name };
 }
 
@@ -341,12 +346,12 @@ export const ResearchFolder = {
   },
 
   /**
-   * 在研究文件夹里建一个空的 .prg 并打开，返回绝对路径。
+   * 在研究文件夹里（directory 是里面的某个文件夹，默认最外层）建一个空的 .prg 并打开，返回绝对路径。
    * 名字不合法、没选研究文件夹、文件已存在时弹提示，不覆盖任何文件，返回 ""。
    */
-  async createWorkspace(name: string): Promise<string> {
+  async createWorkspace(name: string, directory: string = ResearchFolder.getRoot()): Promise<string> {
     const root = ResearchFolder.getRoot();
-    if (!root) {
+    if (!root || !ResearchFolder.isInside(directory)) {
       toast.error(t("files.noRoot"));
       return "";
     }
@@ -356,7 +361,7 @@ export const ResearchFolder = {
       return "";
     }
     await ResearchFolder.ensureRootRegistered();
-    const absPath = joinPath(ResearchFolder.getRoot(), `${check.name}.prg`);
+    const absPath = joinPath(directory, `${check.name}.prg`);
     if (await exists(absPath)) {
       toast.error(t("files.workspaceName.exists", { name: check.name }));
       return "";
@@ -368,6 +373,38 @@ export const ResearchFolder = {
     const { closeEmptyDrafts, onOpenFile } = await import("@/core/service/GlobalMenu");
     const project = await onOpenFile(URI.file(absPath), "科研工作台-新建工作区");
     if (project) await closeEmptyDrafts(project);
+    return absPath;
+  },
+
+  /**
+   * 在研究文件夹的某个文件夹里（默认最外层）建一篇空笔记（.md）或一个文件夹，返回绝对路径。
+   * 名字不合法、位置不在研究文件夹里、已经有同名的，都弹提示并返回 ""，不覆盖任何东西。
+   */
+  async createEntry(
+    kind: "note" | "folder",
+    name: string,
+    directory: string = ResearchFolder.getRoot(),
+  ): Promise<string> {
+    if (!ResearchFolder.getRoot() || !ResearchFolder.isInside(directory)) {
+      toast.error(t("files.noRoot"));
+      return "";
+    }
+    const extension = kind === "note" ? ".md" : "";
+    const check = checkEntryName(name, extension);
+    if (!check.ok) {
+      toast.error(t(check.reason === "empty" ? "files.entryName.empty" : `files.workspaceName.${check.reason}`));
+      return "";
+    }
+    await ResearchFolder.ensureRootRegistered();
+    const absPath = joinPath(directory, `${check.name}${extension}`);
+    if (await exists(absPath)) {
+      toast.error(t("files.entryName.exists", { name: `${check.name}${extension}` }));
+      return "";
+    }
+    // 不递归的 mkdir、createNew 的写入：检查之后万一冒出同名的，会失败而不是覆盖
+    if (kind === "folder") await mkdir(absPath);
+    else await writeFile(absPath, new Uint8Array(), { createNew: true });
+    notifyResearchFilesChanged();
     return absPath;
   },
 };

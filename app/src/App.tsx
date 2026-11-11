@@ -103,9 +103,11 @@ function FloatingCorners() {
 
   return (
     <>
+      {/* 这里原来用 Tailwind 的 empty 变体在没有子元素时隐藏，已去掉，原因见 EmptyVariantGuard.test.ts。
+          里面没东西时它宽度是 0，本来就看不见、点不到 */}
       <div
         ref={leftRef}
-        className="absolute top-1 z-30 flex h-7 items-center empty:hidden"
+        className="absolute top-1 z-30 flex h-7 items-center"
         style={{ left: isMac ? MAC_TRAFFIC_LIGHTS_WIDTH : 8 }}
       >
         <GlobalMenu />

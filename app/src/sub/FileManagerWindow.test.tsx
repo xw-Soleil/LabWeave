@@ -30,7 +30,11 @@ vi.mock("@/core/research/DocumentTab", () => ({
 }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   RESEARCH_FILES_CHANGED_EVENT: "research:files-changed",
-  ResearchFolder: { getRoot: () => "/current", scan: mocks.scan },
+  ResearchFolder: {
+    getRoot: () => "/current",
+    scan: mocks.scan,
+    isInside: (path: string) => path.startsWith("/current"),
+  },
 }));
 vi.mock("@/core/research/ResearchFolderBrowser", () => ({ browseResearchProject: mocks.browse }));
 vi.mock("@/core/research/ResearchWorkspace", () => ({

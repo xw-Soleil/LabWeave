@@ -64,7 +64,7 @@ import { DocumentTab, documentError, documentText as t, openDocumentFile } from 
 import MarkdownEditor, { type MarkdownEditMode } from "./MarkdownEditor";
 import type { LivePreviewConfig } from "./MarkdownLivePreview";
 import type { OutlineHeading, OutlinePosition } from "./NoteHeadings";
-import { NoteProperties, splitFrontmatter } from "./NoteProperties";
+import { NoteProperties, noteStats, splitFrontmatter } from "./NoteProperties";
 import { documentWikilinkComponent } from "./ObsidianMarkdown";
 import PdfView from "./PdfView";
 import { askAiAboutSelection, clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
@@ -454,6 +454,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
     }
   }, [tab, tab.markdownHeading, tab.loadingMarkdown, source, mode]);
   const frontmatter = splitFrontmatter(source);
+  const stats = useMemo(() => noteStats(source), [source]);
   const editProperties = (yaml: string) => {
     // 以最新原文为准重拼，预览用的是稍慢一拍的文字，不能拿它覆盖刚打的字
     const current = splitFrontmatter(editorText(tab.markdown!.text));
@@ -474,7 +475,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   );
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 flex-1 flex-col"
       style={readingThemeVars(resolveReadingTheme(theme)) as CSSProperties}
       onKeyDownCapture={(event) => {
         // Cmd/Ctrl+E 在阅读和编辑之间切换，和 Obsidian 一样
@@ -556,6 +557,16 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         >
           {preview}
           <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
+        </div>
+      )}
+      {/* 右下角的词数、字符数，和 Obsidian 的状态栏一样 */}
+      {tab.markdown && (
+        <div
+          role="status"
+          className="text-muted-foreground bg-background/85 pointer-events-none absolute right-4 bottom-1.5 z-10 flex gap-3 rounded px-2 py-0.5 text-xs tabular-nums"
+        >
+          <span>{t("stats.words", { n: stats.words.toLocaleString("en-US") })}</span>
+          <span>{t("stats.characters", { n: stats.characters.toLocaleString("en-US") })}</span>
         </div>
       )}
     </div>

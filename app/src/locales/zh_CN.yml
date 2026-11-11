@@ -2945,6 +2945,9 @@ research:
     invalidProjectName: 名字不能为空，不能使用路径、隐藏名称、Windows 保留名称或以句点结尾。
   document:
     loading: 正在读取…
+    stats:
+      words: "{{n}} 个词"
+      characters: "{{n}} 个字符"
     source: Markdown 源码
     preview: 实时预览
     modes:
@@ -3401,6 +3404,19 @@ research:
     chooseFolderDialogTitle: 选择研究文件夹
     refresh: 刷新
     newWorkspace: 新建白板
+    create:
+      menu: 新建笔记、白板或文件夹
+      note:
+        newTitle: 新建笔记
+        newDescription: 给笔记起个名字，它会保存成这个文件夹里的一个 .md 文件
+        newPlaceholder: 例如：10-18 组会记录
+      folder:
+        newTitle: 新建文件夹
+        newDescription: 给文件夹起个名字
+        newPlaceholder: 例如：实验记录
+    entryName:
+      empty: 名字不能为空
+      exists: "「{{name}}」已经有了，换个名字吧"
     new: 新建
     noFolder: 未选择研究文件夹
     changeFolder: 更换研究文件夹…

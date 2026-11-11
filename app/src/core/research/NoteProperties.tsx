@@ -35,6 +35,16 @@ export function splitFrontmatter(
   };
 }
 
+/**
+ * 词数和字符数，照 Obsidian 的数法（同一篇笔记实测词数只差 2）：汉字、假名一个字算一个词，
+ * 字母（拉丁、希腊、西里尔）和数字连着的一串算一个词；字符数是正文的长度。笔记属性不算
+ */
+const WORDS = /[一-鿕ぁ-ゖゝ-ゟァ-ヺー-ヿ]|(?:[0-9]+(?:[,.][0-9]+)*|[-A-Za-zªµºÀ-ÖØ-öø-ˁͰ-ϿЀ-ԯ])+/g;
+export function noteStats(source: string): { words: number; characters: number } {
+  const body = splitFrontmatter(source)?.body ?? source;
+  return { words: body.match(WORDS)?.length ?? 0, characters: body.length };
+}
+
 export type PropertyKind = "text" | "list" | "tags" | "number" | "checkbox" | "date" | "link" | "other";
 export interface NoteProperty {
   key: string;

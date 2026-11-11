@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   exists: vi.fn(),
   writeFile: vi.fn(),
+  mkdir: vi.fn(),
   onOpenFile: vi.fn(),
   closeEmptyDrafts: vi.fn(),
   toastError: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-fs", () => ({
   exists: mocks.exists,
   writeFile: mocks.writeFile,
+  mkdir: mocks.mkdir,
   readDir: vi.fn(),
   stat: vi.fn(),
 }));
@@ -119,5 +121,46 @@ describe("ResearchFolder.ensureRootRegistered", () => {
     await Promise.all([old, switching, scan]);
     expect(mocks.invoke.mock.calls.map(([, args]) => args.path)).toEqual(["/old", "/new"]);
     expect(mocks.settings.researchFolderPath).toBe("/new");
+  });
+});
+
+describe("ResearchFolder.createEntry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.settings.researchFolderPath = "/research";
+    mocks.invoke.mockImplementation(async (_command: string, args: { path: string }) => args.path);
+    mocks.exists.mockResolvedValue(false);
+    mocks.writeFile.mockResolvedValue(undefined);
+    mocks.mkdir.mockResolvedValue(undefined);
+    mocks.onOpenFile.mockImplementation(async (uri: URI) => ({ uri }));
+  });
+
+  it("creates an empty note, a folder and a board inside a subfolder without overwriting", async () => {
+    expect(await ResearchFolder.createEntry("note", " 组会记录.md ", "/research/笔记")).toBe(
+      "/research/笔记/组会记录.md",
+    );
+    expect(mocks.writeFile).toHaveBeenCalledWith("/research/笔记/组会记录.md", new Uint8Array(), { createNew: true });
+
+    expect(await ResearchFolder.createEntry("folder", "实验", "/research/笔记")).toBe("/research/笔记/实验");
+    expect(mocks.mkdir).toHaveBeenCalledWith("/research/笔记/实验");
+
+    expect(await ResearchFolder.createWorkspace("草图", "/research/笔记")).toBe("/research/笔记/草图.prg");
+  });
+
+  it("refuses names that exist, bad names and folders outside the research folder", async () => {
+    mocks.exists.mockResolvedValue(true);
+    expect(await ResearchFolder.createEntry("note", "已有")).toBe("");
+    expect(mocks.toastError).toHaveBeenLastCalledWith("files.entryName.exists");
+
+    expect(await ResearchFolder.createEntry("folder", "  ")).toBe("");
+    expect(mocks.toastError).toHaveBeenLastCalledWith("files.entryName.empty");
+
+    mocks.exists.mockResolvedValue(false);
+    expect(await ResearchFolder.createEntry("note", "别处", "/elsewhere")).toBe("");
+    expect(await ResearchFolder.createWorkspace("别处", "/elsewhere")).toBe("");
+    expect(mocks.toastError).toHaveBeenLastCalledWith("files.noRoot");
+
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.mkdir).not.toHaveBeenCalled();
   });
 });

@@ -652,3 +652,13 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/DocumentView.tsx`：阅读区的选区高亮改成一直用同一个 `Highlight`，每次 `clear()` 再 `add()`。在系统 WebKit 里实测（截窗口取像素）：`CSS.highlights.delete()` 和用新的 `Highlight` 去 `set()` 都不触发重画，旧的蓝色要等别的东西引起重画才消失；`clear()` / `add()` 会马上重画。一万五千个元素的整篇选区，`clear()` 加 `add()` 约 5ms。
 - `app/src/core/research/MarkdownTable.tsx`：格子不再按下鼠标就进编辑，改成松手（click）且没有选中文字时才进；按下时把焦点放到格子上。这样按着拖过几个格子是原生选字，和阅读模式一样能复制、弹出翻译 / 问 AI / 复制。实测：焦点在格子上时编辑器不会动表格里的选区，焦点留在编辑器上时下一次更新会把它收走。
 - 顺带实测：987 行的笔记中间连续打字，每个字处理 4～5ms，没有掉帧。
+
+### 55. 长笔记卡顿的根源（一条 Tailwind 规则）、词数字符数、文件栏新建笔记 / 文件夹 / 白板（2026-11-12）
+
+- `app/src/App.tsx`：左上角菜单容器去掉 Tailwind「没有子元素时隐藏」的变体。它生成的那条带「空元素」伪类的嵌套规则，会让 WebKit 把页面上每个元素都记成「样式跟有没有子元素有关」，之后任何地方增删一个子元素，那一层下面的样式都整个重算。整个程序只有这一处用到。
+  - 用程序里真的编辑器、焦点在编辑器上，打开一篇 980 行（76KB、近三百处公式）的笔记实测，去掉这条规则前后：快速滚动平均每帧 42ms → 18ms，超过 40ms 的帧 24 个 → 5 个（更快的滚动 20 个 → 1 个）；选中 20 行后松手 350ms → 170ms；取消选中 97ms → 42ms；点一下最慢 90ms → 24ms。
+  - 开发版要重启才生效：Tailwind 在开发服务器运行期间只增不减，旧规则会一直留在样式表里。
+- 新文件 `app/src/core/research/EmptyVariantGuard.test.ts`：`app/src` 下面出现这个变体或伪类（包括注释和文档，Tailwind 也会扫出来）就失败。
+- `app/src/core/research/NoteProperties.tsx`、`DocumentView.tsx`：新增 `noteStats`，笔记右下角显示词数和字符数，照 Obsidian 的数法（汉字、假名一个字算一个词，字母数字连着的一串算一个词，字符数是正文长度，都不算笔记属性）。同一篇笔记和 Obsidian 对比：字符数一样，词数差 2。
+- `app/src/core/research/ResearchFolder.ts`：新增 `createEntry`（在研究文件夹的某个文件夹里建空笔记或文件夹，不覆盖已有的）、`checkEntryName`；`createWorkspace` 多一个参数，可以建在子文件夹里。
+- `app/src/sub/FileManagerWindow.tsx`：顶上的「+」改成菜单（新建笔记、新建白板、新建文件夹），建在选中的文件所在的文件夹里，没选就建在项目最外层；右键文件夹有同样三项，另有「在访达中显示」「复制路径」。建好以后文件栏定位到新建的那一项，笔记和白板直接打开。别的项目（不是当前项目）里的文件夹，这三项是灰的。

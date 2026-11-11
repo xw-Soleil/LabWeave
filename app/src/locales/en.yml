@@ -2826,6 +2826,9 @@ research:
     invalidProjectName: Enter a nonempty name without paths, hidden names, Windows reserved names or a trailing dot.
   document:
     loading: Reading…
+    stats:
+      words: "{{n}} words"
+      characters: "{{n}} characters"
     source: Markdown source
     preview: Live preview
     modes:
@@ -3282,6 +3285,19 @@ research:
     chooseFolderDialogTitle: Choose research folder
     refresh: Refresh
     newWorkspace: New board
+    create:
+      menu: New note, board or folder
+      note:
+        newTitle: New note
+        newDescription: Name the note. It is saved as a .md file in this folder
+        newPlaceholder: "e.g. Group meeting 10-18"
+      folder:
+        newTitle: New folder
+        newDescription: Name the folder
+        newPlaceholder: "e.g. Experiments"
+    entryName:
+      empty: The name can't be empty
+      exists: "“{{name}}” already exists. Pick another name"
     new: New
     noFolder: No research folder
     changeFolder: Change research folder…
