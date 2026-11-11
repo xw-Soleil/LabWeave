@@ -56,6 +56,7 @@ import {
   BookOpenText,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
   Database,
   ExternalLink,
   File,
@@ -76,6 +77,7 @@ import {
   Images,
   LayoutDashboard,
   Library,
+  LocateFixed,
   MoreHorizontal,
   NotebookPen,
   Paperclip,
@@ -140,6 +142,18 @@ function TreeGuide({ depth }: { depth: number }) {
     />
   );
 }
+/**
+ * 照 Obsidian 文件栏顶上的两个按钮：全部收起（collapse 加一，所有文件夹收起来）；
+ * 定位文件（reveal 指向某个文件，它上面的文件夹都展开，滚到它那一行）。
+ */
+interface TreeSignals {
+  collapse: number;
+  reveal?: { key: string; nonce: number };
+}
+const TreeSignalsContext = React.createContext<TreeSignals>({ collapse: 0 });
+const REVEAL_FILE_EVENT = "pg-reveal-research-file";
+let pendingReveal: string | undefined;
+
 let cachedQuery = "";
 const showError = (error: unknown) =>
   toast.error(
@@ -162,6 +176,7 @@ export default function FileManagerWindow() {
   const [version, setVersion] = React.useState(0);
   const [expanded, setExpanded] = React.useState(true);
   const [selected, setSelected] = React.useState("");
+  const [signals, setSignals] = React.useState<TreeSignals>({ collapse: 0 });
   const [drag, setDrag] = React.useState<{ entry: ResearchFileEntry; x: number; y: number } | null>(null);
   const tabs = useAtomValue(tabsAtom);
   const active = useAtomValue(activeResourceTabAtom);
@@ -221,6 +236,38 @@ export default function FileManagerWindow() {
     cachedQuery = value;
     setQuery(value);
   };
+  const reveal = React.useCallback(
+    (path: string) => {
+      const key = projectPathKey(path);
+      cachedQuery = "";
+      setQuery("");
+      setExpanded(true);
+      setSelected(path);
+      setSignals((current) => ({ ...current, reveal: { key, nonce: Date.now() } }));
+      // 文件夹是一层层读出来的，等那一行出现了再滚过去
+      let frames = 0;
+      const find = () => {
+        const row = rootRef.current?.querySelector<HTMLElement>(`[data-file-key="${CSS.escape(key)}"]`);
+        if (row) row.scrollIntoView({ block: "center" });
+        else if (++frames < 180) requestAnimationFrame(find);
+        else toast.message(t("files.notInTree"));
+      };
+      requestAnimationFrame(find);
+    },
+    [t],
+  );
+  React.useEffect(() => {
+    const onReveal = (event: Event) => {
+      pendingReveal = undefined;
+      reveal((event as CustomEvent<string>).detail);
+    };
+    window.addEventListener(REVEAL_FILE_EVENT, onReveal);
+    if (pendingReveal) {
+      reveal(pendingReveal);
+      pendingReveal = undefined;
+    }
+    return () => window.removeEventListener(REVEAL_FILE_EVENT, onReveal);
+  }, [reveal]);
   const openPaths = new Set(
     tabs
       .filter((tab) => !tab.closing && (tab instanceof Project || tab instanceof DocumentTab))
@@ -346,6 +393,7 @@ export default function FileManagerWindow() {
         <div
           role="button"
           tabIndex={0}
+          data-file-key={projectPathKey(entry.absPath)}
           title={`${entry.absPath}\n${t(entry.kind === "workspace" ? "files.workspaceRowHint" : "files.fileRowHint")}`}
           className={cn(TREE_ROW, "cursor-default", highlighted ? TREE_ACTIVE : TREE_IDLE)}
           style={{ paddingLeft: treeIndent(depth) }}
@@ -487,6 +535,29 @@ export default function FileManagerWindow() {
             <X />
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground size-7"
+          disabled={!activePath}
+          title={t("files.revealActive")}
+          aria-label={t("files.revealActive")}
+          onClick={() => {
+            if (active instanceof Project || active instanceof DocumentTab) reveal(active.uri.fsPath);
+          }}
+        >
+          <LocateFixed />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground size-7"
+          title={t("files.collapseAll")}
+          aria-label={t("files.collapseAll")}
+          onClick={() => setSignals((current) => ({ collapse: current.collapse + 1 }))}
+        >
+          <ChevronsDownUp />
+        </Button>
       </div>
       {(error || workspaceError) && (
         <div role="alert" className="text-destructive px-3 py-2 text-xs break-all">
@@ -524,20 +595,23 @@ export default function FileManagerWindow() {
             )}
           </>
         ) : (
-          expanded &&
-          workspace?.projects.map((project) => (
-            <DirectoryRow
-              key={project.path}
-              path={project.path}
-              projectRoot={project.path}
-              depth={0}
-              version={version}
-              current={projectPathKey(root) === projectPathKey(project.path)}
-              renderFile={renderFile}
-              onSelect={() => void requestResearchProject(project.path).catch(showError)}
-              onRemove={() => void removeProject(project.path).catch(showError)}
-            />
-          ))
+          expanded && (
+            <TreeSignalsContext.Provider value={signals}>
+              {workspace?.projects.map((project) => (
+                <DirectoryRow
+                  key={project.path}
+                  path={project.path}
+                  projectRoot={project.path}
+                  depth={0}
+                  version={version}
+                  current={projectPathKey(root) === projectPathKey(project.path)}
+                  renderFile={renderFile}
+                  onSelect={() => void requestResearchProject(project.path).catch(showError)}
+                  onRemove={() => void removeProject(project.path).catch(showError)}
+                />
+              ))}
+            </TreeSignalsContext.Provider>
+          )
         )}
         {workspace?.projects.length === 0 && (
           <div className="flex flex-col gap-3 p-4">
@@ -588,10 +662,27 @@ function DirectoryRow({
   onRemove?: () => void;
 }) {
   const { t } = useTranslation("research");
-  const [expanded, setExpanded] = React.useState(false);
+  const signals = React.useContext(TreeSignalsContext);
+  const [expanded, setExpanded] = React.useState(() => !!signals.reveal?.key.startsWith(`${projectPathKey(path)}/`));
   const [entries, setEntries] = React.useState<ResearchTreeEntry[]>();
   const [error, setError] = React.useState("");
   const [visibleCount, setVisibleCount] = React.useState(200);
+  React.useEffect(() => {
+    if (signals.collapse) setExpanded(false);
+  }, [signals.collapse]);
+  React.useEffect(() => {
+    if (signals.reveal?.key.startsWith(`${projectPathKey(path)}/`)) setExpanded(true);
+  }, [signals.reveal, path]);
+  // 要定位的文件在「再显示 200 个」后面时，一次放出来
+  React.useEffect(() => {
+    const key = signals.reveal?.key;
+    if (!key || !entries) return;
+    const index = entries.findIndex((entry) => {
+      const entryKey = projectPathKey(entry.absPath);
+      return entryKey === key || key.startsWith(`${entryKey}/`);
+    });
+    if (index >= visibleCount) setVisibleCount(index + 1);
+  }, [signals.reveal, entries, visibleCount]);
   React.useEffect(() => {
     if (!expanded && depth !== 0) return;
     let alive = true;
@@ -771,4 +862,10 @@ FileManagerWindow.toggle = async () => {
     fileManagerTabIds.delete(existing.id);
     await TabWorkspace.close(existing.id);
   } else TabWorkspace.focus(existing.id);
+};
+/** 在文件栏里找到这个文件：打开文件栏，展开它上面的文件夹，滚到它那一行（照 Obsidian 的「在文件列表中显示」） */
+FileManagerWindow.reveal = (path: string) => {
+  FileManagerWindow.open();
+  pendingReveal = path;
+  window.dispatchEvent(new CustomEvent(REVEAL_FILE_EVENT, { detail: path }));
 };

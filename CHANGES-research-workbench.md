@@ -621,3 +621,22 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 去掉阅读区单独设的 `antialiased`。
 - `app/src/core/research/DocumentView.tsx`：新增 `watchReadingSelection`，选区落在阅读区里时放进 `reading-selection` 高亮，几篇文档同时开着也只挂一个监听；文章去掉 `[&_*]:select-text`（改由 CSS 处理）。
 - 在系统 WebKit 里按帧实测：选中一大段、清掉选区、滚动都在一帧内画完；整篇样式重算 120ms。
+
+### 52. 实时预览间距、公式编辑照 Obsidian、松手才展开、快速滚动、图片菜单、文件栏两个按钮、大纲面板（2026-11-11）
+
+- `app/src/css/reading.css`：
+  - 编辑器里贴进来的排好版的块（提示框、表格、属性、公式）改为 `white-space: normal`。编辑器按原文保留换行，排好的内容里夹着的换行符原来被当成了空行，提示框里每两项之间多出一整行。
+  - 公式原文的样式：`$`、`$$` 变浅，原文用等宽字，命令、字母、数字各一种颜色；`\,` 这类转义在公式里不再按 Markdown 转义上色。有序列表的序号用主色。
+- `app/src/core/research/MarkdownLivePreview.tsx`：
+  - 公式原文用 CodeMirror 自带的 LaTeX 分词（`@codemirror/legacy-modes` 的 `stexMath`，新加的依赖，MIT）上色；光标在整行公式里时，排好的公式留在原文下面；点排好的公式，把公式原文整段选中。
+  - 按着鼠标拖选时排版不动，松开鼠标才把选中的地方露出原文（`pointerSelecting` 状态）。提示框首行的 `[!类型]` 露出时变浅。
+  - 公式排版结果按原文缓存；快速滚动时公式离视野 300px 以内才排（`IntersectionObserver`），不在滚动时照常当场排；整行公式记住高度，没画到时按它估。React 画的块当场画完（`flushSync`），滚到眼前时不会空一帧。
+- `app/src/core/research/DocumentView.tsx`、`DocumentTab.tsx`、`ReadingContext.ts`：
+  - 文档标签新增图片（`kind: "image"`），双击图片在软件里打开，默认缩到放得下，点一下看原大小。
+  - 笔记里的图片（两种写法）右键：在新标签页打开、在文件栏中显示、用系统程序打开、打开所在文件夹、复制图片、复制图片路径；⌘（Windows 上 Ctrl）点图片直接在新标签页打开。
+  - 大纲点标题时跳过去（编辑模式移动光标并滚到那一行，阅读模式滚到那个标题）；滚动时记下读到哪个标题。
+- `app/src/sub/FileManagerWindow.tsx`：搜索框右边加「定位当前打开的文件」（展开上面的文件夹，滚到它那一行）和「全部收起」；`FileManagerWindow.reveal(path)` 给图片菜单用。
+- 新文件 `app/src/core/research/NoteHeadings.ts`、`NoteOutline.tsx`、`NoteOutlineTab.ts`：大纲面板，照 Obsidian 的样子：标题按层级缩进、能折叠、有竖线，当前读到的标题亮着，能搜、能全部收起或展开。竖栏加「大纲」按钮，默认放右侧栏，记住上次放的一边。
+- 新文件 `app/src/core/research/SidePanelDrag.ts`，`TabWorkspace.dockToSide`、`ProjectTabs.tsx`、`docked-area.tsx`：侧栏面板（大纲、文件、AI）按住标题或标签拖到窗口另一边就换到那一侧，拖动时那一边亮一块。
+- `app/src/components/activity-rail.tsx`：竖栏按钮的快捷键改为可选。
+- 在系统 WebKit 里用真编辑器和一篇 987 行、460 多个公式的笔记实测快速滚动（每帧 150px）：超过 40ms 的帧从 18 个降到 11 个，九成的帧在 45ms 以内（原来 70ms）；剩下的时间主要花在公式的样式计算上。

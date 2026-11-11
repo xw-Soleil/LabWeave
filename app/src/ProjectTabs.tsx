@@ -9,12 +9,14 @@ import TabContextMenu from "./components/tab-context-menu";
 import { displayWorkspaceName, FileName } from "./components/ui/file-name";
 import { Project, ProjectState } from "./core/Project";
 import { findResearchPanelTab } from "./core/research/ResearchSession";
+import { finishSideDrop, previewSideDrop, sideDropPreviewAtom } from "./core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "./core/research/TemporaryWorkspace";
 import { SoundService } from "./core/service/feedbackService/SoundService";
 import { Settings } from "./core/service/Settings";
 import { ComponentTab, Tab } from "./core/Tab";
+import { isFixedSideGroupId } from "./core/TabGroup";
 import { TabWorkspace } from "./core/TabWorkspace";
-import { activeResourceTabAtom } from "./state";
+import { activeResourceTabAtom, store } from "./state";
 import { replaceTextWhenProtect } from "./utils/font";
 
 // 将 ProjectTabs 移出 App 组件，作为独立组件
@@ -101,11 +103,15 @@ export const ProjectTabs = memo(function ProjectTabs({
         handleTabClick(tab);
         const start = new Vector(e.clientX, e.clientY);
         let dragged = false;
+        // 侧栏里的面板拖到另一边的侧栏（或窗口另一侧边缘）上，就换到那一边，和 Obsidian 一样
+        const inSide = isFixedSideGroupId(groupId);
         const onMouseUp = (event: MouseEvent) => {
           window.removeEventListener("mousemove", onMouseMove);
           window.removeEventListener("mouseup", onMouseUp);
           const target = TabWorkspace.getDropTarget(event.clientX, event.clientY);
           TabWorkspace.clearDropPreview();
+          if (inSide && dragged && finishSideDrop(tab.id, event.clientX, event.clientY)) return;
+          store.set(sideDropPreviewAtom, null);
           if (!dragged) return;
           if (target) {
             TabWorkspace.moveTab(tab.id, target);
@@ -116,7 +122,8 @@ export const ProjectTabs = memo(function ProjectTabs({
         const onMouseMove = (event: MouseEvent) => {
           if (new Vector(event.clientX, event.clientY).subtract(start).magnitude() < 8) return;
           dragged = true;
-          TabWorkspace.previewDrop(event.clientX, event.clientY);
+          if (inSide && previewSideDrop(tab.id, event.clientX, event.clientY)) TabWorkspace.clearDropPreview();
+          else TabWorkspace.previewDrop(event.clientX, event.clientY);
         };
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
@@ -129,7 +136,7 @@ export const ProjectTabs = memo(function ProjectTabs({
         SoundService.play.cuttingLineRelease();
       }
     },
-    [handleTabClick, onTabClose, saveScrollPosition, restoreScrollPosition],
+    [handleTabClick, onTabClose, saveScrollPosition, restoreScrollPosition, groupId],
   );
 
   // 用快捷键等方式切到被挤出可视区的标签时，把它滚进来

@@ -115,11 +115,12 @@ describe("document tab actions", () => {
       expect(store.get(activeResourceTabAtom)).toBe(first);
     },
   );
-  it("preserves system opening for images and Office files", async () => {
-    await openDocumentFile("/r/a.png");
+  it("opens images in a tab of this app and leaves Office files to the system", async () => {
+    const image = await openDocumentFile("/r/a.png");
     await openDocumentFile("/r/a.docx");
-    expect(mocks.open.mock.calls).toEqual([["/r/a.png"], ["/r/a.docx"]]);
-    expect(store.get(tabsAtom)).toHaveLength(0);
+    expect(image?.kind).toBe("image");
+    expect(mocks.open.mock.calls).toEqual([["/r/a.docx"]]);
+    expect(store.get(tabsAtom)).toEqual([image]);
   });
   it("does not reuse a stale inode after the original path has been replaced", async () => {
     const first = await openDocumentFile("/r/a.md");

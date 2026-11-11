@@ -281,6 +281,17 @@ export namespace TabWorkspace {
     return true;
   }
 
+  /** 把一个面板挪进左侧栏或右侧栏（照 Obsidian 把侧栏里的面板拖到另一边） */
+  export function dockToSide(id: string, edge: FixedSideEdge) {
+    const tab = get(id);
+    if (!tab?.canDock) return false;
+    tab.layout = "docked";
+    dockToSideGroup(id, edge);
+    store.set(tabsAtom, [...store.get(tabsAtom)]);
+    focus(id);
+    return true;
+  }
+
   export function split(id: string, edge: TabDropEdge) {
     const group = findTabGroupByTabId(store.get(tabGroupRootAtom), id);
     if (!group) return false;

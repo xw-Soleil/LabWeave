@@ -2852,6 +2852,17 @@ research:
     retry: Retry
     retryHint: Could not read the file. Reload or open it with a system app.
     openSystem: Open with system app
+    image:
+      openInTab: Open in new tab
+      clickHint: "{{key}}-click"
+      revealInFiles: Reveal in file panel
+      openFolder: Open containing folder
+      copy: Copy image
+      copied: Image copied
+      copyPath: Copy image path
+      pathCopied: Image path copied
+      fit: Click to fit
+      actualSize: Click for actual size
     imageFailed: Image could not be displayed
     previousPage: Previous page
     nextPage: Next page
@@ -2986,6 +2997,7 @@ research:
       ai: AI chat
       aiNeedsWorkspace: AI chat (open a board first)
       files: Files
+      outline: Outline
       library: Library
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
@@ -3139,6 +3151,21 @@ research:
     remove: "Remove property {{key}}"
     removeValue: "Remove {{value}}"
     saveFailed: Couldn't apply the change; the note is unchanged
+  outline:
+    title: Outline
+    dragHint: Drag to the other side of the window to move the outline there
+    search: Search headings
+    searchPlaceholder: Search headings
+    clearSearch: Clear search
+    collapseAll: Collapse all
+    expandAll: Expand all
+    collapse: Collapse
+    expand: Expand
+    moveLeft: Move to left sidebar
+    moveRight: Move to right sidebar
+    noNote: Open a note to see its headings here
+    empty: This note has no headings
+    noMatch: No matching headings
   markdownTable:
     cell: "Row {{row}}, column {{column}}"
     rowAbove: Insert row above
@@ -3257,6 +3284,9 @@ research:
     noFolder: No research folder
     changeFolder: Change research folder…
     revealInFinder: Show in Finder
+    revealActive: Reveal the open file
+    collapseAll: Collapse all
+    notInTree: The open file isn't in any project in the file panel
     searchPlaceholder: Search files in current project
     clearSearch: Clear search
     loading: Reading folder…
@@ -3265,7 +3295,7 @@ research:
     noMatch: No matching files
     opened: Opened
     workspaceRowHint: Double-click to open a board; boards in another project switch projects first
-    fileRowHint: Double-click to open (Markdown and PDF open in this app); drag onto a board to make a card
+    fileRowHint: Double-click to open (Markdown, PDF and images open in this app); drag onto a board to make a card
     truncated: "Too many files, only the first {{count}} are listed"
     unreadableDirs: "{{count}} subfolder(s) couldn't be read and were skipped"
     setRootFailed: "Couldn't set the research folder: {{error}}"

@@ -13,6 +13,7 @@ import {
   workspacePopoverOpenAtom,
   type ResearchWorkspaceItem,
 } from "@/core/research/ResearchSession";
+import { findNoteOutlineTab, toggleNoteOutline } from "@/core/research/NoteOutlineTab";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelStates } from "@/core/research/SidePanels";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
@@ -30,6 +31,7 @@ import {
   FolderSearch,
   LayoutDashboard,
   Library,
+  ListTree,
   LoaderCircle,
   MessageSquareText,
   Plus,
@@ -94,7 +96,7 @@ function RailButton({
   hideTooltip,
 }: {
   label: string;
-  keyBindId: string;
+  keyBindId?: string;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -107,7 +109,7 @@ function RailButton({
   /** 侧栏弹出来以后不再显示提示框，免得盖在面板上 */
   hideTooltip?: boolean;
 }) {
-  const shortcut = useShortcutText(keyBindId);
+  const shortcut = useShortcutText(keyBindId ?? "");
   const unavailable = unavailableHint !== undefined;
   return (
     <Tooltip open={hideTooltip ? false : undefined}>
@@ -273,6 +275,12 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
     const edge = sideEdgeOfGroup(group?.id);
     return !edge || (isSidePanelShown(sideStates[edge]) && group?.activeTabId === tab.id);
   };
+  const outlineTab = findNoteOutlineTab(tabs);
+  const outlineGroup = outlineTab ? findTabGroupByTabId(root, outlineTab.id) : undefined;
+  const outlineEdge = sideEdgeOfGroup(outlineGroup?.id);
+  const outlineShown =
+    !!outlineTab &&
+    (!outlineEdge || (isSidePanelShown(sideStates[outlineEdge]) && outlineGroup?.activeTabId === outlineTab.id));
   // 没打开工作区时 AI 对话收起（见 DockedArea），按钮也变灰
   const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
   const activeTab = useAtomValue(activeTabAtom);
@@ -342,6 +350,9 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
           hideTooltip={isSidePanelShown(sideStates.left)}
         >
           <FolderOpen />
+        </RailButton>
+        <RailButton label={t("shell.rail.outline")} active={outlineShown} onClick={() => void toggleNoteOutline()}>
+          <ListTree />
         </RailButton>
         <RailButton
           label={t("shell.rail.library")}

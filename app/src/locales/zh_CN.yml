@@ -2971,6 +2971,17 @@ research:
     retry: 重试
     retryHint: 读取失败，可重新读取或用系统程序打开。
     openSystem: 用系统程序打开
+    image:
+      openInTab: 在新标签页打开
+      clickHint: "{{key}} 点击"
+      revealInFiles: 在文件栏中显示
+      openFolder: 打开所在文件夹
+      copy: 复制图片
+      copied: 已复制图片
+      copyPath: 复制图片路径
+      pathCopied: 已复制图片路径
+      fit: 点一下缩到放得下
+      actualSize: 点一下看原图大小
     imageFailed: 图片无法显示
     previousPage: 上一页
     nextPage: 下一页
@@ -3105,6 +3116,7 @@ research:
       ai: AI 对话
       aiNeedsWorkspace: AI 对话（打开白板后可用）
       files: 文件
+      outline: 大纲
       library: 文献库
       settings: 设置
     setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
@@ -3258,6 +3270,21 @@ research:
     remove: "删除属性 {{key}}"
     removeValue: "去掉 {{value}}"
     saveFailed: 没能改好，原文没有变
+  outline:
+    title: 大纲
+    dragHint: 按住拖到窗口另一边，大纲就换到那一侧
+    search: 搜索标题
+    searchPlaceholder: 搜索标题
+    clearSearch: 清除搜索
+    collapseAll: 全部收起
+    expandAll: 全部展开
+    collapse: 收起
+    expand: 展开
+    moveLeft: 移到左侧栏
+    moveRight: 移到右侧栏
+    noNote: 打开一篇笔记，这里列出它的标题
+    empty: 这篇笔记没有标题
+    noMatch: 没有匹配的标题
   markdownTable:
     cell: "第 {{row}} 行第 {{column}} 列"
     rowAbove: 在上方插入行
@@ -3376,6 +3403,9 @@ research:
     noFolder: 未选择研究文件夹
     changeFolder: 更换研究文件夹…
     revealInFinder: 在访达中显示
+    revealActive: 定位当前打开的文件
+    collapseAll: 全部收起
+    notInTree: 当前文件不在文件栏的项目里
     searchPlaceholder: 搜索当前项目的文件
     clearSearch: 清除搜索
     loading: 正在读取文件夹…
@@ -3384,7 +3414,7 @@ research:
     noMatch: 没有找到匹配的文件
     opened: 已打开
     workspaceRowHint: 双击打开白板；其他项目的白板会先切换项目
-    fileRowHint: 双击打开，Markdown 和 PDF 在软件内打开；拖到白板上生成卡片
+    fileRowHint: 双击打开，Markdown、PDF 和图片在软件内打开；拖到白板上生成卡片
     truncated: "文件太多，只列出了前 {{count}} 个"
     unreadableDirs: "有 {{count}} 个子文件夹读不了，已跳过"
     setRootFailed: "没能设置研究文件夹：{{error}}"

@@ -5,11 +5,12 @@ import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { exists } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-shell";
 import i18next from "i18next";
-import { FileText, NotebookPen } from "lucide-react";
+import { FileText, Image, NotebookPen } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
 import { identifyDocument, documentKey, documentPath, MarkdownDocument, markdownFileIO } from "./DocumentFile";
+import type { OutlinePosition } from "./NoteHeadings";
 import { notifyResearchFilesChanged, ResearchFolder } from "./ResearchFolder";
 import { fileKindOf } from "./ResearchShell";
 import { loadAnnotationStore, type PdfAnnotationStore } from "./PdfAnnotationStore";
@@ -64,6 +65,8 @@ export class DocumentTab extends Tab {
   saving = false;
   loadingMarkdown = false;
   markdownHeading?: string;
+  /** 读到哪了，大纲面板按它亮出当前标题；变了会发 outline-position */
+  outlinePosition?: OutlinePosition;
   pdfLocation = { page: 1, scale: "fit-width" as string | number };
   private loading?: Promise<void>;
   private readonly component = () => (
@@ -74,7 +77,7 @@ export class DocumentTab extends Tab {
 
   constructor(
     public path: string,
-    readonly kind: "markdown" | "pdf",
+    readonly kind: "markdown" | "pdf" | "image",
   ) {
     super({});
     this.uri = URI.file(path);
@@ -106,7 +109,7 @@ export class DocumentTab extends Tab {
     return this.path.split("/").at(-1) ?? this.path;
   }
   override get icon() {
-    return this.kind === "markdown" ? NotebookPen : FileText;
+    return this.kind === "markdown" ? NotebookPen : this.kind === "image" ? Image : FileText;
   }
   override get hasUnsavedChanges() {
     return this.pendingAnnotations || (this.markdown?.dirty ?? this.annotations?.dirty ?? false);
@@ -261,7 +264,7 @@ const opening = new Map<string, Promise<DocumentTab>>();
 
 export async function openDocumentFile(path: string, options?: { heading?: string }): Promise<DocumentTab | undefined> {
   const kind = fileKindOf(path);
-  if (kind !== "markdown" && kind !== "pdf") {
+  if (kind !== "markdown" && kind !== "pdf" && kind !== "image") {
     await open(path);
     return;
   }

@@ -18,8 +18,8 @@ const detailsAtom = atom(new Map<string, ReadingDetails>());
 export const readingContextAtom = atom<ReadingContext | null>((get) => {
   const tab = get(activeResourceTabAtom);
   if (!tab || tab.closing || !get(tabsAtom).includes(tab) || !("kind" in tab) || !("path" in tab)) return null;
-  if (tab.kind !== "pdf" && tab.kind !== "markdown") return null;
   const document = tab as DocumentTab;
+  if (document.kind !== "pdf" && document.kind !== "markdown") return null;
   return {
     path: document.path,
     kind: document.kind,

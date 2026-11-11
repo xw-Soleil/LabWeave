@@ -1,6 +1,7 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
+import { sideDropPreviewAtom } from "@/core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import {
   enterSidePanel,
@@ -588,6 +589,7 @@ export default function DockedArea({
   const root = useAtomValue(tabGroupRootAtom);
   const tabs = useAtomValue(tabsAtom);
   const docked = useAtomValue(dockedChromeAtom);
+  const sideDrop = useAtomValue(sideDropPreviewAtom);
   const sideStates = useSidePanelStates();
   const [sideWidths, setSideWidths] = useState<SidePanelWidths>(() => readSidePanelWidths());
   const changeSideWidth = (edge: FixedSideEdge, width: number) =>
@@ -761,6 +763,15 @@ export default function DockedArea({
             docked={docked}
           />
         ) : null,
+      )}
+      {/* 正把侧栏面板拖到另一边：那一边亮一块，松手就放进去 */}
+      {sideDrop && (
+        <div
+          className={cn(
+            "bg-primary/10 border-primary pointer-events-none absolute inset-y-0 z-40 w-72 border-2",
+            sideDrop === "left" ? "left-0" : "right-0",
+          )}
+        />
       )}
       {!sideStates.left.pinned && <SideEdgeTrigger edge="left" onPeek={peekLeftSide} docked={docked} />}
       {rightTabs.length > 0 && !sideStates.right.pinned && (

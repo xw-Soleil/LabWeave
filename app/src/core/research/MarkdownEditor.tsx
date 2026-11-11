@@ -38,6 +38,7 @@ export default function MarkdownEditor({
   config,
   disabled,
   label,
+  onView,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -45,13 +46,15 @@ export default function MarkdownEditor({
   config: LivePreviewConfig;
   disabled?: boolean;
   label: string;
+  /** 编辑器建好、拆掉时告诉外面（大纲跳转、跟着滚动要用） */
+  onView?: (view: EditorView | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>(null);
   const modeSlot = useRef(new Compartment());
   const editableSlot = useRef(new Compartment());
-  const latest = useRef({ onChange, config });
-  latest.current = { onChange, config };
+  const latest = useRef({ onChange, config, onView });
+  latest.current = { onChange, config, onView };
 
   const modeExtension = (value: MarkdownEditMode) => (value === "live" ? livePreview(() => latest.current.config) : []);
   const editableExtension = (readOnly: boolean) => [
@@ -83,7 +86,9 @@ export default function MarkdownEditor({
       }),
     });
     view.current = editor;
+    latest.current.onView?.(editor);
     return () => {
+      latest.current.onView?.(null);
       editor.destroy();
       view.current = null;
     };
