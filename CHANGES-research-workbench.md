@@ -500,3 +500,24 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - Markdown 预览增加 Obsidian 提示框、默认标题、对应 Lucide 图标及鼠标/键盘折叠。双链和嵌入仅在传入文档路径时启用；代码、数学公式、转义文字和已有 Markdown 链接保持原来的解析方式，折叠只保存在组件状态中，不写回笔记。
 - 新增 `DocumentLinks.ts`，同目录优先，再按项目根目录路径或文件名查找；只查当前文档所属项目或设置中的文献库，沿用原有目录登记与路径检查，拒绝网络地址、目录逃逸、隐藏路径和符号链接。单次预览共享目录读取，点击时重新检查；未找到的链接标为 `is-unresolved` 并显示提示，读取失败另行提示。文献库只额外导出已有授权函数，没有扩大文件权限。
 - 双链使用现有文档标签打开，支持新标签和已有标签的标题跳转，并可展开标题所在的折叠提示框。嵌入图片复用 `DocumentImage` 的本地读取与对象 URL 生命周期，支持宽度；嵌入 Markdown 只显示链接。新增主题保存/重载、提示框/图标/折叠、查找优先级、Windows/UNC/目录别名、路径边界、图片释放、标题跳转及 BOM/CRLF 原文保真回归测试；没有新增依赖、联网、构建或改动只读参考库。
+
+### 45. 文献库、划词翻译和阅读外观的界面，以及三步后台的审查修改（2026-11-11）
+
+- `app/src/sub/FileManagerWindow.tsx`：文件栏照 Obsidian 改样子。按扩展名和常见文件夹名（`assets`、`data`、`src`、文献、笔记等）自动配图标；子层级前加竖着的缩进线，文件和同层文件夹的图标对齐；选中改为浅灰圆角底；折叠箭头更轻；项目行的「更多」按钮鼠标停住时才出现。文件后缀照常显示。
+- `app/src/core/research/DocumentView.tsx`、`app/src/css/reading.css`（新增）、`app/src/assets/fonts/`（新增 Inter、JetBrains Mono 及其 OFL 许可证）：
+  - Markdown 页可切「编辑 / 对照 / 阅读」，选择记在本机；
+  - 排版和提示框配色照用户 Obsidian 的 Minimal 主题和几个 CSS 片段：标题阶梯、表格、图注、代码块；
+  - 预览里选中文字，弹出「翻译 / 问 AI / 复制」。
+- `app/src/core/research/TranslateCard.tsx`（新增）、`PdfAnnotationUI.tsx`、`PdfView.tsx`：PDF 选区菜单加「翻译」「问 AI」。翻译卡片可以拖动，单词显示音标和释义，可复制译文，可「高亮并把译文写进批注」，带「选中即译」开关。PDF 不允许复制内容时不给这两个按钮。
+- `app/src/core/research/LibraryTab.tsx`、`LibraryView.tsx`（新增）、`app/src/components/activity-rail.tsx`：左侧竖栏加「文献库」，打开一个文献库标签页，三栏照用户 Obsidian 文献库插件：
+  - 左栏：分类树、未分类、回收站、标签筛选；
+  - 中栏：搜索、可排序的列表、附件展开、右键菜单；
+  - 右栏：可编辑的信息、阅读状态、分类和标签。
+  - 选文件夹、导入 PDF 都用程序自带的浏览器，不弹系统窗口（`ResearchFolderBrowser.tsx` 加「只挑一个文件夹 / PDF」模式）。
+- `app/src/sub/SettingsWindow/ReadingThemePage.tsx`（新增）：「阅读外观」页，三套预设带样张，可调字号、行高、阅读宽度、正文和代码字体，带实时预览。
+- 审查修改：
+  - `Translate.ts`：AI 翻译单词少给音标时照样返回译文，原来会判失败。
+  - `Library.ts`：B 步写的文件监听改为「切回窗口、鼠标移进文献库时比对修改时间，只重读变了的条目」，另加「整个重读」，不需要开文件插件的 `watch` 功能，也不补依赖。新增 `createLibrary`，在没有 `.litlib` 的文件夹里新建空文献库。文献库错误文案统一放到 `library.errors` 下。
+  - `components/ui/markdown.tsx`：双链组件只随文档路径重建，边打字边预览时不再反复去磁盘上找链接目标。
+  - `DocumentLinks.ts`：按文件名全项目找笔记时最多翻 3000 个文件夹。
+- `CLAUDE.md`：写明划词翻译默认调 Google、Bing 是用户定的例外。
