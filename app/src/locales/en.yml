@@ -3303,14 +3303,16 @@ research:
     noChanges: None
     matchedBy: "Matched by {{method}}"
     showMore: "Show more ({{count}} remaining)"
+    fileSize: "Size: {{size}} bytes"
     groups:
       push: Write to Zotero
       pull: Write locally
       conflict: Conflicts
       skip: Preserve / skip
+      attachment: Attachments
     summary:
       unchanged: "{{count}} papers unchanged"
-      deferred: "{{count}} child records ({{annotations}} annotations, {{attachments}} attachments, {{notes}} notes). This version does not sync annotations, attachments or child notes yet."
+      deferred: "{{count}} child records have no syncable parent paper and are skipped."
       missingCollections: "{{count}} papers reference Zotero collections missing from the list. These collection IDs are excluded from comparison and display."
     progress:
       authorize: Choose Always Allow in Zotero's authorization dialog…
@@ -3320,6 +3322,7 @@ research:
       items: "Reading Zotero items: {{count}} read…"
       collections: "Reading Zotero collections: {{count}} read…"
       pairing: "Matching and comparing: {{count}} processed…"
+      attachments: "Checking attachments and excerpts: {{count}} attachments processed…"
     match:
       key: Zotero key
       doi: DOI
@@ -3340,7 +3343,13 @@ research:
       status: Reading status
       collections: Collections
     reasons:
-      preserved: Deletions, trash status, item types, arXiv IDs and other custom properties stay unchanged. Research note bodies and local PDF annotations are not sent to Zotero. This version does not sync annotations, attachments or child notes yet.
+      preserved: Deletions, trash status, item types, arXiv IDs and other custom properties stay unchanged. Research note bodies and local PDF annotations are not sent to Zotero.
+      upload: Upload attachment, keeping existing versions.
+      uploadVersion: Upload a new version, keeping the original attachment and annotations.
+      download: Download attachment.
+      downloadVersion: Download a new version, keeping existing files.
+      attachmentMissing: Attachment is not available on this computer in Zotero; skipped.
+      exportNotes: Update the read-only Zotero annotations and notes excerpt.
       unreadable: This local item cannot be read. Check its error in the library and repair it.
       deletion: Deleted, trashed or missing linked item; do not propagate deletion or recreate it.
       newCollection: New collection
@@ -3368,6 +3377,9 @@ research:
       unsupportedField: This Zotero item type does not support a field being written. Adjust its metadata and preview again.
       invalidStatus: Zotero has multiple reading statuses. Use a valid local status or keep only one reading status in Zotero first.
       writeMismatch: Saved content differs from the intended result. Roll back this sync, then preview again.
+      attachmentAddress: The attachment address is not a regular local file. Reading stopped.
+      uploadAddress: Zotero returned an address outside the specified local upload endpoint. Upload stopped.
+      uploadFormat: Zotero returned an upload prefix or suffix, which is not supported.
       operationFailed: The operation did not finish. Check file permissions and Zotero. Roll back any unfinished sync first.
       unfinished: The last sync is unfinished. Roll it back first.
       busy: This library is already syncing or rolling back. Wait for it to finish.

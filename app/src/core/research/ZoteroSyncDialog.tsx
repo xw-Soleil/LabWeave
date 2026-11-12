@@ -93,7 +93,7 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
           report,
           stored.baseline,
         );
-        await captureSyncFiles(next);
+        await captureSyncFiles(next, controller.signal, report);
         if (!controller.signal.aborted) setPreview(next);
       } catch (cause) {
         if (!controller.signal.aborted)
@@ -216,7 +216,7 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
                   ))}
                 </section>
               )}
-              {(["push", "pull", "conflict", "skip"] as const).map((group) => (
+              {(["push", "pull", "attachment", "conflict", "skip"] as const).map((group) => (
                 <PreviewGroup
                   key={`${attempt}:${group}`}
                   group={group}
@@ -340,6 +340,7 @@ function PreviewGroup({
           )}
           {row.field && <p>{t(`fields.${row.field}`)}</p>}
           {row.reason && <p>{t(`reasons.${row.reason}`)}</p>}
+          {row.size !== undefined && <p>{t("fileSize", { size: row.size.toLocaleString() })}</p>}
           {row.matchedBy && <p>{t("matchedBy", { method: t(`match.${row.matchedBy}`) })}</p>}
           {(row.local !== undefined || row.remote !== undefined) && (
             <dl className="grid grid-cols-2 gap-3">

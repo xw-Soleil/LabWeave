@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import * as disk from "node:fs/promises";
 import { webcrypto } from "node:crypto";
@@ -21,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   settings: { literatureLibraryPath: "" },
   confirm: vi.fn(),
   shell: vi.fn(),
+  read: vi.fn(),
   beforeRename: undefined as undefined | ((from: string, to: string) => Promise<void>),
   fs: vi.fn(() => {
     throw new Error("Unexpected filesystem access");
@@ -75,6 +78,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
     },
     readFile: async (path: string) => {
       guard();
+      mocks.read(path);
       return new Uint8Array(await fs.readFile(path));
     },
     mkdir: async (path: string, options?: { mode?: number; recursive?: boolean }) => {
@@ -112,8 +116,8 @@ vi.mock("./ZoteroSync", async (original) => {
   const actual = await original<typeof import("./ZoteroSync")>();
   return {
     ...actual,
-    captureSyncFiles: async (preview: Parameters<typeof actual.captureSyncFiles>[0]) => {
-      if (mocks.diskEnabled) await actual.captureSyncFiles(preview);
+    captureSyncFiles: async (...args: Parameters<typeof actual.captureSyncFiles>) => {
+      if (mocks.diskEnabled) await actual.captureSyncFiles(...args);
     },
   };
 });
@@ -223,6 +227,7 @@ beforeEach(() => {
   mocks.shell.mockReset().mockResolvedValue(undefined);
   mocks.fetch.mockReset();
   mocks.fs.mockClear();
+  mocks.read.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -255,7 +260,8 @@ describe("read-only local API", () => {
       expect(options).toMatchObject({
         method: "GET",
         maxRedirections: 0,
-        headers: { "Zotero-API-Version": "3", "Zotero-Server-ID": index ? "fixture-server" : "" },
+        // Zotero closes the connection on any Origin header; "" tells the HTTP plugin to send none
+        headers: { Origin: "", "Zotero-API-Version": "3", "Zotero-Server-ID": index ? "fixture-server" : "" },
       });
       expect(options.headers).not.toHaveProperty("Zotero-API-Key");
     }
@@ -554,7 +560,7 @@ describe("pairing and preview", () => {
     expect(result.blocked).toBe(false);
     expect(result.summary).toEqual({
       unchanged: 67,
-      deferred: { total: 660, annotations: 490, attachments: 160, notes: 10 },
+      deferred: { total: 0, annotations: 0, attachments: 0, notes: 0 },
       missingCollections: 0,
     });
     expect(result.rows).toHaveLength(4);
@@ -587,7 +593,7 @@ describe("pairing and preview", () => {
         expect.objectContaining({ reason: "preserved" }),
       ]),
     );
-    expect(result.summary.deferred).toEqual({ total: 1, annotations: 0, attachments: 0, notes: 1 });
+    expect(result.summary.deferred).toEqual({ total: 0, annotations: 0, attachments: 0, notes: 0 });
     expect(result.rows.some((r) => r.key === "NOTE0001")).toBe(false);
     expect(JSON.stringify({ l, r })).toBe(before);
   });
@@ -777,11 +783,9 @@ describe("dialog", () => {
     fixture.remote.items[0].collections = ["MISSING1", "MISSING2"];
     const dialog = await showPreview(fixture.local, fixture.remote);
     const skip = dialog.querySelector('section[aria-label="保留／跳过"]')!;
-    expect(skip.querySelector("h3")?.textContent).toBe("保留／跳过 (7)");
+    expect(skip.querySelector("h3")?.textContent).toBe("保留／跳过 (6)");
     expect(skip.textContent).toContain("67 篇没有变化");
-    expect(skip.textContent).toContain(
-      "660 条子记录（批注 490 条、附件 160 条、子笔记 10 条）。这一版还不同步批注、附件和子笔记。",
-    );
+    expect(skip.textContent).not.toContain("这一版还不同步");
     expect(skip.textContent).toContain("1 篇文献引用了列表中不存在的 Zotero 分类");
     for (const key of ["SOLO0001", "SOLO0002", "LINK0001"]) expect(skip.textContent).toContain(key);
     for (const key of ["P0000000", "C0000000", "MISSING", "继续显示"]) expect(skip.textContent).not.toContain(key);
@@ -882,6 +886,13 @@ describe("sync, backups and rollback with a fake Zotero", () => {
   let beforeWrite: ((kind: string, data: Record<string, unknown>) => void) | undefined;
   let afterWrite: (() => void) | undefined;
   let refusal: number, remember: boolean, serverId: string;
+  let files: Map<string, string>,
+    uploadURL: string,
+    prefix: string,
+    suffix: string,
+    corruptUpload: boolean,
+    fileLocation: string | undefined,
+    uploadExists: boolean;
   const secret = "fixture-secret-never-in-journals-or-errors";
   const signal = () => new AbortController().signal;
   const manifest = () => join(root, "文献库.litlib");
@@ -936,8 +947,14 @@ describe("sync, backups and rollback with a fake Zotero", () => {
     serverId = "fixture-server";
     beforeWrite = undefined;
     afterWrite = undefined;
+    files = new Map();
+    uploadURL = "http://localhost:23119/api/local/uploads/fixture";
+    prefix = suffix = "";
+    corruptUpload = uploadExists = false;
+    fileLocation = undefined;
+    const uploads = new Map<string, string>();
     mocks.fetch.mockImplementation(
-      async (url: string, options: { method: string; headers: Record<string, string>; body?: string }) => {
+      async (url: string, options: { method: string; headers: Record<string, string>; body?: string | Uint8Array }) => {
         const u = new URL(url);
         expect(u.origin).toBe("http://localhost:23119");
         expect(options.headers["Zotero-API-Version"]).toBe("3");
@@ -946,7 +963,7 @@ describe("sync, backups and rollback with a fake Zotero", () => {
         if (u.pathname === "/api/") return reply([]);
         expect(options.headers["Zotero-Server-ID"]).toBe(serverId);
         if (u.pathname === "/api/local/authorize") {
-          expect(JSON.parse(options.body!)).toEqual({ appName: "LabWeave" });
+          expect(JSON.parse(options.body as string)).toEqual({ appName: "LabWeave" });
           return reply({ key: secret, remember });
         }
         if (u.pathname === "/api/itemTypeFields")
@@ -965,6 +982,51 @@ describe("sync, backups and rollback with a fake Zotero", () => {
               "abstractNote",
             ].map((field) => ({ field })),
           );
+        if (u.pathname.startsWith("/api/local/uploads/")) {
+          expect(options.headers["Zotero-API-Key"]).toBe(secret);
+          const key = uploads.keys().next().value!;
+          const path = join(temp, `${key}.pdf`);
+          await writeFile(path, corruptUpload ? "corrupt" : options.body!);
+          files.set(key, path);
+          return reply({});
+        }
+        const file = /^\/api\/users\/0\/items\/([A-Z0-9]{8})\/file$/.exec(u.pathname);
+        if (file) {
+          const key = file[1],
+            path = files.get(key);
+          if (options.method === "GET")
+            return path || fileLocation
+              ? response({}, 302, { "Zotero-Server-ID": serverId, Location: fileLocation ?? pathToFileURL(path!).href })
+              : reply({}, 404);
+          expect(options.headers["Zotero-API-Key"]).toBe(secret);
+          expect(options.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+          const form = new URLSearchParams(options.body as string);
+          if (form.has("upload")) {
+            expect(form.get("upload")).toBe(key);
+            Object.assign(items.find((d) => d.key === key)!, {
+              md5: uploads.get(key),
+              mtime: Date.now(),
+              version: ++version,
+            });
+            uploads.delete(key);
+            return reply({});
+          }
+          expect(options.headers["If-None-Match"]).toBe("*");
+          expect(form.get("md5")).toMatch(/^[\da-f]{32}$/);
+          uploads.set(key, form.get("md5")!);
+          if (uploadExists) {
+            const existing = [...files.values()][0];
+            files.set(key, existing);
+          }
+          return reply({
+            exists: uploadExists,
+            url: uploadURL,
+            prefix,
+            suffix,
+            contentType: "application/octet-stream",
+            uploadKey: key,
+          });
+        }
         const match = /^\/api\/users\/0\/(items|collections)(?:\/([A-Z0-9]{8}))?$/.exec(u.pathname);
         expect(match, url).not.toBeNull();
         const kind = match![1],
@@ -984,7 +1046,7 @@ describe("sync, backups and rollback with a fake Zotero", () => {
           );
         }
         expect(options.headers["Zotero-API-Key"]).toBe(secret);
-        const data = JSON.parse(options.body!);
+        const data = JSON.parse(options.body as string);
         beforeWrite?.(kind, Array.isArray(data) ? data[0] : data);
         if (refusal) return reply({ error: secret }, refusal);
         if (options.method === "POST") {
@@ -1003,6 +1065,370 @@ describe("sync, backups and rollback with a fake Zotero", () => {
   });
   afterEach(async () => {
     await rm(temp, { recursive: true, force: true });
+  });
+
+  const attachment = async (key = "ATTACH01", content = "%PDF-fixture", filename = "paper.pdf") => {
+    const path = join(temp, `${key}-${filename}`);
+    await writeFile(path, content);
+    files.set(key, path);
+    items.push({
+      key,
+      version: 1,
+      itemType: "attachment",
+      parentItem: "PAPER001",
+      linkMode: "imported_file",
+      filename,
+      title: filename,
+    });
+    return path;
+  };
+  const paired = async () => {
+    items.push(paper("PAPER001", { title: "one" }));
+    await note("one", { zotero_key: "PAPER001" });
+    return join(root, "条目/one");
+  };
+
+  it("uploads PDF and CSV, journals metadata only and trashes the new attachments on rollback", async () => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload-fixture");
+    await writeFile(join(folder, "data.csv"), "a,b\n1,2\n");
+    await writeFile(join(folder, "leave.txt"), "do not upload");
+    const result = await sync();
+    expect(result.p.rows.filter((r) => r.group === "attachment")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "upload", title: "paper.pdf", size: 19 }),
+        expect.objectContaining({ reason: "upload", title: "data.csv", size: 8 }),
+      ]),
+    );
+    const uploaded = items.filter((d) => d.itemType === "attachment");
+    expect(uploaded).toHaveLength(2);
+    for (const d of uploaded)
+      expect(await readFile(files.get(d.key)!, "utf8")).toBe(
+        await readFile(join(folder, d.filename as string), "utf8"),
+      );
+    const journal = await readFile(join(result.path, "journal.json"), "utf8");
+    expect(journal).not.toContain("%PDF-upload-fixture");
+    expect(journal).not.toContain("a,b");
+    expect(await readdir(result.path)).toEqual(["journal.json"]);
+    expect((await preview()).rows.filter((r) => r.group === "attachment")).toEqual([]);
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(uploaded.every((d) => d.deleted)).toBe(true);
+    expect(await readFile(join(folder, "paper.pdf"), "utf8")).toBe("%PDF-upload-fixture");
+  });
+
+  it.each([
+    "https://localhost:23119/api/local/uploads/x",
+    "http://example.invalid/api/local/uploads/x",
+    "http://localhost:23120/api/local/uploads/x",
+    "http://user@localhost:23119/api/local/uploads/x",
+    "http://localhost:23119/api/other/x",
+    "http://localhost:23119/api/local/uploads/../../other",
+    "malformed",
+  ])("rejects upload address %s before sending bytes", async (url) => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload");
+    uploadURL = url;
+    await expect(sync()).rejects.toThrow("uploadAddress");
+    expect(mocks.fetch.mock.calls.some(([, o]) => o.body instanceof Uint8Array)).toBe(false);
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(items.at(-1)?.deleted).toBe(true);
+  });
+  it.each(["prefix", "suffix"])("rejects nonempty upload %s", async (part) => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload");
+    if (part === "prefix") prefix = "unsafe";
+    else suffix = "unsafe";
+    await expect(sync()).rejects.toThrow("uploadFormat");
+    expect(mocks.fetch.mock.calls.some(([, o]) => o.body instanceof Uint8Array)).toBe(false);
+  });
+  it("rejects an upload whose verified bytes differ", async () => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload");
+    corruptUpload = true;
+    await expect(sync()).rejects.toThrow("writeMismatch");
+    expect(pendingSync((await readSyncHistory(root)).run)).toBe(true);
+  });
+  it("verifies deduplicated upload responses too", async () => {
+    const folder = await paired(),
+      path = join(temp, "stored.pdf");
+    await writeFile(path, "%PDF-upload");
+    files.set("STORED01", path);
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload");
+    uploadExists = true;
+    await sync();
+    expect(mocks.fetch.mock.calls.some(([, o]) => o.body instanceof Uint8Array)).toBe(false);
+  });
+  it("downloads local files without authorization and moves them into removed on rollback", async () => {
+    const folder = await paired();
+    await attachment();
+    const result = await sync();
+    expect(result.p.rows).toContainEqual(
+      expect.objectContaining({ group: "attachment", reason: "download", title: "paper.pdf", size: 12 }),
+    );
+    expect(await readFile(join(folder, "paper.pdf"), "utf8")).toBe("%PDF-fixture");
+    expect((await loadLibrary(root)).items[0].frontmatter?.pdf).toBe("paper.pdf");
+    expect(mocks.fetch.mock.calls.every(([, o]) => o.method === "GET")).toBe(true);
+    expect(await readFile(join(result.path, "journal.json"), "utf8")).not.toContain("%PDF-fixture");
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    await expect(disk.stat(join(folder, "paper.pdf"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(result.path, "removed/条目/one/paper.pdf"), "utf8")).toBe("%PDF-fixture");
+    expect(items[1].deleted).toBeUndefined();
+  });
+  it.each([
+    "https://example.invalid/file.pdf",
+    "file://other-host/share/file.pdf",
+    "file:////server/share/file.pdf",
+    "file:///C:/%5C%5Cserver/share.pdf",
+  ])("rejects non-local download %s", async (location) => {
+    await paired();
+    await attachment();
+    fileLocation = location;
+    await expect(preview()).rejects.toThrow("attachmentAddress");
+    expect(mocks.fetch.mock.calls.every(([url]) => String(url).startsWith("http://localhost:23119/api"))).toBe(true);
+  });
+  it("adopts matching hashes on first sync and skips hashing unchanged size and mtime", async () => {
+    const folder = await paired(),
+      path = await attachment();
+    await writeFile(join(folder, "renamed.pdf"), "%PDF-fixture");
+    const result = await sync();
+    expect(result.p.rows.filter((r) => r.group === "attachment")).toEqual([]);
+    expect(result.run.actions.some((a) => a.kind === "api" || (a.kind === "file" && a.download))).toBe(false);
+    mocks.read.mockClear();
+    await preview();
+    expect(mocks.read.mock.calls.filter(([p]) => [path, join(folder, "renamed.pdf")].includes(p))).toEqual([]);
+    await disk.utimes(join(folder, "renamed.pdf"), new Date(), new Date(Date.now() + 10000));
+    await preview();
+    expect(mocks.read).toHaveBeenCalledWith(join(folder, "renamed.pdf"));
+  });
+  it("keeps edited local and remote attachments as additional versions without changing annotations", async () => {
+    const folder = await paired(),
+      path = await attachment();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-fixture");
+    items.push({
+      key: "ANNOT001",
+      version: 1,
+      itemType: "annotation",
+      parentItem: "ATTACH01",
+      annotationType: "highlight",
+      annotationText: "original",
+      annotationPosition: '{"pageIndex":0}',
+    });
+    await sync();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-local-edited");
+    const uploaded = await sync();
+    expect(uploaded.p.rows).toContainEqual(expect.objectContaining({ reason: "uploadVersion" }));
+    expect(items.filter((d) => d.itemType === "attachment")).toHaveLength(2);
+    expect(await readFile(path, "utf8")).toBe("%PDF-fixture");
+    await writeFile(path, "%PDF-remote-edited");
+    const downloaded = await sync();
+    expect(downloaded.p.rows).toContainEqual(
+      expect.objectContaining({ reason: "downloadVersion", title: "paper.zotero-2.pdf" }),
+    );
+    expect(await readFile(join(folder, "paper.pdf"), "utf8")).toBe("%PDF-local-edited");
+    expect(await readFile(join(folder, "paper.zotero-2.pdf"), "utf8")).toBe("%PDF-remote-edited");
+    expect(items.find((d) => d.key === "ANNOT001")?.annotationText).toBe("original");
+    expect((await preview()).rows.filter((r) => r.group === "attachment")).toEqual([]);
+    mocks.read.mockClear();
+    await preview();
+    expect(mocks.read.mock.calls.some(([p]) => /\.pdf$/.test(p))).toBe(false);
+  });
+
+  it("adopts nested non-PDF files and downloads duplicate remote bytes only once", async () => {
+    const folder = await paired();
+    await attachment("ATTACH01", "image", "image.png");
+    await disk.mkdir(join(folder, "assets"));
+    await writeFile(join(folder, "assets/renamed.png"), "image");
+    expect((await sync()).p.rows.filter((r) => r.group === "attachment")).toEqual([]);
+    await attachment("ATTACH02", "new-image", "image.png");
+    await attachment("ATTACH03", "new-image", "same.png");
+    const result = await sync();
+    expect(result.p.rows.filter((r) => r.group === "attachment")).toHaveLength(1);
+    expect(result.run.next.attachments?.ATTACH02.local.path).toBe(result.run.next.attachments?.ATTACH03.local.path);
+  });
+
+  it("rolls back a new paper with only exported notes, removing its empty directory", async () => {
+    items.push(paper("PAPER001"), {
+      key: "NOTE0001",
+      version: 1,
+      itemType: "note",
+      parentItem: "PAPER001",
+      note: "<p>note</p>",
+    });
+    await sync();
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect((await loadLibrary(root)).errors).toEqual([]);
+    expect(await readdir(join(root, "条目"))).toEqual([]);
+  });
+
+  it("recovers when upload completes just before the journal is written", async () => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload");
+    const p = await preview(),
+      run = await resolveZoteroSync(p, {}, signal());
+    mocks.beforeRename = async (from, to) => {
+      if (to.endsWith("journal.json") && (await readFile(from, "utf8")).includes('"mtime"') && items.some((d) => d.md5))
+        throw new Error("interrupted");
+    };
+    await expect(applyZoteroSync(p, run, signal(), vi.fn())).rejects.toThrow("interrupted");
+    mocks.beforeRename = undefined;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(items.find((d) => d.itemType === "attachment")?.deleted).toBe(true);
+  });
+  it("blocks stale attachment sources and later edits during rollback", async () => {
+    const folder = await paired(),
+      source = await attachment();
+    const p = await preview(),
+      run = await resolveZoteroSync(p, {}, signal());
+    await writeFile(source, "%PDF-later");
+    await expect(applyZoteroSync(p, run, signal(), vi.fn())).rejects.toThrow("snapshotChanged");
+    await sync();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-user-edit");
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toThrow("rollbackChanged");
+  });
+  it("imports attachments with new parents and ignores linked URLs and unavailable files", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await attachment();
+    items.push(
+      { key: "LINK0001", version: 1, itemType: "attachment", parentItem: "PAPER001", linkMode: "linked_url" },
+      { key: "MISSING1", version: 1, itemType: "attachment", parentItem: "PAPER001", linkMode: "imported_file" },
+    );
+    const result = await sync();
+    expect(result.p.rows).toContainEqual(expect.objectContaining({ key: "MISSING1", reason: "attachmentMissing" }));
+    expect(mocks.fetch.mock.calls.some(([url]) => String(url).includes("LINK0001/file"))).toBe(false);
+    const imported = (await loadLibrary(root)).items[0];
+    expect(await readFile(join(imported.dir, "paper.pdf"), "utf8")).toBe("%PDF-fixture");
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect((await loadLibrary(root)).errors).toEqual([]);
+    await note("new-local");
+    await writeFile(join(root, "条目/new-local/data.csv"), "a\n1");
+    await sync();
+    expect(
+      items.some(
+        (d) => d.filename === "data.csv" && items.some((p) => p.key === d.parentItem && p.title === "new-local"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      "<p>研究 <strong>重点</strong>，<em>强调</em> a_b * x &amp; y<br>下一行</p>",
+      "研究 **重点**，*强调* a\\_b \\* x & y  \n下一行",
+    ],
+    [
+      '<h1>标题</h1><h2>二级</h2><h3>三级</h3><p><a href="https://example.invalid">链接</a></p>',
+      "标题\n==\n\n二级\n--\n\n### 三级\n\n[链接](https://example.invalid)",
+    ],
+    [
+      '<ul><li>One<ul><li>Nested</li></ul></li><li>Two</li></ul><ol start="3"><li>Three</li></ol>',
+      "* One\n  + Nested\n* Two\n\n3. Three",
+    ],
+    [
+      "<blockquote><p>Quote</p><p>More</p></blockquote><pre><code> a_b\n * c\n</code></pre>",
+      "> Quote\n>\n> More\n\n```\n a_b\n * c\n```",
+    ],
+    [
+      "<table><tr><th>A</th><th>B</th></tr><tr><td>x</td><td>y</td></tr></table>",
+      "| A | B |\n| --- | --- |\n| x | y |",
+    ],
+    [
+      '<p><code>a`b</code> <s>gone</s> x<sub>2</sub> <img src="local.png" alt="图"></p>',
+      "`` a`b `` ~~gone~~ x2 ![图](local.png)",
+    ],
+    [
+      '<table><thead><tr><td colspan="2">A</td></tr></thead><tbody><tr><td>x</td><td>y</td></tr></tbody></table>',
+      "| A | |\n| --- | --- |\n| x | y |",
+    ],
+    ["<table><tr><td>x</td><td>y</td></tr></table>", "|  |  |\n| --- | --- |\n| x | y |"],
+    [
+      '<div data-schema-version="9">\n<p> <span class="citation">(A, 2020)</span> &nbsp;<a href="https://example.invalid/a_b">https://example.invalid/a_b</a></p>\n<p>Text <sup>2</sup> <code>x_y</code></p></div>',
+      "(A, 2020) \u00a0<https://example.invalid/a_b>\n\nText 2 `x_y`",
+    ],
+    [
+      "<dl><dt>Term</dt><dd>Definition</dd></dl><p><q>Quote</q></p><hr><pre>code  </pre>",
+      'Term\n:   Definition\n\n"Quote"\n\n---\n\n```\ncode\n```',
+    ],
+    [
+      '<p><span>&nbsp;</span></p><video src="movie.mp4" poster="poster.png">caption</video><script>alert(1)</script><style>p{color:red}</style>',
+      "\u00a0\n\n[![caption](poster.png)](movie.mp4)",
+    ],
+  ])("exports plugin-compatible Markdown and raw JSON for %s", async (html, expected) => {
+    const folder = await paired();
+    const records: ZoteroData[] = [
+      { key: "NOTE0001", version: 1, itemType: "note", parentItem: "PAPER001", note: html },
+      {
+        key: "ANNOT001",
+        version: 2,
+        itemType: "annotation",
+        parentItem: "ATTACH01",
+        annotationType: "highlight",
+        annotationText: "  quoted  ",
+        annotationComment: "评论",
+        annotationPosition: '{"pageIndex":2}',
+        annotationSortIndex: "00003",
+      },
+    ];
+    items.push(
+      { key: "ATTACH01", version: 1, itemType: "attachment", parentItem: "PAPER001", linkMode: "linked_url" },
+      ...records,
+    );
+    const expectedMD = `# Zotero 批注与笔记\n\n此文件由同步更新；研究笔记请写在文献条目的正文中。\n\n## p.3 · highlight\n\n  quoted  \n评论\n[在 Zotero 中打开](zotero://open-pdf/library/items/ATTACH01?page=3&annotation=ANNOT001)\n\n## Zotero 笔记\n\n${expected}\n`;
+    const expectedJSON = JSON.stringify(records, null, 2) + "\n";
+    if (process.env.ZOTERO_SYNC_REFERENCE) {
+      // Execute only the reference exporter with synthetic records; never instantiate API or Sync.
+      const generated = JSON.parse(
+        execFileSync(
+          process.env.ZOTERO_SYNC_PYTHON!,
+          [
+            "-B",
+            "-c",
+            `
+import sys, json, socket
+sys.path.insert(0, sys.argv[1])
+def forbidden(*args, **kwargs): raise RuntimeError('Network forbidden in fixture generator')
+from zotero_sync import Sync
+socket.socket = forbidden
+s = Sync.__new__(Sync)
+s.remote = {d['key']: d for d in json.load(sys.stdin)}
+s.by_key = {'PAPER001': '条目/one/one.md'}
+s.top = {'PAPER001': {'title': 'one'}}
+s.blocked_pairs = set()
+s.state = {'exports': {}}
+s.files = {}
+s.plan = {'next_state': {'exports': {}}}
+out = {}
+s.file_action = lambda path, data, label: out.update({path: data.decode()})
+s.plan_exports()
+print(json.dumps(out, ensure_ascii=False))
+`,
+            process.env.ZOTERO_SYNC_REFERENCE,
+          ],
+          { input: JSON.stringify(items), encoding: "utf8" },
+        ),
+      );
+      expect(generated["条目/one/zotero/同步批注与笔记.md"]).toBe(expectedMD);
+      expect(generated["条目/one/zotero/同步批注与笔记.json"]).toBe(expectedJSON);
+    }
+    const bodyBefore = splitLibraryNote(await readFile(notePath("one"))).body;
+    await writeFile(join(folder, "paper.pdf.annotations.json"), "our annotations");
+    await sync();
+    const md = join(folder, "zotero/同步批注与笔记.md"),
+      raw = join(folder, "zotero/同步批注与笔记.json");
+    expect(await readFile(md, "utf8")).toBe(expectedMD);
+    expect(await readFile(raw, "utf8")).toBe(expectedJSON);
+    expect(splitLibraryNote(await readFile(notePath("one"))).body).toEqual(bodyBefore);
+    expect(await readFile(join(folder, "paper.pdf.annotations.json"), "utf8")).toBe("our annotations");
+    const mtime = (await disk.stat(md)).mtimeMs;
+    expect((await sync()).run.actions).toEqual([]);
+    expect((await disk.stat(md)).mtimeMs).toBe(mtime);
+    await writeFile(md, "edited excerpt");
+    await writeFile(raw, "edited raw excerpt");
+    await sync();
+    expect(await readFile(md, "utf8")).toBe(expectedMD);
+    expect(await readFile(raw, "utf8")).toBe(expectedJSON);
+    items = items.filter((d) => !["note", "annotation"].includes(d.itemType!));
+    await sync();
+    expect(await readFile(raw, "utf8")).toBe("[]\n");
+    expect(await readFile(md, "utf8")).not.toContain("## Zotero 笔记");
   });
 
   it("writes fields in both directions and preserves body, custom fields, creator roles and tag metadata", async () => {
@@ -1460,6 +1886,20 @@ describe("sync, backups and rollback with a fake Zotero", () => {
       await ui.click("回退本次同步");
       expect(document.body.textContent).toContain("已回退，可以重新预览");
       expect(items[0].title).toBe("Remote");
+    } finally {
+      await ui.close();
+    }
+  });
+
+  it("shows attachment direction, filename and size in its own preview group", async () => {
+    const folder = await paired();
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload-fixture");
+    const ui = await showWindow();
+    try {
+      const section = document.querySelector('section[aria-label="附件"]')!;
+      expect(section.textContent).toContain("paper.pdf");
+      expect(section.textContent).toContain("上传附件，保留已有版本");
+      expect(section.textContent).toContain("大小：19 字节");
     } finally {
       await ui.close();
     }

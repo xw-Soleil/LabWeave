@@ -3422,14 +3422,16 @@ research:
     noChanges: 无
     matchedBy: "按{{method}}配对"
     showMore: "继续显示（还有 {{count}} 项）"
+    fileSize: "大小：{{size}} 字节"
     groups:
       push: 写到 Zotero
       pull: 写到本地
       conflict: 冲突
       skip: 保留／跳过
+      attachment: 附件
     summary:
       unchanged: "{{count}} 篇没有变化"
-      deferred: "{{count}} 条子记录（批注 {{annotations}} 条、附件 {{attachments}} 条、子笔记 {{notes}} 条）。这一版还不同步批注、附件和子笔记。"
+      deferred: "{{count}} 条子记录没有可同步的所属文献，暂不处理。"
       missingCollections: "{{count}} 篇文献引用了列表中不存在的 Zotero 分类，已忽略这些分类编号，不参与比较和显示。"
     progress:
       authorize: 请在 Zotero 的授权窗口中选择「始终允许」…
@@ -3439,6 +3441,7 @@ research:
       items: "正在读取 Zotero 条目，已读 {{count}} 条…"
       collections: "正在读取 Zotero 分类，已读 {{count}} 个…"
       pairing: "正在配对并比较，已处理 {{count}} 项…"
+      attachments: "正在检查附件与摘录，已处理 {{count}} 个附件…"
     match:
       key: Zotero key
       doi: DOI
@@ -3459,7 +3462,13 @@ research:
       status: 阅读状态
       collections: 所属分类
     reasons:
-      preserved: 删除和回收站状态、文献类型、arXiv 号及其他自定义属性保留原值。研究笔记正文和本地 PDF 批注不推到 Zotero。这一版还不同步批注、附件和子笔记。
+      preserved: 删除和回收站状态、文献类型、arXiv 号及其他自定义属性保留原值。研究笔记正文和本地 PDF 批注不推到 Zotero。
+      upload: 上传附件，保留已有版本。
+      uploadVersion: 上传新版本，保留原附件和原批注。
+      download: 下载附件。
+      downloadVersion: 下载新版本，保留已有文件。
+      attachmentMissing: 附件尚未下载到 Zotero 本机，暂时跳过。
+      exportNotes: 更新只读的 Zotero 批注与笔记摘录。
       unreadable: 本地条目无法读取，请回文献库查看错误并修复。
       deletion: 删除／回收站或已关联条目缺失，不自动传播、不重新创建。
       newCollection: 新增分类
@@ -3487,6 +3496,9 @@ research:
       unsupportedField: 该 Zotero 文献类型不支持要写入的字段，请调整资料后重新预览。
       invalidStatus: Zotero 有多个阅读状态，无法直接使用。请选用本地的有效状态，或先在 Zotero 中只保留一个阅读状态。
       writeMismatch: 写入后的内容与预期不同，已停止。请先回退本次同步，再重新预览。
+      attachmentAddress: 附件地址不是本机的普通文件，已停止读取。
+      uploadAddress: Zotero 返回的上传地址不是指定的本机上传接口，已停止上传。
+      uploadFormat: Zotero 返回了带前缀或后缀的上传格式，目前不支持。
       operationFailed: 操作未完成。请检查文件权限和 Zotero 是否正常运行；如果有未完成的同步，请先回退。
       unfinished: 上次同步尚未完成，请先回退。
       busy: 这个文献库正在同步或回退，请等待完成。

@@ -2,6 +2,7 @@ import { fetch } from "@tauri-apps/plugin-http";
 import { appDataDir } from "@tauri-apps/api/path";
 import { exists, lstat, mkdir, readDir, readFile, remove } from "@tauri-apps/plugin-fs";
 import { stringify } from "yaml";
+import md5 from "md5";
 import {
   atomicWrite,
   checkedPath,
@@ -33,7 +34,7 @@ export const syncFields = [
 export type SyncField = (typeof syncFields)[number];
 export type SyncValue = string | string[];
 export type SyncValues = Record<SyncField, SyncValue>;
-export type SyncGroup = "push" | "pull" | "conflict" | "skip";
+export type SyncGroup = "push" | "pull" | "conflict" | "skip" | "attachment";
 type Match = "key" | "doi" | "arxiv" | "title";
 
 export interface ZoteroData {
@@ -70,6 +71,10 @@ export interface SyncBaseline {
   serverId: string;
   pairs: Record<string, { path: string; local: Partial<SyncValues>; remote: Partial<SyncValues> }>;
   collections: Record<string, { local: string; remote: string }>;
+  attachments?: Record<string, { parent: string; local: FileStamp; remote: FileStamp }>;
+  attachmentHistory?: Record<string, string[]>;
+  exports?: Record<string, { source: string; raw: string }>;
+  attachmentFiles?: Record<string, FileStamp>;
 }
 
 export interface SyncRow {
@@ -83,6 +88,7 @@ export interface SyncRow {
   remote?: SyncValue;
   reason?: string;
   matchedBy?: Match;
+  size?: number;
 }
 
 export interface PairingIssue {
@@ -106,11 +112,12 @@ export interface SyncPreview {
   blocked: boolean;
   baseline?: SyncBaseline;
   files?: Record<string, string>;
+  draft?: SyncRun;
   collectionPaths: { local: Record<string, string>; remote: Record<string, string> };
 }
 
 export interface SyncProgress {
-  phase: "connect" | "items" | "collections" | "pairing" | "authorize" | "apply" | "rollback";
+  phase: "connect" | "items" | "collections" | "pairing" | "attachments" | "authorize" | "apply" | "rollback";
   count: number;
 }
 
@@ -243,6 +250,11 @@ function validatePage(value: unknown, kind: "items" | "collections"): ZoteroData
       "pages",
       "abstractNote",
       "linkMode",
+      "annotationType",
+      "annotationText",
+      "annotationComment",
+      "annotationPosition",
+      "annotationSortIndex",
     ]) {
       if (d[field] !== undefined && typeof d[field] !== "string") fail("invalidResponse");
     }
@@ -274,64 +286,22 @@ export async function readZotero(
   signal: AbortSignal,
   progress: (value: SyncProgress) => void,
 ): Promise<ZoteroSnapshot> {
-  let serverId = "",
-    libraryVersion: string | undefined;
-  async function get(path: string, read: boolean): Promise<unknown> {
-    signal.throwIfAborted();
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    signal.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, 15000);
-    try {
-      const response = await fetch(`http://localhost:23119/api${path}`, {
-        method: "GET",
-        signal: controller.signal,
-        connectTimeout: 3000,
-        maxRedirections: 0,
-        // The first request discovers the ID; subsequent requests pin that instance.
-        headers: { "Zotero-API-Version": "3", "Zotero-Server-ID": serverId },
-      });
-      if (response.status === 403) {
-        const body = await response.text();
-        fail(body.includes("Local API is not enabled") ? "communicationDisabled" : "authorizationDenied");
-      }
-      if (response.status === 401) fail("authorizationDenied");
-      if (response.status === 412) fail("snapshotChanged");
-      if (response.status >= 300 && response.status < 400) fail("redirectRefused");
-      if (!serverId && response.status === 404) fail("oldVersion");
-      if (!response.ok) fail("requestFailed");
-      const id = response.headers.get("Zotero-Server-ID");
-      if (!id) fail("oldVersion");
-      if (serverId && id !== serverId) fail("snapshotChanged");
-      serverId = id!;
-      if (!read) return await response.text();
-      const version = response.headers.get("Last-Modified-Version");
-      if (version) {
-        if (libraryVersion !== undefined && version !== libraryVersion) fail("snapshotChanged");
-        libraryVersion = version;
-      }
-      try {
-        return await response.json();
-      } catch {
-        return fail(controller.signal.aborted ? "timeout" : "invalidResponse");
-      }
-    } catch (error) {
-      signal.throwIfAborted();
-      if (error instanceof Error && error.message.startsWith("zoteroSync.")) throw error;
-      return fail(controller.signal.aborted ? "timeout" : "notRunning");
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-    }
-  }
+  const api = client("", signal);
+  let libraryVersion: string | undefined;
   progress({ phase: "connect", count: 0 });
-  await get("/", false);
+  await api.request("/");
   async function all(kind: "items" | "collections") {
     const result: ZoteroData[] = [],
       seen = new Set<string>();
     progress({ phase: kind, count: 0 });
     for (let start = 0; start < 1000000; start += 100) {
-      const page = validatePage(await get(`/users/0/${kind}?start=${start}&limit=100`, true), kind);
+      const response = await api.request(`/users/0/${kind}?start=${start}&limit=100`);
+      const version = response.headers.get("Last-Modified-Version");
+      if (version) {
+        if (libraryVersion !== undefined && version !== libraryVersion) fail("snapshotChanged");
+        libraryVersion = version;
+      }
+      const page = validatePage(await responseJSON(response), kind);
       for (const item of page) {
         if (seen.has(item.key)) fail("snapshotChanged");
         seen.add(item.key);
@@ -344,7 +314,7 @@ export async function readZotero(
   }
   const items = await all("items"),
     collections = await all("collections");
-  return { serverId, items, collections, libraryVersion };
+  return { serverId: api.serverId, items, collections, libraryVersion };
 }
 
 function collectionPaths(collections: ZoteroData[]): Map<string, string> {
@@ -617,6 +587,14 @@ export async function planZoteroSync(
               ? "standalone"
               : "newItem";
     if (reason === "deferred") {
+      const owner = byKey.get(item.parentItem ?? "");
+      const parent = owner?.itemType === "attachment" ? byKey.get(owner.parentItem ?? "") : owner;
+      if (
+        parent &&
+        !parent.deleted &&
+        (pairs[parent.key] || (!child(parent) && !special(parent) && !used.has(parent.key)))
+      )
+        continue;
       summary.deferred.total++;
       if (item.itemType === "annotation") summary.deferred.annotations++;
       if (item.itemType === "attachment") summary.deferred.attachments++;
@@ -652,7 +630,15 @@ export async function planZoteroSync(
 
 export type SyncChoice = "local" | "remote" | "skip";
 export const conflictId = (row: SyncRow) => `${row.kind}:${row.key}:${row.field ?? ""}`;
-type FileAction = { kind: "file"; path: string; before: string | null; after: string };
+type FileStamp = { path: string; hash: string; size: number; mtime: number | null };
+type FileAction = {
+  kind: "file";
+  path: string;
+  before: string | null;
+  after: string;
+  download?: FileStamp;
+  media?: boolean;
+};
 type APIAction = {
   kind: "api";
   resource: "items" | "collections";
@@ -661,6 +647,7 @@ type APIAction = {
   before: Record<string, unknown> | null;
   version: number;
   after?: ZoteroData;
+  upload?: FileStamp;
 };
 type SyncAction = (FileAction | APIAction) & { status?: "pending" | "done" | "restored" };
 export interface SyncRun {
@@ -681,9 +668,12 @@ export interface SyncHistory {
 }
 const encode = (value: string) => new TextEncoder().encode(value);
 const decode = (value: Uint8Array) => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(value);
-const digest = async (value: string) =>
-  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encode(value))), (n) =>
-    n.toString(16).padStart(2, "0"),
+const digest = async (value: string | Uint8Array) =>
+  Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", typeof value === "string" ? encode(value) : new Uint8Array(value)),
+    ),
+    (n) => n.toString(16).padStart(2, "0"),
   ).join("");
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 const active = new Set<string>();
@@ -727,7 +717,11 @@ export async function readSyncHistory(root: string): Promise<SyncHistory> {
   return { directory, baseline: state ? (JSON.parse(state) ?? undefined) : undefined };
 }
 
-export async function captureSyncFiles(preview: SyncPreview) {
+export async function captureSyncFiles(
+  preview: SyncPreview,
+  signal = new AbortController().signal,
+  progress: (p: SyncProgress) => void = () => undefined,
+) {
   if (preview.blocked) return;
   const local = preview.source.local;
   const manifest = await readManifest(local.root);
@@ -745,52 +739,163 @@ export async function captureSyncFiles(preview: SyncPreview) {
     files[item.notePath] = raw;
   }
   preview.files = files;
+  preview.draft = await resolveZoteroSync(preview, {}, signal, progress);
 }
 
+async function responseJSON(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return fail("invalidResponse");
+  }
+}
 function client(serverId: string, signal: AbortSignal) {
   let secret = "",
     authPath = "",
     authRoot = "";
-  async function request(path: string, method = "GET", body?: unknown): Promise<Response> {
+  async function request(
+    path: string,
+    method = "GET",
+    body?: unknown,
+    headers: Record<string, string> = {},
+    file = false,
+  ): Promise<Response> {
     signal.throwIfAborted();
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    const timer = setTimeout(abort, path === "/local/authorize" ? 180000 : file ? 90000 : 15000);
     try {
       const response = await fetch(`http://localhost:23119/api${path}`, {
         method,
-        signal: AbortSignal.any([signal, AbortSignal.timeout(path === "/local/authorize" ? 180000 : 15000)]),
+        signal: controller.signal,
         connectTimeout: 3000,
         maxRedirections: 0,
         headers: {
+          // The HTTP plugin adds the webview's Origin by default; Zotero drops any request carrying one
+          // (its guard against web pages). An empty value makes the plugin omit the header.
+          Origin: "",
           "Zotero-API-Version": "3",
           "Zotero-Server-ID": serverId,
           ...(secret ? { "Zotero-API-Key": secret } : {}),
           ...(body ? { "Content-Type": "application/json" } : {}),
+          ...headers,
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body:
+          body === undefined
+            ? undefined
+            : body instanceof URLSearchParams
+              ? body.toString()
+              : body instanceof Uint8Array
+                ? new Uint8Array(body)
+                : JSON.stringify(body),
       });
       if (response.status === 401 && method !== "GET" && authPath && (await exists(authPath)))
         await remove(await checkedPath(authRoot, authPath));
-      if ([401, 403].includes(response.status)) fail("authorizationDenied");
+      if (response.status === 403)
+        fail(
+          (await response.text()).includes("Local API is not enabled")
+            ? "communicationDisabled"
+            : "authorizationDenied",
+        );
+      if (response.status === 401) fail("authorizationDenied");
       if (response.status === 412) fail("snapshotChanged");
-      if (response.status >= 300 && response.status < 400) fail("redirectRefused");
-      if (!response.ok) fail("requestFailed");
-      if (response.headers.get("Zotero-Server-ID") !== serverId) fail("snapshotChanged");
-      return response;
+      if (response.status >= 300 && response.status < 400 && !(file && method === "GET" && response.status === 302))
+        fail("redirectRefused");
+      if (!serverId && response.status === 404) fail("oldVersion");
+      if (!response.ok && !(file && method === "GET" && [302, 404].includes(response.status))) fail("requestFailed");
+      const id = response.headers.get("Zotero-Server-ID");
+      if (!id) fail("oldVersion");
+      if (serverId && id !== serverId) fail("snapshotChanged");
+      serverId = id!;
+      const content = await response.text();
+      return new Response([204, 205, 304].includes(response.status) ? null : content, response);
     } catch (error) {
       signal.throwIfAborted();
       // Transport errors may include request headers. Never expose or persist their text or cause.
       if (error instanceof Error && /^zoteroSync\.[a-zA-Z]+$/.test(error.message)) throw error;
-      return fail("requestFailed");
+      return fail(controller.signal.aborted ? "timeout" : method === "GET" ? "notRunning" : "requestFailed");
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
     }
   }
-  async function data(path: string) {
-    try {
-      return await (await request(path)).json();
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("zoteroSync.")) throw error;
-      return fail("invalidResponse");
-    }
+  const data = async (path: string) => responseJSON(await request(path));
+  async function attachment(key: string): Promise<string | null> {
+    const response = await request(`/users/0/items/${key}/file`, "GET", undefined, {}, true);
+    if (response.status === 404) return null;
+    if (response.status !== 302) return fail("invalidResponse");
+    const location = response.headers.get("Location") ?? "";
+    if (!/^file:\/\/(?:localhost)?\//i.test(location)) fail("attachmentAddress");
+    const url = new URL(location),
+      path = decodeURIComponent(url.pathname).replace(/^\/(?=[a-z]:\/)/i, "");
+    if (
+      (url.host && url.host !== "localhost") ||
+      url.search ||
+      url.hash ||
+      path.startsWith("//") ||
+      path.includes("\\") ||
+      path.includes("\0")
+    )
+      fail("attachmentAddress");
+    if (!(await exists(path))) return null;
+    if (!(await lstat(path)).isFile) return fail("attachmentAddress");
+    return path;
   }
   return {
+    request,
+    attachment,
+    async upload(key: string, source: FileStamp) {
+      const bytes = await checkedBytes(source),
+        current = await data(`/users/0/items/${key}`);
+      const headers: Record<string, string> = current.data.md5
+        ? { "If-Match": String(current.data.md5) }
+        : { "If-None-Match": "*" };
+      const endpoint = `/users/0/items/${key}/file`;
+      const form = (body: Record<string, string>) =>
+        request(
+          endpoint,
+          "POST",
+          new URLSearchParams(body),
+          { ...headers, "Content-Type": "application/x-www-form-urlencoded" },
+          true,
+        );
+      const upload = await responseJSON(
+        await form({
+          md5: md5(bytes),
+          filename: source.path.split("/").at(-1)!,
+          filesize: String(source.size),
+          mtime: String(Math.trunc(source.mtime ?? 0)),
+        }),
+      );
+      if (!upload.exists) {
+        if (typeof upload.url !== "string" || !URL.canParse(upload.url)) fail("uploadAddress");
+        const url = new URL(upload.url);
+        if (
+          url.origin !== "http://localhost:23119" ||
+          url.username ||
+          url.password ||
+          !url.pathname.startsWith("/api/local/uploads/")
+        )
+          fail("uploadAddress");
+        if (upload.prefix || upload.suffix) fail("uploadFormat");
+        if (typeof upload.uploadKey !== "string" || !upload.uploadKey) fail("invalidResponse");
+        await request(
+          url.pathname.slice(4) + url.search,
+          "POST",
+          bytes,
+          { "Content-Type": upload.contentType || "application/octet-stream", "Content-Length": String(bytes.length) },
+          true,
+        );
+        await form({ upload: upload.uploadKey });
+      }
+      const path = await attachment(key);
+      if (!path || (await fileStamp(path)).hash !== source.hash) fail("writeMismatch");
+      return validatePage([await data(`/users/0/items/${key}`)], "items")[0];
+    },
+    get serverId() {
+      return serverId;
+    },
     async authorize() {
       try {
         const home = documentPath(await appDataDir()).replace(/\/$/, "");
@@ -923,10 +1028,20 @@ function remoteField(d: ZoteroData, field: SyncField, value: SyncValue, values: 
   return { [name]: value };
 }
 
+function newKey(used: Set<string>) {
+  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  let key;
+  do {
+    key = Array.from(crypto.getRandomValues(new Uint8Array(8)), (v) => alphabet[v % alphabet.length]).join("");
+  } while (used.has(key));
+  used.add(key);
+  return key;
+}
 export async function resolveZoteroSync(
   preview: SyncPreview,
   choices: Record<string, SyncChoice>,
   signal: AbortSignal,
+  progress: (p: SyncProgress) => void = () => undefined,
 ): Promise<SyncRun> {
   if (preview.blocked || !preview.files) return fail("snapshotChanged");
   const { local, remote } = preview.source,
@@ -941,19 +1056,10 @@ export async function resolveZoteroSync(
       ? { local: "push", remote: "pull", skip: "skip" }[choices[conflictId(row)] ?? "skip"]
       : row.group;
   const used = new Set([...remote.items, ...remote.collections].map((d) => d.key));
-  const newKey = () => {
-    const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-    let key;
-    do {
-      key = Array.from(crypto.getRandomValues(new Uint8Array(8)), (v) => alphabet[v % alphabet.length]).join("");
-    } while (used.has(key));
-    used.add(key);
-    return key;
-  };
   const aliases = new Map(
     Object.keys(preview.collectionPaths.local)
       .filter((k) => k.startsWith("local:"))
-      .map((k) => [k, newKey()]),
+      .map((k) => [k, newKey(used)]),
   );
   const keyOf = (key: string) => aliases.get(key) ?? key;
   const lp = new Map(Object.entries(preview.collectionPaths.local).map(([k, p]) => [keyOf(k), p]));
@@ -1049,7 +1155,12 @@ export async function resolveZoteroSync(
     signal.throwIfAborted();
     const rows = preview.rows.filter((r) => r.path === item.notePath);
     const creating = rows.some((r) => r.kind === "item" && r.group === "push");
-    const key = pairMap.get(item.notePath) ?? (creating ? newKey() : undefined);
+    const key =
+      pairMap.get(item.notePath) ??
+      (creating
+        ? (Object.entries(preview.draft?.next.pairs ?? {}).find(([, p]) => p.path === item.notePath)?.[0] ??
+          newKey(used))
+        : undefined);
     const note = readNote(item.notePath);
     if (key) {
       const pair = preview.pairs[key];
@@ -1120,7 +1231,7 @@ export async function resolveZoteroSync(
       n = 1;
     while (occupied.has(name.toLowerCase())) name = `${base}${++n}`;
     occupied.add(name.toLowerCase());
-    const path = `${local.root}/条目/${name}/${name}.md`;
+    const path = preview.draft?.next.pairs[d.key]?.path ?? `${local.root}/条目/${name}/${name}.md`;
     notes.set(path, {
       before: null,
       fm: {
@@ -1145,6 +1256,17 @@ export async function resolveZoteroSync(
       local: { ...values, collections: (values.collections as string[]).filter((k) => lp.has(k)) },
       remote: values,
     };
+  }
+  if (preview.draft) {
+    actions.push(...structuredClone(preview.draft.actions.filter((a) => (a.kind === "file" ? a.media : a.upload))));
+    next.attachments = structuredClone(preview.draft.next.attachments);
+    next.attachmentHistory = structuredClone(preview.draft.next.attachmentHistory);
+    next.exports = structuredClone(preview.draft.next.exports);
+    next.attachmentFiles = structuredClone(preview.draft.next.attachmentFiles);
+  } else await planMedia(preview, next, actions, signal, progress);
+  for (const a of Object.values(next.attachments ?? {})) {
+    const note = notes.get(next.pairs[a.parent]?.path);
+    if (note && !note.fm.pdf && /\.pdf$/i.test(a.local.path)) note.fm.pdf = a.local.path.split("/").at(-1);
   }
   for (const [path, note] of notes) {
     const original = note.before === null ? undefined : parseLibraryYaml(note.yaml);
@@ -1177,6 +1299,377 @@ export async function resolveZoteroSync(
     actions,
     skipped: preview.rows.filter((r) => r.group === "conflict" && direction(r) === "skip").length,
   };
+}
+
+// Match markdownify 1.2.3 defaults used by the plugin; parse in an inert template (no image/network loads).
+function noteMarkdown(html: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const tag = (n: Node | null) => (n instanceof Element ? n.tagName.toLowerCase() : "");
+  const block = (n: Node | null) =>
+    /^(h[1-6]|p|blockquote|article|div|section|[ou]l|li|d[ldt]|table|thead|tbody|tfoot|tr|td|th)$/.test(tag(n));
+  const outside = (n: Node | null) => block(n) || tag(n) === "pre";
+  function convert(n: Node, parents: string[] = []): string {
+    const t = tag(n),
+      pre = parents.includes("pre"),
+      noformat = parents.some((p) => /^(pre|code|kbd|samp)$/.test(p));
+    const inline = parents.some((p) => /^(h[1-6]|td|th)$/.test(p));
+    if (n.nodeType === 3) {
+      let s = n.textContent ?? "";
+      if (!pre) s = s.replace(/[\t \r\n]*[\r\n][\t \r\n]*/g, "\n").replace(/[\t ]+/g, " ");
+      if (!noformat) s = s.replace(/[*_]/g, "\\$&");
+      if (outside(n.previousSibling) || (block(n.parentNode) && !n.previousSibling)) s = s.replace(/^[ \t\r\n]+/, "");
+      if (outside(n.nextSibling) || (block(n.parentNode) && !n.nextSibling)) s = s.trimEnd();
+      return s;
+    }
+    if (n.nodeType === 8 || ["script", "style"].includes(t)) return "";
+    const children = [...n.childNodes].filter(
+      (c) =>
+        !(
+          c.nodeType === 3 &&
+          !c.textContent?.trim() &&
+          ((block(n) && (!c.previousSibling || !c.nextSibling)) || outside(c.previousSibling) || outside(c.nextSibling))
+        ),
+    );
+    const s = children
+      .map((c) => convert(c, [...parents, t]))
+      .reduce((a, b) => {
+        const left = a.match(/\n+$/)?.[0].length ?? 0,
+          right = b.match(/^\n+/)?.[0].length ?? 0;
+        return !pre && t !== "pre" && left && right
+          ? a.slice(0, -left) + "\n".repeat(Math.min(2, Math.max(left, right))) + b.slice(right)
+          : a + b;
+      }, "");
+    const value = ["p", "blockquote"].includes(t) ? s.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "") : s.trim(),
+      attr = (name: string) => (n as Element).getAttribute(name) ?? "";
+    const wrapped = (start: string, end = start) =>
+      value ? `${s.startsWith(" ") ? " " : ""}${start}${value}${end}${s.endsWith(" ") ? " " : ""}` : "";
+    const markers: Record<string, string> = {
+      b: "**",
+      strong: "**",
+      i: "*",
+      em: "*",
+      del: "~~",
+      s: "~~",
+      sub: "",
+      sup: "",
+    };
+    if (t in markers) return noformat ? s : wrapped(markers[t]);
+    if (["code", "kbd", "samp"].includes(t)) {
+      const count = Math.max(0, ...[...value.matchAll(/`+/g)].map((m) => m[0].length));
+      return noformat
+        ? s
+        : wrapped("`".repeat(count + 1) + (count ? " " : ""), (count ? " " : "") + "`".repeat(count + 1));
+    }
+    if (t === "a")
+      return noformat || !attr("href")
+        ? noformat
+          ? s
+          : value
+        : value.replace(/\\_/g, "_") === attr("href") && !attr("title")
+          ? `<${attr("href")}>`
+          : wrapped("[", `](${attr("href")}${attr("title") ? ` "${attr("title").replace(/"/g, '\\"')}"` : ""})`);
+    if (t === "img")
+      return inline
+        ? attr("alt")
+        : `![${attr("alt")}](${attr("src")}${attr("title") ? ` "${attr("title").replace(/"/g, '\\"')}"` : ""})`;
+    if (t === "video") {
+      const src = attr("src") || (n as Element).querySelector("source[src]")?.getAttribute("src"),
+        poster = attr("poster");
+      return inline
+        ? s
+        : src
+          ? poster
+            ? `[![${s}](${poster})](${src})`
+            : `[${s}](${src})`
+          : poster
+            ? `![${s}](${poster})`
+            : s;
+    }
+    if (t === "br") return inline ? " " : "  \n";
+    if (t === "hr") return "\n\n---\n\n";
+    if (t === "q") return `"${s}"`;
+    if (t === "pre") return s ? `\n\n\`\`\`\n${s.replace(/^[ \n]*\n|[ \n]*$/g, "")}\n\`\`\`\n\n` : "";
+    if (/^h[1-6]$/.test(t))
+      return inline
+        ? s
+        : Number(t[1]) <= 2
+          ? value
+            ? `\n\n${value}\n${(t === "h1" ? "=" : "-").repeat([...value].length)}\n\n`
+            : ""
+          : `\n\n${"#".repeat(Number(t[1]))} ${value.replace(/[\t \r\n]+/g, " ")}\n\n`;
+    if (t === "blockquote")
+      return inline
+        ? ` ${value} `
+        : value
+          ? `\n${value
+              .split("\n")
+              .map((l) => (l ? `> ${l}` : ">"))
+              .join("\n")}\n\n`
+          : "\n";
+    if (t === "li") {
+      const parent = n.parentElement!;
+      const bullet =
+        tag(parent) === "ol"
+          ? `${Number(parent.getAttribute("start") || 1) + [...parent.children].filter((c) => tag(c) === "li").indexOf(n as Element)}.`
+          : "*+-"[(parents.filter((p) => p === "ul").length - 1) % 3];
+      return value
+        ? `${bullet} ${value
+            .split("\n")
+            .map((l, i) => (i && l ? " ".repeat(bullet.length + 1) + l : l))
+            .join("\n")}\n`
+        : "\n";
+    }
+    if (["ul", "ol"].includes(t))
+      return parents.includes("li")
+        ? "\n" + s.trimEnd()
+        : "\n\n" +
+            s +
+            ((n as Element).nextElementSibling && !["ul", "ol"].includes(tag((n as Element).nextElementSibling))
+              ? "\n"
+              : "");
+    const colspan = (e: Element) =>
+      /^\d+$/.test(e.getAttribute("colspan") ?? "")
+        ? Math.max(1, Math.min(1000, Number(e.getAttribute("colspan"))))
+        : 1;
+    if (["td", "th"].includes(t)) return ` ${value.replace(/\n/g, " ")}` + " |".repeat(colspan(n as Element));
+    if (t === "tr") {
+      const rows = [...(n as Element).closest("table")!.querySelectorAll("tr")],
+        cells = [...(n as Element).children];
+      const count = cells.reduce((sum, c) => sum + colspan(c), 0),
+        header =
+          cells.every((c) => tag(c) === "th") ||
+          (tag(n.parentNode) === "thead" && n.parentElement!.querySelectorAll("tr").length === 1);
+      const separator = "|" + " --- |".repeat(count) + "\n";
+      return (
+        (rows[0] === n && !header ? "|" + "  |".repeat(count) + "\n" + separator : "") +
+        "|" +
+        s +
+        "\n" +
+        (rows[0] === n && header ? separator : "")
+      );
+    }
+    if (t === "dt") return inline ? ` ${value} ` : `\n\n${value.replace(/[\t \r\n]+/g, " ")}\n`;
+    if (t === "dd") return inline ? ` ${value} ` : value ? `:   ${value.replace(/\n(?=.)/g, "\n    ")}\n` : "\n";
+    if (["p", "div", "article", "section", "dl", "table", "figcaption"].includes(t))
+      return inline ? ` ${value} ` : value ? `\n\n${value}\n\n` : "";
+    if (t === "caption") return value + "\n\n";
+    return s;
+  }
+  return convert(template.content).replace(/^\n+|\n+$/g, "");
+}
+
+async function fileStamp(path: string, cached?: FileStamp): Promise<FileStamp> {
+  const info = await lstat(path),
+    mtime = info.mtime?.getTime() ?? null;
+  if (!info.isFile || info.isSymlink) return fail("attachmentAddress");
+  if (cached?.path === path && mtime !== null && cached.size === info.size && cached.mtime === mtime) return cached;
+  const hash = await digest(await readFile(path)),
+    after = await lstat(path);
+  if (after.size !== info.size || after.mtime?.getTime() !== info.mtime?.getTime()) fail("snapshotChanged");
+  return { path, hash, size: info.size, mtime };
+}
+async function checkedBytes(source: FileStamp) {
+  const bytes = await readFile(source.path);
+  if (bytes.length !== source.size || (await digest(bytes)) !== source.hash) fail("snapshotChanged");
+  return bytes;
+}
+async function planMedia(
+  preview: SyncPreview,
+  next: SyncBaseline,
+  actions: SyncAction[],
+  signal: AbortSignal,
+  progress: (p: SyncProgress) => void,
+) {
+  const api = client(next.serverId, signal),
+    remote = preview.source.remote.items;
+  const before = preview.baseline?.attachments ?? {};
+  const used = new Set(
+    [...remote, ...preview.source.remote.collections, ...actions.filter((a) => a.kind === "api")].map((d) => d.key),
+  );
+  next.attachments ??= {};
+  next.attachmentHistory ??= {};
+  next.exports ??= {};
+  next.attachmentFiles ??= {};
+  for (const [parent, pair] of Object.entries(next.pairs)) {
+    if (
+      !preview.pairs[parent] &&
+      !preview.rows.some((r) => r.kind === "item" && r.group !== "skip" && (r.key === parent || r.path === pair.path))
+    )
+      continue;
+    signal.throwIfAborted();
+    progress({ phase: "attachments", count: Object.keys(next.attachments).length });
+    const folder = pair.path.slice(0, pair.path.lastIndexOf("/")),
+      local: FileStamp[] = [];
+    async function scan(dir: string) {
+      for (const entry of await readDir(await checkedPath(next.root, dir))) {
+        signal.throwIfAborted();
+        if (entry.isSymlink) continue;
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory) await scan(path);
+        else if (entry.isFile) {
+          const stamp = await fileStamp(await checkedPath(next.root, path), next.attachmentFiles![path]);
+          next.attachmentFiles![path] = stamp;
+          local.push(stamp);
+        }
+      }
+    }
+    if (await exists(folder)) await scan(folder);
+    const known = new Set(next.attachmentHistory[parent] ?? []),
+      hashes = new Set<string>();
+    Object.values(before)
+      .filter((a) => a.parent === parent)
+      .forEach((a) => known.add(a.local.hash));
+    const children = remote.filter((d) => d.parentItem === parent),
+      occupied = new Set(local.map((s) => s.path));
+    for (const d of remote.filter(
+      (d) =>
+        (d.parentItem || d.key) === parent && d.itemType === "attachment" && !d.deleted && d.linkMode !== "linked_url",
+    )) {
+      const path = await api.attachment(d.key);
+      if (!path) {
+        preview.rows.push({
+          group: "skip",
+          kind: "notice",
+          key: d.key,
+          title: text(d.title),
+          reason: "attachmentMissing",
+        });
+        continue;
+      }
+      const source = await fileStamp(path, before[d.key]?.remote);
+      hashes.add(source.hash);
+      if (before[d.key]?.remote.hash === source.hash) {
+        next.attachments[d.key].remote = source;
+        continue;
+      }
+      let target = local.find((s) => s.hash === source.hash);
+      if (!target) {
+        const name = (text(d.filename) || path.split("/").at(-1)!)
+          .split(/[\\/]/)
+          .at(-1)!
+          .replace(/[<>:"|?*]/g, "_")
+          .split("")
+          .map((c) => (c.charCodeAt(0) < 32 ? "_" : c))
+          .join("");
+        if (!name || /^\.+$/.test(name)) fail("attachmentAddress");
+        let dest = `${folder}/${name}`,
+          counter = 1;
+        while (occupied.has(dest) || (await exists(dest)))
+          dest = `${folder}/${name.replace(/(\.[^.]*)?$/, `.zotero-${++counter}$1`)}`;
+        occupied.add(dest);
+        target = { ...source, path: dest, mtime: null };
+        local.push(target);
+        actions.push({ kind: "file", path: dest, before: null, after: source.hash, download: source, media: true });
+        preview.rows.push({
+          group: "attachment",
+          kind: "notice",
+          key: d.key,
+          path: dest,
+          title: dest.split("/").at(-1)!,
+          size: source.size,
+          reason: before[d.key] ? "downloadVersion" : "download",
+        });
+      }
+      next.attachments[d.key] = { parent, local: target, remote: source };
+    }
+    if (!special(remote.find((d) => d.key === parent) ?? { key: parent, version: 0 }))
+      for (const source of local) {
+        if (source.path.slice(0, source.path.lastIndexOf("/")) !== folder || !/\.(pdf|csv)$/i.test(source.path))
+          continue;
+        if (hashes.has(source.hash) || known.has(source.hash)) continue;
+        const key = newKey(used);
+        const name = source.path.split("/").at(-1)!;
+        actions.push({
+          kind: "api",
+          resource: "items",
+          key,
+          version: 0,
+          before: null,
+          upload: source,
+          fields: {
+            key,
+            itemType: "attachment",
+            linkMode: "imported_file",
+            parentItem: parent,
+            title: name,
+            filename: name,
+            contentType: /\.pdf$/i.test(name) ? "application/pdf" : "text/csv",
+            tags: [],
+            relations: {},
+          },
+        });
+        next.attachments[key] = { parent, local: source, remote: { ...source, path: "", mtime: null } };
+        hashes.add(source.hash);
+        preview.rows.push({
+          group: "attachment",
+          kind: "notice",
+          key,
+          path: source.path,
+          title: name,
+          size: source.size,
+          reason: Object.values(before).some((a) => a.parent === parent && a.local.path === source.path)
+            ? "uploadVersion"
+            : "upload",
+        });
+      }
+    next.attachmentHistory[parent] = sorted([...known, ...hashes]);
+    const records = [...children, ...children.flatMap((d) => remote.filter((c) => c.parentItem === d.key))].filter(
+      (d) => ["annotation", "note"].includes(d.itemType!) && !d.deleted,
+    );
+    if (!records.length && !next.exports[parent]) continue;
+    const sourceHash = await digest(
+      json(
+        records
+          .toSorted((a, b) => (a.key < b.key ? -1 : 1))
+          .map((d) =>
+            Object.fromEntries(
+              Object.entries(d).filter(
+                ([f]) => !["version", "dateModified", "dateAdded", "lastRead", "charset"].includes(f),
+              ),
+            ),
+          ),
+      ),
+    );
+    const lines = ["# Zotero 批注与笔记", "", "此文件由同步更新；研究笔记请写在文献条目的正文中。", ""];
+    for (const d of records.toSorted((a, b) => {
+      const x = [a.parentItem, a.annotationSortIndex ?? "", a.key].join("\0"),
+        y = [b.parentItem, b.annotationSortIndex ?? "", b.key].join("\0");
+      return x < y ? -1 : x > y ? 1 : 0;
+    })) {
+      if (d.itemType === "note") lines.push("## Zotero 笔记", "", noteMarkdown(String(d.note ?? "")), "");
+      else {
+        const page = (JSON.parse(String(d.annotationPosition || "{}")).pageIndex ?? 0) + 1;
+        lines.push(
+          `## p.${page} · ${d.annotationType ?? ""}`,
+          "",
+          String(d.annotationText ?? ""),
+          String(d.annotationComment ?? ""),
+          `[在 Zotero 中打开](zotero://open-pdf/library/items/${d.parentItem}?page=${page}&annotation=${d.key})`,
+          "",
+        );
+      }
+    }
+    let rawHash = "";
+    for (const [ext, after] of [
+      ["json", json(records) + "\n"],
+      ["md", lines.join("\n")],
+    ]) {
+      const path = `${folder}/zotero/同步批注与笔记.${ext}`,
+        before = await optionalText(next.root, path);
+      if (before !== null) preview.files![path] = before;
+      const unchangedRaw =
+        ext === "json" &&
+        next.exports[parent]?.source === sourceHash &&
+        before !== null &&
+        (await digest(before)) === next.exports[parent]?.raw;
+      if (ext === "json") rawHash = await digest(unchangedRaw ? before! : after);
+      if (before === after || unchangedRaw) continue;
+      actions.push({ kind: "file", path, before, after, media: true });
+      preview.rows.push({ group: "pull", kind: "notice", path, title: text(pair.remote.title), reason: "exportNotes" });
+    }
+    next.exports[parent] = { source: sourceHash, raw: rawHash };
+  }
 }
 
 async function exclusive<T>(root: string, action: () => Promise<T>): Promise<T> {
@@ -1223,8 +1716,16 @@ export async function applyZoteroSync(
     for (const [path, before] of Object.entries(preview.files!))
       if ((await optionalText(run.root, path)) !== before) fail("snapshotChanged");
     for (const op of run.actions)
-      if (op.kind === "file" && op.before === null && (await exists(op.path.slice(0, op.path.lastIndexOf("/")))))
+      if (
+        op.kind === "file" &&
+        op.before === null &&
+        (await exists(op.media ? op.path : op.path.slice(0, op.path.lastIndexOf("/"))))
+      )
         fail("snapshotChanged");
+    for (const op of run.actions) {
+      const source = op.kind === "file" ? op.download : op.upload;
+      if (source && (await fileStamp(source.path, source)).hash !== source.hash) fail("snapshotChanged");
+    }
     const home = documentPath(await appDataDir());
     await privateDirectory(home, history.directory);
     const timestamp = Math.max(Date.now(), Number(history.runPath?.match(/\/run-(\d+)-/)?.[1] ?? 0) + 1);
@@ -1244,10 +1745,20 @@ export async function applyZoteroSync(
       op.status = "pending";
       await save();
       if (op.kind === "file")
-        await writeSyncFile(run.root, op.path, encode(op.after), op.before === null ? null : encode(op.before));
+        await writeSyncFile(
+          run.root,
+          op.path,
+          op.download ? await checkedBytes(op.download) : encode(op.after),
+          op.before === null ? null : encode(op.before),
+        );
       else {
         const after = await api.write(op);
         if (op.before === null) op.after = after;
+        if (op.upload) {
+          await save();
+          op.after = await api.upload(op.key, op.upload);
+          run.next.attachments![op.key].remote = await fileStamp((await api.attachment(op.key))!);
+        }
       }
       op.status = "done";
       await save();
@@ -1257,7 +1768,12 @@ export async function applyZoteroSync(
       if ((await optionalText(run.root, path)) !== (op?.after ?? before)) fail("snapshotChanged");
     }
     for (const op of run.actions)
-      if (op.kind === "file" && (await optionalText(run.root, op.path)) !== op.after) fail("snapshotChanged");
+      if (op.kind === "file" && (await fileValue(run.root, op)) !== op.after) fail("snapshotChanged");
+    for (const a of Object.values(run.next.attachments ?? {}))
+      if (a.local.mtime === null && (await exists(a.local.path))) {
+        a.local = await fileStamp(a.local.path);
+        run.next.attachmentFiles![a.local.path] = a.local;
+      }
     await storeJSON(history.directory, `${history.directory}/state.json`, run.next);
     run.status = "complete";
     await save();
@@ -1269,6 +1785,10 @@ export class SyncRollbackError extends Error {
   constructor(readonly changes: string[]) {
     super("zoteroSync.rollbackChanged");
   }
+}
+async function fileValue(root: string, op: FileAction) {
+  if (!op.download) return optionalText(root, op.path);
+  return (await exists(op.path)) ? (await fileStamp(await checkedPath(root, op.path))).hash : null;
 }
 export async function rollbackZoteroSync(
   root: string,
@@ -1294,26 +1814,33 @@ export async function rollbackZoteroSync(
       .sort(
         (a, b) =>
           Number(a.kind === "file" && /\.litlib$/i.test(a.path)) -
-          Number(b.kind === "file" && /\.litlib$/i.test(b.path)),
+          Number(a.kind === "file" && !!a.media) -
+          Number(b.kind === "file" && /\.litlib$/i.test(b.path)) +
+          Number(b.kind === "file" && !!b.media),
       );
     const changes: string[] = [];
+    const api = client(run.serverId, signal);
     const clean = (d: Record<string, unknown>) =>
       Object.fromEntries(
         Object.entries(d).filter(([f]) => !["version", "dateModified", "dateAdded", "lastRead", "charset"].includes(f)),
       );
     for (const op of operations) {
       if (op.kind === "file") {
-        const value = await optionalText(root, op.path);
+        const value = await fileValue(root, op);
         if (value !== op.before && (op.status === "restored" || value !== op.after)) changes.push(op.path);
       } else {
         const value = maps[op.resource].get(op.key);
         if (op.before === null) {
+          const uploaded = op.upload && value && !value.deleted ? await api.attachment(op.key) : null;
+          if (uploaded && (await fileStamp(uploaded)).hash !== op.upload!.hash) changes.push(op.key);
+          const comparable = (d: ZoteroData) =>
+            clean(op.upload ? Object.fromEntries(Object.entries(d).filter(([f]) => !["md5", "mtime"].includes(f))) : d);
           if (
             value &&
             !value.deleted &&
             (op.status === "restored" ||
               (op.after
-                ? !equal(clean(value), clean(op.after))
+                ? !equal(comparable(value), comparable(op.after))
                 : !Object.entries(op.fields).every(([f, v]) => equal(value[f], v))))
           )
             changes.push(op.key);
@@ -1339,7 +1866,6 @@ export async function rollbackZoteroSync(
       }
     }
     if (changes.length) throw new SyncRollbackError(sorted(changes));
-    const api = client(run.serverId, signal);
     if (operations.some((a) => a.kind === "api" && a.status !== "restored")) {
       progress({ phase: "authorize", count: 0 });
       await api.authorize();
@@ -1353,13 +1879,23 @@ export async function rollbackZoteroSync(
       progress({ phase: "rollback", count: index });
       if (op.status === "restored") continue;
       if (op.kind === "file") {
-        const value = await optionalText(root, op.path);
+        const value = await fileValue(root, op);
         if (value !== op.before && value !== op.after) throw new SyncRollbackError([op.path]);
         if (op.before === null) {
           const relative = documentPath(op.path).slice(documentPath(root).replace(/\/$/, "").length + 1);
           const target = `${runPath}/removed/${relative}`;
           await privateDirectory(runPath, target.slice(0, target.lastIndexOf("/")));
-          await moveSyncFile(root, op.path, encode(op.after), runPath, target);
+          await moveSyncFile(
+            root,
+            op.path,
+            op.download
+              ? value === null
+                ? new Uint8Array()
+                : await checkedBytes({ ...op.download, path: op.path })
+              : encode(op.after),
+            runPath,
+            target,
+          );
         } else if (value !== op.before) await writeSyncFile(root, op.path, encode(op.before), encode(op.after));
       } else {
         const value = maps[op.resource].get(op.key);
