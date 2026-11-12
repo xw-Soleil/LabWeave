@@ -4,32 +4,140 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import * as disk from "node:fs/promises";
+import { webcrypto } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import i18next from "i18next";
 import { I18nextProvider } from "react-i18next";
-import type { LibraryItem, LibrarySnapshot } from "./Library";
+import { loadLibrary, type LibraryItem, type LibrarySnapshot } from "./Library";
 import { libraryExtra, libraryMetadata, parseLibraryYaml, splitLibraryNote } from "./LibraryFormat";
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
+  diskEnabled: false,
+  data: "/fixture-app-data",
+  settings: { literatureLibraryPath: "" },
+  confirm: vi.fn(),
+  shell: vi.fn(),
+  beforeRename: undefined as undefined | ((from: string, to: string) => Promise<void>),
   fs: vi.fn(() => {
     throw new Error("Unexpected filesystem access");
   }),
 }));
 vi.mock("@tauri-apps/plugin-http", () => ({ fetch: mocks.fetch }));
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  open: mocks.fs,
-  readFile: mocks.fs,
-  stat: mocks.fs,
-  writeFile: mocks.fs,
-  SeekMode: {},
-}));
+vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
+vi.mock("@tauri-apps/api/path", () => ({ appDataDir: async () => mocks.data }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: async (_name: string, { path }: { path: string }) => path }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ confirm: mocks.confirm }));
+vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.shell }));
+vi.mock("@tauri-apps/plugin-fs", async () => {
+  const fs = await import("node:fs/promises");
+  const guard = () => {
+    if (!mocks.diskEnabled) mocks.fs();
+  };
+  const info = (s: NonNullable<Awaited<ReturnType<typeof fs.stat>>>) => ({
+    isFile: s.isFile(),
+    isDirectory: s.isDirectory(),
+    isSymlink: s.isSymbolicLink(),
+    size: s.size,
+    mtime: s.mtime,
+    mode: s.mode,
+  });
+  return {
+    exists: async (path: string) => {
+      if (!mocks.diskEnabled) return false;
+      try {
+        await fs.lstat(path);
+        return true;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw e;
+      }
+    },
+    lstat: async (path: string) => {
+      guard();
+      return info(await fs.lstat(path));
+    },
+    stat: async (path: string) => {
+      guard();
+      return info(await fs.stat(path));
+    },
+    readDir: async (path: string) => {
+      guard();
+      return (await fs.readdir(path, { withFileTypes: true })).map((e) => ({
+        name: e.name,
+        isFile: e.isFile(),
+        isDirectory: e.isDirectory(),
+        isSymlink: e.isSymbolicLink(),
+      }));
+    },
+    readFile: async (path: string) => {
+      guard();
+      return new Uint8Array(await fs.readFile(path));
+    },
+    mkdir: async (path: string, options?: { mode?: number; recursive?: boolean }) => {
+      guard();
+      await fs.mkdir(path, options);
+    },
+    remove: async (path: string, options?: { recursive?: boolean }) => {
+      guard();
+      if ((await fs.lstat(path)).isDirectory() && !options?.recursive) await fs.rmdir(path);
+      else await fs.rm(path, { recursive: !!options?.recursive });
+    },
+    rename: async (from: string, to: string) => {
+      guard();
+      await mocks.beforeRename?.(from, to);
+      await fs.rename(from, to);
+    },
+    open: async (path: string, options: { createNew?: boolean; mode?: number }) => {
+      guard();
+      const handle = await fs.open(path, options.createNew ? "wx" : "r", options.mode);
+      return {
+        write: async (bytes: Uint8Array) => (await handle.write(bytes)).bytesWritten,
+        close: () => handle.close(),
+      };
+    },
+    readTextFileLines: async (path: string) => {
+      guard();
+      return (async function* () {
+        yield* (await fs.readFile(path, "utf8")).split(/\r?\n/);
+      })();
+    },
+    SeekMode: {},
+  };
+});
+vi.mock("./ZoteroSync", async (original) => {
+  const actual = await original<typeof import("./ZoteroSync")>();
+  return {
+    ...actual,
+    captureSyncFiles: async (preview: Parameters<typeof actual.captureSyncFiles>[0]) => {
+      if (mocks.diskEnabled) await actual.captureSyncFiles(preview);
+    },
+  };
+});
+vi.mock("./Library", async (original) => {
+  const actual = await original<typeof import("./Library")>();
+  return {
+    ...actual,
+    loadLibrary: async (root: string) =>
+      mocks.diskEnabled ? actual.loadLibrary(root) : { root, items: [], collections: [], errors: [] },
+  };
+});
 vi.mock("@/components/overlay-host", () => ({ OverlayHost: {} }));
 
 import {
   localValues,
+  captureSyncFiles,
+  readSyncHistory,
+  resolveZoteroSync,
+  applyZoteroSync,
+  rollbackZoteroSync,
+  pendingSync,
+  conflictId,
+  SyncRollbackError,
+  type SyncChoice,
   mergeField,
   planZoteroSync,
   readZotero,
@@ -108,6 +216,11 @@ function largePreviewFixture() {
 }
 
 beforeEach(() => {
+  Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
+  mocks.diskEnabled = false;
+  mocks.beforeRename = undefined;
+  mocks.confirm.mockReset().mockResolvedValue(true);
+  mocks.shell.mockReset().mockResolvedValue(undefined);
   mocks.fetch.mockReset();
   mocks.fs.mockClear();
 });
@@ -666,7 +779,9 @@ describe("dialog", () => {
     const skip = dialog.querySelector('section[aria-label="保留／跳过"]')!;
     expect(skip.querySelector("h3")?.textContent).toBe("保留／跳过 (7)");
     expect(skip.textContent).toContain("67 篇没有变化");
-    expect(skip.textContent).toContain("660 条子记录（批注 490 条、附件 160 条、子笔记 10 条），第 3 步再处理。");
+    expect(skip.textContent).toContain(
+      "660 条子记录（批注 490 条、附件 160 条、子笔记 10 条）。这一版还不同步批注、附件和子笔记。",
+    );
     expect(skip.textContent).toContain("1 篇文献引用了列表中不存在的 Zotero 分类");
     for (const key of ["SOLO0001", "SOLO0002", "LINK0001"]) expect(skip.textContent).toContain(key);
     for (const key of ["P0000000", "C0000000", "MISSING", "继续显示"]) expect(skip.textContent).not.toContain(key);
@@ -692,7 +807,7 @@ describe("dialog", () => {
     expect(dialog.textContent).not.toContain(dir);
   });
 
-  it("shows four groups and both conflict values, with only refresh and close controls", async () => {
+  it("shows four groups, conflict choices and the sync control", async () => {
     mocks.fetch.mockImplementation(async (url: string) =>
       response(url.includes("/items?") ? [envelope(paper("PAPER001", { title: "Remote title" }))] : []),
     );
@@ -727,8 +842,16 @@ describe("dialog", () => {
     expect(dialog.querySelector("script")).toBeNull();
     expect(dialog.textContent).toContain("条目/local/local.md");
     expect(dialog.textContent).not.toContain("/fixture");
-    expect([...dialog.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["重新预览", "关闭"]);
-    await act(async () => (dialog.querySelectorAll("button")[1] as HTMLButtonElement).click());
+    expect([...dialog.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(["全部用本地", "全部用 Zotero", "这次跳过", "备份并同步", "重新预览", "关闭"]),
+    );
+    await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "全部用本地")!.click());
+    expect(dialog.querySelector('[role="combobox"]')?.textContent).toBe("用本地");
+    await act(async () =>
+      [...dialog.querySelectorAll("button")].find((b) => b.textContent === "全部用 Zotero")!.click(),
+    );
+    expect(dialog.querySelector('[role="combobox"]')?.textContent).toBe("用 Zotero");
+    await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "关闭")!.click());
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -751,5 +874,614 @@ describe("dialog", () => {
       refresh.click();
     });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("已连接本机 Zotero");
+  });
+});
+
+describe("sync, backups and rollback with a fake Zotero", () => {
+  let temp: string, root: string, items: ZoteroData[], collections: ZoteroData[], version: number;
+  let beforeWrite: ((kind: string, data: Record<string, unknown>) => void) | undefined;
+  let afterWrite: (() => void) | undefined;
+  let refusal: number, remember: boolean, serverId: string;
+  const secret = "fixture-secret-never-in-journals-or-errors";
+  const signal = () => new AbortController().signal;
+  const manifest = () => join(root, "文献库.litlib");
+  const notePath = (key: string) => join(root, "条目", key, `${key}.md`);
+  const note = async (key: string, fields: Record<string, unknown> = {}) => {
+    await disk.mkdir(join(root, "条目", key), { recursive: true });
+    const { stringify } = await import("yaml");
+    await writeFile(
+      notePath(key),
+      `---\n${stringify({ type: "文献", title: key, authors: [], collections: [], tags: [], status: "未读", ...fields })}---\n\n# 研究笔记\nKeep my body.\r\n`,
+    );
+  };
+  const localEdit = async (key: string, fields: Record<string, unknown>) => {
+    const { stringify } = await import("yaml");
+    const parts = splitLibraryNote(new Uint8Array(await readFile(notePath(key))));
+    await writeFile(
+      notePath(key),
+      `---\n${stringify({ ...parseLibraryYaml(parts.yaml).values, ...fields })}---\n${new TextDecoder().decode(parts.body)}`,
+    );
+  };
+  const preview = async () => {
+    const local = await loadLibrary(root),
+      history = await readSyncHistory(root);
+    const p = await plan(local, await readZotero(signal(), vi.fn()), history.baseline);
+    await captureSyncFiles(p);
+    return p;
+  };
+  const sync = async (choice: SyncChoice = "skip") => {
+    const p = await preview();
+    const choices = Object.fromEntries(
+      p.rows.filter((r) => r.group === "conflict").map((r) => [conflictId(r), choice]),
+    );
+    const run = await resolveZoteroSync(p, choices, signal());
+    const path = await applyZoteroSync(p, run, signal(), vi.fn());
+    return { p, run, path };
+  };
+  const changedRows = async () => (await preview()).rows.filter((r) => r.group !== "skip");
+  beforeEach(async () => {
+    mocks.diskEnabled = true;
+    temp = await disk.realpath(await mkdtemp(join(tmpdir(), "zotero-sync-")));
+    root = join(temp, "library");
+    mocks.data = join(temp, "app-data");
+    await disk.mkdir(join(root, "条目"), { recursive: true });
+    await disk.mkdir(mocks.data);
+    await writeFile(manifest(), JSON.stringify({ version: 1, collections: [], custom: "keep" }));
+    mocks.settings.literatureLibraryPath = root;
+    items = [];
+    collections = [];
+    version = 20;
+    refusal = 0;
+    remember = true;
+    serverId = "fixture-server";
+    beforeWrite = undefined;
+    afterWrite = undefined;
+    mocks.fetch.mockImplementation(
+      async (url: string, options: { method: string; headers: Record<string, string>; body?: string }) => {
+        const u = new URL(url);
+        expect(u.origin).toBe("http://localhost:23119");
+        expect(options.headers["Zotero-API-Version"]).toBe("3");
+        const reply = (data: unknown, status = 200) =>
+          response(data, status, { "Last-Modified-Version": String(version), "Zotero-Server-ID": serverId });
+        if (u.pathname === "/api/") return reply([]);
+        expect(options.headers["Zotero-Server-ID"]).toBe(serverId);
+        if (u.pathname === "/api/local/authorize") {
+          expect(JSON.parse(options.body!)).toEqual({ appName: "LabWeave" });
+          return reply({ key: secret, remember });
+        }
+        if (u.pathname === "/api/itemTypeFields")
+          return reply(
+            [
+              "title",
+              "date",
+              "publicationTitle",
+              "proceedingsTitle",
+              "repository",
+              "volume",
+              "issue",
+              "pages",
+              "DOI",
+              "url",
+              "abstractNote",
+            ].map((field) => ({ field })),
+          );
+        const match = /^\/api\/users\/0\/(items|collections)(?:\/([A-Z0-9]{8}))?$/.exec(u.pathname);
+        expect(match, url).not.toBeNull();
+        const kind = match![1],
+          key = match![2],
+          records = kind === "items" ? items : collections;
+        if (options.method === "GET") {
+          if (key) {
+            const record = records.find((d) => d.key === key);
+            return reply(record ? envelope(record) : {}, record ? 200 : 404);
+          }
+          const start = Number(u.searchParams.get("start"));
+          return reply(
+            records
+              .filter((d) => kind === "items" || !d.deleted)
+              .slice(start, start + 100)
+              .map(envelope),
+          );
+        }
+        expect(options.headers["Zotero-API-Key"]).toBe(secret);
+        const data = JSON.parse(options.body!);
+        beforeWrite?.(kind, Array.isArray(data) ? data[0] : data);
+        if (refusal) return reply({ error: secret }, refusal);
+        if (options.method === "POST") {
+          expect(data[0].version).toBe(0);
+          if (records.some((r) => r.key === data[0].key)) return reply({}, 412);
+          records.push({ ...data[0], version: ++version });
+        } else {
+          const record = records.find((r) => r.key === key)!;
+          if (record.version !== data.version) return reply({}, 412);
+          Object.assign(record, data, { version: ++version });
+        }
+        afterWrite?.();
+        return reply({ successful: { "0": true }, failed: {} });
+      },
+    );
+  });
+  afterEach(async () => {
+    await rm(temp, { recursive: true, force: true });
+  });
+
+  it("writes fields in both directions and preserves body, custom fields, creator roles and tag metadata", async () => {
+    items.push(
+      paper("PAPER001", {
+        title: "Original",
+        date: "2020-02-03",
+        creators: [
+          { creatorType: "author", firstName: "Ada", lastName: "Lovelace" },
+          { creatorType: "editor", name: "Editor" },
+        ],
+        tags: [{ tag: "keep", type: 1 }],
+      }),
+    );
+    await note("one", {
+      title: "Original",
+      year: "2020",
+      authors: ["Ada Lovelace"],
+      tags: ["keep"],
+      zotero_key: "PAPER001",
+      custom: { preserved: true },
+    });
+    await sync();
+    await localEdit("one", {
+      title: "Local title",
+      year: "2024",
+      authors: ["Ada Lovelace", "Grace Hopper"],
+      tags: ["keep", "new"],
+      status: "已读",
+    });
+    Object.assign(items[0], { abstractNote: "Remote abstract", DOI: "10.1/remote", version: ++version });
+    const before = await readFile(notePath("one"), "utf8");
+    const result = await sync();
+    expect(result.run.actions.filter((a) => a.kind === "api")).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      title: "Local title",
+      date: "2024-02-03",
+      creators: [
+        { creatorType: "author", firstName: "Ada", lastName: "Lovelace" },
+        { creatorType: "author", firstName: "Grace", lastName: "Hopper" },
+        { creatorType: "editor", name: "Editor" },
+      ],
+      tags: expect.arrayContaining([{ tag: "keep", type: 1 }, { tag: "阅读/已读" }]),
+    });
+    const saved = (await loadLibrary(root)).items[0];
+    expect(saved.abstract).toBe("Remote abstract");
+    expect(saved.doi).toBe("10.1/remote");
+    expect(saved.extra.custom).toEqual({ preserved: true });
+    expect((await readFile(notePath("one"), "utf8")).split("# 研究笔记")[1]).toBe(before.split("# 研究笔记")[1]);
+    expect(await changedRows()).toEqual([]);
+    const reads = mocks.fetch.mock.calls.filter(([url]) => /\/items\?/.test(url));
+    expect(reads.length).toBeLessThan(10);
+  });
+
+  it.each(["local", "remote", "skip"] as const)(
+    "resolves conflicts with %s and keeps skipped conflicts visible",
+    async (choice) => {
+      items.push(paper("PAPER001", { title: "Remote" }));
+      await note("one", { title: "Local", zotero_key: "PAPER001" });
+      await sync(choice);
+      expect(items[0].title).toBe(choice === "local" ? "Local" : "Remote");
+      expect((await loadLibrary(root)).items[0].title).toBe(choice === "remote" ? "Remote" : "Local");
+      expect((await changedRows()).filter((r) => r.field === "title")).toHaveLength(choice === "skip" ? 1 : 0);
+    },
+  );
+
+  it("creates both ways using plugin paths, writes zotero_key, and rolls creations into trash and removed", async () => {
+    await note("Local", { title: "Local addition", itemType: "期刊文章", authors: ["Local Person"] });
+    items.push(
+      paper("REMOTE01", {
+        title: "The Diffusion Method",
+        date: "2024",
+        creators: [{ creatorType: "author", name: "Huang" }],
+      }),
+    );
+    const original = await readFile(notePath("Local"), "utf8");
+    const result = await sync();
+    const loaded = await loadLibrary(root);
+    const imported = loaded.items.find((i) => i.extra.zotero_key === "REMOTE01")!;
+    expect(imported.notePath).toBe(notePath("Huang2024Diffusion"));
+    const localKey = loaded.items.find((i) => i.key === "Local")!.extra.zotero_key;
+    expect(items.find((i) => i.key === localKey)?.title).toBe("Local addition");
+    expect(await changedRows()).toEqual([]);
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(items.find((i) => i.key === localKey)?.deleted).toBe(true);
+    expect(await readFile(notePath("Local"), "utf8")).toBe(original);
+    expect(
+      await readFile(join(result.path, "removed", "条目", "Huang2024Diffusion", "Huang2024Diffusion.md"), "utf8"),
+    ).toContain("zotero_key: REMOTE01");
+    expect((await loadLibrary(root)).errors).toEqual([]);
+    expect((await changedRows()).map((r) => [r.group, r.kind, r.title])).toEqual(
+      result.p.rows.filter((r) => r.group !== "skip").map((r) => [r.group, r.kind, r.title]),
+    );
+    await rollbackZoteroSync(root, signal(), vi.fn());
+  });
+
+  it("adds and renames nested collections both ways, updating membership and the stable map", async () => {
+    collections.push(collection("COL00001", "Remote"));
+    await writeFile(manifest(), JSON.stringify({ version: 1, collections: ["Local", "Local/Sub"], custom: "keep" }));
+    await note("one", { title: "Same", zotero_key: "PAPER001", collections: ["Local/Sub"] });
+    items.push(paper("PAPER001", { title: "Same", collections: ["COL00001"] }));
+    await sync("local");
+    let data = JSON.parse(await readFile(manifest(), "utf8"));
+    expect(data.collections).toEqual(["Local", "Local/Sub", "Remote"]);
+    expect(data.custom).toBe("keep");
+    const localKey = Object.keys(data.zoteroCollections).find((k) => data.zoteroCollections[k] === "Local")!;
+    const subKey = Object.keys(data.zoteroCollections).find((k) => data.zoteroCollections[k] === "Local/Sub")!;
+    expect(collections.find((c) => c.key === subKey)?.parentCollection).toBe(localKey);
+    data.collections = ["Renamed", "Renamed/Sub", "Remote"];
+    data.zoteroCollections[localKey] = "Renamed";
+    data.zoteroCollections[subKey] = "Renamed/Sub";
+    await writeFile(manifest(), JSON.stringify(data));
+    await localEdit("one", { collections: ["Renamed/Sub"] });
+    Object.assign(collections.find((c) => c.key === "COL00001")!, { name: "Remote renamed", version: ++version });
+    await sync();
+    data = JSON.parse(await readFile(manifest(), "utf8"));
+    expect(data.zoteroCollections).toMatchObject({
+      [localKey]: "Renamed",
+      [subKey]: "Renamed/Sub",
+      COL00001: "Remote renamed",
+    });
+    expect(collections.find((c) => c.key === localKey)?.name).toBe("Renamed");
+    expect((await loadLibrary(root)).items[0].collections).toEqual(["Renamed/Sub"]);
+    expect(await changedRows()).toEqual([]);
+  });
+
+  it.each(["remote", "local", "newLocal", "collection", "state"])(
+    "rejects a stale %s preview before mutations",
+    async (side) => {
+      items.push(paper("PAPER001", { title: "Remote" }));
+      await note("one", { title: "Local", zotero_key: "PAPER001" });
+      const p = await preview(),
+        run = await resolveZoteroSync(p, { "field:PAPER001:title": "local" }, signal());
+      if (side === "remote") items[0].version++;
+      if (side === "local") await localEdit("one", { title: "Later" });
+      if (side === "newLocal") await note("new");
+      if (side === "collection") collections.push(collection("COL00001", "Later"));
+      if (side === "state") await sync("remote");
+      mocks.fetch.mockClear();
+      await expect(applyZoteroSync(p, run, signal(), vi.fn())).rejects.toThrow("snapshotChanged");
+      expect(
+        mocks.fetch.mock.calls.filter(
+          ([, o]) => o.method === "PATCH" || (o.method === "POST" && !o.body?.includes("appName")),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("stops at 412 without retry and can roll back the pending operation", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    refusal = 412;
+    await expect(sync("local")).rejects.toThrow("snapshotChanged");
+    expect(mocks.fetch.mock.calls.filter(([, o]) => o.method === "PATCH")).toHaveLength(1);
+    expect(pendingSync((await readSyncHistory(root)).run)).toBe(true);
+    refusal = 0;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(items[0].title).toBe("Remote");
+  });
+
+  it("recovers an interrupted sync and an interrupted rollback, including the response-before-journal gap", async () => {
+    items.push(paper("PAPER001", { title: "Remote", abstractNote: "remote abstract" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    const bytes = await readFile(notePath("one"));
+    afterWrite = () => {
+      throw new Error(`transport included ${secret}`);
+    };
+    await expect(sync("local")).rejects.toThrow("requestFailed");
+    expect(items[0].title).toBe("Local");
+    expect(pendingSync((await readSyncHistory(root)).run)).toBe(true);
+    await expect(sync()).rejects.toThrow("unfinished");
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toThrow("requestFailed");
+    expect(items[0].title).toBe("Remote");
+    expect((await readSyncHistory(root)).run?.status).toBe("rolling-back");
+    afterWrite = undefined;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(await readFile(notePath("one"))).toEqual(bytes);
+    expect((await readSyncHistory(root)).run?.status).toBe("rolled-back");
+  });
+
+  it("recovers a local write interrupted before completion is journaled", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    const bytes = await readFile(notePath("one"));
+    mocks.beforeRename = async (from, to) => {
+      if (to.endsWith("journal.json") && (await readFile(from, "utf8")).includes('"status": "done"'))
+        throw new Error("simulated crash");
+    };
+    await expect(sync("remote")).rejects.toThrow("simulated crash");
+    expect((await loadLibrary(root)).items[0].title).toBe("Remote");
+    mocks.beforeRename = undefined;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(await readFile(notePath("one"))).toEqual(bytes);
+  });
+
+  it("lists later local and remote edits and performs no rollback writes", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    await sync("local");
+    await writeFile(manifest(), (await readFile(manifest(), "utf8")) + "\n");
+    Object.assign(items[0], { title: "Later edit", version: ++version });
+    const calls = mocks.fetch.mock.calls.length;
+    const error = await rollbackZoteroSync(root, signal(), vi.fn()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SyncRollbackError);
+    expect((error as SyncRollbackError).changes).toEqual(expect.arrayContaining([manifest(), "PAPER001/title"]));
+    expect(mocks.fetch.mock.calls.slice(calls).every(([, o]) => o.method === "GET")).toBe(true);
+    expect(items[0].title).toBe("Later edit");
+  });
+
+  it("preserves unrelated later Zotero edits, restores the baseline and leaves a clean preview", async () => {
+    items.push(paper("PAPER001", { title: "Same" }));
+    await note("one", { title: "Same", zotero_key: "PAPER001" });
+    await sync();
+    const baseline = (await readSyncHistory(root)).baseline;
+    await sync();
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect((await readSyncHistory(root)).baseline).toEqual(baseline);
+    expect(await changedRows()).toEqual([]);
+    await localEdit("one", { title: "Local edit" });
+    await sync();
+    Object.assign(items[0], { extra: "Later unsynced property", version: ++version });
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect(items[0]).toMatchObject({ title: "Same", extra: "Later unsynced property" });
+  });
+
+  it("refuses rollback when a created item has a later attachment", async () => {
+    await note("new", { itemType: "期刊文章" });
+    await sync();
+    items.push(paper("ATTACH01", { itemType: "attachment", parentItem: items[0].key }));
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toMatchObject({ changes: ["ATTACH01"] });
+    expect(items[0].deleted).toBeUndefined();
+  });
+
+  it("protects later membership in a new collection even if that item had another field synced", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    await writeFile(manifest(), JSON.stringify({ version: 1, collections: ["New category"] }));
+    await sync("local");
+    items[0].collections = [collections[0].key];
+    items[0].version = ++version;
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toMatchObject({ changes: ["PAPER001"] });
+    expect(collections[0].deleted).toBeUndefined();
+    expect(items[0].title).toBe("Local");
+  });
+
+  it("stores secrets only in a private per-server credential file, erases it on 401 and sanitizes errors", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    const { path } = await sync("local");
+    const files = await readdir(temp, { recursive: true });
+    const containing: string[] = [];
+    for (const file of files)
+      if ((await disk.stat(join(temp, file))).isFile() && (await readFile(join(temp, file), "utf8")).includes(secret))
+        containing.push(file);
+    expect(containing).toHaveLength(1);
+    expect(containing[0]).toMatch(/app-data\/zotero-sync\/auth\/[a-f0-9]{64}\.json$/);
+    expect((await disk.stat(join(temp, containing[0]))).mode & 0o777).toBe(0o600);
+    expect((await disk.stat(join(mocks.data, "zotero-sync", "auth"))).mode & 0o777).toBe(0o700);
+    expect(await readFile(join(path, "journal.json"), "utf8")).not.toContain(secret);
+    await localEdit("one", { title: "Another edit" });
+    refusal = 401;
+    const error = await sync().catch((e: unknown) => e);
+    expect(String(error)).toContain("authorizationDenied");
+    expect(String(error)).not.toContain(secret);
+    expect(await readdir(join(mocks.data, "zotero-sync", "auth"))).toEqual([]);
+    refusal = 0;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    serverId = "another-server";
+    const p = await plan(await loadLibrary(root), await readZotero(signal(), vi.fn()));
+    await captureSyncFiles(p);
+    const run = await resolveZoteroSync(p, { "field:PAPER001:title": "local" }, signal());
+    // Different Zotero instances cannot reuse a library baseline or its authorization.
+    await expect(applyZoteroSync(p, run, signal(), vi.fn())).rejects.toThrow("snapshotChanged");
+  });
+
+  it("does not save temporary authorization and retains only ten backups", async () => {
+    await note("new", { itemType: "期刊文章" });
+    remember = false;
+    await expect(sync()).rejects.toThrow("persistentAuthorization");
+    expect(await readdir(join(mocks.data, "zotero-sync", "auth"))).toEqual([]);
+    remember = true;
+    for (let i = 0; i < 12; i++) await sync();
+    const h = await readSyncHistory(root);
+    expect((await readdir(h.directory)).filter((n) => n.startsWith("run-"))).toHaveLength(10);
+  });
+
+  it("does not expose credentials when their file cannot be saved", async () => {
+    await note("new", { itemType: "期刊文章" });
+    mocks.beforeRename = async (_from, to) => {
+      if (to.includes("/auth/")) throw new Error(secret);
+    };
+    const error = await sync().catch((e: unknown) => e);
+    expect(String(error)).toContain("storageFailed");
+    expect(String(error)).not.toContain(secret);
+    expect(error).not.toHaveProperty("cause");
+    expect(await readdir(join(mocks.data, "zotero-sync", "auth"))).toEqual([]);
+  });
+
+  it("stops when the saved Zotero version does not advance", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    afterWrite = () => {
+      items[0].version = 7;
+    };
+    await expect(sync("local")).rejects.toThrow("snapshotChanged");
+    expect(mocks.fetch.mock.calls.filter(([, o]) => o.method === "PATCH")).toHaveLength(1);
+  });
+
+  it("imports into a new library without an items folder and retries an interrupted removal", async () => {
+    await disk.rmdir(join(root, "条目"));
+    items.push(paper("REMOTE01", { title: "Remote" }));
+    const { path } = await sync();
+    const imported = (await loadLibrary(root)).items[0];
+    mocks.beforeRename = async (from, to) => {
+      if (to.endsWith("journal.json") && (await readFile(from, "utf8")).includes('"status": "restored"'))
+        throw new Error("crash after removal");
+    };
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toThrow("crash after removal");
+    expect((await loadLibrary(root)).items).toEqual([]);
+    // A process can exit after removing the file but before removing its empty directory.
+    await disk.mkdir(imported.dir);
+    mocks.beforeRename = undefined;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    expect((await loadLibrary(root)).errors).toEqual([]);
+    expect(await readFile(join(path, "removed", "条目", imported.key, `${imported.key}.md`), "utf8")).toContain(
+      "zotero_key: REMOTE01",
+    );
+  });
+
+  it("uses separate credentials for separate server IDs", async () => {
+    await note("first", { itemType: "期刊文章" });
+    await sync();
+    const auth = join(mocks.data, "zotero-sync", "auth"),
+      first = await readdir(auth);
+    serverId = "second-server";
+    items = [];
+    root = join(temp, "second-library");
+    mocks.settings.literatureLibraryPath = root;
+    await disk.mkdir(join(root, "条目"), { recursive: true });
+    await writeFile(manifest(), JSON.stringify({ version: 1, collections: [] }));
+    await note("second", { itemType: "期刊文章" });
+    await sync();
+    expect(await readdir(auth)).toHaveLength(2);
+    expect(mocks.fetch.mock.calls.filter(([url]) => url.endsWith("/local/authorize"))).toHaveLength(2);
+    await localEdit("second", { title: "Later" });
+    refusal = 401;
+    await expect(sync()).rejects.toThrow("authorizationDenied");
+    expect(await readdir(auth)).toEqual(first);
+  });
+
+  it("handles collection conflict choices and keeps skipped renames visible", async () => {
+    collections.push(collection("COL00001", "Original"));
+    await writeFile(
+      manifest(),
+      JSON.stringify({ version: 1, collections: ["Original"], zoteroCollections: { COL00001: "Original" } }),
+    );
+    await sync();
+    await writeFile(
+      manifest(),
+      JSON.stringify({ version: 1, collections: ["Local"], zoteroCollections: { COL00001: "Local" } }),
+    );
+    collections[0].name = "Remote";
+    collections[0].version = ++version;
+    await sync("skip");
+    expect((await changedRows()).filter((r) => r.kind === "collection")).toHaveLength(1);
+    await sync("remote");
+    expect((await loadLibrary(root)).zoteroCollections).toEqual({ COL00001: "Remote" });
+    expect(await changedRows()).toEqual([]);
+    await rollbackZoteroSync(root, signal(), vi.fn());
+    await sync("local");
+    expect(collections[0].name).toBe("Local");
+    expect(await changedRows()).toEqual([]);
+  });
+
+  it("refuses a version race during rollback without retrying", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    await sync("local");
+    beforeWrite = () => {
+      items[0].version = ++version;
+    };
+    mocks.fetch.mockClear();
+    await expect(rollbackZoteroSync(root, signal(), vi.fn())).rejects.toThrow("snapshotChanged");
+    expect(items[0].title).toBe("Local");
+    expect(mocks.fetch.mock.calls.filter(([, o]) => o.method === "PATCH")).toHaveLength(1);
+    beforeWrite = undefined;
+    await rollbackZoteroSync(root, signal(), vi.fn());
+  });
+
+  it("keeps a skipped multiple-status conflict and rejects choosing an invalid remote status", async () => {
+    items.push(paper("PAPER001", { title: "Remote", tags: [{ tag: "阅读/已读" }, { tag: "阅读/待读" }] }));
+    await sync();
+    expect((await loadLibrary(root)).items).toHaveLength(0);
+    await expect(sync("remote")).rejects.toThrow("invalidStatus");
+    expect(items[0].tags).toHaveLength(2);
+  });
+
+  async function showWindow() {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    await i18next.init({
+      lng: "zh_CN",
+      resources: { zh_CN: { research: parse(readFileSync("app/src/locales/zh_CN.yml", "utf8")).research } },
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const view = createRoot(host),
+      snapshot = await loadLibrary(root);
+    await act(async () =>
+      view.render(
+        createElement(
+          I18nextProvider,
+          { i18n: i18next },
+          createElement(ZoteroSyncDialog, { snapshot, onClose: vi.fn() }),
+        ),
+      ),
+    );
+    const settle = () =>
+      vi.waitFor(async () => {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+        });
+        expect(document.querySelector('[aria-busy="false"]')).not.toBeNull();
+      });
+    await settle();
+    const click = async (label: string) => {
+      await act(async () => [...document.querySelectorAll("button")].find((b) => b.textContent === label)!.click());
+      await settle();
+    };
+    const close = async () => {
+      await act(async () => view.unmount());
+      host.remove();
+    };
+    return { click, close };
+  }
+
+  it("asks for a concrete system confirmation, respects cancel, shows results and opens the backup", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    const ui = await showWindow();
+    try {
+      await ui.click("全部用本地");
+      mocks.confirm.mockResolvedValue(false);
+      await ui.click("备份并同步");
+      expect(mocks.confirm).toHaveBeenCalledWith(
+        expect.stringContaining("将修改 2 处"),
+        expect.objectContaining({ kind: "warning" }),
+      );
+      expect(items[0].title).toBe("Remote");
+      expect((await readSyncHistory(root)).run).toBeUndefined();
+      mocks.confirm.mockResolvedValue(true);
+      await ui.click("备份并同步");
+      expect(document.body.textContent).toContain("上次同步已完成，共修改 2 处");
+      await ui.click("打开备份文件夹");
+      expect(mocks.shell).toHaveBeenCalledWith((await readSyncHistory(root)).runPath);
+      await ui.click("回退本次同步");
+      expect(document.body.textContent).toContain("已回退，可以重新预览");
+      expect(items[0].title).toBe("Remote");
+    } finally {
+      await ui.close();
+    }
+  });
+
+  it("shows unfinished work before contacting Zotero when the window reopens", async () => {
+    items.push(paper("PAPER001", { title: "Remote" }));
+    await note("one", { title: "Local", zotero_key: "PAPER001" });
+    afterWrite = () => {
+      throw new Error("closed");
+    };
+    await expect(sync("local")).rejects.toThrow("requestFailed");
+    afterWrite = undefined;
+    mocks.fetch.mockClear();
+    const ui = await showWindow();
+    try {
+      expect(mocks.fetch).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain("上次同步或回退没有完成");
+      await ui.click("回退上次同步");
+      expect(document.body.textContent).toContain("已回退，可以重新预览");
+    } finally {
+      await ui.close();
+    }
   });
 });

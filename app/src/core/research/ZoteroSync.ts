@@ -1,7 +1,19 @@
 import { fetch } from "@tauri-apps/plugin-http";
-import type { LibraryItem, LibrarySnapshot } from "./Library";
-import { libraryStatuses } from "./LibraryFormat";
-import { documentKey } from "./DocumentFile";
+import { appDataDir } from "@tauri-apps/api/path";
+import { exists, lstat, mkdir, readDir, readFile, remove } from "@tauri-apps/plugin-fs";
+import { stringify } from "yaml";
+import {
+  atomicWrite,
+  checkedPath,
+  readManifest,
+  writeSyncFile,
+  moveSyncFile,
+  loadLibrary,
+  type LibraryItem,
+  type LibrarySnapshot,
+} from "./Library";
+import { libraryStatuses, parseLibraryYaml, splitLibraryNote } from "./LibraryFormat";
+import { documentKey, documentPath } from "./DocumentFile";
 
 export const syncFields = [
   "title",
@@ -56,7 +68,7 @@ export interface SyncBaseline {
   schema: 1;
   root: string;
   serverId: string;
-  pairs: Record<string, SyncPair>;
+  pairs: Record<string, { path: string; local: Partial<SyncValues>; remote: Partial<SyncValues> }>;
   collections: Record<string, { local: string; remote: string }>;
 }
 
@@ -92,16 +104,28 @@ export interface SyncPreview {
   };
   pairingIssues: PairingIssue[];
   blocked: boolean;
+  baseline?: SyncBaseline;
+  files?: Record<string, string>;
+  collectionPaths: { local: Record<string, string>; remote: Record<string, string> };
 }
 
 export interface SyncProgress {
-  phase: "connect" | "items" | "collections" | "pairing";
+  phase: "connect" | "items" | "collections" | "pairing" | "authorize" | "apply" | "rollback";
   count: number;
 }
 
 const text = (value: unknown): string => (value == null ? "" : String(value).trim());
 const sorted = (values: string[]) => [...new Set(values)].sort();
-const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const equal = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => equal(v, b[i]));
+  return (
+    isObject(a) &&
+    isObject(b) &&
+    Object.keys(a).length === Object.keys(b).length &&
+    Object.keys(a).every((k) => equal(a[k], b[k]))
+  );
+};
 const fail = (code: string): never => {
   throw new Error(`zoteroSync.${code}`);
 };
@@ -380,6 +404,8 @@ export async function planZoteroSync(
     summary,
     pairingIssues,
     blocked: !!pairingIssues.length || !!local.errors.length,
+    baseline,
+    collectionPaths: { local: Object.fromEntries(localMap), remote: Object.fromEntries(remotePaths) },
   });
   let count = 0;
   async function tick() {
@@ -393,7 +419,7 @@ export async function planZoteroSync(
   rows.push({ group: "skip", kind: "notice", title: "", reason: "preserved" });
   for (const error of local.errors)
     rows.push({ group: "skip", kind: "notice", title: error.key, path: error.notePath, reason: "unreadable" });
-  const remotePaths = collectionPaths(remote.collections);
+  const remotePaths = collectionPaths(remote.collections.filter((c) => !c.deleted));
   const knownCollections = (keys: string[]) => keys.filter((key) => remotePaths.has(key));
   const remoteKeys = new Map([...remotePaths].map(([key, path]) => [path, key]));
   const localPaths = new Set(local.collections);
@@ -622,4 +648,736 @@ export async function planZoteroSync(
     }
   }
   return result();
+}
+
+export type SyncChoice = "local" | "remote" | "skip";
+export const conflictId = (row: SyncRow) => `${row.kind}:${row.key}:${row.field ?? ""}`;
+type FileAction = { kind: "file"; path: string; before: string | null; after: string };
+type APIAction = {
+  kind: "api";
+  resource: "items" | "collections";
+  key: string;
+  fields: Record<string, unknown>;
+  before: Record<string, unknown> | null;
+  version: number;
+  after?: ZoteroData;
+};
+type SyncAction = (FileAction | APIAction) & { status?: "pending" | "done" | "restored" };
+export interface SyncRun {
+  schema: 1;
+  root: string;
+  serverId: string;
+  status: "applying" | "complete" | "rolling-back" | "rolled-back";
+  before: SyncBaseline | null;
+  next: SyncBaseline;
+  actions: SyncAction[];
+  skipped: number;
+}
+export interface SyncHistory {
+  directory: string;
+  baseline?: SyncBaseline;
+  run?: SyncRun;
+  runPath?: string;
+}
+const encode = (value: string) => new TextEncoder().encode(value);
+const decode = (value: Uint8Array) => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(value);
+const digest = async (value: string) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encode(value))), (n) =>
+    n.toString(16).padStart(2, "0"),
+  ).join("");
+const json = (value: unknown) => JSON.stringify(value, null, 2);
+const active = new Set<string>();
+export const pendingSync = (run?: SyncRun) => !!run && ["applying", "rolling-back"].includes(run.status);
+
+async function optionalText(root: string, path: string): Promise<string | null> {
+  if (!(await exists(path))) return null;
+  return decode(await readFile(await checkedPath(root, path)));
+}
+async function privateDirectory(root: string, path: string) {
+  for (const part of documentPath(path)
+    .slice(documentPath(root).replace(/\/$/, "").length + 1)
+    .split("/")) {
+    path = `${root.replace(/\/$/, "")}/${part}`;
+    await checkedPath(root, path, true);
+    if (!(await exists(path))) await mkdir(path, { mode: 0o700 });
+    const info = await lstat(path);
+    if (!info.isDirectory || info.isSymlink) fail("storageFailed");
+    root = path;
+  }
+}
+async function storeJSON(root: string, path: string, value: unknown) {
+  const before = await optionalText(root, path);
+  await atomicWrite(root, path, encode(json(value)), before === null ? null : encode(before), 0o600);
+}
+export async function readSyncHistory(root: string): Promise<SyncHistory> {
+  const directory = `${documentPath(await appDataDir()).replace(/\/$/, "")}/zotero-sync/${await digest(documentKey(root))}`;
+  if (!(await exists(directory))) return { directory };
+  const state = await optionalText(directory, `${directory}/state.json`);
+  const entries = (await readDir(directory))
+    .filter((e) => e.isDirectory && !e.isSymlink && /^run-[\dT-]+-[\da-f-]+$/.test(e.name))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  for (const entry of entries) {
+    const runPath = `${directory}/${entry.name}`;
+    const raw = await optionalText(directory, `${runPath}/journal.json`);
+    if (!raw) continue;
+    const run = JSON.parse(raw) as SyncRun;
+    if (run.schema !== 1 || documentKey(run.root) !== documentKey(root)) fail("baselineMismatch");
+    return { directory, baseline: state ? (JSON.parse(state) ?? undefined) : undefined, run, runPath };
+  }
+  return { directory, baseline: state ? (JSON.parse(state) ?? undefined) : undefined };
+}
+
+export async function captureSyncFiles(preview: SyncPreview) {
+  if (preview.blocked) return;
+  const local = preview.source.local;
+  const manifest = await readManifest(local.root);
+  if (
+    local.manifest &&
+    (manifest.path !== local.manifest.path || decode(manifest.bytes) !== decode(local.manifest.bytes))
+  )
+    fail("snapshotChanged");
+  if (!equal(manifest.data.zoteroCollections, local.zoteroCollections)) fail("snapshotChanged");
+  const files: Record<string, string> = { [manifest.path]: decode(manifest.bytes) };
+  for (const item of local.items) {
+    const raw = await optionalText(local.root, item.notePath);
+    if (raw === null || !equal(parseLibraryYaml(splitLibraryNote(encode(raw)).yaml).values, item.frontmatter))
+      return fail("snapshotChanged");
+    files[item.notePath] = raw;
+  }
+  preview.files = files;
+}
+
+function client(serverId: string, signal: AbortSignal) {
+  let secret = "",
+    authPath = "",
+    authRoot = "";
+  async function request(path: string, method = "GET", body?: unknown): Promise<Response> {
+    signal.throwIfAborted();
+    try {
+      const response = await fetch(`http://localhost:23119/api${path}`, {
+        method,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(path === "/local/authorize" ? 180000 : 15000)]),
+        connectTimeout: 3000,
+        maxRedirections: 0,
+        headers: {
+          "Zotero-API-Version": "3",
+          "Zotero-Server-ID": serverId,
+          ...(secret ? { "Zotero-API-Key": secret } : {}),
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (response.status === 401 && method !== "GET" && authPath && (await exists(authPath)))
+        await remove(await checkedPath(authRoot, authPath));
+      if ([401, 403].includes(response.status)) fail("authorizationDenied");
+      if (response.status === 412) fail("snapshotChanged");
+      if (response.status >= 300 && response.status < 400) fail("redirectRefused");
+      if (!response.ok) fail("requestFailed");
+      if (response.headers.get("Zotero-Server-ID") !== serverId) fail("snapshotChanged");
+      return response;
+    } catch (error) {
+      signal.throwIfAborted();
+      // Transport errors may include request headers. Never expose or persist their text or cause.
+      if (error instanceof Error && /^zoteroSync\.[a-zA-Z]+$/.test(error.message)) throw error;
+      return fail("requestFailed");
+    }
+  }
+  async function data(path: string) {
+    try {
+      return await (await request(path)).json();
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("zoteroSync.")) throw error;
+      return fail("invalidResponse");
+    }
+  }
+  return {
+    async authorize() {
+      try {
+        const home = documentPath(await appDataDir()).replace(/\/$/, "");
+        authRoot = `${home}/zotero-sync/auth`;
+        await privateDirectory(home, authRoot);
+        const mode = (await lstat(authRoot)).mode;
+        if (mode !== null && mode & 0o077) fail("storageFailed");
+        authPath = `${authRoot}/${await digest(serverId)}.json`;
+        const saved = await optionalText(authRoot, authPath);
+        if (saved) {
+          let auth;
+          try {
+            auth = JSON.parse(saved);
+          } catch {
+            return fail("storageFailed");
+          }
+          const mode = (await lstat(authPath)).mode;
+          if (mode !== null && mode & 0o077) fail("storageFailed");
+          if (auth.serverId !== serverId || typeof auth.key !== "string" || !auth.key) fail("storageFailed");
+          secret = auth.key;
+          return;
+        }
+        let auth;
+        try {
+          auth = await (await request("/local/authorize", "POST", { appName: "LabWeave" })).json();
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith("zoteroSync.")) throw error;
+          return fail("authorizationDenied");
+        }
+        if (!auth.remember || typeof auth.key !== "string" || !auth.key) fail("persistentAuthorization");
+        await storeJSON(authRoot, authPath, { serverId, key: auth.key });
+        secret = auth.key;
+      } catch (error) {
+        if (error instanceof Error && /^zoteroSync\.[a-zA-Z]+$/.test(error.message)) throw error;
+        fail("storageFailed");
+      }
+    },
+    async template(itemType: string): Promise<Record<string, unknown>> {
+      const fields = await data(`/itemTypeFields?itemType=${encodeURIComponent(itemType)}`);
+      if (!Array.isArray(fields) || !fields.every((f) => isObject(f) && typeof f.field === "string"))
+        fail("invalidResponse");
+      return {
+        itemType,
+        ...Object.fromEntries(fields.map((f: { field: string }) => [f.field, ""])),
+        creators: [],
+        tags: [],
+        collections: [],
+        relations: {},
+      };
+    },
+    async write(op: APIAction, fields = op.fields, version = op.version, create = op.before === null) {
+      const path = `/users/0/${op.resource}`;
+      const response = await request(
+        create ? path : `${path}/${op.key}`,
+        create ? "POST" : "PATCH",
+        create ? [{ ...fields, key: op.key, version: 0 }] : { ...fields, version },
+      );
+      if (create) {
+        let result;
+        try {
+          result = await response.json();
+        } catch {
+          return fail("invalidResponse");
+        }
+        if (Object.keys(result.failed ?? {}).length)
+          fail(
+            Object.values(result.failed).some((v) => isObject(v) && v.code === 412)
+              ? "snapshotChanged"
+              : "requestFailed",
+          );
+      }
+      const result = validatePage([await data(`${path}/${op.key}`)], op.resource)[0];
+      if (result.version <= version) fail("snapshotChanged");
+      if (!Object.entries(fields).every(([f, value]) => equal(result[f], value))) fail("writeMismatch");
+      return result;
+    },
+  };
+}
+
+const types: Record<string, string> = {
+  journalArticle: "期刊文章",
+  conferencePaper: "会议论文",
+  preprint: "预印本",
+  book: "书籍",
+  thesis: "学位论文",
+  webpage: "网页",
+  document: "其他",
+};
+function remoteField(d: ZoteroData, field: SyncField, value: SyncValue, values: SyncValues): Record<string, unknown> {
+  if (field === "status" || field === "tags") {
+    if (!Object.values(libraryStatuses).includes(text(values.status))) fail("invalidStatus");
+    return {
+      tags: sorted([...(values.tags as string[]), `阅读/${values.status}`]).map(
+        (tag) => d.tags?.find((t) => t.tag === tag) ?? { tag },
+      ),
+    };
+  }
+  if (field === "authors")
+    return {
+      creators: [
+        ...(value as string[]).map((name) => {
+          const old = d.creators?.find(
+            (c) => c.creatorType === "author" && (c.name || `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()) === name,
+          );
+          const space = name.lastIndexOf(" ");
+          return (
+            old ?? {
+              creatorType: "author",
+              ...(space < 0 ? { name } : { firstName: name.slice(0, space), lastName: name.slice(space + 1) }),
+            }
+          );
+        }),
+        ...(d.creators ?? []).filter((c) => c.creatorType !== "author"),
+      ],
+    };
+  if (field === "year")
+    return {
+      date:
+        value && /\b(?:19|20)\d{2}\b/.test(text(d.date))
+          ? text(d.date).replace(/\b(?:19|20)\d{2}\b/, text(value))
+          : value,
+    };
+  const name =
+    field === "venue"
+      ? ({ journalArticle: "publicationTitle", conferencePaper: "proceedingsTitle", preprint: "repository" }[
+          d.itemType ?? ""
+        ] ?? "")
+      : (({ doi: "DOI", abstract: "abstractNote" } as Partial<Record<SyncField, string>>)[field] ?? field);
+  if (!name) fail("unsupportedField");
+  return { [name]: value };
+}
+
+export async function resolveZoteroSync(
+  preview: SyncPreview,
+  choices: Record<string, SyncChoice>,
+  signal: AbortSignal,
+): Promise<SyncRun> {
+  if (preview.blocked || !preview.files) return fail("snapshotChanged");
+  const { local, remote } = preview.source,
+    api = client(remote.serverId, signal);
+  const actions: SyncAction[] = [],
+    templates = new Map<string, Record<string, unknown>>();
+  const next: SyncBaseline = structuredClone(
+    preview.baseline ?? { schema: 1, root: local.root, serverId: remote.serverId, pairs: {}, collections: {} },
+  );
+  const direction = (row: SyncRow) =>
+    row.group === "conflict"
+      ? { local: "push", remote: "pull", skip: "skip" }[choices[conflictId(row)] ?? "skip"]
+      : row.group;
+  const used = new Set([...remote.items, ...remote.collections].map((d) => d.key));
+  const newKey = () => {
+    const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    let key;
+    do {
+      key = Array.from(crypto.getRandomValues(new Uint8Array(8)), (v) => alphabet[v % alphabet.length]).join("");
+    } while (used.has(key));
+    used.add(key);
+    return key;
+  };
+  const aliases = new Map(
+    Object.keys(preview.collectionPaths.local)
+      .filter((k) => k.startsWith("local:"))
+      .map((k) => [k, newKey()]),
+  );
+  const keyOf = (key: string) => aliases.get(key) ?? key;
+  const lp = new Map(Object.entries(preview.collectionPaths.local).map(([k, p]) => [keyOf(k), p]));
+  const rp = new Map(Object.entries(preview.collectionPaths.remote));
+  for (const row of preview.rows.filter((r) => r.kind === "collection")) {
+    const k = keyOf(row.key!);
+    if (direction(row) === "push") rp.set(k, text(row.local));
+    if (direction(row) === "pull") lp.set(k, text(row.remote));
+  }
+  for (const paths of [lp, rp]) {
+    if (new Set(paths.values()).size !== paths.size) fail("invalidCollections");
+    for (const path of paths.values())
+      if (path.includes("/") && ![...paths.values()].includes(path.slice(0, path.lastIndexOf("/"))))
+        fail("invalidCollections");
+  }
+  function apiAction(
+    resource: APIAction["resource"],
+    key: string,
+    fields: Record<string, unknown>,
+    before?: ZoteroData,
+  ) {
+    delete fields.version;
+    if (!Object.keys(fields).length) return;
+    actions.push({
+      kind: "api",
+      resource,
+      key,
+      fields,
+      version: before?.version ?? 0,
+      before: before
+        ? Object.fromEntries(
+            Object.keys(fields).map((f) => [
+              f,
+              before[f] ?? (["tags", "collections", "creators"].includes(f) ? [] : ""),
+            ]),
+          )
+        : null,
+    });
+  }
+  for (const [key, path] of [...rp].sort((a, b) => a[1].split("/").length - b[1].split("/").length)) {
+    const before = remote.collections.find((c) => c.key === key);
+    const parent = path.includes("/") ? [...rp].find(([, p]) => p === path.slice(0, path.lastIndexOf("/")))![0] : false;
+    const fields = { name: path.split("/").at(-1)!, parentCollection: parent };
+    if (
+      !before ||
+      !equal(fields.name, before.name) ||
+      !equal(fields.parentCollection, before.parentCollection ?? false)
+    )
+      apiAction("collections", key, fields, before);
+  }
+  for (const key of new Set([...lp.keys(), ...rp.keys()])) {
+    const row = preview.rows.find((r) => r.kind === "collection" && keyOf(r.key!) === key);
+    if (row && direction(row) === "skip") continue;
+    if (lp.has(key) && rp.has(key)) next.collections[key] = { local: lp.get(key)!, remote: rp.get(key)! };
+  }
+  const originalKeys = new Map(Object.entries(preview.collectionPaths.local).map(([k, p]) => [p, keyOf(k)]));
+  const pairMap = new Map(Object.entries(preview.pairs).map(([k, p]) => [p.path, k]));
+  const notes = new Map<
+    string,
+    { before: string | null; fm: Record<string, unknown>; body: string; opening: string; closing: string; yaml: string }
+  >();
+  const readNote = (path: string) => {
+    const existing = notes.get(path);
+    if (existing) return existing;
+    const before = preview.files![path],
+      parts = splitLibraryNote(encode(before));
+    const note = { before, fm: parseLibraryYaml(parts.yaml).values, ...parts };
+    const parsed = { ...note, body: decode(parts.body) };
+    notes.set(path, parsed);
+    return parsed;
+  };
+  const template = async (type: string) => {
+    if (!templates.has(type)) templates.set(type, await api.template(type));
+    return templates.get(type)!;
+  };
+  async function fieldsFor(d: ZoteroData, desired: SyncValues, fields: readonly SyncField[]) {
+    const result: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (equal(desired[field], remoteValues(d)[field])) continue;
+      const patch = remoteField(d, field, desired[field], desired);
+      for (const name of Object.keys(patch))
+        if (
+          !(name in d) &&
+          !["tags", "collections", "creators"].includes(name) &&
+          !(name in (await template(d.itemType!)))
+        )
+          fail("unsupportedField");
+      Object.assign(result, patch);
+    }
+    return result;
+  }
+  for (const item of local.items) {
+    signal.throwIfAborted();
+    const rows = preview.rows.filter((r) => r.path === item.notePath);
+    const creating = rows.some((r) => r.kind === "item" && r.group === "push");
+    const key = pairMap.get(item.notePath) ?? (creating ? newKey() : undefined);
+    const note = readNote(item.notePath);
+    if (key) {
+      const pair = preview.pairs[key];
+      const lv = pair ? structuredClone(pair.local) : localValues(item, originalKeys);
+      lv.collections = sorted((lv.collections as string[]).map(keyOf));
+      const type = Object.entries(types).find(([, label]) => label === item.itemType)?.[0] ?? "document";
+      const d = creating
+        ? ({ ...(await template(type)), key, version: 0 } as ZoteroData)
+        : remote.items.find((d) => d.key === key)!;
+      const desired = creating ? structuredClone(lv) : structuredClone(pair.remote);
+      const localDesired = structuredClone(lv);
+      const pushed: SyncField[] = [];
+      for (const row of rows.filter((r) => r.kind === "field")) {
+        if (direction(row) === "push") {
+          desired[row.field!] = lv[row.field!];
+          pushed.push(row.field!);
+        }
+        if (direction(row) === "pull") localDesired[row.field!] = pair.remote[row.field!];
+      }
+      const patch = await fieldsFor(d, desired, creating ? syncFields : pushed);
+      apiAction("items", key, creating ? { ...d, ...patch, key, version: 0 } : patch, creating ? undefined : d);
+      if (creating || rows.some((r) => r.kind === "link"))
+        Object.assign(note.fm, {
+          zotero_key: key,
+          zotero_uri: `zotero://select/library/items/${key}`,
+          zotero_item_type: d.itemType,
+        });
+      for (const row of rows.filter((r) => r.kind === "field" && direction(r) === "pull"))
+        note.fm[row.field!] = localDesired[row.field!];
+      if (localDesired.status === "conflict") fail("invalidStatus");
+      note.fm.collections = (localDesired.collections as string[]).flatMap((k) => (lp.has(k) ? [lp.get(k)!] : []));
+      const baseline = { path: item.notePath, local: { ...localDesired }, remote: { ...desired } };
+      for (const row of rows.filter((r) => r.kind === "field" && direction(r) === "skip")) {
+        for (const side of ["local", "remote"] as const) {
+          const previous = preview.baseline?.pairs[key]?.[side][row.field!];
+          if (previous === undefined) delete (baseline[side] as Partial<SyncValues>)[row.field!];
+          else baseline[side][row.field!] = previous;
+        }
+      }
+      next.pairs[key] = baseline;
+    } else if (Array.isArray(note.fm.collections))
+      note.fm.collections = note.fm.collections.map((p) => lp.get(originalKeys.get(text(p)) ?? "") ?? p);
+  }
+  const itemsDir = await checkedPath(local.root, `${local.root}/条目`, true);
+  const occupied = new Set(((await exists(itemsDir)) ? await readDir(itemsDir) : []).map((e) => e.name.toLowerCase()));
+  for (const row of preview.rows.filter((r) => r.kind === "item" && r.group === "pull")) {
+    const d = remote.items.find((d) => d.key === row.key)!,
+      values = remoteValues(d);
+    if (values.status === "conflict") {
+      if (preview.rows.some((r) => r.key === row.key && r.group === "conflict" && direction(r) !== "skip"))
+        fail("invalidStatus");
+      continue;
+    }
+    values.collections = (values.collections as string[]).filter((k) => rp.has(k));
+    const clean = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, "");
+    const words = text(values.title)
+      .split(/[^\p{L}\p{N}_]+/u)
+      .filter((w) => !["a", "an", "the", "on", "of", "for"].includes(w.toLowerCase()));
+    const base =
+      Array.from(
+        ((values.authors as string[]).length ? clean((values.authors as string[])[0].split(/\s+/).at(-1)!) : "Anon") +
+          values.year +
+          clean(words[0] || "Untitled"),
+      )
+        .slice(0, 65)
+        .join("") || d.key;
+    let name = base,
+      n = 1;
+    while (occupied.has(name.toLowerCase())) name = `${base}${++n}`;
+    occupied.add(name.toLowerCase());
+    const path = `${local.root}/条目/${name}/${name}.md`;
+    notes.set(path, {
+      before: null,
+      fm: {
+        type: "文献",
+        itemType: types[d.itemType!] ?? "其他",
+        ...values,
+        collections: (values.collections as string[]).flatMap((k) => (lp.has(k) ? [lp.get(k)!] : [])),
+        added: text(d.dateAdded).slice(0, 10),
+        pdf: "",
+        arxiv: "",
+        zotero_key: d.key,
+        zotero_uri: `zotero://select/library/items/${d.key}`,
+        zotero_item_type: d.itemType,
+      },
+      opening: "---\n",
+      closing: "---\n",
+      yaml: "",
+      body: "\n\n# 研究笔记\n",
+    });
+    next.pairs[d.key] = {
+      path,
+      local: { ...values, collections: (values.collections as string[]).filter((k) => lp.has(k)) },
+      remote: values,
+    };
+  }
+  for (const [path, note] of notes) {
+    const original = note.before === null ? undefined : parseLibraryYaml(note.yaml);
+    if (original && equal(original.values, note.fm)) continue;
+    if (note.fm.year && /^\d+$/.test(text(note.fm.year))) note.fm.year = Number(note.fm.year);
+    const doc = original?.document;
+    if (doc)
+      for (const [field, value] of Object.entries(note.fm))
+        if (!equal(original!.values[field], value)) doc.set(field, value);
+    const after = note.opening + (doc ? doc.toString() : stringify(note.fm)) + note.closing + note.body;
+    actions.push({ kind: "file", path, before: note.before, after });
+  }
+  const manifestPath = Object.keys(preview.files).find((p) => /\.litlib$/i.test(p))!;
+  const manifest = JSON.parse(preview.files[manifestPath]);
+  const desiredPaths = new Set(lp.values());
+  const updated = {
+    ...manifest,
+    collections: [...manifest.collections.filter((p: string) => desiredPaths.delete(p)), ...sorted([...desiredPaths])],
+    zoteroCollections: Object.fromEntries(lp),
+  };
+  if (!equal(manifest, updated))
+    actions.push({ kind: "file", path: manifestPath, before: preview.files[manifestPath], after: json(updated) });
+  return {
+    schema: 1,
+    root: local.root,
+    serverId: remote.serverId,
+    status: "applying",
+    before: preview.baseline ?? null,
+    next,
+    actions,
+    skipped: preview.rows.filter((r) => r.group === "conflict" && direction(r) === "skip").length,
+  };
+}
+
+async function exclusive<T>(root: string, action: () => Promise<T>): Promise<T> {
+  const key = documentKey(root);
+  if (active.has(key)) fail("busy");
+  active.add(key);
+  try {
+    return await action();
+  } finally {
+    active.delete(key);
+  }
+}
+const versions = (data: ZoteroData[]) => Object.fromEntries(data.map((d) => [d.key, d.version]));
+export async function applyZoteroSync(
+  preview: SyncPreview,
+  run: SyncRun,
+  signal: AbortSignal,
+  progress: (p: SyncProgress) => void,
+): Promise<string> {
+  return exclusive(run.root, async () => {
+    const history = await readSyncHistory(run.root);
+    if (pendingSync(history.run)) fail("unfinished");
+    if (!equal(history.baseline ?? null, run.before) || !preview.files) fail("snapshotChanged");
+    const api = client(run.serverId, signal);
+    if (run.actions.some((a) => a.kind === "api")) {
+      progress({ phase: "authorize", count: 0 });
+      await api.authorize();
+    }
+    const current = await readZotero(signal, progress),
+      source = preview.source.remote;
+    if (
+      current.serverId !== source.serverId ||
+      current.libraryVersion !== source.libraryVersion ||
+      !equal(versions(current.items), versions(source.items)) ||
+      !equal(versions(current.collections), versions(source.collections))
+    )
+      fail("snapshotChanged");
+    const local = await loadLibrary(run.root);
+    if (
+      local.errors.length ||
+      !equal(sorted(local.items.map((i) => i.notePath)), sorted(preview.source.local.items.map((i) => i.notePath)))
+    )
+      fail("snapshotChanged");
+    for (const [path, before] of Object.entries(preview.files!))
+      if ((await optionalText(run.root, path)) !== before) fail("snapshotChanged");
+    for (const op of run.actions)
+      if (op.kind === "file" && op.before === null && (await exists(op.path.slice(0, op.path.lastIndexOf("/")))))
+        fail("snapshotChanged");
+    const home = documentPath(await appDataDir());
+    await privateDirectory(home, history.directory);
+    const timestamp = Math.max(Date.now(), Number(history.runPath?.match(/\/run-(\d+)-/)?.[1] ?? 0) + 1);
+    const runPath = `${history.directory}/run-${timestamp}-${crypto.randomUUID()}`;
+    await privateDirectory(home, runPath);
+    const save = () => storeJSON(runPath, `${runPath}/journal.json`, run);
+    // The complete before/after plan is the backup; pending is durable before each side effect.
+    await save();
+    const old = (await readDir(history.directory))
+      .filter((e) => e.isDirectory && !e.isSymlink && /^run-[\dT-]+-[\da-f-]+$/.test(e.name))
+      .sort((a, b) => b.name.localeCompare(a.name));
+    for (const entry of old.slice(10))
+      await remove(await checkedPath(history.directory, `${history.directory}/${entry.name}`), { recursive: true });
+    for (const [index, op] of run.actions.entries()) {
+      signal.throwIfAborted();
+      progress({ phase: "apply", count: index });
+      op.status = "pending";
+      await save();
+      if (op.kind === "file")
+        await writeSyncFile(run.root, op.path, encode(op.after), op.before === null ? null : encode(op.before));
+      else {
+        const after = await api.write(op);
+        if (op.before === null) op.after = after;
+      }
+      op.status = "done";
+      await save();
+    }
+    for (const [path, before] of Object.entries(preview.files!)) {
+      const op = run.actions.find((a): a is FileAction => a.kind === "file" && a.path === path);
+      if ((await optionalText(run.root, path)) !== (op?.after ?? before)) fail("snapshotChanged");
+    }
+    for (const op of run.actions)
+      if (op.kind === "file" && (await optionalText(run.root, op.path)) !== op.after) fail("snapshotChanged");
+    await storeJSON(history.directory, `${history.directory}/state.json`, run.next);
+    run.status = "complete";
+    await save();
+    return runPath;
+  });
+}
+
+export class SyncRollbackError extends Error {
+  constructor(readonly changes: string[]) {
+    super("zoteroSync.rollbackChanged");
+  }
+}
+export async function rollbackZoteroSync(
+  root: string,
+  signal: AbortSignal,
+  progress: (p: SyncProgress) => void,
+): Promise<void> {
+  return exclusive(root, async () => {
+    const history = await readSyncHistory(root),
+      run = history.run,
+      runPath = history.runPath;
+    if (!run || !runPath) return fail("noBackup");
+    if (run.status === "rolled-back") return;
+    if (!equal(history.baseline ?? null, run.before) && !equal(history.baseline, run.next)) fail("snapshotChanged");
+    const current = await readZotero(signal, progress);
+    if (current.serverId !== run.serverId) fail("baselineMismatch");
+    const maps = {
+      items: new Map(current.items.map((d) => [d.key, d])),
+      collections: new Map(current.collections.map((d) => [d.key, d])),
+    };
+    const operations = run.actions
+      .filter((a) => a.status)
+      .toReversed()
+      .sort(
+        (a, b) =>
+          Number(a.kind === "file" && /\.litlib$/i.test(a.path)) -
+          Number(b.kind === "file" && /\.litlib$/i.test(b.path)),
+      );
+    const changes: string[] = [];
+    const clean = (d: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(d).filter(([f]) => !["version", "dateModified", "dateAdded", "lastRead", "charset"].includes(f)),
+      );
+    for (const op of operations) {
+      if (op.kind === "file") {
+        const value = await optionalText(root, op.path);
+        if (value !== op.before && (op.status === "restored" || value !== op.after)) changes.push(op.path);
+      } else {
+        const value = maps[op.resource].get(op.key);
+        if (op.before === null) {
+          if (
+            value &&
+            !value.deleted &&
+            (op.status === "restored" ||
+              (op.after
+                ? !equal(clean(value), clean(op.after))
+                : !Object.entries(op.fields).every(([f, v]) => equal(value[f], v))))
+          )
+            changes.push(op.key);
+          const children = [...current.items, ...current.collections].filter((d) => {
+            if (d.deleted) return false;
+            const undo = operations.find((a): a is APIAction => a.kind === "api" && a.key === d.key);
+            const restores = (field: string) => undo && (undo.before === null || Object.hasOwn(undo.before, field));
+            return (
+              (d.parentItem === op.key && !restores("parentItem")) ||
+              (d.parentCollection === op.key && !restores("parentCollection")) ||
+              (op.resource === "collections" && d.collections?.includes(op.key) && !restores("collections"))
+            );
+          });
+          changes.push(...children.map((d) => d.key));
+        } else if (!value) changes.push(op.key);
+        else
+          for (const [f, before] of Object.entries(op.before))
+            if (
+              !equal(value[f] ?? (Array.isArray(before) ? [] : ""), before) &&
+              (op.status === "restored" || !equal(value[f], op.fields[f]))
+            )
+              changes.push(`${op.key}/${f}`);
+      }
+    }
+    if (changes.length) throw new SyncRollbackError(sorted(changes));
+    const api = client(run.serverId, signal);
+    if (operations.some((a) => a.kind === "api" && a.status !== "restored")) {
+      progress({ phase: "authorize", count: 0 });
+      await api.authorize();
+    }
+    run.status = "rolling-back";
+    const save = () => storeJSON(runPath, `${runPath}/journal.json`, run);
+    await save();
+    await privateDirectory(runPath, `${runPath}/removed`);
+    for (const [index, op] of operations.entries()) {
+      signal.throwIfAborted();
+      progress({ phase: "rollback", count: index });
+      if (op.status === "restored") continue;
+      if (op.kind === "file") {
+        const value = await optionalText(root, op.path);
+        if (value !== op.before && value !== op.after) throw new SyncRollbackError([op.path]);
+        if (op.before === null) {
+          const relative = documentPath(op.path).slice(documentPath(root).replace(/\/$/, "").length + 1);
+          const target = `${runPath}/removed/${relative}`;
+          await privateDirectory(runPath, target.slice(0, target.lastIndexOf("/")));
+          await moveSyncFile(root, op.path, encode(op.after), runPath, target);
+        } else if (value !== op.before) await writeSyncFile(root, op.path, encode(op.before), encode(op.after));
+      } else {
+        const value = maps[op.resource].get(op.key);
+        if (
+          value &&
+          (op.before === null
+            ? !value.deleted
+            : Object.entries(op.before).some(([f, v]) => !equal(value[f] ?? (Array.isArray(v) ? [] : ""), v)))
+        ) {
+          const after = await api.write(op, op.before ?? { deleted: true }, value.version, false);
+          maps[op.resource].set(op.key, after);
+        }
+      }
+      op.status = "restored";
+      await save();
+    }
+    await storeJSON(history.directory, `${history.directory}/state.json`, run.before);
+    run.status = "rolled-back";
+    await save();
+  });
 }

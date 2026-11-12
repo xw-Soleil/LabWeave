@@ -3393,7 +3393,24 @@ research:
       abstract: 摘要
   zoteroSync:
     title: 同步 Zotero
-    readOnly: 本輪只查看差別，不寫入 Zotero 或本地文件，也不請求授權。首次配對時，兩邊不同的字段都會列為衝突。
+    description: 先查看差別並選擇衝突的處理方式，再備份並同步。沒有選的衝突會留到下次。
+    sync: 備份並同步
+    confirmSync: "將修改 {{count}} 處文獻、分類或本地文件。修改前會保存備份，之後可以回退。確定同步嗎？首次寫入時，請在 Zotero 中選擇「始終允許」。"
+    confirmRollback: 回退前會檢查是否有後續編輯，有變化就停止。本次新建的 Zotero 條目會移進回收站，本地新文件會移進備份文件夾。確定回退嗎？
+    openBackup: 打開備份文件夾
+    rollbackThis: 回退本次同步
+    rollbackLast: 回退上次同步
+    unfinished: 上次同步或回退沒有完成。請先回退上次同步，再重新預覽；回退中斷後可以再次執行。
+    completed: "上次同步已完成，共修改 {{count}} 處，跳過 {{skipped}} 個衝突。"
+    rolledBack: 已回退，可以重新預覽。
+    choiceLabel: 處理方式
+    choices:
+      local: 用本地
+      remote: 用 Zotero
+      skip: 這次跳過
+    all:
+      local: 全部用本地
+      remote: 全部用 Zotero
     connected: "已連接本機 Zotero：本地 {{local}} 篇，Zotero {{remote}} 條（含附件與筆記）。"
     blocked: 有重複候選或讀不了的本地條目，已停止生成寫入計劃。請先處理下面的問題，再重新預覽。
     pairingIssues: 配對不明確
@@ -3412,9 +3429,12 @@ research:
       skip: 保留／跳過
     summary:
       unchanged: "{{count}} 篇沒有變化"
-      deferred: "{{count}} 條子記錄（批註 {{annotations}} 條、附件 {{attachments}} 條、子筆記 {{notes}} 條），第 3 步再處理。"
+      deferred: "{{count}} 條子記錄（批註 {{annotations}} 條、附件 {{attachments}} 條、子筆記 {{notes}} 條）。這一版還不同步批註、附件和子筆記。"
       missingCollections: "{{count}} 篇文獻引用了列表中不存在的 Zotero 分類，已忽略這些分類編號，不參與比較和顯示。"
     progress:
+      authorize: 請在 Zotero 的授權窗口中選擇「始終允許」…
+      apply: "正在同步，已處理 {{count}} 處…"
+      rollback: "正在回退，已處理 {{count}} 處…"
       connect: 正在檢查本機 Zotero…
       items: "正在讀取 Zotero 條目，已讀 {{count}} 條…"
       collections: "正在讀取 Zotero 分類，已讀 {{count}} 個…"
@@ -3439,7 +3459,7 @@ research:
       status: 閱讀狀態
       collections: 所屬分類
     reasons:
-      preserved: 刪除和回收站狀態、文獻類型、arXiv 號及其他自定義屬性保留原值。研究筆記正文和本地 PDF 批註不推到 Zotero；附件、Zotero 批註和筆記留待後續步驟處理。
+      preserved: 刪除和回收站狀態、文獻類型、arXiv 號及其他自定義屬性保留原值。研究筆記正文和本地 PDF 批註不推到 Zotero。這一版還不同步批註、附件和子筆記。
       unreadable: 本地條目無法讀取，請回文獻庫查看錯誤並修復。
       deletion: 刪除／回收站或已關聯條目缺失，不自動傳播、不重新創建。
       newCollection: 新增分類
@@ -3452,16 +3472,26 @@ research:
       notRunning: 連接不上本機 Zotero，請先打開 Zotero。若已經打開，請檢查本機接口是否可用。
       oldVersion: 當前 Zotero 沒有提供 Zotero-Server-ID，請升級到 Zotero 10 或更新版本。
       communicationDisabled: Zotero 未開啟本機通訊。請在 Zotero 高級設置中打開「允許本機其他程序通訊」，再重新預覽。
-      authorizationDenied: Zotero 拒絕了訪問。本輪不會請求寫入授權，請檢查 Zotero 的訪問限制後重試。
+      authorizationDenied: Zotero 拒絕了訪問。請檢查訪問限制；如果原有寫入授權失效，重新同步時會再次請求授權。
       timeout: Zotero 響應超時，請檢查它是否正常運行，再重新預覽。
       redirectRefused: 本機接口返回了重定向，已停止連接，以免訪問其他地址。
       requestFailed: Zotero 接口返回錯誤，請檢查 Zotero 後重新預覽。
       invalidResponse: Zotero 返回的數據不完整或格式不正確，已停止預覽。
-      snapshotChanged: 讀取過程中 Zotero 的實例或數據發生變化，請重新預覽。
+      snapshotChanged: 預覽後本地文件、Zotero 數據或同步記錄發生了變化，已停止。若有未完成的同步，請先回退，再重新預覽。
       tooManyItems: 條目數量超出本次預覽上限。
       invalidCollections: 分類層級缺失、循環、重名，或名稱為空／含有斜槓，請檢查分類後重新預覽。
       baselineMismatch: 同步記錄屬於另一份文獻庫或 Zotero 實例，已停止預覽。
       previewFailed: 預覽失敗，請重新打開窗口重試。
+      persistentAuthorization: 多步同步需要持久授權。請重試，並在 Zotero 彈窗中選擇「始終允許」，臨時密鑰不會保存。
+      storageFailed: 無法安全讀取或保存同步授權。請檢查程序數據目錄及其文件夾權限。
+      unsupportedField: 該 Zotero 文獻類型不支持要寫入的字段，請調整資料後重新預覽。
+      invalidStatus: Zotero 有多個閱讀狀態，無法直接使用。請選用本地的有效狀態，或先在 Zotero 中只保留一個閱讀狀態。
+      writeMismatch: 寫入後的內容與預期不同，已停止。請先回退本次同步，再重新預覽。
+      operationFailed: 操作未完成。請檢查文件權限和 Zotero 是否正常運行；如果有未完成的同步，請先回退。
+      unfinished: 上次同步尚未完成，請先回退。
+      busy: 這個文獻庫正在同步或回退，請等待完成。
+      noBackup: 沒有可回退的同步記錄。
+      rollbackChanged: 以下文件或 Zotero 字段有後續修改，已停止回退，沒有強行覆蓋。請先核對這些改動。
   files:
     title: 文件
     placeholder: 文件面板（建設中）

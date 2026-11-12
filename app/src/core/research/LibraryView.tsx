@@ -400,7 +400,15 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           )}
         </aside>
       )}
-      {syncOpen && snapshot && <ZoteroSyncDialog snapshot={snapshot} onClose={() => setSyncOpen(false)} />}
+      {syncOpen && snapshot && (
+        <ZoteroSyncDialog
+          snapshot={snapshot}
+          onClose={() => {
+            setSyncOpen(false);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

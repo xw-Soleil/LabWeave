@@ -282,6 +282,23 @@ describe("atomic writes and imports", () => {
     );
   });
 
+  it("queues writes in call order even when the first authorization read is slower", async () => {
+    await item("Paper");
+    const nativeLstat = vi.mocked(fs.lstat).getMockImplementation()!;
+    let delayed = false;
+    vi.mocked(fs.lstat).mockImplementation(async (...args) => {
+      if (args[0] === root && !delayed) {
+        delayed = true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return nativeLstat(...args);
+    });
+    const first = updateItem(root, "Paper", { title: "First" });
+    const second = updateItem(root, "Paper", { title: "Second" });
+    await Promise.all([first, second]);
+    expect((await loadLibrary(root)).items[0].title).toBe("Second");
+  });
+
   it("detects an external edit made during temporary-file writing and keeps that edit", async () => {
     await item("Paper");
     const nativeOpen = vi.mocked(fs.open).getMockImplementation()!;

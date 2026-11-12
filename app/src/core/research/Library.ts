@@ -52,6 +52,7 @@ export interface LibraryItemError {
 
 export interface LibrarySnapshot {
   root: string;
+  manifest?: { path: string; bytes: Uint8Array };
   collections: string[];
   zoteroCollections?: Record<string, string>;
   items: LibraryItem[];
@@ -165,7 +166,7 @@ export async function authorizeLibrary(root: string): Promise<string> {
 }
 
 /** The fs scope may also cover opened projects, so check each component inside this library. */
-async function checkedPath(root: string, path: string, missingLeaf = false): Promise<string> {
+export async function checkedPath(root: string, path: string, missingLeaf = false): Promise<string> {
   const normalized = absolutePath(path);
   const prefix = `${root.replace(/\/$/, "")}/`;
   if (!documentKey(normalized).startsWith(documentKey(prefix).replace(/\/$/, "") + "/")) {
@@ -234,7 +235,7 @@ async function readItem(root: string, key: string): Promise<LibraryItem> {
   };
 }
 
-async function readManifest(root: string) {
+export async function readManifest(root: string) {
   const manifests = (await readDir(root)).filter((entry) => /\.litlib$/i.test(entry.name));
   if (manifests.length !== 1)
     throw new Error(manifests.length ? "library.manifestAmbiguous" : "library.manifestMissing");
@@ -322,6 +323,7 @@ async function snapshotAt(root: string, previous?: LibrarySnapshot, changed?: Se
   errors.sort((a, b) => a.key.localeCompare(b.key));
   return {
     root,
+    manifest: { path: manifest.path, bytes: manifest.bytes },
     collections: allCollections(manifest.data.collections, items),
     zoteroCollections: manifest.data.zoteroCollections,
     items,
@@ -338,15 +340,15 @@ export async function loadLibrary(root: string): Promise<LibrarySnapshot> {
 }
 
 async function writeLibrary<T>(root: string, action: (canonical: string) => Promise<T>): Promise<T> {
-  const canonical = await authorizeLibrary(root);
-  const key = documentKey(canonical);
+  // Queue before asynchronous authorization, using the configured path for both aliases and canonical paths.
+  const key = documentKey(Settings.literatureLibraryPath || root);
   // Earlier callers keep their rejection; a failed save must not poison the next queued edit.
   const ready = (writes.get(key) ?? Promise.resolve()).then(
     () => undefined,
     () => undefined,
   );
   const task = ready.then(async () => {
-    await authorizeLibrary(root);
+    const canonical = await authorizeLibrary(root);
     try {
       return await action(canonical);
     } catch (cause) {
@@ -365,11 +367,17 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-async function atomicWrite(root: string, path: string, bytes: Uint8Array, expected: Uint8Array | null): Promise<void> {
+export async function atomicWrite(
+  root: string,
+  path: string,
+  bytes: Uint8Array,
+  expected: Uint8Array | null,
+  mode?: number,
+): Promise<void> {
   if (expected && equalBytes(bytes, expected)) return;
   await checkedPath(root, path, expected === null);
   const temporary = `${path.slice(0, path.lastIndexOf("/"))}/.library-${crypto.randomUUID()}.tmp`;
-  const handle = await open(temporary, { write: true, createNew: true });
+  const handle = await open(temporary, { write: true, createNew: true, mode });
   let published = false;
   try {
     try {
@@ -391,6 +399,39 @@ async function atomicWrite(root: string, path: string, bytes: Uint8Array, expect
   } finally {
     if (!published) await remove(await checkedPath(root, temporary));
   }
+}
+
+export function writeSyncFile(root: string, path: string, bytes: Uint8Array, expected: Uint8Array | null) {
+  return writeLibrary(root, async (canonical) => {
+    if (expected === null) {
+      const dir = path.slice(0, path.lastIndexOf("/"));
+      const parent = dir.slice(0, dir.lastIndexOf("/"));
+      await checkedPath(canonical, parent, true);
+      if (!(await exists(parent))) await mkdir(parent);
+      await checkedPath(canonical, dir, true);
+      if (!(await exists(dir))) await mkdir(dir);
+    }
+    await atomicWrite(canonical, path, bytes, expected);
+  });
+}
+
+export function moveSyncFile(root: string, path: string, expected: Uint8Array, backup: string, target: string) {
+  return writeLibrary(root, async (canonical) => {
+    if (await exists(path)) {
+      await checkedPath(canonical, path);
+      if (!equalBytes(await readFile(path), expected)) throw new Error("library.fileChanged");
+      // The backup may be on another volume; finish and verify the copy before removing the source.
+      if (!(await exists(target))) await atomicWrite(backup, target, expected, null, 0o600);
+      if (
+        !equalBytes(await readFile(await checkedPath(backup, target)), expected) ||
+        !equalBytes(await readFile(path), expected)
+      )
+        throw new Error("library.fileChanged");
+      await remove(await checkedPath(canonical, path));
+    }
+    const dir = path.slice(0, path.lastIndexOf("/"));
+    if ((await exists(dir)) && !(await readDir(await checkedPath(canonical, dir))).length) await remove(dir);
+  });
 }
 
 async function updateAt(root: string, key: string, patch: LibraryItemPatch): Promise<LibraryItem> {
