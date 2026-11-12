@@ -2928,20 +2928,9 @@ research:
       projectNotInWorkspace: 這個項目已不在工作區清單中，請刷新或重新添加。
       directoryOutsideProject: 這個文件夾不在所選項目內。
       projectPathNotAbsolute: 項目必須使用完整的文件夾路徑。
-    locations: 文件夾起點
-    home: 主目錄
-    drives: 外接磁盤 / 驅動器
-    recent: 最近用過的項目
-    parent: 上一級文件夾
-    path: 文件夾完整路徑（支持網絡共享）
-    go: 前往
-    folders: 子文件夾
-    noFolders: 沒有可顯示的子文件夾
-    addHint: 只瀏覽文件夾。進入目標文件夾後，選「就用這個文件夾」加入工作區。
-    createHint: 先進入要存放項目的位置，再填寫新項目的文件夾名。
+    createLocation: 選擇新項目放在哪裡
+    createHint: "新項目會建成 {{parent}} 裡的一個文件夾，給它起個名字。"
     projectName: 項目文件夾名
-    useFolder: 就用這個文件夾
-    createHere: 在此新建項目
     invalidProjectName: 名字不能為空，不能使用路徑、隱藏名稱、Windows 保留名稱或以句點結尾。
   document:
     loading: 正在讀取…
@@ -3320,7 +3309,6 @@ research:
     emptyHint: 文獻庫是一個單獨的文件夾，每篇文獻一個子文件夾，放筆記、PDF 和圖片。可以直接選 Obsidian 文獻庫插件用的那個文件夾，兩邊讀的是同一份。
     chooseFolder: 選擇文獻庫文件夾
     chooseTitle: 選擇文獻庫文件夾
-    chooseHint: 選中文獻庫所在的文件夾（有 .litlib 文件的那一層）。還沒有文獻庫的話，選好文件夾後可以在裡面新建。
     notLibraryTitle: 這個文件夾還不是文獻庫
     notLibraryHint: "{{path}} 裡沒有 .litlib 文件。可以在這裡新建一個文獻庫，或者換一個文件夾。"
     createHere: 在這裡新建文獻庫
@@ -3344,7 +3332,6 @@ research:
       writeFailed: 保存失敗，未完成寫入的原文件已保留，請檢查磁盤和權限後重試。
       fileChanged: 文件已被其他程序修改，請刷新後重試。
       partialWrite: 分類修改中途失敗，部分條目沒能改回原樣。請刷新後檢查，不要覆蓋外部修改。
-    useFolder: 用這個文件夾
     changeFolder: 換一個文獻庫文件夾
     libraryActions: 文獻庫操作
     all: 我的文庫
@@ -3367,8 +3354,6 @@ research:
     newItemTitle: 新建條目
     importPdf: 導入 PDF
     importTitle: 導入 PDF
-    importHint: 選一個 PDF，會複製進文獻庫，新建一個條目。標題先用文件名，之後可以在右邊改。
-    import: 導入
     refresh: 刷新
     info: 信息
     searchPlaceholder: 在當前列表中快速搜索（標題 / 作者 / 期刊 / 標籤 / DOI）

@@ -63,7 +63,7 @@ import {
   type LibrarySnapshot,
   type ReadStatus,
 } from "./Library";
-import { browseLocalPath } from "./ResearchFolderBrowser";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 type Scope = { kind: "all" } | { kind: "collection"; path: string } | { kind: "unfiled" } | { kind: "trash" };
 type SortKey = "title" | "authors" | "year" | "status" | "added";
@@ -132,12 +132,7 @@ export default function LibraryView() {
   const t = useLibraryText();
   const [root, setRoot] = Settings.use("literatureLibraryPath");
   const chooseRoot = async () => {
-    const path = await browseLocalPath({
-      pick: "folder",
-      title: t("library.chooseTitle"),
-      description: t("library.chooseHint"),
-      confirm: t("library.useFolder"),
-    });
+    const path = await openDialog({ directory: true, title: t("library.chooseTitle") });
     if (path) setRoot(path);
   };
   if (!root)
@@ -202,11 +197,9 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
   const targetCollections = scope.kind === "collection" ? [scope.path] : [];
   const importPdf = () =>
     run(async () => {
-      const pdf = await browseLocalPath({
-        pick: "pdf",
+      const pdf = await openDialog({
         title: t("library.importTitle"),
-        description: t("library.importHint"),
-        confirm: t("library.import"),
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!pdf) return;
       const title = pdf

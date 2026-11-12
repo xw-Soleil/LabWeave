@@ -36,7 +36,6 @@ vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: mocks.buttons, inp
 vi.mock("@/core/service/dataFileService/RecentFileManager", () => ({
   RecentFileManager: { addRecentFilesByUris: mocks.recent },
 }));
-vi.mock("./ResearchFolderBrowser", () => ({ browseResearchProject: mocks.browse }));
 vi.mock("./ResearchWorkspace", async (importOriginal) => ({
   authorizeResearchProject: mocks.authorize,
   projectPathKey: (await importOriginal<typeof import("./ResearchWorkspace")>()).projectPathKey,
@@ -58,7 +57,7 @@ vi.mock("./DocumentTab", () => ({
 vi.mock("@tauri-apps/plugin-fs", () => ({ exists: mocks.exists, readDir: mocks.readDir }));
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
-vi.mock("@/sub/FileManagerWindow", () => ({ default: { open: mocks.openFiles } }));
+vi.mock("@/sub/FileManagerWindow", () => ({ default: { open: mocks.openFiles }, pickResearchProject: mocks.browse }));
 vi.mock("@/sub/AIWindow", () => ({ default: { open: mocks.openAI, toggle: vi.fn() } }));
 vi.mock("@/core/research/ResearchFolder", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./ResearchFolder")>();

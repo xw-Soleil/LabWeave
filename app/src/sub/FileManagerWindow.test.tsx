@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   drop: vi.fn(),
   update: vi.fn(),
   confirm: vi.fn(),
-  browse: vi.fn(),
   load: vi.fn(),
 }));
 vi.mock("@/state", () => ({ store: getDefaultStore(), tabsAtom: atom([]), activeResourceTabAtom: atom(undefined) }));
@@ -37,7 +36,6 @@ vi.mock("@/core/research/ResearchFolder", () => ({
     toRelative: (path: string) => path.replace(/^\/current\/?/, ""),
   },
 }));
-vi.mock("@/core/research/ResearchFolderBrowser", () => ({ browseResearchProject: mocks.browse }));
 vi.mock("@/core/research/ResearchWorkspace", () => ({
   researchWorkspaceAtom: atom({
     workspaces: [{ name: "My workspace", projects: [{ path: "/current" }, { path: "/other" }] }],

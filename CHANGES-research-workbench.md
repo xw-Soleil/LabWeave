@@ -683,3 +683,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/MarkdownLivePreview.tsx`：上一版在编辑器的 mousedown 处理里接管提示框，但编辑器在处理函数返回 true 时会顺手取消这次按下，网页自己的选字因此根本没开始（真机上一个字也选不中）。现在提示框这类整块显示的内容（`cm-lp-embed`）里按下鼠标时，`ignoreEvent` 让编辑器不接，由挂在这一块上的 `selectInsideBlock` 处理（挪焦点、松手没选到字才露出原文），不取消按下。
 - 用 Mac 系统的网页引擎、往测试窗口直接发真实的鼠标按下 / 拖动 / 松开事件（不动你的鼠标）在 `Huang2024DiffusionPDE.md` 上验证：改前按下被取消、一个字没选中、提示框被展开；改后拖动选中了提示框里的一段字，提示框不展开、光标不动；只点一下则光标进到提示框、露出原文。
 - 单元测试加了一条：在提示框里按下鼠标不能被取消。
+
+### 59. 选文件夹、选 PDF 改用系统窗口（2026-11-12）
+
+- 原来「添加项目」「新建项目」、文献库的「选择文献库文件夹」「导入 PDF」都用程序自己画的浏览框（`ResearchFolderBrowser.tsx`），功能不如系统的（没有收藏、搜索、新建文件夹等）。现在都改成系统自带的选择窗口（`@tauri-apps/plugin-dialog` 的 `open`，权限 `dialog:default` 原来就有，没有新增权限）。
+- `app/src/sub/FileManagerWindow.tsx`：新增 `pickResearchProject`。添加项目：系统窗口选文件夹后加进工作区；新建项目：系统窗口选位置，再在程序里问文件夹名（名字不合规时提示并让你改，取消就不建）。出错用提示条报告。`ResearchSession.chooseResearchFolder` 也用它。
+- `app/src/core/research/LibraryView.tsx`：选文献库文件夹用系统的选文件夹窗口；导入 PDF 用系统的选文件窗口，只列 PDF。
+- 删掉 `ResearchFolderBrowser.tsx` 和它的测试；删掉只给它用的文案（`projectTree` 下的起点、主目录、外接磁盘、前往等，`library` 下的 `chooseHint`、`useFolder`、`importHint`、`import`），新增 `projectTree.createLocation`，`projectTree.createHint` 改成问名字时的说明。

@@ -21,10 +21,11 @@ import {
   type ResearchFileEntry,
   type ResearchFolderScan,
 } from "@/core/research/ResearchFolder";
-import { browseResearchProject } from "@/core/research/ResearchFolderBrowser";
 import {
   activeResearchWorkspace,
+  addResearchProject,
   authorizeResearchProject,
+  createResearchProject,
   loadResearchWorkspace,
   projectName,
   projectPathKey,
@@ -58,6 +59,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { exists } from "@tauri-apps/plugin-fs";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import i18next from "i18next";
 import { useAtomValue } from "jotai";
 import {
@@ -199,6 +201,40 @@ async function createInFolder(kind: CreateKind, directory: string) {
   if (!path) return;
   if (kind === "note") await openDocumentFile(path);
   FileManagerWindow.reveal(path);
+}
+
+/** 用系统的选文件夹窗口把已有文件夹加进工作区；新建时在选好的位置里再问一个名字。返回加进去的项目路径 */
+export async function pickResearchProject(create = false): Promise<string | null> {
+  const text = (key: string, options?: Record<string, unknown>) =>
+    i18next.t(key, { ns: "research", ...options, interpolation: { escapeValue: false } });
+  const folder = await openDialog({
+    directory: true,
+    title: text(create ? "projectTree.createLocation" : "projectTree.add"),
+  });
+  if (!folder) return null;
+  if (!create) {
+    try {
+      return await addResearchProject(folder);
+    } catch (error) {
+      toast.error(researchWorkspaceError(error));
+      return null;
+    }
+  }
+  let name: string | undefined = "";
+  for (;;) {
+    name = await Dialog.input(text("projectTree.create"), text("projectTree.createHint", { parent: folder }), {
+      defaultValue: name,
+      placeholder: text("projectTree.projectName"),
+    });
+    if (name === undefined) return null;
+    try {
+      return await createResearchProject(folder, name);
+    } catch (error) {
+      const invalid = error instanceof Error && error.message === "invalidProjectName";
+      toast.error(invalid ? text("projectTree.invalidProjectName") : researchWorkspaceError(error));
+      if (!invalid) return null;
+    }
+  }
 }
 
 /** 「新建笔记 / 新建白板 / 新建文件夹」三项，顶上的「+」菜单和文件夹的右键菜单共用 */
@@ -354,7 +390,7 @@ export default function FileManagerWindow() {
   const beforeModify = (projectRoot: string) => requestResearchProject(projectRoot);
 
   const addProject = async (create: boolean) => {
-    const path = await browseResearchProject(create);
+    const path = await pickResearchProject(create);
     if (path && !ResearchFolder.getRoot()) await requestResearchProject(path);
   };
   const renameWorkspace = async () => {

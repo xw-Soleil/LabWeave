@@ -1,7 +1,6 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project, ProjectState } from "@/core/Project";
 import { DocumentTab } from "./DocumentTab";
-import { browseResearchProject } from "./ResearchFolderBrowser";
 import {
   activeResearchWorkspace,
   authorizeResearchProject,
@@ -46,7 +45,7 @@ import {
   tabsAtom,
 } from "@/state";
 // 静态 import 让文件面板模块常驻，它在模块加载时注册 toggleFiles 监听
-import FileManagerWindow from "@/sub/FileManagerWindow";
+import FileManagerWindow, { pickResearchProject } from "@/sub/FileManagerWindow";
 import { exists, readDir } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { atom } from "jotai";
@@ -188,7 +187,7 @@ export async function openResearchWorkspace(absPath: string) {
 }
 
 export async function chooseResearchFolder(): Promise<string | null> {
-  const root = await browseResearchProject();
+  const root = await pickResearchProject();
   if (root === null) return null;
   return (await switchResearchProject(root)) ? root : null;
 }

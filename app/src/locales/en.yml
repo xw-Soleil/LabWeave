@@ -2809,20 +2809,9 @@ research:
       projectNotInWorkspace: This project is no longer in the workspace. Refresh or add it again.
       directoryOutsideProject: This folder is outside the selected project.
       projectPathNotAbsolute: A project requires an absolute folder path.
-    locations: Folder locations
-    home: Home
-    drives: External disks / drives
-    recent: Recent projects
-    parent: Parent folder
-    path: Absolute folder path (network shares supported)
-    go: Go
-    folders: Subfolders
-    noFolders: No visible subfolders
-    addHint: Browse folders only. Enter your project folder and choose “Use this folder”.
-    createHint: Enter the location for your project, then give the new folder a name.
+    createLocation: Choose where the new project goes
+    createHint: "The new project becomes a folder inside {{parent}}. Give it a name."
     projectName: Project folder name
-    useFolder: Use this folder
-    createHere: Create project here
     invalidProjectName: Enter a nonempty name without paths, hidden names, Windows reserved names or a trailing dot.
   document:
     loading: Reading…
@@ -3201,7 +3190,6 @@ research:
     emptyHint: A library is a separate folder with one subfolder per paper holding its note, PDF and images. You can pick the folder used by the Obsidian Literature Library plugin; both read the same files.
     chooseFolder: Choose library folder
     chooseTitle: Choose library folder
-    chooseHint: Pick the folder that holds the .litlib file. If you have no library yet, pick a folder and create one there.
     notLibraryTitle: This folder is not a library yet
     notLibraryHint: "{{path}} has no .litlib file. Create a library here or pick another folder."
     createHere: Create a library here
@@ -3225,7 +3213,6 @@ research:
       writeFailed: Saving failed. Files whose writes did not complete were preserved. Check disk space and permissions.
       fileChanged: Another application changed the file. Refresh and retry.
       partialWrite: The collection change failed and some items could not be restored. Refresh and check them without overwriting external edits.
-    useFolder: Use this folder
     changeFolder: Use another library folder
     libraryActions: Library actions
     all: My Library
@@ -3248,8 +3235,6 @@ research:
     newItemTitle: New item
     importPdf: Import PDF
     importTitle: Import PDF
-    importHint: Pick a PDF. It is copied into the library as a new item, titled after the file name until you change it on the right.
-    import: Import
     refresh: Refresh
     info: Info
     searchPlaceholder: Search this list (title / author / venue / tag / DOI)
