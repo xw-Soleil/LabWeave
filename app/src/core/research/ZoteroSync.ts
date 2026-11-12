@@ -629,7 +629,9 @@ export async function planZoteroSync(
 }
 
 export type SyncChoice = "local" | "remote" | "skip";
-export const conflictId = (row: SyncRow) => `${row.kind}:${row.key}:${row.field ?? ""}`;
+/** Stable id of a preview row; ticks and conflict choices are keyed by it. New local papers have no key yet. */
+export const rowId = (row: SyncRow) =>
+  [row.kind, row.key ?? "", row.path ?? "", row.field ?? "", row.reason ?? ""].join("|");
 type FileStamp = { path: string; hash: string; size: number; mtime: number | null };
 type FileAction = {
   kind: "file";
@@ -1051,10 +1053,13 @@ export async function resolveZoteroSync(
   const next: SyncBaseline = structuredClone(
     preview.baseline ?? { schema: 1, root: local.root, serverId: remote.serverId, pairs: {}, collections: {} },
   );
+  // Conflicts default to skip; every other row runs unless the user unticked it.
   const direction = (row: SyncRow) =>
     row.group === "conflict"
-      ? { local: "push", remote: "pull", skip: "skip" }[choices[conflictId(row)] ?? "skip"]
-      : row.group;
+      ? { local: "push", remote: "pull", skip: "skip" }[choices[rowId(row)] ?? "skip"]
+      : choices[rowId(row)] === "skip"
+        ? "skip"
+        : row.group;
   const used = new Set([...remote.items, ...remote.collections].map((d) => d.key));
   const aliases = new Map(
     Object.keys(preview.collectionPaths.local)
@@ -1075,6 +1080,9 @@ export async function resolveZoteroSync(
       if (path.includes("/") && ![...paths.values()].includes(path.slice(0, path.lastIndexOf("/"))))
         fail("invalidCollections");
   }
+  // The baseline only records memberships of collections present on both sides, so a membership in an
+  // unticked collection shows up again next time instead of looking settled (or later reading as a removal).
+  const synced = (keys: string[]) => sorted(keys.filter((k) => lp.has(k) && rp.has(k)));
   function apiAction(
     resource: APIAction["resource"],
     key: string,
@@ -1154,13 +1162,16 @@ export async function resolveZoteroSync(
   for (const item of local.items) {
     signal.throwIfAborted();
     const rows = preview.rows.filter((r) => r.path === item.notePath);
-    const creating = rows.some((r) => r.kind === "item" && r.group === "push");
-    const key =
-      pairMap.get(item.notePath) ??
-      (creating
-        ? (Object.entries(preview.draft?.next.pairs ?? {}).find(([, p]) => p.path === item.notePath)?.[0] ??
-          newKey(used))
-        : undefined);
+    const creating = rows.some((r) => r.kind === "item" && direction(r) === "push");
+    // Unticking a DOI/arXiv/title match leaves the paper unlinked, together with its field changes.
+    const unlinked = rows.some((r) => r.kind === "link" && direction(r) === "skip");
+    const key = unlinked
+      ? undefined
+      : (pairMap.get(item.notePath) ??
+        (creating
+          ? (Object.entries(preview.draft?.next.pairs ?? {}).find(([, p]) => p.path === item.notePath)?.[0] ??
+            newKey(used))
+          : undefined));
     const note = readNote(item.notePath);
     if (key) {
       const pair = preview.pairs[key];
@@ -1180,6 +1191,9 @@ export async function resolveZoteroSync(
         }
         if (direction(row) === "pull") localDesired[row.field!] = pair.remote[row.field!];
       }
+      // A paper can only join collections that exist on that side after this run (an unticked new one does not).
+      desired.collections = sorted((desired.collections as string[]).filter((k) => rp.has(k)));
+      localDesired.collections = sorted((localDesired.collections as string[]).filter((k) => lp.has(k)));
       const patch = await fieldsFor(d, desired, creating ? syncFields : pushed);
       apiAction("items", key, creating ? { ...d, ...patch, key, version: 0 } : patch, creating ? undefined : d);
       if (creating || rows.some((r) => r.kind === "link"))
@@ -1191,8 +1205,15 @@ export async function resolveZoteroSync(
       for (const row of rows.filter((r) => r.kind === "field" && direction(r) === "pull"))
         note.fm[row.field!] = localDesired[row.field!];
       if (localDesired.status === "conflict") fail("invalidStatus");
-      note.fm.collections = (localDesired.collections as string[]).flatMap((k) => (lp.has(k) ? [lp.get(k)!] : []));
-      const baseline = { path: item.notePath, local: { ...localDesired }, remote: { ...desired } };
+      const paths = (localDesired.collections as string[]).map((k) => lp.get(k)!);
+      // Keep the note's own order when the set is unchanged, so an untouched note is not rewritten.
+      if (!equal(sorted(paths), sorted(Array.isArray(note.fm.collections) ? note.fm.collections.map(text) : [])))
+        note.fm.collections = paths;
+      const baseline: { path: string; local: SyncValues; remote: SyncValues } = {
+        path: item.notePath,
+        local: { ...localDesired, collections: synced(localDesired.collections as string[]) },
+        remote: { ...desired, collections: synced(desired.collections as string[]) },
+      };
       for (const row of rows.filter((r) => r.kind === "field" && direction(r) === "skip")) {
         for (const side of ["local", "remote"] as const) {
           const previous = preview.baseline?.pairs[key]?.[side][row.field!];
@@ -1206,7 +1227,7 @@ export async function resolveZoteroSync(
   }
   const itemsDir = await checkedPath(local.root, `${local.root}/条目`, true);
   const occupied = new Set(((await exists(itemsDir)) ? await readDir(itemsDir) : []).map((e) => e.name.toLowerCase()));
-  for (const row of preview.rows.filter((r) => r.kind === "item" && r.group === "pull")) {
+  for (const row of preview.rows.filter((r) => r.kind === "item" && direction(r) === "pull")) {
     const d = remote.items.find((d) => d.key === row.key)!,
       values = remoteValues(d);
     if (values.status === "conflict") {
@@ -1253,16 +1274,53 @@ export async function resolveZoteroSync(
     });
     next.pairs[d.key] = {
       path,
-      local: { ...values, collections: (values.collections as string[]).filter((k) => lp.has(k)) },
-      remote: values,
+      local: { ...values, collections: synced(values.collections as string[]) },
+      remote: { ...values, collections: synced(values.collections as string[]) },
     };
   }
   if (preview.draft) {
-    actions.push(...structuredClone(preview.draft.actions.filter((a) => (a.kind === "file" ? a.media : a.upload))));
-    next.attachments = structuredClone(preview.draft.next.attachments);
-    next.attachmentHistory = structuredClone(preview.draft.next.attachmentHistory);
-    next.exports = structuredClone(preview.draft.next.exports);
-    next.attachmentFiles = structuredClone(preview.draft.next.attachmentFiles);
+    // The draft planned media for every paper with nothing unticked. Keep what still belongs to a paper
+    // in this run and was not unticked; the rest falls back to the previous baseline and comes up again.
+    const draft = structuredClone(preview.draft.next),
+      old = preview.baseline;
+    // Attachment rows carry the attachment key, the notes export row its .md path.
+    const unticked = new Set(
+      preview.rows.filter((r) => r.group !== "skip" && direction(r) === "skip").map((r) => r.key ?? r.path),
+    );
+    const folder = (parent: string) => next.pairs[parent]?.path.replace(/[^/]*$/, "");
+    const exportKept = (parent: string) =>
+      !!folder(parent) && !unticked.has(`${folder(parent)}zotero/同步批注与笔记.md`);
+    next.attachments = Object.fromEntries(
+      Object.entries(draft.attachments ?? {}).filter(([k, a]) => folder(a.parent) && !unticked.has(k)),
+    );
+    const dropped = new Set(
+      Object.entries(draft.attachments ?? {})
+        .filter(([k]) => !next.attachments![k])
+        .map(([, a]) => a.local.hash),
+    );
+    next.attachmentHistory = Object.fromEntries(
+      Object.entries(draft.attachmentHistory ?? {}).map(([parent, hashes]) => [
+        parent,
+        folder(parent)
+          ? hashes.filter((h) => !dropped.has(h) || old?.attachmentHistory?.[parent]?.includes(h))
+          : (old?.attachmentHistory?.[parent] ?? []),
+      ]),
+    );
+    next.exports = Object.fromEntries(
+      Object.entries(draft.exports ?? {}).flatMap(([parent, value]) => {
+        const kept = exportKept(parent) ? value : old?.exports?.[parent];
+        return kept ? [[parent, kept]] : [];
+      }),
+    );
+    next.attachmentFiles = draft.attachmentFiles;
+    const keptFiles = new Set(Object.values(next.attachments).map((a) => a.local.path));
+    for (const a of structuredClone(preview.draft.actions)) {
+      if (a.kind === "api" ? a.upload && next.attachments[a.key] : a.download && keptFiles.has(a.path)) actions.push(a);
+      else if (a.kind === "file" && a.media && !a.download) {
+        const parent = Object.keys(next.pairs).find((k) => a.path.startsWith(`${folder(k)}zotero/`));
+        if (parent && exportKept(parent)) actions.push(a);
+      }
+    }
   } else await planMedia(preview, next, actions, signal, progress);
   for (const a of Object.values(next.attachments ?? {})) {
     const note = notes.get(next.pairs[a.parent]?.path);
@@ -1282,10 +1340,13 @@ export async function resolveZoteroSync(
   const manifestPath = Object.keys(preview.files).find((p) => /\.litlib$/i.test(p))!;
   const manifest = JSON.parse(preview.files[manifestPath]);
   const desiredPaths = new Set(lp.values());
+  // Map only collections that exist in Zotero after this run (or were already mapped); an unticked new local
+  // collection must stay unmapped, or the next preview would read it as deleted in Zotero.
+  const mapped = new Set(Object.keys(manifest.zoteroCollections ?? {}));
   const updated = {
     ...manifest,
     collections: [...manifest.collections.filter((p: string) => desiredPaths.delete(p)), ...sorted([...desiredPaths])],
-    zoteroCollections: Object.fromEntries(lp),
+    zoteroCollections: Object.fromEntries([...lp].filter(([k]) => rp.has(k) || mapped.has(k))),
   };
   if (!equal(manifest, updated))
     actions.push({ kind: "file", path: manifestPath, before: preview.files[manifestPath], after: json(updated) });
@@ -1297,7 +1358,7 @@ export async function resolveZoteroSync(
     before: preview.baseline ?? null,
     next,
     actions,
-    skipped: preview.rows.filter((r) => r.group === "conflict" && direction(r) === "skip").length,
+    skipped: preview.rows.filter((r) => r.group !== "skip" && direction(r) === "skip").length,
   };
 }
 
@@ -1650,7 +1711,8 @@ async function planMedia(
         );
       }
     }
-    let rawHash = "";
+    let rawHash = "",
+      exported = false;
     for (const [ext, after] of [
       ["json", json(records) + "\n"],
       ["md", lines.join("\n")],
@@ -1666,8 +1728,17 @@ async function planMedia(
       if (ext === "json") rawHash = await digest(unchangedRaw ? before! : after);
       if (before === after || unchangedRaw) continue;
       actions.push({ kind: "file", path, before, after, media: true });
-      preview.rows.push({ group: "pull", kind: "notice", path, title: text(pair.remote.title), reason: "exportNotes" });
+      exported = true;
     }
+    // One row for the .md and .json pair; they are ticked together.
+    if (exported)
+      preview.rows.push({
+        group: "pull",
+        kind: "notice",
+        path: `${folder}/zotero/同步批注与笔记.md`,
+        title: text(pair.remote.title),
+        reason: "exportNotes",
+      });
     next.exports[parent] = { source: sourceHash, raw: rawHash };
   }
 }

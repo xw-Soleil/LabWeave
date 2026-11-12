@@ -3393,15 +3393,47 @@ research:
       abstract: 摘要
   zoteroSync:
     title: 同步 Zotero
-    description: 先查看差别并选择冲突的处理方式，再备份并同步。没有选的冲突会留到下次。
+    description: 正在读取两边的差别。
     sync: 备份并同步
+    syncCount: "备份并同步（{{count}} 处）"
+    selected: "已选 {{count}} / {{total}} 处，没勾的下次还会列出来"
+    selectAll: 全选
+    selectNone: 全不选
+    filterLabel: 按方向筛选
+    tickSection: "勾选整组：{{section}}"
+    filters:
+      all: 全部
+      push: ↑ 写到 Zotero
+      pull: ↓ 写到本地
+      conflict: 冲突
+    sections:
+      collection: 分类
+      item: 文献
+      field: 字段改动
+      attachment: 附件与批注摘录
+      conflict: 冲突（逐条选用哪边）
+      skip: 不处理的
+    row:
+      newCollectionPush: 新建到 Zotero
+      newCollectionPull: 新建到本地
+      newItemPush: 新建到 Zotero
+      newItemPull: 新建到本地
+      rename: "改名：{{from}} → {{to}}"
+      link: "按{{method}}配上，记下 Zotero 编号"
+      field: "{{field}}：{{from}} → {{to}}"
+      conflict: "{{field}}：本地「{{local}}」· Zotero「{{remote}}」"
+      upload: "上传 · {{size}}"
+      uploadVersion: "上传新版本 · {{size}}"
+      download: "下载 · {{size}}"
+      downloadVersion: "下载新版本 · {{size}}"
+      exportNotes: 导出 Zotero 批注和笔记
     confirmSync: "将修改 {{count}} 处文献、分类或本地文件。修改前会保存备份，之后可以回退。确定同步吗？首次写入时，请在 Zotero 中选择「始终允许」。"
     confirmRollback: 回退前会检查是否有后续编辑，有变化就停止。本次新建的 Zotero 条目会移进回收站，本地新文件会移进备份文件夹。确定回退吗？
     openBackup: 打开备份文件夹
     rollbackThis: 回退本次同步
     rollbackLast: 回退上次同步
     unfinished: 上次同步或回退没有完成。请先回退上次同步，再重新预览；回退中断后可以再次执行。
-    completed: "上次同步已完成，共修改 {{count}} 处，跳过 {{skipped}} 个冲突。"
+    completed: "上次同步已完成：改了 {{count}} 处，{{skipped}} 处没勾或跳过，留到下次。"
     rolledBack: 已回退，可以重新预览。
     choiceLabel: 处理方式
     choices:
@@ -3411,7 +3443,7 @@ research:
     all:
       local: 全部用本地
       remote: 全部用 Zotero
-    connected: "已连接本机 Zotero：本地 {{local}} 篇，Zotero {{remote}} 条（含附件与笔记）。"
+    connected: "已连接本机 Zotero · 本地 {{local}} 篇 · Zotero {{remote}} 篇。勾选要同步的改动，冲突逐条选用哪边。"
     blocked: 有重复候选或读不了的本地条目，已停止生成写入计划。请先处理下面的问题，再重新预览。
     pairingIssues: 配对不明确
     refresh: 重新预览

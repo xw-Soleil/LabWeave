@@ -3274,15 +3274,47 @@ research:
       abstract: Abstract
   zoteroSync:
     title: Sync Zotero
-    description: Review the differences and choose how to handle conflicts, then back up and sync. Unselected conflicts will appear again next time.
+    description: Reading the differences between both sides.
     sync: Back up and sync
+    syncCount: "Back up and sync ({{count}})"
+    selected: "{{count}} of {{total}} selected; unticked ones come up again next time"
+    selectAll: Select all
+    selectNone: Select none
+    filterLabel: Filter by direction
+    tickSection: "Tick the whole group: {{section}}"
+    filters:
+      all: All
+      push: ↑ To Zotero
+      pull: ↓ To library
+      conflict: Conflicts
+    sections:
+      collection: Collections
+      item: Papers
+      field: Field changes
+      attachment: Attachments and annotation exports
+      conflict: Conflicts (choose a side for each)
+      skip: Not handled
+    row:
+      newCollectionPush: New in Zotero
+      newCollectionPull: New in library
+      newItemPush: New in Zotero
+      newItemPull: New in library
+      rename: "Rename: {{from}} → {{to}}"
+      link: "Matched by {{method}}; records the Zotero key"
+      field: "{{field}}: {{from}} → {{to}}"
+      conflict: "{{field}}: library “{{local}}” · Zotero “{{remote}}”"
+      upload: "Upload · {{size}}"
+      uploadVersion: "Upload new version · {{size}}"
+      download: "Download · {{size}}"
+      downloadVersion: "Download new version · {{size}}"
+      exportNotes: Export Zotero annotations and notes
     confirmSync: "This will change {{count}} Zotero records, collections or local files. A backup will be saved first so you can roll back. Continue? For the first write, choose Always Allow in Zotero."
     confirmRollback: Rollback stops if it finds later edits. Newly created Zotero records go to the trash; new local files move into the backup folder. Continue?
     openBackup: Open backup folder
     rollbackThis: Roll back this sync
     rollbackLast: Roll back last sync
     unfinished: The last sync or rollback did not finish. Roll it back before previewing again. An interrupted rollback can be run again.
-    completed: "Last sync completed: {{count}} changes, {{skipped}} conflicts skipped."
+    completed: "Last sync completed: {{count}} changes made; {{skipped}} unticked or skipped, left for next time."
     rolledBack: Rollback completed. You can preview again.
     choiceLabel: Resolution
     choices:
@@ -3292,7 +3324,7 @@ research:
     all:
       local: Use local for all
       remote: Use Zotero for all
-    connected: "Connected to local Zotero: {{local}} local papers, {{remote}} Zotero records (including attachments and notes)."
+    connected: "Connected to local Zotero · {{local}} papers in the library · {{remote}} in Zotero. Tick the changes to sync and pick a side for each conflict."
     blocked: Duplicate candidates or unreadable local items prevent a write plan. Resolve the issues below and preview again.
     pairingIssues: Ambiguous matches
     refresh: Preview again

@@ -139,9 +139,10 @@ import {
   applyZoteroSync,
   rollbackZoteroSync,
   pendingSync,
-  conflictId,
+  rowId,
   SyncRollbackError,
   type SyncChoice,
+  type SyncRow,
   mergeField,
   planZoteroSync,
   readZotero,
@@ -777,13 +778,19 @@ describe("dialog", () => {
     });
     return document.querySelector('[role="dialog"]')!;
   }
+  /** 「不处理的」默认收起，点开再看 */
+  async function skipped(dialog: Element) {
+    const skip = dialog.querySelector('section[aria-label="不处理的"]')!;
+    await act(async () => skip.querySelector("button")!.click());
+    return skip;
+  }
 
   it("renders compact summaries with separate child counts and one missing-collections notice", async () => {
     const fixture = largePreviewFixture();
     fixture.remote.items[0].collections = ["MISSING1", "MISSING2"];
     const dialog = await showPreview(fixture.local, fixture.remote);
-    const skip = dialog.querySelector('section[aria-label="保留／跳过"]')!;
-    expect(skip.querySelector("h3")?.textContent).toBe("保留／跳过 (6)");
+    const skip = await skipped(dialog);
+    expect(skip.querySelector("button")?.textContent).toBe("不处理的（6）");
     expect(skip.textContent).toContain("67 篇没有变化");
     expect(skip.textContent).not.toContain("这一版还不同步");
     expect(skip.textContent).toContain("1 篇文献引用了列表中不存在的 Zotero 分类");
@@ -806,12 +813,40 @@ describe("dialog", () => {
     const dialog = await showPreview(snapshot, remote([paper("PAPER001", { title: "Same" })]));
     const candidates = dialog.querySelector('section[aria-label="配对不明确"]')!;
     for (const name of ["a", "b"]) expect(candidates.textContent).toContain(`条目/AI/${name}.md`);
-    expect(dialog.querySelector('section[aria-label="保留／跳过"]')?.textContent).toContain("条目/AI/broken.md");
+    expect((await skipped(dialog)).textContent).toContain("条目/AI/broken.md");
     expect(dialog.textContent).not.toContain(libraryRoot);
     expect(dialog.textContent).not.toContain(dir);
   });
 
-  it("shows four groups, conflict choices and the sync control", async () => {
+  it("ticks rows one by one or a whole group, filters by direction and counts the selection", async () => {
+    const dialog = await showPreview(
+      library([item("mine", { title: "Mine" })]),
+      remote([paper("THEIRS01", { title: "Theirs" })]),
+    );
+    const box = (label: string) =>
+      dialog.querySelector<HTMLButtonElement>(`button[role="checkbox"][aria-label^="${label}"]`)!;
+    const syncButton = () =>
+      [...dialog.querySelectorAll("button")].find((b) => b.textContent?.startsWith("备份并同步"))!;
+    expect(dialog.textContent).toContain("已选 2 / 2 处");
+    expect(dialog.textContent).toContain("新建到 Zotero");
+    expect(dialog.textContent).toContain("新建到本地");
+    await act(async () => box("Mine").click());
+    expect(box("Mine").getAttribute("aria-checked")).toBe("false");
+    expect(dialog.textContent).toContain("已选 1 / 2 处");
+    expect(syncButton().textContent).toBe("备份并同步（1 处）");
+    await act(async () => box("勾选整组：文献").click());
+    expect(dialog.textContent).toContain("已选 2 / 2 处");
+    await act(async () => box("勾选整组：文献").click());
+    expect(dialog.textContent).toContain("已选 0 / 2 处");
+    expect(syncButton().disabled).toBe(true);
+    await act(async () =>
+      [...dialog.querySelectorAll("button")].find((b) => b.textContent === "↓ 写到本地 1")!.click(),
+    );
+    expect(dialog.textContent).toContain("Theirs");
+    expect(dialog.textContent).not.toContain("Mine");
+  });
+
+  it("shows the direction filters, one-line conflict choices and the sync control", async () => {
     mocks.fetch.mockImplementation(async (url: string) =>
       response(url.includes("/items?") ? [envelope(paper("PAPER001", { title: "Remote title" }))] : []),
     );
@@ -834,27 +869,45 @@ describe("dialog", () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
     const dialog = document.querySelector('[role="dialog"]')!;
+    const buttons = () => [...dialog.querySelectorAll("button")];
+    const pressed = () =>
+      buttons().find((b) => b.getAttribute("aria-pressed") === "true" && b.closest('[role="group"]'));
     for (const label of [
-      "写到 Zotero",
-      "写到本地",
-      "冲突",
-      "保留／跳过",
+      "↑ 写到 Zotero 0",
+      "↓ 写到本地 0",
+      "冲突 1",
+      "不处理的",
       "Local <script>title</script>",
       "Remote title",
     ])
       expect(dialog.textContent).toContain(label);
     expect(dialog.querySelector("script")).toBeNull();
+    expect(dialog.textContent).not.toContain("条目/local/local.md");
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "Local <script>title</script>")!
+        .click(),
+    );
     expect(dialog.textContent).toContain("条目/local/local.md");
     expect(dialog.textContent).not.toContain("/fixture");
-    expect([...dialog.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
-      expect.arrayContaining(["全部用本地", "全部用 Zotero", "这次跳过", "备份并同步", "重新预览", "关闭"]),
+    expect(buttons().map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(["全部用本地", "全部用 Zotero", "这次跳过", "备份并同步（0 处）", "重新预览", "关闭"]),
     );
-    await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "全部用本地")!.click());
-    expect(dialog.querySelector('[role="combobox"]')?.textContent).toBe("用本地");
+    expect(pressed()?.textContent).toBe("这次跳过");
+    expect(buttons().find((b) => b.textContent === "备份并同步（0 处）")!.disabled).toBe(true);
     await act(async () =>
-      [...dialog.querySelectorAll("button")].find((b) => b.textContent === "全部用 Zotero")!.click(),
+      buttons()
+        .find((b) => b.textContent === "全部用本地")!
+        .click(),
     );
-    expect(dialog.querySelector('[role="combobox"]')?.textContent).toBe("用 Zotero");
+    expect(pressed()?.textContent).toBe("用本地");
+    expect(dialog.textContent).toContain("已选 1 / 1 处");
+    await act(async () =>
+      buttons()
+        .find((b) => b.textContent === "全部用 Zotero")!
+        .click(),
+    );
+    expect(pressed()?.textContent).toBe("用 Zotero");
     await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "关闭")!.click());
     expect(onClose).toHaveBeenCalled();
   });
@@ -922,9 +975,7 @@ describe("sync, backups and rollback with a fake Zotero", () => {
   };
   const sync = async (choice: SyncChoice = "skip") => {
     const p = await preview();
-    const choices = Object.fromEntries(
-      p.rows.filter((r) => r.group === "conflict").map((r) => [conflictId(r), choice]),
-    );
+    const choices = Object.fromEntries(p.rows.filter((r) => r.group === "conflict").map((r) => [rowId(r), choice]));
     const run = await resolveZoteroSync(p, choices, signal());
     const path = await applyZoteroSync(p, run, signal(), vi.fn());
     return { p, run, path };
@@ -1087,6 +1138,51 @@ describe("sync, backups and rollback with a fake Zotero", () => {
     await note("one", { zotero_key: "PAPER001" });
     return join(root, "条目/one");
   };
+  /** Sync with the rows matching `untick` unticked in the window */
+  const syncWithout = async (untick: (row: SyncRow) => boolean) => {
+    const p = await preview();
+    const choices = Object.fromEntries(p.rows.filter(untick).map((r) => [rowId(r), "skip" as const]));
+    await applyZoteroSync(p, await resolveZoteroSync(p, choices, signal()), signal(), vi.fn());
+  };
+
+  it("does not create unticked papers or collections, and lists them again next time", async () => {
+    collections.push(collection("COLZ0001", "Remote col"));
+    items.push(paper("NEWZ0001", { title: "Remote paper", collections: ["COLZ0001"] }));
+    await writeFile(manifest(), JSON.stringify({ version: 1, collections: ["Local col"] }));
+    await note("local", { title: "Local paper", collections: ["Local col"] });
+    await syncWithout(
+      (r) => (r.kind === "item" && r.group === "pull") || (r.kind === "collection" && r.group === "push"),
+    );
+    const library = await loadLibrary(root);
+    expect(library.items.some((i) => i.extra.zotero_key === "NEWZ0001")).toBe(false);
+    expect(library.collections).toContain("Remote col");
+    expect(collections.map((c) => c.name)).toEqual(["Remote col"]);
+    // The ticked new paper is created, just outside the collection that was not created
+    expect(items.find((d) => d.title === "Local paper")?.collections).toEqual([]);
+    expect(await changedRows()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "item", group: "pull", key: "NEWZ0001" }),
+        expect.objectContaining({ kind: "collection", group: "push", local: "Local col" }),
+        expect.objectContaining({ kind: "field", group: "push", field: "collections", title: "Local paper" }),
+      ]),
+    );
+  });
+
+  it("does not write an unticked field change or upload, and offers both again", async () => {
+    const folder = await paired();
+    await sync();
+    await localEdit("one", { title: "Local title" });
+    await writeFile(join(folder, "paper.pdf"), "%PDF-upload-fixture");
+    await syncWithout((r) => r.kind === "field" || r.group === "attachment");
+    expect(items.find((d) => d.key === "PAPER001")?.title).toBe("one");
+    expect(items.filter((d) => d.itemType === "attachment")).toEqual([]);
+    expect(await changedRows()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "field", group: "push", field: "title", local: "Local title" }),
+        expect.objectContaining({ group: "attachment", reason: "upload", title: "paper.pdf" }),
+      ]),
+    );
+  });
 
   it("uploads PDF and CSV, journals metadata only and trashes the new attachments on rollback", async () => {
     const folder = await paired();
@@ -1871,7 +1967,7 @@ print(json.dumps(out, ensure_ascii=False))
     try {
       await ui.click("全部用本地");
       mocks.confirm.mockResolvedValue(false);
-      await ui.click("备份并同步");
+      await ui.click("备份并同步（1 处）");
       expect(mocks.confirm).toHaveBeenCalledWith(
         expect.stringContaining("将修改 2 处"),
         expect.objectContaining({ kind: "warning" }),
@@ -1879,8 +1975,8 @@ print(json.dumps(out, ensure_ascii=False))
       expect(items[0].title).toBe("Remote");
       expect((await readSyncHistory(root)).run).toBeUndefined();
       mocks.confirm.mockResolvedValue(true);
-      await ui.click("备份并同步");
-      expect(document.body.textContent).toContain("上次同步已完成，共修改 2 处");
+      await ui.click("备份并同步（1 处）");
+      expect(document.body.textContent).toContain("上次同步已完成：改了 2 处");
       await ui.click("打开备份文件夹");
       expect(mocks.shell).toHaveBeenCalledWith((await readSyncHistory(root)).runPath);
       await ui.click("回退本次同步");
@@ -1896,10 +1992,10 @@ print(json.dumps(out, ensure_ascii=False))
     await writeFile(join(folder, "paper.pdf"), "%PDF-upload-fixture");
     const ui = await showWindow();
     try {
-      const section = document.querySelector('section[aria-label="附件"]')!;
+      const section = document.querySelector('section[aria-label="附件与批注摘录"]')!;
       expect(section.textContent).toContain("paper.pdf");
-      expect(section.textContent).toContain("上传附件，保留已有版本");
-      expect(section.textContent).toContain("大小：19 字节");
+      expect(section.textContent).toContain("上传 · 19 B");
+      expect(section.querySelector('svg[aria-label="↑ 写到 Zotero"]')).not.toBeNull();
     } finally {
       await ui.close();
     }
