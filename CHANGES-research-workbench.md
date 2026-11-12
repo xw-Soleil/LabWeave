@@ -690,3 +690,41 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/sub/FileManagerWindow.tsx`：新增 `pickResearchProject`。添加项目：系统窗口选文件夹后加进工作区；新建项目：系统窗口选位置，再在程序里问文件夹名（名字不合规时提示并让你改，取消就不建）。出错用提示条报告。`ResearchSession.chooseResearchFolder` 也用它。
 - `app/src/core/research/LibraryView.tsx`：选文献库文件夹用系统的选文件夹窗口；导入 PDF 用系统的选文件窗口，只列 PDF。
 - 删掉 `ResearchFolderBrowser.tsx` 和它的测试；删掉只给它用的文案（`projectTree` 下的起点、主目录、外接磁盘、前往等，`library` 下的 `chooseHint`、`useFolder`、`importHint`、`import`），新增 `projectTree.createLocation`，`projectTree.createHint` 改成问名字时的说明。
+
+### 61. Zotero 同步第一步：只读连接与预览（2026-11-12）
+
+- 文献库顶栏新增「同步 Zotero」，只打开一个预览窗口。窗口显示连接、读取和比较进度，可关闭取消、重新预览；没有授权、备份、执行或回退按钮。
+- 新增 `ZoteroSync.ts` 和 `ZoteroSyncDialog.tsx`。通过已有的 HTTP 插件访问固定的本机接口，按每页 100 条读取文献和分类，拒绝重定向；分开提示未连接、版本过旧、本机通讯未开启和访问被拒。发现读取期间实例或库版本变化时停止预览。
+- 复用文献库已经加载的数据，保留原始 frontmatter 和 `.litlib` 中的 `zoteroCollections` 分类映射；比较时不把界面显示用的标签去前缀、作者拆分等处理当成同步改动。按 Zotero key、DOI、arXiv、规范化标题配对；重复候选和无法读取的本地条目会阻止生成写入计划。
+- 预览分为「写到 Zotero」「写到本地」「冲突」「保留／跳过」，冲突显示两边的值，分类显示完整路径。同一篇首次配对时，不同字段都算冲突，包括空值；已相同的字段不动。删除、研究笔记正文、自定义属性等保留，附件和 Zotero 批注留到后续步骤。
+- 预览只存在内存，不写文献库、Zotero、同步记录或备份。数据里保留配对方法、两边字段、原始快照与 Zotero 版本；三方比较接收独立的双边基线，供下一步继续接入，不共用 Obsidian 插件的记录。
+- 新增假的 HTTP、临时文献和窗口测试，检查分页、错误、配对歧义、字段映射、分类、三方比较、取消，以及预览前后文件字节不变。中英文文案已补齐，普通繁体由现有脚本生成。没有增加依赖、设置、Rust 代码或 capability。
+
+本轮按 Claude 审查修正了五处：
+
+1. 在 LabWeave 改名、删除分类时，同一次 `.litlib` 保存会更新 `zoteroCollections`：改名连子分类一起换路径，删除去掉整个子树的映射；相似前缀的其他分类不受影响。没有映射字段的旧库不会新增这个字段，新增分类也不会编造 Zotero key。补了临时目录测试，检查快照和实际文件、空映射及其他扩展字段。
+2. `SyncPreview.summary` 保存未变化文献数、待处理子记录总数及批注／附件／子笔记各自数量，界面分别合成一行。删除、独立笔记和附件、链接型附件、读不了的条目继续逐条提示。用 730 条假记录验证：67 篇无变化文献、490 条批注、160 条附件、10 条子笔记以及 3 条需留意的记录；普通提示加这 3 条记录一共只有 4 个 row 对象，没有为前 727 条逐个生成 row。子记录细分数只是测试构造，不代表读取过真实库。
+3. 本地标题重复只在 Zotero 有同规范化标题的有效顶层文献时阻止配对；没有命中就正常预览。DOI、arXiv 和 key 的重复保护保持原样。补测了有命中、无命中、回收站和笔记不算标题命中的情况。
+4. Zotero 条目引用缺失分类时，已配对条目的比较值会过滤掉这些编号，新文献也不再报错退出；比较历史远端值时同样过滤，避免误判远端变化。按受影响的有效顶层文献数合成一条提示，一篇引用多个缺失编号只算一次，原始快照保留不变。补测了已配对／新文献、有效和缺失分类混用、计数、界面摘要及历史比较。
+5. 窗口中的条目路径和配对候选路径相对本次预览的文献库根目录显示，内部快照和配对仍保留绝对路径。补测了普通差异行、读不了的条目和配对候选，覆盖 macOS 路径、Windows 盘符和 UNC 路径，以及尾部斜杠、盘符／主机名大小写。
+
+文件与行数（文件总行数，包含已有代码和空行；`LibraryView.tsx` 本轮未再改，只保留并检查第一步的按钮接入）：
+
+| 文件                                         | 总行数 | 本轮用途                         |
+| -------------------------------------------- | -----: | -------------------------------- |
+| `app/src/core/research/Library.ts`           |    771 | 保存分类映射改名和删除           |
+| `app/src/core/research/Library.test.ts`      |    617 | 分类映射回归测试                 |
+| `app/src/core/research/ZoteroSync.ts`        |    625 | 计数摘要、标题配对、缺失分类处理 |
+| `app/src/core/research/ZoteroSyncDialog.tsx` |    228 | 摘要和相对路径显示               |
+| `app/src/core/research/ZoteroSync.test.ts`   |    755 | 预览逻辑和窗口回归测试           |
+| `app/src/core/research/LibraryView.tsx`      |   1322 | 第一步已有的按钮接入             |
+| `app/src/locales/en.yml`                     |   3709 | 英文摘要文案                     |
+| `app/src/locales/zh_CN.yml`                  |   3828 | 简体中文摘要文案                 |
+| `app/src/locales/zh_TW.yml`                  |   3828 | 脚本生成的普通繁体文案           |
+| `CHANGES-research-workbench.md`              |    730 | 中文变更报告                     |
+
+按任务书“同步逻辑 + 界面”的预算口径，目前是 **625 + 228 = 853 行**，没有超过三步合计 1200 行的目标，剩余 347 行；测试和现有文献库文件不计入这个口径。分类映射更新与插件行为一致；按标题兜底配对是任务书要求的扩展，本轮仅放宽无远端命中的标题重复。摘要、缺失分类提示和路径显示按本轮审查要求调整。
+
+检查结果：类型检查通过；本轮相关测试 89 个通过；全量前端测试 169 个文件通过、3 个跳过，1827 个用例通过、4 个跳过，使用本工作树的 `PROJECT_GRAPH_OWNERSHIP_HELPER_PATH`，按仓库要求排除依赖打包产物的 `ProjectGraphCliProduction.test.ts`。`sync-locales`、改动文件的 Prettier、改动代码的 ESLint 和 `git diff --check` 均通过；Prettier 遵从仓库配置忽略 locale YAML。命令使用 `TMPDIR=/private/tmp` 避开环境临时路径乱码；繁体生成的 IPC 管道及已有测试的本地回环服务起初被沙箱拒绝，经权限重试后运行成功。全量测试仍有既有 jsdom canvas/localStorage 提示，没有测试失败。
+
+没有连接真实 Zotero、安装依赖、运行 build、改 Rust 或提交 git。Windows 路径只用假数据测过，没有在 Windows 桌面和真实 Tauri 窗口中手工验证。本次到第一步审查修正为止，未开始第二步。

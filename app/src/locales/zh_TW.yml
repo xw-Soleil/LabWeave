@@ -3391,6 +3391,77 @@ research:
       collections: 分類
       tags: 標籤
       abstract: 摘要
+  zoteroSync:
+    title: 同步 Zotero
+    readOnly: 本輪只查看差別，不寫入 Zotero 或本地文件，也不請求授權。首次配對時，兩邊不同的字段都會列為衝突。
+    connected: "已連接本機 Zotero：本地 {{local}} 篇，Zotero {{remote}} 條（含附件與筆記）。"
+    blocked: 有重複候選或讀不了的本地條目，已停止生成寫入計劃。請先處理下面的問題，再重新預覽。
+    pairingIssues: 配對不明確
+    refresh: 重新預覽
+    close: 關閉
+    local: 本地
+    remote: Zotero
+    emptyValue: （空）
+    noChanges: 無
+    matchedBy: "按{{method}}配對"
+    showMore: "繼續顯示（還有 {{count}} 項）"
+    groups:
+      push: 寫到 Zotero
+      pull: 寫到本地
+      conflict: 衝突
+      skip: 保留／跳過
+    summary:
+      unchanged: "{{count}} 篇沒有變化"
+      deferred: "{{count}} 條子記錄（批註 {{annotations}} 條、附件 {{attachments}} 條、子筆記 {{notes}} 條），第 3 步再處理。"
+      missingCollections: "{{count}} 篇文獻引用了列表中不存在的 Zotero 分類，已忽略這些分類編號，不參與比較和顯示。"
+    progress:
+      connect: 正在檢查本機 Zotero…
+      items: "正在讀取 Zotero 條目，已讀 {{count}} 條…"
+      collections: "正在讀取 Zotero 分類，已讀 {{count}} 個…"
+      pairing: "正在配對並比較，已處理 {{count}} 項…"
+    match:
+      key: Zotero key
+      doi: DOI
+      arxiv: arXiv 號
+      title: 規範化標題
+    fields:
+      title: 標題
+      authors: 作者
+      year: 年份
+      venue: 期刊／會議
+      volume: 卷
+      issue: 期
+      pages: 頁碼
+      doi: DOI
+      url: 網址
+      abstract: 摘要
+      tags: 標籤
+      status: 閱讀狀態
+      collections: 所屬分類
+    reasons:
+      preserved: 刪除和回收站狀態、文獻類型、arXiv 號及其他自定義屬性保留原值。研究筆記正文和本地 PDF 批註不推到 Zotero；附件、Zotero 批註和筆記留待後續步驟處理。
+      unreadable: 本地條目無法讀取，請回文獻庫查看錯誤並修復。
+      deletion: 刪除／回收站或已關聯條目缺失，不自動傳播、不重新創建。
+      newCollection: 新增分類
+      renameCollection: 分類路徑不同
+      newItem: 新增文獻（只同步支持的資料字段）
+      link: 記錄配對關係，更新本地 zotero_key。
+      standalone: 獨立附件／筆記暫不自動創建文獻條目。
+      linkedAttachment: 鏈接型附件不參與同步。
+    errors:
+      notRunning: 連接不上本機 Zotero，請先打開 Zotero。若已經打開，請檢查本機接口是否可用。
+      oldVersion: 當前 Zotero 沒有提供 Zotero-Server-ID，請升級到 Zotero 10 或更新版本。
+      communicationDisabled: Zotero 未開啟本機通訊。請在 Zotero 高級設置中打開「允許本機其他程序通訊」，再重新預覽。
+      authorizationDenied: Zotero 拒絕了訪問。本輪不會請求寫入授權，請檢查 Zotero 的訪問限制後重試。
+      timeout: Zotero 響應超時，請檢查它是否正常運行，再重新預覽。
+      redirectRefused: 本機接口返回了重定向，已停止連接，以免訪問其他地址。
+      requestFailed: Zotero 接口返回錯誤，請檢查 Zotero 後重新預覽。
+      invalidResponse: Zotero 返回的數據不完整或格式不正確，已停止預覽。
+      snapshotChanged: 讀取過程中 Zotero 的實例或數據發生變化，請重新預覽。
+      tooManyItems: 條目數量超出本次預覽上限。
+      invalidCollections: 分類層級缺失、循環、重名，或名稱為空／含有斜槓，請檢查分類後重新預覽。
+      baselineMismatch: 同步記錄屬於另一份文獻庫或 Zotero 實例，已停止預覽。
+      previewFailed: 預覽失敗，請重新打開窗口重試。
   files:
     title: 文件
     placeholder: 文件面板（建設中）

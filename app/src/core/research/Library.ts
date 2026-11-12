@@ -41,6 +41,7 @@ export interface LibraryItem extends LibraryItemFields {
   translations: { dual?: string; mono?: string };
   annotationsPath?: string;
   extra: Record<string, unknown>;
+  frontmatter?: Record<string, unknown>;
 }
 
 export interface LibraryItemError {
@@ -52,6 +53,7 @@ export interface LibraryItemError {
 export interface LibrarySnapshot {
   root: string;
   collections: string[];
+  zoteroCollections?: Record<string, string>;
   items: LibraryItem[];
   errors: LibraryItemError[];
 }
@@ -228,6 +230,7 @@ async function readItem(root: string, key: string): Promise<LibraryItem> {
     translations: { dual: dual ? `${dir}/${dual}` : undefined, mono: mono ? `${dir}/${mono}` : undefined },
     annotationsPath: annotations && files.includes(annotations) ? `${dir}/${annotations}` : undefined,
     extra: libraryExtra(values),
+    frontmatter: values,
   };
 }
 
@@ -247,11 +250,25 @@ async function readManifest(root: string) {
       Array.isArray(data) ||
       (data.version !== undefined && data.version !== 1) ||
       !Array.isArray(data.collections) ||
-      !data.collections.every((entry) => typeof entry === "string")
+      !data.collections.every((entry) => typeof entry === "string") ||
+      (data.zoteroCollections !== undefined &&
+        (!data.zoteroCollections ||
+          typeof data.zoteroCollections !== "object" ||
+          Array.isArray(data.zoteroCollections) ||
+          !Object.values(data.zoteroCollections).every((value) => typeof value === "string")))
     ) {
       throw new Error("library.invalidManifest");
     }
-    return { path, bytes, data: { ...data, version: 1, collections: data.collections as string[] } };
+    return {
+      path,
+      bytes,
+      data: {
+        ...data,
+        version: 1,
+        collections: data.collections as string[],
+        zoteroCollections: data.zoteroCollections as Record<string, string> | undefined,
+      },
+    };
   } catch (cause) {
     throw errorCode(cause, "library.invalidManifest");
   }
@@ -303,7 +320,13 @@ async function snapshotAt(root: string, previous?: LibrarySnapshot, changed?: Se
   );
   items.sort((a, b) => a.key.localeCompare(b.key));
   errors.sort((a, b) => a.key.localeCompare(b.key));
-  return { root, collections: allCollections(manifest.data.collections, items), items, errors };
+  return {
+    root,
+    collections: allCollections(manifest.data.collections, items),
+    zoteroCollections: manifest.data.zoteroCollections,
+    items,
+    errors,
+  };
 }
 
 export async function loadLibrary(root: string): Promise<LibrarySnapshot> {
@@ -522,6 +545,12 @@ async function changeCollections(
       }
     }
     const collections = allCollections(next, []);
+    if (action !== "add" && manifest.data.zoteroCollections !== undefined)
+      manifest.data.zoteroCollections = Object.fromEntries(
+        Object.entries(manifest.data.zoteroCollections).flatMap(([key, value]) =>
+          transform([value]).map((path) => [key, path]),
+        ),
+      );
     const manifestBytes = new TextEncoder().encode(JSON.stringify({ ...manifest.data, collections }, null, 2));
     let written = 0;
     try {

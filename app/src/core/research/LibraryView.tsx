@@ -64,6 +64,7 @@ import {
   type ReadStatus,
 } from "./Library";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import ZoteroSyncDialog from "./ZoteroSyncDialog";
 
 type Scope = { kind: "all" } | { kind: "collection"; path: string } | { kind: "unfiled" } | { kind: "trash" };
 type SortKey = "title" | "authors" | "year" | "status" | "added";
@@ -166,6 +167,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
   const [selected, setSelected] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState(storedLayout);
+  const [syncOpen, setSyncOpen] = useState(false);
   const toggleLayout = (part: "tree" | "info") => {
     const next = { ...layout, [part]: !layout[part] };
     setLayout(next);
@@ -284,6 +286,14 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           <ToolButton icon={Plus} label={t("library.newItem")} onClick={newItem} />
           <ToolButton icon={Upload} label={t("library.importPdf")} onClick={importPdf} />
           <span className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!snapshot || loading || !!error}
+            onClick={() => setSyncOpen(true)}
+          >
+            {t("zoteroSync.title")}
+          </Button>
           <ToolButton
             icon={RefreshCw}
             label={t("library.refresh")}
@@ -390,6 +400,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           )}
         </aside>
       )}
+      {syncOpen && snapshot && <ZoteroSyncDialog snapshot={snapshot} onClose={() => setSyncOpen(false)} />}
     </div>
   );
 }

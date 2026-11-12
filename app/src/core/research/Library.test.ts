@@ -175,6 +175,20 @@ afterEach(async () => {
 });
 
 describe("literature library loading", () => {
+  it("retains the plugin's collection identities in the existing snapshot without writing", async () => {
+    const path = join(root, "文献库.litlib");
+    const data = { version: 1, collections: ["A"], zoteroCollections: { COL00001: "A" } };
+    await disk.writeFile(path, JSON.stringify(data));
+    await item("Paper", "zotero_key: PAPER001\ncustom: keep\n");
+    const before = await disk.readFile(path);
+    const snapshot = await loadLibrary(root);
+    expect(snapshot.zoteroCollections).toEqual(data.zoteroCollections);
+    expect(snapshot.items[0].frontmatter).toMatchObject({ zotero_key: "PAPER001", custom: "keep", title: "Paper" });
+    expect(await disk.readFile(path)).toEqual(before);
+    await disk.writeFile(path, JSON.stringify({ ...data, zoteroCollections: { COL00001: 1 } }));
+    await expect(loadLibrary(root)).rejects.toThrow("library.invalidManifest");
+  });
+
   it("stops at the second delimiter, bounds concurrency, and isolates malformed items", async () => {
     await Promise.all(Array.from({ length: 32 }, (_, i) => item(`Paper${i}`)));
     await item("Broken");
@@ -396,7 +410,30 @@ describe("collections, queries and counts", () => {
     expect((await disk.readFile(note("Trash"), "utf8")).split("---\n").at(-1)).toBe(before.split("---\n").at(-1));
     expect(JSON.parse(await disk.readFile(join(root, "文献库.litlib"), "utf8")).custom).toEqual({ keep: true });
     expect((await addCollection(root, "New/Child")).collections).toEqual(["Other", "New/Child", "New"]);
+    expect(JSON.parse(await disk.readFile(join(root, "文献库.litlib"), "utf8"))).not.toHaveProperty(
+      "zoteroCollections",
+    );
     expect(await disk.readdir(join(root, "条目"))).toEqual(["One", "Trash", "Two"]);
+  });
+
+  it("renames and removes Zotero collection mappings with descendants but preserves sibling prefixes", async () => {
+    const path = join(root, "文献库.litlib");
+    const zoteroCollections = { COL00001: "AI", COL00002: "AI/PDE", COL00003: "AI/PDE/Sub", COL00004: "AI2" };
+    await disk.writeFile(
+      path,
+      JSON.stringify({ version: 1, collections: Object.values(zoteroCollections), zoteroCollections, custom: "keep" }),
+    );
+    expect((await addCollection(root, "New")).zoteroCollections).toEqual(zoteroCollections);
+    const renamed = { COL00001: "Learning", COL00002: "Learning/PDE", COL00003: "Learning/PDE/Sub", COL00004: "AI2" };
+    expect((await renameCollection(root, "AI", "Learning")).zoteroCollections).toEqual(renamed);
+    expect(JSON.parse(await disk.readFile(path, "utf8")).zoteroCollections).toEqual(renamed);
+    expect((await removeCollection(root, "Learning")).zoteroCollections).toEqual({ COL00004: "AI2" });
+    expect(JSON.parse(await disk.readFile(path, "utf8"))).toMatchObject({
+      zoteroCollections: { COL00004: "AI2" },
+      custom: "keep",
+    });
+    expect((await removeCollection(root, "AI2")).zoteroCollections).toEqual({});
+    expect(JSON.parse(await disk.readFile(path, "utf8")).zoteroCollections).toEqual({});
   });
 
   it("refuses partial category changes when a malformed item is known in advance", async () => {

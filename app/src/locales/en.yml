@@ -3272,6 +3272,77 @@ research:
       collections: Collections
       tags: Tags
       abstract: Abstract
+  zoteroSync:
+    title: Sync Zotero
+    readOnly: This preview does not write to Zotero or local files or request authorization. On first pairing, every differing field is a conflict.
+    connected: "Connected to local Zotero: {{local}} local papers, {{remote}} Zotero records (including attachments and notes)."
+    blocked: Duplicate candidates or unreadable local items prevent a write plan. Resolve the issues below and preview again.
+    pairingIssues: Ambiguous matches
+    refresh: Preview again
+    close: Close
+    local: Local
+    remote: Zotero
+    emptyValue: (empty)
+    noChanges: None
+    matchedBy: "Matched by {{method}}"
+    showMore: "Show more ({{count}} remaining)"
+    groups:
+      push: Write to Zotero
+      pull: Write locally
+      conflict: Conflicts
+      skip: Preserve / skip
+    summary:
+      unchanged: "{{count}} papers unchanged"
+      deferred: "{{count}} child records ({{annotations}} annotations, {{attachments}} attachments, {{notes}} notes), deferred to step 3."
+      missingCollections: "{{count}} papers reference Zotero collections missing from the list. These collection IDs are excluded from comparison and display."
+    progress:
+      connect: Checking local Zotero…
+      items: "Reading Zotero items: {{count}} read…"
+      collections: "Reading Zotero collections: {{count}} read…"
+      pairing: "Matching and comparing: {{count}} processed…"
+    match:
+      key: Zotero key
+      doi: DOI
+      arxiv: arXiv ID
+      title: normalized title
+    fields:
+      title: Title
+      authors: Authors
+      year: Year
+      venue: Journal / conference
+      volume: Volume
+      issue: Issue
+      pages: Pages
+      doi: DOI
+      url: URL
+      abstract: Abstract
+      tags: Tags
+      status: Reading status
+      collections: Collections
+    reasons:
+      preserved: Deletions, trash status, item types, arXiv IDs and other custom properties stay unchanged. Research note bodies and local PDF annotations are not sent to Zotero. Attachments, Zotero annotations and notes are deferred to a later step.
+      unreadable: This local item cannot be read. Check its error in the library and repair it.
+      deletion: Deleted, trashed or missing linked item; do not propagate deletion or recreate it.
+      newCollection: New collection
+      renameCollection: Collection paths differ
+      newItem: New paper (supported metadata fields only)
+      link: Record the pairing by updating the local zotero_key.
+      standalone: Standalone attachments / notes do not automatically become literature items.
+      linkedAttachment: Linked URL attachments are not synced.
+    errors:
+      notRunning: Cannot connect to local Zotero. Open Zotero first; if it is already running, check that its local API is available.
+      oldVersion: Zotero did not provide Zotero-Server-ID. Upgrade to Zotero 10 or newer.
+      communicationDisabled: Local communication is disabled. Enable “Allow other applications on this computer to communicate with Zotero” in Zotero's advanced settings, then preview again.
+      authorizationDenied: Zotero denied access. This preview does not request write authorization. Check Zotero's access restrictions and retry.
+      timeout: Zotero timed out. Check that it is running normally and preview again.
+      redirectRefused: The local API returned a redirect. The connection was stopped to avoid accessing another address.
+      requestFailed: The Zotero API returned an error. Check Zotero and preview again.
+      invalidResponse: Zotero returned incomplete or invalid data. Preview stopped.
+      snapshotChanged: The Zotero instance or data changed while reading. Preview again.
+      tooManyItems: The number of items exceeds the preview limit.
+      invalidCollections: Collections have missing parents, cycles, duplicate paths, empty names or slashes in names. Check them and preview again.
+      baselineMismatch: The sync record belongs to a different library or Zotero instance. Preview stopped.
+      previewFailed: Preview failed. Reopen this dialog and retry.
   files:
     title: Files
     placeholder: File panel (coming soon)
