@@ -91,7 +91,15 @@ describe("FileCardNode serialization", () => {
       project,
     ) as FileCardNode[];
 
-    expect(restored).toMatchObject({ attachmentId: "", excerpt: "", pageCount: 0, caption: "", details: [] });
+    expect(restored).toMatchObject({
+      attachmentId: "",
+      excerpt: "",
+      pageCount: 0,
+      caption: "",
+      pdfPage: 0,
+      pdfAnnotation: "",
+      details: [],
+    });
     expect(restored.color).toEqual(Color.Transparent);
   });
 
@@ -104,6 +112,12 @@ describe("FileCardNode serialization", () => {
     const card = new FileCardNode(project as never, { fileKind: "image", caption: "B 模型准确率" });
     const [restored] = deserialize(structuredClone(serialize([card])), project) as FileCardNode[];
     expect(restored.caption).toBe("B 模型准确率");
+  });
+
+  it("round-trips where a PDF excerpt came from", () => {
+    const card = new FileCardNode(project as never, { pdfPage: 5, pdfAnnotation: "ABCD1234", excerpt: "原文一段" });
+    const [restored] = deserialize(structuredClone(serialize([card])), project) as FileCardNode[];
+    expect(restored).toMatchObject({ pdfPage: 5, pdfAnnotation: "ABCD1234", excerpt: "原文一段" });
   });
 });
 

@@ -2952,6 +2952,12 @@ research:
       translate: 翻譯
       askAi: 問 AI
       copy: 複製
+    toBoard:
+      action: 發到白板
+      caption: 第 {{page}} 頁 · {{title}}
+      noBoard: 先打開或新建一個白板，再發過去
+      sent: 已發到「{{board}}」
+      show: 去看看
     save: 保存
     saving: 正在保存…
     cancel: 取消

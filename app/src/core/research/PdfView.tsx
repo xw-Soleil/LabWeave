@@ -64,8 +64,15 @@ import {
   type AnnotationController,
   type SelectionAnchor,
 } from "./PdfAnnotationUI";
+import { annotationBounds, pdfRectToReader, type PdfAnnotation } from "./PdfAnnotations";
+import type { PdfExcerpt } from "./PdfExcerpt";
 import { askAiAboutSelection } from "./ReadingContext";
 import { selectionForTranslation, TranslateCard } from "./TranslateCard";
+
+/** 框下来的图按长边约 1600 像素存：放大看图里的小字也清楚，又不至于把白板文件撑太大 */
+const EXCERPT_IMAGE_SIDE = 1600;
+// 白板那一套（工程、标签页、渲染）用到才加载，阅读器本身保持轻
+const sendPdfExcerpt = (excerpt: PdfExcerpt) => import("./PdfExcerpt").then((module) => module.sendPdfExcerpt(excerpt));
 
 const reportToast = (error: unknown) => toast.error(documentError(pdfReaderError(error)));
 
@@ -294,6 +301,7 @@ export function PdfReaderContent({
   const page = scrollState.currentPage;
   const pages = pdf.pages.length;
 
+  const [laidOut, setLaidOut] = useState(false);
   useEffect(() => {
     if (!scroll || !scrollApi || !zoom || !viewportApi) return;
     let restored = false;
@@ -305,6 +313,7 @@ export function PdfReaderContent({
       // The v2 zoom plugin only recalculates automatic modes when the viewport mounts.
       zoom.requestZoom(zoom.getState().zoomLevel);
       scroll.scrollToPage({ pageNumber: Math.min(initialLocation.page, pages), behavior: "instant" });
+      setLaidOut(true);
     };
     const offLayout = scrollApi.onLayoutReady((event) => {
       if (event.documentId === tab.id) restore();
@@ -327,6 +336,32 @@ export function PdfReaderContent({
     };
   }, [scroll, scrollApi, viewportApi, zoom, tab, initialLocation, pages]);
 
+  const scrollToSpot = useCallback(
+    (pageIndex: number, x?: number, y?: number) =>
+      scroll?.scrollToPage({
+        pageNumber: pageIndex + 1,
+        pageCoordinates: x === undefined || y === undefined ? undefined : { x, y },
+        alignY: 30,
+        behavior: "instant",
+      }),
+    [scroll],
+  );
+  // 白板上的摘录卡片双击过来：等版面和批注都好了，选中那条批注并滚过去；批注删了就只翻到那一页
+  const target = tab.pdfTarget;
+  useEffect(() => {
+    if (!target || !laidOut || tab.loadingAnnotations) return;
+    tab.pdfTarget = undefined;
+    const item = target.annotationId ? annotations.items.find((value) => value.id === target.annotationId) : undefined;
+    const pageObject = pdf.pages[item ? item.position.pageIndex : target.page - 1];
+    if (!pageObject) return;
+    if (!item) {
+      scrollToSpot(pageObject.index);
+      return;
+    }
+    annotations.select(item.id);
+    const { origin } = pdfRectToReader(pageObject, annotationBounds(item.position));
+    scrollToSpot(pageObject.index, origin.x, origin.y);
+  }, [target, laidOut, tab, tab.loadingAnnotations, annotations, pdf, scrollToSpot]);
   useEffect(() => setJump(String(page)), [page]);
   useEffect(() => updateReadingContext(tab, { page, pageCount: pages }), [tab, page, pages]);
   useEffect(() => {
@@ -452,6 +487,35 @@ export function PdfReaderContent({
         selection?.clear();
       })
       .catch(reportToast);
+  const sendToBoard = (item: PdfAnnotation) => {
+    const page = pdf.pages[item.position.pageIndex];
+    if (!page) return;
+    const excerpt = {
+      path: tab.path,
+      title: tab.title.replace(/\.pdf$/i, ""),
+      page: page.index + 1,
+      pageLabel: item.pageLabel,
+      pageCount: pages,
+      annotationId: item.id,
+    };
+    if (item.type !== "image") {
+      sendPdfExcerpt({ ...excerpt, text: item.text }).catch(reportToast);
+      return;
+    }
+    const rect = pdfRectToReader(page, annotationBounds(item.position));
+    const { width, height } = rect.size;
+    engine
+      .renderPageRect(pdf, page, rect, {
+        scaleFactor: Math.min(4, EXCERPT_IMAGE_SIDE / Math.max(width, height, 1)),
+        dpr: 1,
+        imageType: "image/webp",
+        withAnnotations: true,
+        withForms: true,
+      })
+      .toPromise()
+      .then((blob) => sendPdfExcerpt({ ...excerpt, image: { blob, width, height } }))
+      .catch(reportToast);
+  };
   const go = (value: string | number) => {
     const target = pdfPageNumber(value, pages);
     if (target && scroll) {
@@ -714,17 +778,7 @@ export function PdfReaderContent({
                 )}
               </TabsContent>
               <TabsContent value="annotations" className="min-h-0 overflow-hidden">
-                <PdfAnnotationSidebar
-                  controller={annotations}
-                  jump={(pageIndex, x, y) =>
-                    scroll?.scrollToPage({
-                      pageNumber: pageIndex + 1,
-                      pageCoordinates: { x, y },
-                      alignY: 30,
-                      behavior: "instant",
-                    })
-                  }
-                />
+                <PdfAnnotationSidebar controller={annotations} jump={scrollToSpot} onSend={sendToBoard} />
               </TabsContent>
             </Tabs>
           </aside>
@@ -761,6 +815,7 @@ export function PdfReaderContent({
             copy={copy}
             onTranslate={canCopyContents ? translate : undefined}
             onAskAi={canCopyContents ? askAi : undefined}
+            onSend={canCopyContents ? sendToBoard : undefined}
           />
           {translation && (
             <TranslateCard

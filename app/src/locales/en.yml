@@ -2833,6 +2833,12 @@ research:
       translate: Translate
       askAi: Ask AI
       copy: Copy
+    toBoard:
+      action: Send to board
+      caption: p. {{page}} · {{title}}
+      noBoard: Open or create a board first, then send it
+      sent: Sent to “{{board}}”
+      show: Show
     save: Save
     saving: Saving…
     cancel: Cancel

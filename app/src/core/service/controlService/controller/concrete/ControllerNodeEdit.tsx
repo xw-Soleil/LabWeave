@@ -96,7 +96,11 @@ export class ControllerNodeEditClass extends ControllerClass {
       toast.error(cardText("missingToast", { path: absPath }));
       return;
     }
-    await openDocumentFile(absPath);
+    // PDF 摘录卡片跳回圈它的那条批注
+    await openDocumentFile(
+      absPath,
+      card.pdfPage > 0 ? { pdf: { page: card.pdfPage, annotationId: card.pdfAnnotation } } : undefined,
+    );
   }
 
   mouseup = (event: MouseEvent) => {

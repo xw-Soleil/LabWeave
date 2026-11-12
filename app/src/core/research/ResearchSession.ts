@@ -135,7 +135,7 @@ export function isTabVisibleInWorkspace(tabId: string): boolean {
 }
 
 /** 主编辑区（不是左右固定侧栏）里正在显示的工作区 */
-function findMainProject(): Project | undefined {
+export function findMainProject(): Project | undefined {
   const active = store.get(activeResourceTabAtom);
   if (active instanceof Project && !active.closing && active.layout === "docked") return active;
   const tabs = store.get(tabsAtom);
