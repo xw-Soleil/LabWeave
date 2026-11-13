@@ -18,6 +18,7 @@ import {
   ArrowUp,
   Book,
   BookOpen,
+  Check,
   ChevronRight,
   FileClock,
   FileText,
@@ -860,9 +861,10 @@ function ItemTable({
                     {item.authors.join("; ")}
                   </span>
                   <span className="text-foreground/75 tabular-nums">{item.year}</span>
-                  <span className={cn("truncate text-xs", STATUS_COLOR[item.status])}>
-                    {t(`library.status.${item.status}`)}
-                  </span>
+                  <StatusPicker
+                    value={item.status}
+                    onPick={(status) => run(() => updateItem(root, item.key, { status }))}
+                  />
                   <span className="flex items-center gap-1.5">
                     <AttachmentIcon
                       icon={FileText}
@@ -951,6 +953,38 @@ function AttachmentIcon({
     >
       <Icon className="size-4" strokeWidth={1.75} />
     </button>
+  );
+}
+
+function StatusPicker({ value, onPick }: { value: ReadStatus; onPick: (status: ReadStatus) => void }) {
+  const t = useLibraryText();
+  return (
+    // 菜单画在别处，但点它的事件仍会冒到这一行：拦住，免得点状态变成选中或打开这篇
+    <span
+      className="flex min-w-0"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={t("library.fields.status")}
+          className={cn(
+            "hover:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07] -ml-1.5 truncate rounded px-1.5 py-0.5 text-xs",
+            STATUS_COLOR[value],
+          )}
+        >
+          {t(`library.status.${value}`)}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-24">
+          {STATUSES.map((status) => (
+            <DropdownMenuItem key={status} onSelect={() => status !== value && onPick(status)}>
+              <Check className={cn(status !== value && "invisible")} />
+              {t(`library.status.${status}`)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   );
 }
 
