@@ -1,6 +1,6 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { appDataDir } from "@tauri-apps/api/path";
-import { exists, lstat, mkdir, readDir, readFile, remove } from "@tauri-apps/plugin-fs";
+import { exists, lstat, mkdir, readDir, readFile, remove, rename, writeFile } from "@tauri-apps/plugin-fs";
 import { stringify } from "yaml";
 import md5 from "md5";
 import {
@@ -8,7 +8,8 @@ import {
   checkedPath,
   readManifest,
   writeSyncFile,
-  moveSyncFile,
+  placeSyncFile,
+  stashSyncFile,
   loadLibrary,
   type LibraryItem,
   type LibrarySnapshot,
@@ -119,6 +120,8 @@ export interface SyncPreview {
 export interface SyncProgress {
   phase: "connect" | "items" | "collections" | "pairing" | "attachments" | "authorize" | "apply" | "rollback";
   count: number;
+  /** Known for apply and rollback: how many steps in all */
+  total?: number;
 }
 
 const text = (value: unknown): string => (value == null ? "" : String(value).trim());
@@ -633,12 +636,20 @@ export type SyncChoice = "local" | "remote" | "skip";
 export const rowId = (row: SyncRow) =>
   [row.kind, row.key ?? "", row.path ?? "", row.field ?? "", row.reason ?? ""].join("|");
 type FileStamp = { path: string; hash: string; size: number; mtime: number | null };
+/**
+ * In memory `before`/`after` hold the file text (`after` is the source hash for downloads). On disk the journal
+ * only keeps hashes; an overwritten file's old text is stored once in before/<index> (older journals kept both inline).
+ */
 type FileAction = {
   kind: "file";
   path: string;
   before: string | null;
   after: string;
+  beforeHash?: string | null;
+  afterHash?: string;
   download?: FileStamp;
+  /** Size and time of the downloaded copy, to recognise it later without reading it again */
+  placed?: { size: number; mtime: number | null };
   media?: boolean;
 };
 type APIAction = {
@@ -696,6 +707,30 @@ async function privateDirectory(root: string, path: string) {
     if (!info.isDirectory || info.isSymlink) fail("storageFailed");
     root = path;
   }
+}
+/**
+ * The journal is rewritten after every step, so it must stay small and cheap: hashes instead of file text
+ * (old text lives once in before/), compact JSON, written to a temporary file in the private run folder and renamed.
+ */
+async function writeJournal(runPath: string, run: SyncRun) {
+  const actions = run.actions.map((op) =>
+    op.kind === "file" ? { ...op, before: op.before === null ? null : undefined, after: undefined } : op,
+  );
+  const temporary = `${runPath}/.journal-${crypto.randomUUID()}.tmp`;
+  await writeFile(temporary, encode(JSON.stringify({ ...run, actions })), { mode: 0o600 });
+  await rename(temporary, `${runPath}/journal.json`);
+}
+const afterHash = async (op: FileAction) => op.afterHash ?? (op.download ? op.after : await digest(op.after));
+const beforeHash = async (op: FileAction) => (op.before === null ? null : (op.beforeHash ?? (await digest(op.before))));
+/** Hash of the file as it is now, null when missing; a downloaded copy with its recorded size and time is taken as is */
+async function fileHash(root: string, op: FileAction): Promise<string | null> {
+  if (!(await exists(op.path))) return null;
+  const path = await checkedPath(root, op.path);
+  if (op.download && op.placed) {
+    const info = await lstat(path);
+    if (info.size === op.placed.size && (info.mtime?.getTime() ?? null) === op.placed.mtime) return op.download.hash;
+  }
+  return digest(await readFile(path));
 }
 async function storeJSON(root: string, path: string, value: unknown) {
   const before = await optionalText(root, path);
@@ -1802,8 +1837,17 @@ export async function applyZoteroSync(
     const timestamp = Math.max(Date.now(), Number(history.runPath?.match(/\/run-(\d+)-/)?.[1] ?? 0) + 1);
     const runPath = `${history.directory}/run-${timestamp}-${crypto.randomUUID()}`;
     await privateDirectory(home, runPath);
-    const save = () => storeJSON(runPath, `${runPath}/journal.json`, run);
-    // The complete before/after plan is the backup; pending is durable before each side effect.
+    // Undo needs the old text of files this run overwrites; it is written once here, the journal keeps hashes.
+    for (const [index, op] of run.actions.entries()) {
+      if (op.kind !== "file") continue;
+      op.afterHash = await afterHash(op);
+      op.beforeHash = await beforeHash(op);
+      if (op.before === null) continue;
+      await privateDirectory(runPath, `${runPath}/before`);
+      await writeFile(`${runPath}/before/${index}`, encode(op.before), { mode: 0o600 });
+    }
+    const save = () => writeJournal(runPath, run);
+    // "pending" is durable before each side effect, so an interrupted step is undone too.
     await save();
     const old = (await readDir(history.directory))
       .filter((e) => e.isDirectory && !e.isSymlink && /^run-[\dT-]+-[\da-f-]+$/.test(e.name))
@@ -1812,16 +1856,12 @@ export async function applyZoteroSync(
       await remove(await checkedPath(history.directory, `${history.directory}/${entry.name}`), { recursive: true });
     for (const [index, op] of run.actions.entries()) {
       signal.throwIfAborted();
-      progress({ phase: "apply", count: index });
+      progress({ phase: "apply", count: index, total: run.actions.length });
       op.status = "pending";
       await save();
-      if (op.kind === "file")
-        await writeSyncFile(
-          run.root,
-          op.path,
-          op.download ? await checkedBytes(op.download) : encode(op.after),
-          op.before === null ? null : encode(op.before),
-        );
+      if (op.kind === "file" && op.download) op.placed = await placeSyncFile(run.root, op.download.path, op.path);
+      else if (op.kind === "file")
+        await writeSyncFile(run.root, op.path, encode(op.after), op.before === null ? null : encode(op.before));
       else {
         const after = await api.write(op);
         if (op.before === null) op.after = after;
@@ -1839,10 +1879,13 @@ export async function applyZoteroSync(
       if ((await optionalText(run.root, path)) !== (op?.after ?? before)) fail("snapshotChanged");
     }
     for (const op of run.actions)
-      if (op.kind === "file" && (await fileValue(run.root, op)) !== op.after) fail("snapshotChanged");
+      if (op.kind === "file" && (await fileHash(run.root, op)) !== op.afterHash) fail("snapshotChanged");
     for (const a of Object.values(run.next.attachments ?? {}))
       if (a.local.mtime === null && (await exists(a.local.path))) {
-        a.local = await fileStamp(a.local.path);
+        // A downloaded copy has the source's hash; take size and time from the copy instead of reading it again
+        const placed = run.actions.find((op) => op.kind === "file" && op.path === a.local.path && op.placed);
+        a.local =
+          placed?.kind === "file" && placed.placed ? { ...a.local, ...placed.placed } : await fileStamp(a.local.path);
         run.next.attachmentFiles![a.local.path] = a.local;
       }
     await storeJSON(history.directory, `${history.directory}/state.json`, run.next);
@@ -1857,10 +1900,6 @@ export class SyncRollbackError extends Error {
     super("zoteroSync.rollbackChanged");
   }
 }
-async function fileValue(root: string, op: FileAction) {
-  if (!op.download) return optionalText(root, op.path);
-  return (await exists(op.path)) ? (await fileStamp(await checkedPath(root, op.path))).hash : null;
-}
 export async function rollbackZoteroSync(
   root: string,
   signal: AbortSignal,
@@ -1872,6 +1911,10 @@ export async function rollbackZoteroSync(
       runPath = history.runPath;
     if (!run || !runPath) return fail("noBackup");
     if (run.status === "rolled-back") return;
+    // Journals since 11-13 keep an overwritten file's old text in before/<index> instead of inline.
+    for (const [index, op] of run.actions.entries())
+      if (op.kind === "file" && op.before === undefined)
+        op.before = decode(await readFile(await checkedPath(runPath, `${runPath}/before/${index}`)));
     if (!equal(history.baseline ?? null, run.before) && !equal(history.baseline, run.next)) fail("snapshotChanged");
     const current = await readZotero(signal, progress);
     if (current.serverId !== run.serverId) fail("baselineMismatch");
@@ -1897,8 +1940,9 @@ export async function rollbackZoteroSync(
       );
     for (const op of operations) {
       if (op.kind === "file") {
-        const value = await fileValue(root, op);
-        if (value !== op.before && (op.status === "restored" || value !== op.after)) changes.push(op.path);
+        const value = await fileHash(root, op);
+        if (value !== (await beforeHash(op)) && (op.status === "restored" || value !== (await afterHash(op))))
+          changes.push(op.path);
       } else {
         const value = maps[op.resource].get(op.key);
         if (op.before === null) {
@@ -1942,32 +1986,24 @@ export async function rollbackZoteroSync(
       await api.authorize();
     }
     run.status = "rolling-back";
-    const save = () => storeJSON(runPath, `${runPath}/journal.json`, run);
+    const save = () => writeJournal(runPath, run);
     await save();
     await privateDirectory(runPath, `${runPath}/removed`);
     for (const [index, op] of operations.entries()) {
       signal.throwIfAborted();
-      progress({ phase: "rollback", count: index });
+      progress({ phase: "rollback", count: index, total: operations.length });
       if (op.status === "restored") continue;
       if (op.kind === "file") {
-        const value = await fileValue(root, op);
-        if (value !== op.before && value !== op.after) throw new SyncRollbackError([op.path]);
+        const value = await fileHash(root, op),
+          before = await beforeHash(op);
+        if (value !== before && value !== (await afterHash(op))) throw new SyncRollbackError([op.path]);
         if (op.before === null) {
           const relative = documentPath(op.path).slice(documentPath(root).replace(/\/$/, "").length + 1);
           const target = `${runPath}/removed/${relative}`;
           await privateDirectory(runPath, target.slice(0, target.lastIndexOf("/")));
-          await moveSyncFile(
-            root,
-            op.path,
-            op.download
-              ? value === null
-                ? new Uint8Array()
-                : await checkedBytes({ ...op.download, path: op.path })
-              : encode(op.after),
-            runPath,
-            target,
-          );
-        } else if (value !== op.before) await writeSyncFile(root, op.path, encode(op.before), encode(op.after));
+          await stashSyncFile(root, op.path, runPath, target);
+        } else if (value !== before)
+          await writeSyncFile(root, op.path, encode(op.before), await readFile(await checkedPath(root, op.path)));
       } else {
         const value = maps[op.resource].get(op.key);
         if (

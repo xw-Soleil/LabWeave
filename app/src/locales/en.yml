@@ -3275,8 +3275,29 @@ research:
   zoteroSync:
     title: Sync Zotero
     description: Reading the differences between both sides.
-    sync: Back up and sync
-    syncCount: "Back up and sync ({{count}})"
+    sync: Sync
+    syncCount: "Sync ({{count}})"
+    backup: Back up
+    backupChoose: Choose a folder for a full copy of the library
+    background: Running in the background. You can close this window; progress and Cancel are at the bottom centre of the window.
+    cancel: Cancel
+    openFolder: Open folder
+    task:
+      sync:
+        running: "Zotero sync: {{done}} / {{total}}"
+        done: Zotero sync finished
+        cancelled: Zotero sync cancelled; roll back the partial sync from the sync window
+        failed: "Zotero sync did not finish: "
+      rollback:
+        running: "Rolling back: {{done}} / {{total}}"
+        done: Last sync rolled back
+        cancelled: Rollback cancelled; you can roll back again from the sync window
+        failed: "Rollback did not finish: "
+      backup:
+        running: "Backing up the library: {{done}} / {{total}} files"
+        done: Library backup finished
+        cancelled: Backup cancelled; the partly copied folder is left in place and can be deleted
+        failed: "Backup did not finish: "
     selected: "{{count}} of {{total}} selected; unticked ones come up again next time"
     selectAll: Select all
     selectNone: Select none
@@ -3308,9 +3329,9 @@ research:
       download: "Download · {{size}}"
       downloadVersion: "Download new version · {{size}}"
       exportNotes: Export Zotero annotations and notes
-    confirmSync: "This will change {{count}} Zotero records, collections or local files. A backup will be saved first so you can roll back. Continue? For the first write, choose Always Allow in Zotero."
-    confirmRollback: Rollback stops if it finds later edits. Newly created Zotero records go to the trash; new local files move into the backup folder. Continue?
-    openBackup: Open backup folder
+    confirmSync: "This will change {{count}} Zotero records, collections or local files; you can roll this sync back later. For a full backup first, cancel and click Back up. Continue? For the first write, choose Always Allow in Zotero."
+    confirmRollback: Rollback stops if it finds later edits. Newly created Zotero records go to the trash; new local files move into the sync record folder. Continue?
+    openRecord: Open sync record
     rollbackThis: Roll back this sync
     rollbackLast: Roll back last sync
     unfinished: The last sync or rollback did not finish. Roll it back before previewing again. An interrupted rollback can be run again.
@@ -3413,6 +3434,7 @@ research:
       uploadAddress: Zotero returned an address outside the specified local upload endpoint. Upload stopped.
       uploadFormat: Zotero returned an upload prefix or suffix, which is not supported.
       operationFailed: The operation did not finish. Check file permissions and Zotero. Roll back any unfinished sync first.
+      backupInside: A backup cannot go inside the library. Choose another folder.
       unfinished: The last sync is unfinished. Roll it back first.
       busy: This library is already syncing or rolling back. Wait for it to finish.
       noBackup: No sync record is available to roll back.

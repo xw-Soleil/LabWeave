@@ -415,23 +415,92 @@ export function writeSyncFile(root: string, path: string, bytes: Uint8Array, exp
   });
 }
 
-export function moveSyncFile(root: string, path: string, expected: Uint8Array, backup: string, target: string) {
+/** Native copy into a temporary name next to the target, then rename: big files never pass through the webview. */
+async function copyInto(source: string, root: string, target: string): Promise<{ size: number; mtime: number | null }> {
+  const temporary = `${target.slice(0, target.lastIndexOf("/"))}/.library-${crypto.randomUUID()}.tmp`;
+  await checkedPath(root, temporary, true);
+  let published = false;
+  try {
+    await copyFile(source, temporary);
+    const copied = await lstat(temporary);
+    if (copied.size !== (await lstat(source)).size) throw new Error("library.fileChanged");
+    await checkedPath(root, target, true);
+    if (await exists(target)) throw new Error("library.fileChanged");
+    await rename(temporary, target);
+    published = true;
+    return { size: copied.size, mtime: copied.mtime?.getTime() ?? null };
+  } finally {
+    if (!published && (await exists(temporary))) await remove(temporary);
+  }
+}
+
+/** Puts a copy of `source` (e.g. a Zotero attachment) at a new path inside the library; returns its size and time. */
+export function placeSyncFile(root: string, source: string, path: string) {
+  return writeLibrary(root, async (canonical) => {
+    const dir = path.slice(0, path.lastIndexOf("/"));
+    const parent = dir.slice(0, dir.lastIndexOf("/"));
+    await checkedPath(canonical, parent, true);
+    if (!(await exists(parent))) await mkdir(parent);
+    await checkedPath(canonical, dir, true);
+    if (!(await exists(dir))) await mkdir(dir);
+    return copyInto(source, canonical, path);
+  });
+}
+
+/** Moves a file this sync created out of the library into `target` (the run's removed/ folder, maybe another volume). */
+export function stashSyncFile(root: string, path: string, backup: string, target: string) {
   return writeLibrary(root, async (canonical) => {
     if (await exists(path)) {
       await checkedPath(canonical, path);
-      if (!equalBytes(await readFile(path), expected)) throw new Error("library.fileChanged");
-      // The backup may be on another volume; finish and verify the copy before removing the source.
-      if (!(await exists(target))) await atomicWrite(backup, target, expected, null, 0o600);
-      if (
-        !equalBytes(await readFile(await checkedPath(backup, target)), expected) ||
-        !equalBytes(await readFile(path), expected)
-      )
-        throw new Error("library.fileChanged");
+      if (!(await exists(target))) await copyInto(path, backup, target);
+      if ((await lstat(target)).size !== (await lstat(path)).size) throw new Error("library.fileChanged");
       await remove(await checkedPath(canonical, path));
     }
     const dir = path.slice(0, path.lastIndexOf("/"));
     if ((await exists(dir)) && !(await readDir(await checkedPath(canonical, dir))).length) await remove(dir);
   });
+}
+
+/**
+ * 「备份」按钮：把整个文献库（笔记、分类文件、PDF）原样复制到 destination 下一个新文件夹，返回它的路径。
+ * 用系统拷贝，跳过符号链接和 .DS_Store；destination 不能在文献库里面。
+ */
+export async function backupLibrary(
+  root: string,
+  destination: string,
+  signal: AbortSignal,
+  progress: (done: number, total: number) => void,
+): Promise<string> {
+  const source = absolutePath(root).replace(/\/$/, ""),
+    parent = absolutePath(destination).replace(/\/$/, "");
+  if (documentKey(`${parent}/`).startsWith(documentKey(`${source}/`))) throw new Error("library.pathNotAllowed");
+  const files: string[] = [],
+    dirs: string[] = [""];
+  for (let i = 0; i < dirs.length; i++) {
+    for (const entry of await readDir(`${source}${dirs[i]}`)) {
+      signal.throwIfAborted();
+      if (entry.isSymlink || entry.name === ".DS_Store") continue;
+      const relative = `${dirs[i]}/${entry.name}`;
+      if (entry.isDirectory) dirs.push(relative);
+      else if (entry.isFile) files.push(relative);
+    }
+  }
+  // "2026-11-13 11-40": the Swedish locale gives ISO-like local time; colons are not allowed in Windows names
+  const stamp = new Date()
+    .toLocaleString("sv")
+    .replace(/:\d\d$/, "")
+    .replace(":", "-");
+  let target = `${parent}/${source.slice(source.lastIndexOf("/") + 1)} 备份 ${stamp}`;
+  for (let n = 2; await exists(target); n++) target = `${target.replace(/ \(\d+\)$/, "")} (${n})`;
+  await mkdir(target);
+  for (const dir of dirs.slice(1)) await mkdir(`${target}${dir}`);
+  for (const [index, file] of files.entries()) {
+    signal.throwIfAborted();
+    progress(index, files.length);
+    await copyFile(`${source}${file}`, `${target}${file}`);
+  }
+  progress(files.length, files.length);
+  return target;
 }
 
 async function updateAt(root: string, key: string, patch: LibraryItemPatch): Promise<LibraryItem> {

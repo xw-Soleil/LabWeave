@@ -33,6 +33,7 @@ import { URI } from "vscode-uri";
 import App from "./App";
 import { ExtensionManager } from "./core/extension/ExtensionManager";
 import { startResearchSession } from "./core/research/ResearchSession";
+import { SyncTaskBar } from "./core/research/ZoteroSyncTask";
 import { handleDeepLink, isProjectGraphDeepLink } from "./core/service/dataFileService/DeepLinkHandler";
 import { onOpenFile } from "./core/service/GlobalMenu";
 import "./css/index.css";
@@ -218,6 +219,7 @@ async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = f
         <ErrorBoundary FallbackComponent={Fallback}>
           <App />
         </ErrorBoundary>
+        <SyncTaskBar />
       </Provider>,
     );
   }

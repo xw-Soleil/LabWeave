@@ -3394,8 +3394,29 @@ research:
   zoteroSync:
     title: 同步 Zotero
     description: 正在读取两边的差别。
-    sync: 备份并同步
-    syncCount: "备份并同步（{{count}} 处）"
+    sync: 同步
+    syncCount: "同步（{{count}} 处）"
+    backup: 备份
+    backupChoose: 把整个文献库备份到哪个文件夹
+    background: 正在后台进行。可以关掉这个窗口，进度和「取消」在窗口底部正中。
+    cancel: 取消
+    openFolder: 打开文件夹
+    task:
+      sync:
+        running: "Zotero 同步：{{done}} / {{total}}"
+        done: Zotero 同步完成
+        cancelled: Zotero 同步已取消，做到一半的可以在同步窗口里回退
+        failed: "Zotero 同步没完成："
+      rollback:
+        running: "回退同步：{{done}} / {{total}}"
+        done: 已回退上次同步
+        cancelled: 回退已取消，可以在同步窗口里再点回退
+        failed: "回退没完成："
+      backup:
+        running: "备份文献库：{{done}} / {{total}} 个文件"
+        done: 文献库备份完成
+        cancelled: 备份已取消，没复制完的文件夹留着，可以删掉
+        failed: "备份没完成："
     selected: "已选 {{count}} / {{total}} 处，没勾的下次还会列出来"
     selectAll: 全选
     selectNone: 全不选
@@ -3427,9 +3448,9 @@ research:
       download: "下载 · {{size}}"
       downloadVersion: "下载新版本 · {{size}}"
       exportNotes: 导出 Zotero 批注和笔记
-    confirmSync: "将修改 {{count}} 处文献、分类或本地文件。修改前会保存备份，之后可以回退。确定同步吗？首次写入时，请在 Zotero 中选择「始终允许」。"
-    confirmRollback: 回退前会检查是否有后续编辑，有变化就停止。本次新建的 Zotero 条目会移进回收站，本地新文件会移进备份文件夹。确定回退吗？
-    openBackup: 打开备份文件夹
+    confirmSync: "将修改 {{count}} 处文献、分类或本地文件，之后可以回退这次同步。要先完整备份，请取消后点「备份」。确定同步吗？首次写入时，请在 Zotero 中选择「始终允许」。"
+    confirmRollback: 回退前会检查是否有后续编辑，有变化就停止。本次新建的 Zotero 条目会移进回收站，本地新文件会移进同步记录文件夹。确定回退吗？
+    openRecord: 打开同步记录
     rollbackThis: 回退本次同步
     rollbackLast: 回退上次同步
     unfinished: 上次同步或回退没有完成。请先回退上次同步，再重新预览；回退中断后可以再次执行。
@@ -3532,6 +3553,7 @@ research:
       uploadAddress: Zotero 返回的上传地址不是指定的本机上传接口，已停止上传。
       uploadFormat: Zotero 返回了带前缀或后缀的上传格式，目前不支持。
       operationFailed: 操作未完成。请检查文件权限和 Zotero 是否正常运行；如果有未完成的同步，请先回退。
+      backupInside: 备份不能放在文献库里面，请换一个文件夹。
       unfinished: 上次同步尚未完成，请先回退。
       busy: 这个文献库正在同步或回退，请等待完成。
       noBackup: 没有可回退的同步记录。

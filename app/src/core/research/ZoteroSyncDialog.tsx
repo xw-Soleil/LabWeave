@@ -11,13 +11,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/utils/cn";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { confirm, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { useAtomValue } from "jotai";
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { documentKey, documentPath } from "./DocumentFile";
-import { loadLibrary, type LibrarySnapshot } from "./Library";
+import { backupLibrary, loadLibrary, type LibrarySnapshot } from "./Library";
+import { startSyncTask, syncTaskAtom } from "./ZoteroSyncTask";
+import { store } from "@/state";
 import { libraryStatuses } from "./LibraryFormat";
 import {
   applyZoteroSync,
@@ -43,6 +46,7 @@ type Section = "collection" | "item" | "field" | "attachment" | "conflict";
 type Filter = "all" | "push" | "pull" | "conflict";
 const sections: Section[] = ["collection", "item", "field", "attachment", "conflict"];
 const ROW_LIMIT = 200;
+const BACKUP_FOLDER_KEY = "labweave.libraryBackupFolder";
 
 function previewPath(root: string, path: string): string {
   if (!/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(path)) return path;
@@ -87,7 +91,6 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
   const [choices, setChoices] = useState<Record<string, SyncChoice>>({});
   const [filter, setFilter] = useState<Filter>("all");
   const [changed, setChanged] = useState<string[]>([]);
-  const operation = useRef<AbortController | null>(null);
   const reportError = (cause: unknown) => {
     setError(
       cause instanceof Error && /^zoteroSync\.[a-zA-Z]+$/.test(cause.message)
@@ -134,10 +137,7 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
         if (!controller.signal.aborted) setBusy(false);
       }
     })();
-    return () => {
-      controller.abort();
-      operation.current?.abort();
-    };
+    return () => controller.abort();
   }, [attempt]);
 
   const rows = preview?.rows ?? [];
@@ -163,37 +163,69 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
   const choose = (list: SyncRow[], choice: SyncChoice) =>
     setChoices((old) => ({ ...old, ...Object.fromEntries(list.map((row) => [rowId(row), choice])) }));
 
-  const execute = async (rollback: boolean) => {
-    const controller = new AbortController();
-    operation.current = controller;
-    setBusy(true);
+  // Sync, rollback and backup run in the background (ZoteroSyncTask); closing this window does not stop them.
+  const task = useAtomValue(syncTaskAtom, { store });
+  const running = task?.state === "running";
+  const own = task && documentKey(task.root) === documentKey(snapshot.root) ? task : undefined;
+  const ownState = own?.kind === "backup" ? undefined : own?.state;
+  useEffect(() => {
+    if (!ownState || ownState === "running") return;
+    let live = true;
+    setPreview(undefined);
+    setError(own?.state === "failed" ? own.error : undefined);
+    setChanged(own?.changes ?? []);
+    readSyncHistory(snapshot.root).then(
+      (stored) => live && setHistory(stored),
+      () => live && setError("operationFailed"),
+    );
+    return () => {
+      live = false;
+    };
+    // Only react when this library's sync or rollback finishes
+  }, [ownState, snapshot.root]);
+  const progressOf =
+    (progress: (done: number, total?: number) => void) =>
+    ({ count, total }: SyncProgress) =>
+      progress(total === undefined ? 0 : count, total);
+  const sync = async () => {
+    if (!preview) return;
     setError(undefined);
     setChanged([]);
     try {
-      if (rollback) {
-        if (!(await confirm(t("confirmRollback"), { title: t("title"), kind: "warning" }))) return;
-        await rollbackZoteroSync(snapshot.root, controller.signal, setProgress);
-      } else if (preview) {
-        const run = await resolveZoteroSync(preview, choices, controller.signal);
-        if (!(await confirm(t("confirmSync", { count: run.actions.length }), { title: t("title"), kind: "warning" })))
-          return;
-        await applyZoteroSync(preview, run, controller.signal, setProgress);
-      }
-      setPreview(undefined);
+      const run = await resolveZoteroSync(preview, choices, new AbortController().signal);
+      if (!(await confirm(t("confirmSync", { count: run.actions.length }), { title: t("title"), kind: "warning" })))
+        return;
+      startSyncTask("sync", snapshot.root, (signal, progress) =>
+        applyZoteroSync(preview, run, signal, progressOf(progress)).then(() => undefined),
+      );
     } catch (cause) {
-      if (!controller.signal.aborted) reportError(cause);
-    } finally {
-      if (!controller.signal.aborted) {
-        try {
-          const stored = await readSyncHistory(snapshot.root);
-          setHistory(stored);
-          if (pendingSync(stored.run)) setPreview(undefined);
-        } catch (cause) {
-          reportError(cause);
-        }
-        setBusy(false);
-      }
+      reportError(cause);
     }
+  };
+  const rollback = async () => {
+    if (!(await confirm(t("confirmRollback"), { title: t("title"), kind: "warning" }))) return;
+    setError(undefined);
+    setChanged([]);
+    startSyncTask("rollback", snapshot.root, (signal, progress) =>
+      rollbackZoteroSync(snapshot.root, signal, progressOf(progress)),
+    );
+  };
+  /** 「备份」：每次都让你选放哪，默认上次选的文件夹 */
+  const backup = async () => {
+    const folder = await openDialog({
+      directory: true,
+      title: t("backupChoose"),
+      defaultPath: globalThis.localStorage?.getItem(BACKUP_FOLDER_KEY) ?? undefined,
+    });
+    if (typeof folder !== "string") return;
+    if (documentKey(`${folder}/`).startsWith(documentKey(`${snapshot.root.replace(/\/$/, "")}/`))) {
+      setError("backupInside");
+      return;
+    }
+    globalThis.localStorage?.setItem(BACKUP_FOLDER_KEY, folder);
+    startSyncTask("backup", snapshot.root, (signal, progress) =>
+      backupLibrary(snapshot.root, folder, signal, progress),
+    );
   };
 
   const papers = preview?.source.remote.items.filter(
@@ -243,6 +275,11 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
         )}
         <div className="flex min-h-0 flex-col gap-3 overflow-y-auto" aria-busy={busy}>
           {busy && <p role="status">{t(`progress.${progress.phase}`, { count: progress.count })}</p>}
+          {running && (
+            <Alert>
+              <AlertDescription>{t("background")}</AlertDescription>
+            </Alert>
+          )}
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{t(`errors.${error}`)}</AlertDescription>
@@ -332,17 +369,17 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
               disabled={busy}
               onClick={() => void shellOpen(history.runPath!).catch(reportError)}
             >
-              {t("openBackup")}
+              {t("openRecord")}
             </Button>
           )}
           {history?.run && history.run.status !== "rolled-back" && (
-            <Button variant="outline" disabled={busy} onClick={() => void execute(true)}>
+            <Button variant="outline" disabled={busy || running} onClick={() => void rollback()}>
               {t(preview || pendingSync(history.run) ? "rollbackLast" : "rollbackThis")}
             </Button>
           )}
           <Button
             variant="outline"
-            disabled={busy || pendingSync(history?.run)}
+            disabled={busy || running || pendingSync(history?.run)}
             onClick={() => setAttempt((value) => value + 1)}
           >
             {t("refresh")}
@@ -350,8 +387,11 @@ export default function ZoteroSyncDialog({ snapshot, onClose }: { snapshot: Libr
           <DialogClose asChild>
             <Button variant="outline">{t("close")}</Button>
           </DialogClose>
+          <Button variant="outline" disabled={running} onClick={() => void backup().catch(reportError)}>
+            {t("backup")}
+          </Button>
           {preview && (
-            <Button disabled={busy || preview.blocked || !selected} onClick={() => void execute(false)}>
+            <Button disabled={busy || running || preview.blocked || !selected} onClick={() => void sync()}>
               {t("syncCount", { count: selected })}
             </Button>
           )}
