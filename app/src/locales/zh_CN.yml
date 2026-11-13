@@ -1215,6 +1215,15 @@ settings:
       google: Google
       bing: Bing
       ai: AI
+  translateOnSelect:
+    title: 选中即译
+    description: 打开后，在 PDF 和笔记里选中文字一松手就翻译，不用再点「翻译」。关着时，选中后点「翻译」才翻。翻译卡片上的「选中即译」是同一个开关。
+  translateProxy:
+    title: 翻译走哪条网络
+    description: Google、Bing 翻译的请求走系统代理还是直连。系统代理指「系统设置 → 网络 → 代理」里的 HTTP / HTTPS 代理。用 AI 翻译时不看这一项，和 AI 对话走同一条路。
+    options:
+      system: 跟随系统代理
+      direct: 直连，不走代理
   readingTheme:
     title: 阅读外观
     description: 阅读预设以及自定义的字体、字号、行高和正文宽度。

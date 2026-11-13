@@ -66,7 +66,18 @@ export const settingsPages: SettingsPage[] = [
   {
     id: "reading",
     icon: BookOpen,
-    sections: [{ id: "main", items: ["translateService", "literatureLibraryPath", { subPage: "readingTheme" }] }],
+    sections: [
+      {
+        id: "main",
+        items: [
+          "translateService",
+          "translateOnSelect",
+          "translateProxy",
+          "literatureLibraryPath",
+          { subPage: "readingTheme" },
+        ],
+      },
+    ],
   },
   {
     id: "save",

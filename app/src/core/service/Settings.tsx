@@ -151,6 +151,8 @@ export const settingsSchema = z.object({
   aiApiFormat: projectToolSettingSchemas.aiApiFormat,
   aiPdfTextPages: projectToolSettingSchemas.aiPdfTextPages,
   translateService: z.union([z.literal("google"), z.literal("bing"), z.literal("ai")]).default("google"),
+  translateOnSelect: z.boolean().default(false),
+  translateProxy: z.union([z.literal("system"), z.literal("direct")]).default("system"),
   readingTheme: readingThemeSchema.default({ preset: "default" }),
   mouseRightDragBackground: z.union([z.literal("cut"), z.literal("moveCamera")]).default("cut"),
   enableSpaceKeyMouseLeftDrag: z.boolean().default(true),

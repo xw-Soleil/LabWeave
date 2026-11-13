@@ -48,10 +48,25 @@ function translationError(error: unknown): Error {
   return new Error("translate.failed");
 }
 
+/**
+ * 设置里选了「直连」时交给联网组件的代理配置。它没有「不走代理」这个开关：
+ * 不写代理时会自己去读系统代理，所以这里写一个代理、再声明所有地址都不经过它（noProxy 的 * 是全部）。
+ * 那个代理地址本身永远不会被用到。
+ */
+const DIRECT = { all: { url: "http://127.0.0.1:9", noProxy: "*" } };
+/** 连不上的服务（按联网方式分开记）和上次连不上的时间；这么久之内先试别的 */
+const unreachable = new Map<string, number>();
+const RETRY_AFTER = 5 * 60 * 1000;
+
 async function request(url: string, signal: AbortSignal, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, signal, headers: { ...browserHeaders, ...init?.headers } });
+    response = await fetch(url, {
+      ...init,
+      signal,
+      headers: { ...browserHeaders, ...init?.headers },
+      ...(Settings.translateProxy === "direct" && { proxy: DIRECT }),
+    });
   } catch {
     checkAbort(signal);
     throw new Error("translate.network");
@@ -268,6 +283,10 @@ export async function translateText(text: string, options: { signal?: AbortSigna
   const singleWord = /^[a-z]+(?:['’-][a-z]+)*$/i.test(cleaned);
   const services: TranslateService[] =
     preferred === "ai" ? ["ai"] : preferred === "bing" ? ["bing", "google"] : ["google", "bing"];
+  // 刚才连不上的那个排到后面（比如直连时的 Google），不用每次都先等它超时
+  const down = (service: TranslateService) =>
+    Date.now() - (unreachable.get(`${service}:${Settings.translateProxy}`) ?? -Infinity) < RETRY_AFTER;
+  services.sort((a, b) => Number(down(a)) - Number(down(b)));
   let failure = new Error("translate.failed");
   for (const service of services) {
     const timeout = AbortSignal.timeout(service === "ai" ? 60000 : 15000);
@@ -276,12 +295,14 @@ export async function translateText(text: string, options: { signal?: AbortSigna
       const result = await { google, bing, ai }[service](cleaned, to, singleWord, signal);
       checkAbort(options.signal);
       if (signal.aborted) throw new Error("translate.network");
+      unreachable.delete(`${service}:${Settings.translateProxy}`);
       cache.set(key, structuredClone(result));
       if (cache.size > 300) cache.delete(cache.keys().next().value!);
       return result;
     } catch (error) {
       checkAbort(options.signal);
       const next = timeout.aborted ? new Error("translate.network") : translationError(error);
+      if (next.message === "translate.network") unreachable.set(`${service}:${Settings.translateProxy}`, Date.now());
       if (failure.message !== "translate.rateLimited") failure = next;
     }
   }

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Settings } from "@/core/service/Settings";
 import { cn } from "@/utils/cn";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Copy, Highlighter, Languages, X, Zap } from "lucide-react";
@@ -7,8 +8,14 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { translateText, type TranslateResult } from "./Translate";
 
-const AUTO_KEY = "labweave.autoTranslate";
-export const autoTranslateEnabled = () => globalThis.localStorage?.getItem(AUTO_KEY) === "1";
+/** 「选中即译」开着没有。开关在设置页「阅读与文献」里，翻译卡片上那个小按钮改的是同一项 */
+export const autoTranslateEnabled = () => Settings.translateOnSelect;
+// 这个开关以前只记在浏览器存储里（只有翻译卡片上能改），挪进设置；原来开着的照旧开着
+const OLD_KEY = "labweave.autoTranslate";
+if (globalThis.localStorage?.getItem(OLD_KEY)) {
+  if (globalThis.localStorage.getItem(OLD_KEY) === "1") Settings.translateOnSelect = true;
+  globalThis.localStorage.removeItem(OLD_KEY);
+}
 
 /** PDF、Markdown 里选中文字后，把选区的几行拼回一句话再送去翻译 */
 export function selectionForTranslation(text: string) {
@@ -44,7 +51,7 @@ export function TranslateCard({
   const { t } = useTranslation("research");
   const [result, setResult] = useState<TranslateResult>();
   const [error, setError] = useState("");
-  const [auto, setAuto] = useState(autoTranslateEnabled);
+  const [auto, setAuto] = Settings.use("translateOnSelect");
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   useEffect(() => {
     const controller = new AbortController();
@@ -113,10 +120,7 @@ export function TranslateCard({
             "flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px]",
             auto ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-foreground/[0.05]",
           )}
-          onClick={() => {
-            globalThis.localStorage?.setItem(AUTO_KEY, auto ? "0" : "1");
-            setAuto(!auto);
-          }}
+          onClick={() => setAuto(!auto)}
         >
           <Zap className="size-3" />
           {t("translate.autoShort")}

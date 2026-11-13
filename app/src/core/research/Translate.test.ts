@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
   settings: {
     translateService: "google",
+    translateProxy: "system",
     aiApiFormat: "openai",
     aiApiBaseUrl: "http://localhost:1234/v1",
     aiApiKey: "",
@@ -34,7 +35,13 @@ beforeEach(async () => {
   vi.resetModules();
   mocks.fetch.mockReset();
   mocks.generateText.mockReset();
-  Object.assign(mocks.settings, { translateService: "google", aiModel: "local", aiApiKey: "", aiCustomHeaders: "" });
+  Object.assign(mocks.settings, {
+    translateService: "google",
+    translateProxy: "system",
+    aiModel: "local",
+    aiApiKey: "",
+    aiCustomHeaders: "",
+  });
   ({ translateText } = await import("./Translate"));
 });
 
@@ -78,6 +85,43 @@ describe("translation services", () => {
     expect(mocks.fetch.mock.calls[2][1].body).toContain("token=token");
     expect((await translateText("some text")).service).toBe("bing");
     expect(mocks.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("goes through the system proxy unless the setting says to connect directly", async () => {
+    mocks.fetch.mockImplementation(async () => google());
+    await translateText("research");
+    // 不写代理：联网组件自己去读系统代理
+    expect(mocks.fetch.mock.calls[0][1]).not.toHaveProperty("proxy");
+    mocks.settings.translateProxy = "direct";
+    await translateText("another word");
+    // 直连：声明所有地址都不经过代理
+    expect(mocks.fetch.mock.calls[1][1].proxy).toEqual({ all: { url: "http://127.0.0.1:9", noProxy: "*" } });
+  });
+
+  it("tries a service that could not be reached last for five minutes, separately for each network route", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const urls = () => mocks.fetch.mock.calls.map(([url]) => new URL(url).hostname);
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (url.includes("googleapis")) throw new TypeError("unreachable");
+      return url.includes("ttranslatev3") ? bing() : token();
+    });
+    expect((await translateText("first text")).service).toBe("bing");
+    expect(urls()[0]).toBe("translate.googleapis.com");
+    mocks.fetch.mockClear();
+    // 第二次不再先去碰 Google
+    expect((await translateText("second text")).service).toBe("bing");
+    expect(urls()).not.toContain("translate.googleapis.com");
+    // 换一种联网方式要重新试；过了五分钟也重新试
+    mocks.fetch.mockClear();
+    mocks.settings.translateProxy = "direct";
+    await translateText("third text");
+    expect(urls()[0]).toBe("translate.googleapis.com");
+    mocks.settings.translateProxy = "system";
+    vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1);
+    mocks.fetch.mockClear();
+    await translateText("fourth text");
+    expect(urls()[0]).toBe("translate.googleapis.com");
+    vi.useRealTimers();
   });
 
   it("reverses fallback order for Bing and refreshes a rejected token only once", async () => {

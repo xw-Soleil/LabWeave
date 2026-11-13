@@ -1183,6 +1183,15 @@ settings:
       google: Google
       bing: Bing
       ai: AI
+  translateOnSelect:
+    title: Translate on selection
+    description: When on, text selected in a PDF or a note is translated as soon as you release the mouse. When off, select text and then click Translate. The “Auto” toggle on the translation card is the same switch.
+  translateProxy:
+    title: Network route for translation
+    description: Whether requests to Google and Bing Translate go through the system proxy or connect directly. The system proxy is the HTTP / HTTPS proxy under System Settings → Network → Proxies. AI translation ignores this and uses the same route as the AI chat.
+    options:
+      system: Follow the system proxy
+      direct: Connect directly, no proxy
   readingTheme:
     title: Reading appearance
     description: Reading preset and custom fonts, text size, line spacing and reading width.
