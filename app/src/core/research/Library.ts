@@ -1,17 +1,6 @@
 import { Settings } from "@/core/service/Settings";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  copyFile,
-  exists,
-  lstat,
-  mkdir,
-  open,
-  readDir,
-  readFile,
-  readTextFileLines,
-  remove,
-  rename,
-} from "@tauri-apps/plugin-fs";
+import { copyFile, exists, lstat, mkdir, open, readDir, readFile, remove, rename } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { documentKey, documentPath } from "./DocumentFile";
@@ -98,6 +87,12 @@ const itemsName = "条目";
 const concurrency = 8;
 let authorization: { setting: string; canonical?: string; task: Promise<string> } | undefined;
 const writes = new Map<string, Promise<unknown>>();
+/** 标签切走时界面会卸载；读好的内容留在这里，切回来先显示它，再在后台比一遍修改时间 */
+let kept: { root: string; snapshot: LibrarySnapshot; stamps: LibraryStamps } | undefined;
+
+/** 文件名看起来是译文（.zh / .mono / .dual / 译，或 zh- 开头） */
+export const isTranslatedName = (name: string) =>
+  /([-_.](mono|dual)|译|[-_.]zh)\.[^.]+$/i.test(name) || /^(zh|zht|ch)-/i.test(name);
 
 function errorCode(error: unknown, fallback: string): Error {
   return error instanceof Error && error.message.startsWith("library.") ? error : new Error(fallback, { cause: error });
@@ -191,21 +186,8 @@ export async function checkedPath(root: string, path: string, missingLeaf = fals
 }
 
 async function readHeader(path: string): Promise<Record<string, unknown>> {
-  let first = true;
-  let yaml = "";
-  for await (const raw of await readTextFileLines(path)) {
-    const line = raw.replace(/\r?\n$/, "").replace(/\r$/, "");
-    if (first) {
-      first = false;
-      if (!/^\uFEFF?---[\t ]*$/.test(line)) throw new Error("library.invalidFrontmatter");
-    } else if (/^---[\t ]*$/.test(line)) {
-      return parseLibraryYaml(yaml).values;
-    } else {
-      yaml += `${line}\n`;
-      if (yaml.length > 1024 * 1024) throw new Error("library.invalidFrontmatter");
-    }
-  }
-  throw new Error("library.invalidFrontmatter");
+  // 整篇一次读完：按行读每行都要和系统来回一次，一篇四五十行，整库要多等大半秒
+  return parseLibraryYaml(splitLibraryNote(await readFile(path)).yaml).values;
 }
 
 async function readItem(root: string, key: string): Promise<LibraryItem> {
@@ -214,11 +196,13 @@ async function readItem(root: string, key: string): Promise<LibraryItem> {
   const [values, entries] = await Promise.all([readHeader(notePath), readDir(dir)]);
   const files = entries.filter((entry) => entry.isFile && !entry.isSymlink).map((entry) => safeName(entry.name));
   const pdfs = files.filter((name) => /\.pdf$/i.test(name)).sort((a, b) => a.localeCompare(b));
-  const translation = (name: string) =>
-    /([-_.](mono|dual)|译|[-_.]zh)\.[^.]+$/i.test(name) || /^(zh|zht|ch)-/i.test(name);
   const declared = typeof values.pdf === "string" && values.pdf.trim() ? safeName(values.pdf.trim()) : undefined;
+  const original = pdfs.find((name) => !isTranslatedName(name));
+  // 「pdf」里登记的是译文、原文又在旁边时仍打开原文，和 Zotero 一样
   const pdf =
-    (declared && pdfs.includes(declared) ? declared : undefined) ?? pdfs.find((name) => !translation(name)) ?? pdfs[0];
+    (declared && pdfs.includes(declared) && !(original && isTranslatedName(declared)) ? declared : undefined) ??
+    original ??
+    pdfs[0];
   const dual = pdfs.find((name) => /[-_.]dual\.pdf$/i.test(name));
   const mono = pdfs.find((name) => /[-_.]mono\.pdf$/i.test(name));
   const annotations = pdf?.replace(/\.pdf$/i, ".annotations.json");
@@ -762,19 +746,17 @@ export function countLibrary(snapshot: LibrarySnapshot): LibraryCounts {
 }
 
 export function useLibrary(root: string | null): LibraryState {
-  const [state, setState] = useState<{ root: string | null } & Omit<LibraryState, "refresh" | "reloadAll">>({
-    root,
-    snapshot: null,
-    loading: !!root,
-    error: null,
+  const [state, setState] = useState<{ root: string | null } & Omit<LibraryState, "refresh" | "reloadAll">>(() => {
+    const snapshot = kept?.root === root ? kept.snapshot : null;
+    return { root, snapshot, loading: !!root && !snapshot, error: null };
   });
   const actions = useRef({ refresh: async () => {}, reloadAll: async () => {} });
   const refresh = useCallback(() => actions.current.refresh(), []);
   const reloadAll = useCallback(() => actions.current.reloadAll(), []);
   useEffect(() => {
     let stopped = false;
-    let snapshot: LibrarySnapshot | undefined;
-    let stamps: LibraryStamps | undefined;
+    let snapshot = kept?.root === root ? kept.snapshot : undefined;
+    let stamps = kept?.root === root ? kept.stamps : undefined;
     let pending: Promise<void> = Promise.resolve();
     let lastCheck = 0;
     const publish = (loading: boolean, error: Error | null) => {
@@ -793,9 +775,10 @@ export function useLibrary(root: string | null): LibraryState {
           }
           publish(true, null);
           const fresh = await snapshotAt(canonical, changed && snapshot, changed);
-          if (stopped) return;
           snapshot = fresh;
           stamps = next;
+          // 读到一半切走了也留着，下次回来不用重读
+          kept = { root, snapshot, stamps };
           publish(false, null);
         } catch (cause) {
           publish(false, errorCode(cause, "library.readFailed"));
@@ -814,9 +797,9 @@ export function useLibrary(root: string | null): LibraryState {
       if (document.visibilityState === "visible") void check();
     };
     actions.current = { refresh: () => reload(false), reloadAll: () => reload(true) };
-    publish(!!root, null);
+    publish(!!root && !snapshot, null);
     if (root) {
-      void reload(true);
+      void reload(!snapshot);
       window.addEventListener("focus", check);
       document.addEventListener("visibilitychange", onVisible);
     }
@@ -852,10 +835,12 @@ async function libraryStamps(root: string): Promise<LibraryStamps> {
       while (cursor < keys.length) {
         const key = keys[cursor++];
         const dir = `${itemsDir}/${key}`;
-        const note = `${dir}/${key}.md`;
         // 笔记不在或读不了时记成「缺」，交给 snapshotAt 去读并报出这篇的错误
-        const noteStamp = (await exists(note)) ? stamp(await lstat(note)) : "missing";
-        items.set(documentKey(dir), `${stamp(await lstat(dir))}|${noteStamp}`);
+        const [dirStamp, noteStamp] = await Promise.all([
+          lstat(dir).then(stamp),
+          lstat(`${dir}/${key}.md`).then(stamp, () => "missing"),
+        ]);
+        items.set(documentKey(dir), `${dirStamp}|${noteStamp}`);
       }
     }),
   );

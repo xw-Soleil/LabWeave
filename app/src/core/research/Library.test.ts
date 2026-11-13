@@ -12,9 +12,6 @@ import i18next from "i18next";
 const mocks = vi.hoisted(() => ({
   settings: { literatureLibraryPath: "" },
   invoke: vi.fn(),
-  lines: new Map<string, string[]>(),
-  readers: 0,
-  peakReaders: 0,
   beforeRename: undefined as undefined | ((from: string, to: string) => Promise<void>),
 }));
 vi.mock("@/core/service/Settings", () => ({ Settings: mocks.settings }));
@@ -70,29 +67,6 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
         close: async () => handle.close(),
       };
     }),
-    readTextFileLines: vi.fn(async function (path: string) {
-      return (async function* () {
-        mocks.readers++;
-        mocks.peakReaders = Math.max(mocks.readers, mocks.peakReaders);
-        const lines: string[] = [];
-        mocks.lines.set(path, lines);
-        const file = await fs.open(path, "r");
-        try {
-          const reader = file.readLines({ autoClose: false });
-          try {
-            for await (const line of reader) {
-              lines.push(line);
-              yield line;
-            }
-          } finally {
-            reader.close();
-          }
-        } finally {
-          await file.close();
-          mocks.readers--;
-        }
-      })();
-    }),
     SeekMode: { Start: 0, Current: 1, End: 2 },
   };
 });
@@ -125,6 +99,11 @@ let state: LibraryState;
 const template = "\n# 研究笔记\n\n## 研究问题\n\n\n## 方法\n\n\n## 结论与启发\n\n";
 const smallPdf = Uint8Array.of(37, 80, 68, 70, 45, 49, 46, 55, 10);
 const note = (key: string) => join(root, "条目", key, `${key}.md`);
+const noteReads = () =>
+  vi
+    .mocked(fs.readFile)
+    .mock.calls.map(([path]) => String(path))
+    .filter((path) => path.endsWith(".md"));
 
 async function item(key: string, yaml = "", attachments: string[] = []) {
   const dir = join(root, "条目", key);
@@ -142,9 +121,6 @@ beforeEach(async () => {
     mock.mockReset();
     if (implementation) mock.mockImplementation(implementation);
   }
-  mocks.lines.clear();
-  mocks.readers = 0;
-  mocks.peakReaders = 0;
   mocks.beforeRename = undefined;
   root = await disk.realpath(await disk.mkdtemp(join(tmpdir(), "library-test-")));
   outside = await disk.mkdtemp(join(tmpdir(), "library-source-"));
@@ -189,22 +165,40 @@ describe("literature library loading", () => {
     await expect(loadLibrary(root)).rejects.toThrow("library.invalidManifest");
   });
 
-  it("stops at the second delimiter, bounds concurrency, and isolates malformed items", async () => {
+  it("reads each note in one call, bounds concurrency, and isolates malformed items", async () => {
     await Promise.all(Array.from({ length: 32 }, (_, i) => item(`Paper${i}`)));
     await item("Broken");
     await disk.writeFile(note("Broken"), "---\ntype: 文献\nx: [broken\n---\nbody");
+    const read = vi.mocked(fs.readFile).getMockImplementation()!;
+    let readers = 0;
+    let peak = 0;
+    vi.mocked(fs.readFile).mockImplementation(async (...args) => {
+      peak = Math.max(++readers, peak);
+      try {
+        return await read(...args);
+      } finally {
+        readers--;
+      }
+    });
     const snapshot = await loadLibrary(root);
     expect(snapshot.items).toHaveLength(32);
     expect(snapshot.errors).toEqual([{ key: "Broken", notePath: note("Broken"), code: "library.invalidFrontmatter" }]);
-    expect(mocks.peakReaders).toBeGreaterThan(1);
-    expect(mocks.peakReaders).toBeLessThanOrEqual(8);
-    expect(mocks.readers).toBe(0);
-    for (const lines of mocks.lines.values()) {
-      expect(lines.at(-1)).toBe("---");
-      expect(lines.filter((line) => line === "---")).toHaveLength(2);
-      expect(lines.join("\n")).not.toContain("# 研究笔记");
-    }
-    expect(vi.mocked(fs.readFile).mock.calls.every(([path]) => String(path).endsWith(".litlib"))).toBe(true);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(noteReads()).toHaveLength(33);
+    expect(new Set(noteReads()).size).toBe(33);
+  });
+
+  it("opens the original even when the note names a translation as its PDF", async () => {
+    await item("Paper", "pdf: Paper.zh.mono.pdf\n", ["Paper.pdf", "Paper.zh.dual.pdf", "Paper.zh.mono.pdf"]);
+    await item("Translated", "pdf: Translated.zh.mono.pdf\n", ["Translated.zh.dual.pdf", "Translated.zh.mono.pdf"]);
+    const { items } = await loadLibrary(root);
+    expect(items[0]).toMatchObject({
+      pdfPath: join(root, "条目/Paper/Paper.pdf"),
+      translations: { mono: join(root, "条目/Paper/Paper.zh.mono.pdf") },
+    });
+    // 只有译文时，登记的那份照旧算数
+    expect(items[1].pdfPath).toBe(join(root, "条目/Translated/Translated.zh.mono.pdf"));
   });
 
   it("recognizes declared PDFs, modern and legacy translations and the matching annotation sidecar", async () => {
@@ -549,11 +543,10 @@ describe("useLibrary refresh when the user comes back", () => {
     expect(state.snapshot?.items).toHaveLength(2);
     expect(state.error).toBeNull();
     await updateItem(root, "One", { title: "external" });
-    vi.mocked(fs.readTextFileLines).mockClear();
+    vi.mocked(fs.readFile).mockClear();
     await refreshed(() => state.refresh());
     expect(state.snapshot?.items.find((entry) => entry.key === "One")?.title).toBe("external");
-    expect(fs.readTextFileLines).toHaveBeenCalledTimes(1);
-    expect(fs.readTextFileLines).toHaveBeenCalledWith(note("One"));
+    expect(noteReads()).toEqual([note("One")]);
     await item("Three", "", ["Three.zh.dual.pdf"]);
     await disk.rm(join(root, "条目/Two"), { recursive: true });
     await disk.writeFile(join(root, "文献库.litlib"), '{"version":1,"collections":["New"]}');
@@ -567,11 +560,33 @@ describe("useLibrary refresh when the user comes back", () => {
     await item("One");
     await item("Two");
     await mount(root);
-    vi.mocked(fs.readTextFileLines).mockClear();
+    vi.mocked(fs.readFile).mockClear();
     await refreshed(() => state.refresh());
-    expect(fs.readTextFileLines).not.toHaveBeenCalled();
+    expect(noteReads()).toEqual([]);
     await refreshed(() => state.reloadAll());
-    expect(fs.readTextFileLines).toHaveBeenCalledTimes(2);
+    expect(noteReads()).toHaveLength(2);
+  });
+
+  it("shows what it already read when the tab is opened again, then picks up what changed meanwhile", async () => {
+    await item("One");
+    await item("Two");
+    await mount(root);
+    await act(async () => view!.unmount());
+    await updateItem(root, "One", { title: "while away" });
+    vi.mocked(fs.readFile).mockClear();
+    view = createRoot(document.createElement("div"));
+    act(() => view!.render(createElement(Probe, { path: root })));
+    expect(state.loading).toBe(false);
+    expect(state.snapshot?.items.map((entry) => entry.title)).toEqual(["One", "Two"]);
+    expect(noteReads()).toEqual([]);
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(state.snapshot?.items[0].title).toBe("while away");
+    });
+    expect(state.loading).toBe(false);
+    expect(noteReads()).toEqual([note("One")]);
   });
 
   it("checks again when the window regains focus, at most once every 1.5 seconds", async () => {
@@ -583,11 +598,11 @@ describe("useLibrary refresh when the user comes back", () => {
     });
     expect(state.snapshot?.items[0].title).toBe("focused");
     await updateItem(root, "One", { title: "too soon" });
-    vi.mocked(fs.readTextFileLines).mockClear();
+    vi.mocked(fs.readFile).mockClear();
     await refreshed(() => {
       window.dispatchEvent(new Event("focus"));
     });
-    expect(fs.readTextFileLines).not.toHaveBeenCalled();
+    expect(noteReads()).toEqual([]);
   });
 
   it("stops listening when the library is closed", async () => {
@@ -595,14 +610,14 @@ describe("useLibrary refresh when the user comes back", () => {
     await mount(root);
     await mount(null);
     expect(state.snapshot).toBeNull();
-    vi.mocked(fs.readTextFileLines).mockClear();
+    vi.mocked(fs.readFile).mockClear();
     vi.mocked(fs.readDir).mockClear();
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(fs.readDir).not.toHaveBeenCalled();
-    expect(fs.readTextFileLines).not.toHaveBeenCalled();
+    expect(noteReads()).toEqual([]);
   });
 });
 

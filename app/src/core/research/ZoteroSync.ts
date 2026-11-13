@@ -10,6 +10,7 @@ import {
   writeSyncFile,
   placeSyncFile,
   stashSyncFile,
+  isTranslatedName,
   loadLibrary,
   type LibraryItem,
   type LibrarySnapshot,
@@ -1357,9 +1358,12 @@ export async function resolveZoteroSync(
       }
     }
   } else await planMedia(preview, next, actions, signal, progress);
+  // 「pdf」只登记原文；以前把译文登记上去的，这里改回来。只有译文时留空，由文献库自己挑
   for (const a of Object.values(next.attachments ?? {})) {
     const note = notes.get(next.pairs[a.parent]?.path);
-    if (note && !note.fm.pdf && /\.pdf$/i.test(a.local.path)) note.fm.pdf = a.local.path.split("/").at(-1);
+    const name = a.local.path.split("/").at(-1)!;
+    if (!note || !/\.pdf$/i.test(name) || isTranslatedName(name)) continue;
+    if (!note.fm.pdf || isTranslatedName(text(note.fm.pdf))) note.fm.pdf = name;
   }
   for (const [path, note] of notes) {
     const original = note.before === null ? undefined : parseLibraryYaml(note.yaml);

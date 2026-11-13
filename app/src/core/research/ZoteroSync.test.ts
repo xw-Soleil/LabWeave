@@ -114,12 +114,6 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
         close: () => handle.close(),
       };
     },
-    readTextFileLines: async (path: string) => {
-      guard();
-      return (async function* () {
-        yield* (await fs.readFile(path, "utf8")).split(/\r?\n/);
-      })();
-    },
     SeekMode: {},
   };
 });
@@ -1320,6 +1314,25 @@ describe("sync, backups and rollback with a fake Zotero", () => {
     await expect(disk.stat(join(folder, "paper.pdf"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readFile(join(result.path, "removed/条目/one/paper.pdf"), "utf8")).toBe("%PDF-fixture");
     expect(items[1].deleted).toBeUndefined();
+  });
+  it.each(["", "paper.zh.mono.pdf"])(
+    "names the original as the note's PDF when a translation comes first (note had %j)",
+    async (pdf) => {
+      items.push(paper("PAPER001", { title: "one" }));
+      await note("one", { zotero_key: "PAPER001", pdf });
+      await attachment("ATTACH01", "%PDF-mono", "paper.zh.mono.pdf");
+      await attachment("ATTACH02", "%PDF-original", "paper.pdf");
+      await sync();
+      const item = (await loadLibrary(root)).items[0];
+      expect(item.frontmatter?.pdf).toBe("paper.pdf");
+      expect(item.pdfPath).toBe(join(root, "条目/one/paper.pdf"));
+    },
+  );
+  it("leaves the note's PDF empty when Zotero only has translations", async () => {
+    await paired();
+    await attachment("ATTACH01", "%PDF-mono", "paper.zh.mono.pdf");
+    await sync();
+    expect((await loadLibrary(root)).items[0].frontmatter?.pdf ?? "").toBe("");
   });
   it.each([
     "https://example.invalid/file.pdf",
