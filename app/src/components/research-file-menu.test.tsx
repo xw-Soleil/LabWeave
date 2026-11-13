@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   duplicate: vi.fn(),
   reveal: vi.fn(),
 }));
-vi.mock("@/core/research/ResearchRename", () => ({ promptResearchRename: mocks.rename, moveResearchFile: vi.fn() }));
+vi.mock("@/core/research/ResearchRename", () => ({ moveResearchFile: vi.fn() }));
 vi.mock("@/core/research/DocumentTab", () => ({ documentError: String, openDocumentFile: vi.fn() }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: { duplicateFile: mocks.duplicate, listFolders: vi.fn(), toRelative: (path: string) => path },
@@ -56,6 +56,7 @@ async function openMenu(beforeModify?: () => Promise<boolean>) {
       <ResearchFileMenu
         entry={{ name: "a.pdf", absPath: "/research/papers/a.pdf", relPath: "papers/a.pdf", kind: "pdf" }}
         onOpen={onOpen}
+        onRename={mocks.rename}
         beforeModify={beforeModify}
       >
         <button>paper</button>
@@ -77,14 +78,11 @@ async function select(label: string) {
   await act(async () => item!.click());
 }
 describe("file list context menu", () => {
-  it("does not rename or delete when switching to the containing project is cancelled", async () => {
+  it("does not delete when switching to the containing project is cancelled", async () => {
     const switchProject = vi.fn(async () => false);
     await openMenu(switchProject);
-    await select("rename.title");
-    expect(switchProject).toHaveBeenCalledOnce();
-    expect(mocks.rename).not.toHaveBeenCalled();
-    await openMenu(switchProject);
     await select("fileMenu.delete");
+    expect(switchProject).toHaveBeenCalledOnce();
     expect(mocks.trash).not.toHaveBeenCalled();
   });
   it("shows all labeled file actions on an unselected row", async () => {
@@ -137,10 +135,15 @@ describe("file list context menu", () => {
     await select("fileMenu.copyAbsolute");
     expect(mocks.write).toHaveBeenCalledWith("/research/papers/a.pdf");
   });
-  it("renames the clicked file", async () => {
+  it("hands rename to the file panel only after the menu has closed, without giving focus back to the row", async () => {
     await openMenu();
+    const row = container.querySelector("button")!;
+    const focus = vi.spyOn(row, "focus");
     await select("rename.title");
-    expect(mocks.rename).toHaveBeenCalledWith("/research/papers/a.pdf");
+    // 菜单收起来以后才开始改名；焦点不还给那一行，不然刚出来的输入框会立刻失焦
+    await vi.waitFor(() => expect(mocks.rename).toHaveBeenCalledOnce());
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(focus).not.toHaveBeenCalled();
   });
   it("opens the containing folder", async () => {
     await openMenu();

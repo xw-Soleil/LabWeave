@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { displayWorkspaceName, FileName } from "@/components/ui/file-name";
+import { displayWorkspaceName, FileName, splitFileName } from "@/components/ui/file-name";
 import { Input } from "@/components/ui/input";
 import { Project } from "@/core/Project";
 import { DocumentTab, documentError, openDocumentFile } from "@/core/research/DocumentTab";
@@ -36,7 +36,7 @@ import {
   updateResearchWorkspace,
   type ResearchTreeEntry,
 } from "@/core/research/ResearchWorkspace";
-import { promptResearchRename } from "@/core/research/ResearchRename";
+import { renameResearchFile } from "@/core/research/ResearchRename";
 import { restoreLastResearchFile } from "@/core/research/ResearchTrash";
 import { hidePeekForDrag } from "@/core/research/SidePanels";
 import { Settings } from "@/core/service/Settings";
@@ -44,6 +44,7 @@ import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { cn } from "@/utils/cn";
+import { isMac } from "@/utils/platform";
 import { Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -237,6 +238,49 @@ export async function pickResearchProject(create = false): Promise<string | null
   }
 }
 
+/**
+ * 文件栏里原位改名的输入框。照访达：一出来先选中扩展名前面那一段，直接打字就换掉名字；
+ * 回车或焦点离开交出新名字，Esc 交出 undefined（不改）。
+ */
+function RenameInput({ name, label, onDone }: { name: string; label: string; onDone: (name?: string) => void }) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  const done = React.useRef(false);
+  React.useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    ref.current?.setSelectionRange(0, splitFileName(name).stem.length);
+  }, [name]);
+  const finish = (value?: string) => {
+    // 回车以后输入框被拿掉，还会再来一次失焦
+    if (done.current) return;
+    done.current = true;
+    onDone(value);
+  };
+  return (
+    <input
+      ref={ref}
+      defaultValue={name}
+      aria-label={label}
+      spellCheck={false}
+      autoCapitalize="off"
+      autoCorrect="off"
+      className="bg-background text-foreground ring-primary/70 -my-px h-[22px] min-w-0 flex-1 cursor-text rounded-[4px] px-1 text-[13px] ring-1 outline-none select-text"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        // 拼音选字时的回车是确认候选字，不是确认改名
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (event.key !== "Enter" && event.key !== "Escape") return;
+        // 这两个键到此为止：别再去打开文件、收起侧栏
+        event.preventDefault();
+        event.stopPropagation();
+        finish(event.key === "Enter" ? event.currentTarget.value : undefined);
+      }}
+      onBlur={(event) => finish(event.currentTarget.value)}
+    />
+  );
+}
+
 /** 「新建笔记 / 新建白板 / 新建文件夹」三项，顶上的「+」菜单和文件夹的右键菜单共用 */
 function CreateItems({
   Item,
@@ -268,6 +312,7 @@ export default function FileManagerWindow() {
   const [version, setVersion] = React.useState(0);
   const [expanded, setExpanded] = React.useState(true);
   const [selected, setSelected] = React.useState("");
+  const [renaming, setRenaming] = React.useState("");
   const [signals, setSignals] = React.useState<TreeSignals>({ collapse: 0 });
   const [drag, setDrag] = React.useState<{ entry: ResearchFileEntry; x: number; y: number } | null>(null);
   const tabs = useAtomValue(tabsAtom);
@@ -487,14 +532,52 @@ export default function FileManagerWindow() {
     window.addEventListener("keydown", onKeyDown, true);
   };
 
+  const focusRow = (path: string) =>
+    requestAnimationFrame(() =>
+      rootRef.current
+        ?.querySelector<HTMLElement>(`[data-file-key="${CSS.escape(projectPathKey(path))}"]`)
+        ?.focus({ preventScroll: true }),
+    );
+  // 原位改名，照系统文件管理器：名字变成输入框，回车或点别处就改，Esc 取消
+  const startRename = (entry: ResearchFileEntry, projectRoot: string) =>
+    void beforeModify(projectRoot)
+      .then((ready) => {
+        if (!ready) return;
+        setSelected(entry.absPath);
+        setRenaming(entry.absPath);
+      })
+      .catch(showError);
+  const finishRename = (entry: ResearchFileEntry, shown: string, name?: string) => {
+    setRenaming("");
+    if (name === undefined || !name.trim() || name.trim() === shown) {
+      focusRow(entry.absPath);
+      return;
+    }
+    void renameResearchFile(entry.absPath, name).then(
+      (path) => {
+        setSelected(path);
+        focusRow(path);
+      },
+      (error) => toast.error(documentError(error)),
+    );
+  };
+
   const renderFile = (entry: ResearchFileEntry, projectRoot: string, depth: number) => {
     const Icon = fileIcon(entry);
     const highlighted = projectPathKey(entry.absPath) === activePath || entry.absPath === selected;
     const open = () => {
       if (!suppressClick.current) void openEntry(entry, projectRoot).catch(showError);
     };
+    const shown = entry.kind === "workspace" ? displayWorkspaceName(entry.name) : entry.name;
+    const editing = renaming === entry.absPath;
     return (
-      <ResearchFileMenu key={entry.absPath} entry={entry} onOpen={open} beforeModify={() => beforeModify(projectRoot)}>
+      <ResearchFileMenu
+        key={entry.absPath}
+        entry={entry}
+        onOpen={open}
+        onRename={() => startRename(entry, projectRoot)}
+        beforeModify={() => beforeModify(projectRoot)}
+      >
         <div
           role="button"
           tabIndex={0}
@@ -505,31 +588,35 @@ export default function FileManagerWindow() {
           onClick={() => {
             if (!suppressClick.current) setSelected(entry.absPath);
           }}
-          onDoubleClick={open}
+          onDoubleClick={() => !editing && open()}
           // 从这里按住拖文件，划过正文时 Mac 的网页引擎会顺手选中正文里的字；不让按下鼠标开始选字，
-          // 焦点照样落在这一行上（F2 改名要用）
+          // 焦点照样落在这一行上（改名的快捷键要用）。正在改名时不管：要能在输入框里点、拖着选字
           onMouseDown={(event) => {
-            if (event.button !== 0) return;
+            if (event.button !== 0 || editing) return;
             event.preventDefault();
             event.currentTarget.focus({ preventScroll: true });
           }}
-          onPointerDown={(event) => onRowPointerDown(event, entry, projectRoot)}
+          onPointerDown={(event) => !editing && onRowPointerDown(event, entry, projectRoot)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") open();
-            if (event.key === "F2") {
-              event.preventDefault();
-              event.stopPropagation();
-              void beforeModify(projectRoot)
-                .then((ready) => {
-                  if (ready) return promptResearchRename(entry.absPath);
-                })
-                .catch(showError);
-            }
+            // 输入框里的按键归输入框；按住不放的连发不算（不然回车确认完又进了改名）
+            if (event.target !== event.currentTarget || event.repeat) return;
+            // 改名：Windows、Linux 是 F2，Mac 是回车（和访达一样，F2 也留着）；Mac 上打开用 ⌘↓
+            const rename = event.key === "F2" || (isMac && event.key === "Enter" && !event.metaKey);
+            const openKey = isMac ? event.metaKey && event.key === "ArrowDown" : event.key === "Enter";
+            if (!rename && !openKey) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (rename) startRename(entry, projectRoot);
+            else open();
           }}
         >
           {!searching && <span className="w-4 shrink-0" />}
           <Icon className="text-muted-foreground size-4 shrink-0" strokeWidth={1.75} />
-          <FileName name={entry.kind === "workspace" ? displayWorkspaceName(entry.name) : entry.name} tailChars={4} />
+          {editing ? (
+            <RenameInput name={shown} label={t("rename.title")} onDone={(name) => finishRename(entry, shown, name)} />
+          ) : (
+            <FileName name={shown} tailChars={4} />
+          )}
           {searching && (
             <span className="text-muted-foreground min-w-0 shrink-[9999] truncate text-[11px]">{entry.relPath}</span>
           )}

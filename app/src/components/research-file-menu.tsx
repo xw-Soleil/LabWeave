@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/context-menu";
 import { documentError, openDocumentFile } from "@/core/research/DocumentTab";
 import { ResearchFolder, type ResearchFileEntry } from "@/core/research/ResearchFolder";
-import { moveResearchFile, promptResearchRename } from "@/core/research/ResearchRename";
+import { moveResearchFile } from "@/core/research/ResearchRename";
 import { promptTrashResearchFile } from "@/core/research/ResearchTrash";
 import { findTabGroupByTabId } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
@@ -30,7 +30,8 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState, type ReactElement } from "react";
+import { isMac } from "@/utils/platform";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { URI, Utils } from "vscode-uri";
@@ -92,16 +93,20 @@ function MoveDialog({ path, onClose }: { path: string; onClose: () => void }) {
 export default function ResearchFileMenu({
   entry,
   onOpen,
+  onRename,
   beforeModify,
   children,
 }: {
   entry: ResearchFileEntry;
   onOpen: () => void;
+  /** 在文件栏那一行上原位改名（由文件栏自己做，包括先切到文件所在的项目） */
+  onRename: () => void;
   beforeModify?: () => Promise<boolean>;
   children: ReactElement;
 }) {
   const { t } = useTranslation("research");
   const [moving, setMoving] = useState(false);
+  const renameOnClose = useRef(false);
   const run = (action: () => Promise<unknown>) => {
     void action().catch((error) => toast.error(documentError(error)));
   };
@@ -124,7 +129,16 @@ export default function ResearchFileMenu({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent>
+        <ContextMenuContent
+          // 菜单关掉时会把焦点还给那一行。改名的输入框要是先出来，焦点一被拿走就等于立刻确认了，
+          // 所以等菜单关完、并且不让它还焦点，再开始改名
+          onCloseAutoFocus={(event) => {
+            if (!renameOnClose.current) return;
+            renameOnClose.current = false;
+            event.preventDefault();
+            onRename();
+          }}
+        >
           <ContextMenuItem onSelect={onOpen}>
             <File />
             {t("fileMenu.open")}
@@ -181,9 +195,13 @@ export default function ResearchFileMenu({
             {t("fileMenu.reveal")}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => modify(() => promptResearchRename(entry.absPath))}>
+          <ContextMenuItem
+            onSelect={() => {
+              renameOnClose.current = true;
+            }}
+          >
             <Pencil />
-            {t("rename.title")} <span className="ml-auto text-xs">F2</span>
+            {t("rename.title")} <span className="ml-auto text-xs">{isMac ? "↩" : "F2"}</span>
           </ContextMenuItem>
           <ContextMenuItem variant="destructive" onSelect={() => modify(() => promptTrashResearchFile(entry.absPath))}>
             <Trash2 />

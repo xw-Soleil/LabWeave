@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   confirm: vi.fn(),
   load: vi.fn(),
+  rename: vi.fn(),
+  platform: { mac: false },
 }));
 vi.mock("@/state", () => ({ store: getDefaultStore(), tabsAtom: atom([]), activeResourceTabAtom: atom(undefined) }));
 vi.mock("@/core/service/Settings", () => ({ Settings: { use: () => ["/current"] } }));
@@ -26,6 +28,7 @@ vi.mock("@/core/research/DocumentTab", () => ({
     uri = URI.file("/other/a.md");
   },
   openDocumentFile: mocks.openDocument,
+  documentError: String,
 }));
 vi.mock("@/core/research/ResearchFolder", () => ({
   RESEARCH_FILES_CHANGED_EVENT: "research:files-changed",
@@ -50,7 +53,12 @@ vi.mock("@/core/research/ResearchWorkspace", () => ({
   projectName: (path: string) => path.split("/").at(-1),
   researchWorkspaceError: String,
 }));
-vi.mock("@/core/research/ResearchRename", () => ({ promptResearchRename: vi.fn() }));
+vi.mock("@/core/research/ResearchRename", () => ({ renameResearchFile: mocks.rename }));
+vi.mock("@/utils/platform", () => ({
+  get isMac() {
+    return mocks.platform.mac;
+  },
+}));
 vi.mock("@/core/research/ResearchTrash", () => ({
   restoreLastResearchFile: vi.fn(),
   promptTrashResearchFile: vi.fn(),
@@ -81,6 +89,8 @@ beforeEach(async () => {
   mocks.openDocument.mockResolvedValue(undefined);
   mocks.drop.mockResolvedValue(undefined);
   mocks.update.mockResolvedValue(undefined);
+  mocks.rename.mockImplementation(async (path: string, name: string) => path.replace(/[^/]+$/, name));
+  mocks.platform.mac = false;
   mocks.scan.mockResolvedValue({
     entries: [{ absPath: "/current/match.md", relPath: "match.md", name: "match.md", kind: "markdown" }],
     truncated: false,
@@ -108,6 +118,8 @@ beforeEach(async () => {
   );
   store.set(tabsAtom, []);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // jsdom 没有 CSS.escape；测试里的路径不含要转义的字符
+  vi.stubGlobal("CSS", { escape: (value: string) => value });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -145,6 +157,92 @@ async function removeFromMenu(name: string) {
   expect(remove).toBeDefined();
   await act(async () => remove.click());
 }
+
+const press = (target: Element, key: string, init: KeyboardEventInit = {}) =>
+  act(async () => {
+    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }));
+  });
+const renameBox = () => container.querySelector<HTMLInputElement>('input[aria-label="rename.title"]');
+/** React 不认直接赋的 value，要走原生的 setter 再发 input 事件 */
+function type(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+describe("renaming in place", () => {
+  it("turns the name into a text box on F2 with the part before the extension selected, and renames on Enter", async () => {
+    await expandOther();
+    await press(row("a.pdf"), "F2");
+    // 先切到文件所在的项目，再在原位改
+    expect(mocks.switchProject).toHaveBeenCalledWith("/other");
+    const input = renameBox()!;
+    expect(input.value).toBe("a.pdf");
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 1]);
+    type(input, "paper.pdf");
+    await press(input, "Enter");
+    expect(mocks.rename).toHaveBeenCalledExactlyOnceWith("/other/a.pdf", "paper.pdf");
+    expect(renameBox()).toBeNull();
+    // 回车只是确认改名，不顺带打开文件
+    expect(mocks.openDocument).not.toHaveBeenCalled();
+  });
+
+  it("opens on Enter outside macOS; on macOS Enter renames and Command-Down opens", async () => {
+    await expandOther();
+    await press(row("a.md"), "Enter");
+    await vi.waitFor(() => expect(mocks.openDocument).toHaveBeenCalledWith("/other/a.md"));
+    expect(renameBox()).toBeNull();
+
+    mocks.openDocument.mockClear();
+    mocks.platform.mac = true;
+    await press(row("a.md"), "Enter");
+    expect(renameBox()!.value).toBe("a.md");
+    expect(mocks.openDocument).not.toHaveBeenCalled();
+    await press(renameBox()!, "Escape");
+    await press(row("a.md"), "ArrowDown", { metaKey: true });
+    await vi.waitFor(() => expect(mocks.openDocument).toHaveBeenCalledWith("/other/a.md"));
+  });
+
+  it("keeps the old name on Escape, on an unchanged or empty name, and commits when focus leaves", async () => {
+    await expandOther();
+    await press(row("a.md"), "F2");
+    type(renameBox()!, "other.md");
+    await press(renameBox()!, "Escape");
+    expect(renameBox()).toBeNull();
+    for (const value of ["a.md", "  "]) {
+      await press(row("a.md"), "F2");
+      type(renameBox()!, value);
+      await press(renameBox()!, "Enter");
+    }
+    expect(mocks.rename).not.toHaveBeenCalled();
+
+    await press(row("a.md"), "F2");
+    type(renameBox()!, "notes.md");
+    await act(async () => renameBox()!.blur());
+    expect(mocks.rename).toHaveBeenCalledExactlyOnceWith("/other/a.md", "notes.md");
+  });
+
+  it("shows a board without .prg, does not treat Enter while picking a pinyin candidate as confirm, and reports failures", async () => {
+    await expandOther();
+    await press(row("a.prg"), "F2");
+    const input = renameBox()!;
+    expect(input.value).toBe("a");
+    type(input, "板");
+    await press(input, "Enter", { isComposing: true });
+    expect(renameBox()).not.toBeNull();
+    mocks.rename.mockRejectedValueOnce(new Error("exists"));
+    await press(input, "Enter");
+    expect(mocks.rename).toHaveBeenCalledWith("/other/a.prg", "板");
+    await vi.waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+  });
+
+  it("does not start renaming when switching to the file's project is cancelled", async () => {
+    mocks.switchProject.mockResolvedValue(false);
+    await expandOther();
+    await press(row("a.pdf"), "F2");
+    expect(renameBox()).toBeNull();
+  });
+});
 
 describe("workspace file tree", () => {
   it("confirms removal, respects cancellation and only removes the project from the list", async () => {
