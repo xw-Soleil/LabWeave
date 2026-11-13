@@ -256,27 +256,41 @@ export function selectionRects(geo: PdfPageGeometry, from: number, to: number): 
   }));
 }
 
-/** 选区插件状态里这里用到的几项 */
+/**
+ * 选区插件状态里这里用到的几项。以 selection（现在选中的范围）为准：
+ * 清空选区时插件只清 selection 和 rects，slices（每页选中第几个到第几个字）会留着上一次的
+ */
 export interface SelectionGeometry {
   geometry: Record<number, PdfPageGeometry>;
-  slices: Record<number, { start: number; count: number }>;
+  selection: { start: { page: number; index: number }; end: { page: number; index: number } } | null;
   rects: Record<number, Rect[]>;
+}
+
+/** 现在的选区在这一页上的框；这一页没选中东西就是空的 */
+export function pageSelectionRects(state: SelectionGeometry, pageIndex: number): Rect[] {
+  const range = state.selection;
+  if (!range || pageIndex < range.start.page || pageIndex > range.end.page) return [];
+  const geometry = state.geometry[pageIndex];
+  const last = geometry?.runs.at(-1);
+  // 这一页的文字位置还没读到时，先用插件自己的框
+  if (!geometry || !last) return state.rects[pageIndex] ?? [];
+  return selectionRects(
+    geometry,
+    pageIndex === range.start.page ? range.start.index : 0,
+    pageIndex === range.end.page ? range.end.index : last.charStart + last.glyphs.length - 1,
+  );
 }
 
 /** 和选区插件的 getFormattedSelection 一个格式，框换成这里算的。划高亮、摆选区菜单都用它 */
 export function formattedSelection(
   state: SelectionGeometry,
 ): { pageIndex: number; rect: Rect; segmentRects: Rect[] }[] {
-  return Object.keys(state.slices)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .flatMap((pageIndex) => {
-      const slice = state.slices[pageIndex];
-      const geometry = state.geometry[pageIndex];
-      const segmentRects = geometry
-        ? selectionRects(geometry, slice.start, slice.start + slice.count - 1)
-        : (state.rects[pageIndex] ?? []);
-      const rect = boundingRect(segmentRects);
-      return rect ? [{ pageIndex, rect, segmentRects }] : [];
-    });
+  const range = state.selection;
+  if (!range) return [];
+  return Array.from({ length: range.end.page - range.start.page + 1 }, (_, offset) => {
+    const pageIndex = range.start.page + offset;
+    const segmentRects = pageSelectionRects(state, pageIndex);
+    const rect = boundingRect(segmentRects);
+    return rect ? [{ pageIndex, rect, segmentRects }] : [];
+  }).flat();
 }

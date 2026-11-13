@@ -906,6 +906,32 @@ describe("PDF annotation tools and persistence", () => {
     });
   });
 
+  it("clears the blue blocks and the selection menu on a click in the margin", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+    const press = async (events: readonly (readonly [string, number, number])[]) => {
+      for (const [type, clientX, clientY] of events)
+        await act(async () =>
+          page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+        );
+    };
+    await press([
+      ["pointerdown", 41, 85],
+      ["pointermove", 79, 115],
+      ["pointerup", 79, 115],
+    ]);
+    expect(page.querySelectorAll('[data-pdf-selection="0"] > div')).toHaveLength(2);
+    expect(container.querySelector('[aria-label="document.annotation.selectionMenu"]')).not.toBeNull();
+    await press([
+      ["pointerdown", 300, 400],
+      ["pointerup", 300, 400],
+    ]);
+    expect(page.querySelector("[data-pdf-selection]")).toBeNull();
+    expect(container.querySelector('[aria-label="document.annotation.selectionMenu"]')).toBeNull();
+  });
+
   it("returns to the pointer after one highlight and leaves the sidebar alone", async () => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     tab.pdfLocation.scale = 1;

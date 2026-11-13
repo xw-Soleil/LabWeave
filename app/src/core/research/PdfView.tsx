@@ -67,7 +67,7 @@ import {
 } from "./PdfAnnotationUI";
 import { annotationBounds, pdfRectToReader, type PdfAnnotation } from "./PdfAnnotations";
 import type { PdfExcerpt } from "./PdfExcerpt";
-import { selectionRects } from "./PdfSelectionRects";
+import { pageSelectionRects } from "./PdfSelectionRects";
 import { askAiAboutSelection } from "./ReadingContext";
 import { selectionForTranslation, TranslateCard } from "./TranslateCard";
 
@@ -101,14 +101,15 @@ function SelectionBlocks({ documentId, pageIndex, scale }: { documentId: string;
   const [rects, setRects] = useState<Rect[]>([]);
   useEffect(() => {
     if (!selection) return;
-    const read = () => {
-      const state = selection.getState();
-      const slice = state.slices[pageIndex];
-      const geometry = state.geometry[pageIndex];
-      setRects(slice && geometry ? selectionRects(geometry, slice.start, slice.start + slice.count - 1) : []);
-    };
+    const read = () => setRects(pageSelectionRects(selection.getState(), pageIndex));
     read();
-    return selection.onSelectionChange(read);
+    // 点空白处清掉选区、拖动改变选区时插件发「选区变了」；按下鼠标开始新选区时只发「开始选」
+    const offChange = selection.onSelectionChange(read);
+    const offBegin = selection.onBeginSelection(read);
+    return () => {
+      offChange();
+      offBegin();
+    };
   }, [selection, pageIndex]);
   if (!rects.length) return null;
   return (

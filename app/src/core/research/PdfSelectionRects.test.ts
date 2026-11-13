@@ -1,6 +1,6 @@
 import type { PdfPageGeometry, Rect } from "@embedpdf/models";
 import { describe, expect, it } from "vitest";
-import { formattedSelection, selectionRects } from "./PdfSelectionRects";
+import { formattedSelection, pageSelectionRects, selectionRects } from "./PdfSelectionRects";
 
 type Run = PdfPageGeometry["runs"][number];
 
@@ -243,27 +243,45 @@ describe("selection boxes drawn line by line", () => {
   });
 });
 
-describe("the selection as highlights and the menu use it", () => {
-  it("lists every selected page with our boxes and their bounds", () => {
-    const first = page(paragraph(charis, 10));
-    const second = page(paragraph(times, 12));
+describe("the selection as the blue blocks, highlights and the menu use it", () => {
+  const first = page(paragraph(charis, 10));
+  const second = page(paragraph(times, 12));
+  const third = page(paragraph(times, 24));
+  const geometry = { 2: first, 3: second, 4: third };
+
+  it("covers the end of the first page, all of the pages between and the start of the last", () => {
     const state = {
-      geometry: { 2: first, 3: second },
-      slices: { 3: { start: 0, count: 10 }, 2: { start: size(first) - 5, count: 5 } },
+      geometry,
+      selection: { start: { page: 2, index: size(first) - 5 }, end: { page: 4, index: 9 } },
       rects: {},
     };
+    expect(pageSelectionRects(state, 1)).toEqual([]);
+    expect(pageSelectionRects(state, 2)).toEqual(selectionRects(first, size(first) - 5, size(first) - 1));
+    expect(pageSelectionRects(state, 3)).toEqual(all(second));
+    expect(pageSelectionRects(state, 4)).toEqual(selectionRects(third, 0, 9));
+    expect(pageSelectionRects(state, 5)).toEqual([]);
     const formatted = formattedSelection(state);
-    expect(formatted.map((entry) => entry.pageIndex)).toEqual([2, 3]);
-    expect(formatted[0].segmentRects).toEqual(selectionRects(first, size(first) - 5, size(first) - 1));
-    expect(formatted[1].segmentRects).toEqual(selectionRects(second, 0, 9));
+    expect(formatted.map((entry) => entry.pageIndex)).toEqual([2, 3, 4]);
+    expect(formatted[0].segmentRects).toEqual(pageSelectionRects(state, 2));
     expect(formatted[0].rect).toEqual(formatted[0].segmentRects[0]);
-    expect(formattedSelection({ geometry: {}, slices: {}, rects: {} })).toEqual([]);
+    expect(top(formatted[1].rect)).toBe(top(formatted[1].segmentRects[0]));
+    expect(bottom(formatted[1].rect)).toBe(bottom(formatted[1].segmentRects[4]));
+  });
+
+  it("is empty once the selection is cleared, whatever the plugin leaves behind", () => {
+    // 点空白处后插件把 selection 清成空，但每页「选中第几个到第几个字」的记录还留着
+    const cleared = { geometry, selection: null, rects: {}, slices: { 2: { start: 0, count: 40 } } };
+    expect(pageSelectionRects(cleared, 2)).toEqual([]);
+    expect(formattedSelection(cleared)).toEqual([]);
   });
 
   it("uses the plugin's own boxes for a page whose text layout is not loaded", () => {
     const rects = [{ origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } }];
-    expect(formattedSelection({ geometry: {}, slices: { 0: { start: 0, count: 3 } }, rects: { 0: rects } })).toEqual([
-      { pageIndex: 0, rect: rects[0], segmentRects: rects },
-    ]);
+    const state = {
+      geometry: { 1: { runs: [] } },
+      selection: { start: { page: 0, index: 0 }, end: { page: 1, index: 2 } },
+      rects: { 0: rects },
+    };
+    expect(formattedSelection(state)).toEqual([{ pageIndex: 0, rect: rects[0], segmentRects: rects }]);
   });
 });
