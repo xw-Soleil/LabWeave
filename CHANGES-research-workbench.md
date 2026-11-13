@@ -885,3 +885,23 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 删掉：`NoteOutlineTab.ts`、竖栏上的「大纲」按钮、大纲面板里的搜索、折叠、拖到另一侧，以及对应的文案。白板自己的「大纲窗口」（快捷键里那个）没有动。
 - `DocumentView.tsx`：挂上新大纲；阅读模式跳转改成平滑滚动。
 - 测试：新增 `NoteOutline.test.tsx`（标题少时不显示、列出标题、标出读到的那个、点了发出跳转）。
+
+### 70. PDF 选中文字不再一条深一条浅（2026-11-13）
+
+- 现象：有的 PDF 里拖选一段字，蓝色选区一条深一条浅，有的 PDF 没事。
+- 原因：选区是一行一个色块。有的 PDF 相邻两行的行框上下重叠，原来用的是半透明蓝，重叠处叠了两层就变深；行框不重叠的 PDF 看不出来。
+- `app/src/core/research/PdfView.tsx`：选区这一层本来就是用「正片叠底」压在页面上的，把色块换成等效的不透明浅蓝（`rgb(204, 228, 255)`），重叠处不再变深，字照样清楚。测试里加了对色块颜色的检查。
+
+### 71. 文献库：导入 PDF 自动认出标题、作者；可以按 DOI 或 arXiv 编号添加（2026-11-13）
+
+- 起因：用户要求和 Zotero 对齐。原来导入 PDF 只拿文件名当标题，也不能按编号添加。用户同意为此新增联网（Crossref、arXiv），已写进 `CLAUDE.md` 的产品原则。
+- 新文件 `app/src/core/research/LibraryLookup.ts`：
+  - `findPaperId`：从 PDF 开头的文字或用户贴进来的内容里找 DOI 和 arXiv 编号（含 arXiv 的网址、旧式编号、arXiv 自己发的 `10.48550/arXiv.…`）。
+  - `lookupPaper`：DOI 查 `api.crossref.org`，arXiv 编号查 `export.arxiv.org`，取回标题、作者、年份、期刊或会议、卷期页、摘要、类型。只发出编号，10 秒超时。查不到、连不上、没编号分别报不同的错误代码。
+  - `recognizePdf`：导入时先在本机读 PDF 开头两页和文件自带的信息找编号，再联网查，PDF 内容不上传。PDF 上有 arXiv 水印就按 arXiv 查；只有 DOI 时，查回来的标题必须能在这篇 PDF 开头找到才采用（第一页偶尔会出现别的文献的 DOI）。没编号、查不到、对不上或读不了时，退回 PDF 自带的标题和作者，再不行用文件名，并把原因告诉用户。
+- `app/src/core/research/PdfTools.ts`：新增 `readPdfHead`，读用户在系统窗口里亲手选的 PDF 的开头两页和文件信息。原有的 `readPdfText`、`searchPdf`（给 AI 用）仍然只能读研究文件夹里的 PDF。
+- `app/src/core/research/LibraryView.tsx`：
+  - 「导入 PDF」先识别再建条目，所以条目文件夹名是「作者年份标题」而不是下载时的文件名；识别时有提示，认出来、只用了 PDF 自带信息、完全没认出各有一句说明。
+  - 新增「按 DOI 或 arXiv 编号添加」按钮：贴编号或网址，查到就建一篇（不带 PDF）。
+  - 库里已有同一个 DOI 或 arXiv 编号时，选中已有的那篇并先问要不要再加。
+- 测试：新增 `LibraryLookup.test.ts`（找编号的各种写法、Crossref 和 arXiv 的解析、各种失败、导入识别的几条退路）；`PdfTools.test.ts` 用真 PDF 引擎测了读开头文字和文件信息、以及研究文件夹外的文件只有这个入口能读。另用 DiffusionPDE 的编号实际查过一次两个接口，返回内容经解析后标题、作者、年份、类型、页码都对。

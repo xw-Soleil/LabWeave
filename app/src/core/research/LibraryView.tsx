@@ -40,6 +40,7 @@ import {
   Search,
   Trash2,
   Upload,
+  WandSparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -64,6 +65,8 @@ import {
   type LibrarySnapshot,
   type ReadStatus,
 } from "./Library";
+import type { CreateLibraryItemFields } from "./LibraryFormat";
+import { findPaperId, lookupPaper, recognizePdf } from "./LibraryLookup";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import ZoteroSyncDialog from "./ZoteroSyncDialog";
 
@@ -198,6 +201,25 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
 
   const run = (task: () => Promise<unknown>) => void task().then(refresh).catch(reportError);
   const targetCollections = scope.kind === "collection" ? [scope.path] : [];
+  /** 库里已经有同一个 DOI 或 arXiv 编号的文献时，选中它并先问一声 */
+  const mayAdd = async (fields: CreateLibraryItemFields) => {
+    const same = snapshot?.items.find(
+      (item) =>
+        !item.trashed &&
+        ((!!fields.doi && item.doi?.toLowerCase() === fields.doi) || (!!fields.arxiv && item.arxiv === fields.arxiv)),
+    );
+    if (!same) return true;
+    setSelected(same.key);
+    const answer = await Dialog.buttons(
+      t("library.lookup.duplicateTitle"),
+      t("library.lookup.duplicateDescription", { title: same.title }),
+      [
+        { id: "cancel", label: t("library.lookup.cancel"), variant: "ghost" },
+        { id: "add", label: t("library.lookup.addAnyway") },
+      ],
+    );
+    return answer === "add";
+  };
   const importPdf = () =>
     run(async () => {
       const pdf = await openDialog({
@@ -205,12 +227,41 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!pdf) return;
-      const title = pdf
+      const name = pdf
         .split(/[\\/]/)
         .at(-1)!
         .replace(/\.pdf$/i, "");
-      const item = await createItem(root, { title, collections: targetCollections }, pdf);
+      // 和 Zotero 一样先认出是哪篇，再建条目：这样文件夹名是「作者年份标题」，不是下载时的文件名
+      const working = toast.loading(t("library.lookup.reading", { name }));
+      const found = await recognizePdf(pdf).finally(() => toast.dismiss(working));
+      const fields = { ...found.fields, title: found.fields.title || name, collections: targetCollections };
+      if (!(await mayAdd(fields))) return;
+      const item = await createItem(root, fields, pdf);
       setSelected(item.key);
+      if (found.source === "online") toast.success(t("library.lookup.found", { title: item.title }));
+      else
+        toast.warning(
+          [
+            found.problem ? libraryError(found.problem) : "",
+            t(found.source === "pdf" ? "library.lookup.fromPdf" : "library.lookup.none"),
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+    });
+  const addById = () =>
+    run(async () => {
+      const input = await Dialog.input(t("library.addById"), t("library.addByIdHint"), {
+        placeholder: t("library.addByIdPlaceholder"),
+      });
+      if (!input?.trim()) return;
+      const working = toast.loading(t("library.lookup.searching"));
+      const found = await lookupPaper(findPaperId(input.trim())).finally(() => toast.dismiss(working));
+      const fields = { ...found, collections: targetCollections };
+      if (!(await mayAdd(fields))) return;
+      const item = await createItem(root, fields);
+      setSelected(item.key);
+      toast.success(t("library.lookup.found", { title: item.title }));
     });
   const newItem = () =>
     run(async () => {
@@ -286,6 +337,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           />
           <ToolButton icon={Plus} label={t("library.newItem")} onClick={newItem} />
           <ToolButton icon={Upload} label={t("library.importPdf")} onClick={importPdf} />
+          <ToolButton icon={WandSparkles} label={t("library.addById")} onClick={addById} />
           <span className="flex-1" />
           <Button
             variant="ghost"

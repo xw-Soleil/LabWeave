@@ -3321,6 +3321,10 @@ research:
       collectionNotFound: 分类不存在，请刷新后重试。
       itemsHaveErrors: 文献库中有读不了的条目，先修好它们，再改名或删除分类。
       readFailed: 无法读取文献条目，请检查文件和权限。
+      lookupNotFound: 没查到这个编号对应的文献，请检查编号。
+      lookupNetwork: 连不上 Crossref 或 arXiv，请检查网络后再试。
+      lookupNoId: 没认出 DOI 或 arXiv 编号。
+      lookupMismatch: 这篇 PDF 开头的 DOI 查到的是另一篇文献，没有采用。
       writeFailed: 保存失败，未完成写入的原文件已保留，请检查磁盘和权限后重试。
       fileChanged: 文件已被其他程序修改，请刷新后重试。
       partialWrite: 分类修改中途失败，部分条目没能改回原样。请刷新后检查，不要覆盖外部修改。
@@ -3346,6 +3350,19 @@ research:
     newItemTitle: 新建条目
     importPdf: 导入 PDF
     importTitle: 导入 PDF
+    addById: 按 DOI 或 arXiv 编号添加
+    addByIdHint: 贴上 DOI、arXiv 编号或它们的网址，联网取回标题、作者、年份、摘要。只会发出这个编号。
+    addByIdPlaceholder: 10.1038/… 或 2406.17763 或 https://arxiv.org/abs/…
+    lookup:
+      reading: "正在识别「{{name}}」…"
+      searching: 正在查这篇文献…
+      found: "已认出：{{title}}"
+      fromPdf: 没能联网查到这篇，先用了 PDF 里自带的标题，其余信息可以在右栏补。
+      none: 没认出这篇 PDF，先用文件名当标题。可以在右栏补信息，或改用「按 DOI 或 arXiv 编号添加」。
+      duplicateTitle: 库里已经有这篇了
+      duplicateDescription: "「{{title}}」已经在文献库里，还要再添加一篇吗？"
+      addAnyway: 仍然添加
+      cancel: 取消
     refresh: 刷新
     info: 信息
     searchPlaceholder: 在当前列表中快速搜索（标题 / 作者 / 期刊 / 标签 / DOI）

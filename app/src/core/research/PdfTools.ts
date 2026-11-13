@@ -88,6 +88,8 @@ async function withPdf<T>(
   input: string,
   signal: AbortSignal | undefined,
   action: (engine: PdfReaderEngine, pdf: PdfDocumentObject, path: string) => Promise<T>,
+  /** 用户在系统窗口里亲手选的文件（导入文献库时）：不要求它在研究文件夹里 */
+  picked = false,
 ): Promise<T> {
   const lifetime = new AbortController();
   let engine: PdfReaderEngine | undefined;
@@ -109,7 +111,9 @@ async function withPdf<T>(
   signal?.addEventListener("abort", stop, { once: true });
   try {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const path = await pdfWithTimeout(resolveReadablePdfPath(input), 25000, lifetime.signal);
+    const path = picked
+      ? documentPath(input)
+      : await pdfWithTimeout(resolveReadablePdfPath(input), 25000, lifetime.signal);
     if (lifetime.signal.aborted) throw new Error("fileClosed");
     engine = new PdfReaderEngine(
       new Worker(new URL("./PdfReaderWorker.ts", import.meta.url), { type: "module" }),
@@ -157,6 +161,27 @@ export async function readPdfText(
     }
     return result;
   });
+}
+
+/** 导入文献库时认这篇 PDF 用：开头两页的文字，加上文件自带的标题、作者等信息 */
+export function readPdfHead(path: string): Promise<{ text: string; title: string; author: string }> {
+  return withPdf(
+    path,
+    undefined,
+    async (engine, pdf) => {
+      const pages = Array.from({ length: Math.min(2, pdf.pageCount) }, (_, index) => index);
+      const [text, info] = await Promise.all([
+        engine.extractText(pdf, pages).toPromise(),
+        engine.getMetadata(pdf).toPromise(),
+      ]);
+      return {
+        text: [text.slice(0, 20000), info.subject, info.keywords].filter(Boolean).join("\n"),
+        title: info.title ?? "",
+        author: info.author ?? "",
+      };
+    },
+    true,
+  );
 }
 
 export async function searchPdf(

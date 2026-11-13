@@ -3202,6 +3202,10 @@ research:
       collectionNotFound: The collection no longer exists. Refresh and retry.
       itemsHaveErrors: Some items cannot be read. Repair them before renaming or removing collections.
       readFailed: Cannot read this item. Check the file and permissions.
+      lookupNotFound: No paper was found for this identifier. Check it and try again.
+      lookupNetwork: Cannot reach Crossref or arXiv. Check your network and try again.
+      lookupNoId: No DOI or arXiv number was recognised.
+      lookupMismatch: The DOI at the start of this PDF belongs to a different paper, so it was not used.
       writeFailed: Saving failed. Files whose writes did not complete were preserved. Check disk space and permissions.
       fileChanged: Another application changed the file. Refresh and retry.
       partialWrite: The collection change failed and some items could not be restored. Refresh and check them without overwriting external edits.
@@ -3227,6 +3231,19 @@ research:
     newItemTitle: New item
     importPdf: Import PDF
     importTitle: Import PDF
+    addById: Add by DOI or arXiv number
+    addByIdHint: Paste a DOI, an arXiv number or their URL to fetch the title, authors, year and abstract. Only the identifier is sent.
+    addByIdPlaceholder: 10.1038/… or 2406.17763 or https://arxiv.org/abs/…
+    lookup:
+      reading: "Recognising “{{name}}”…"
+      searching: Looking this paper up…
+      found: "Recognised: {{title}}"
+      fromPdf: This paper could not be looked up online, so the title stored in the PDF was used. Fill in the rest in the right-hand panel.
+      none: This PDF was not recognised, so its file name is used as the title. Fill in the details in the right-hand panel, or use “Add by DOI or arXiv number”.
+      duplicateTitle: This paper is already in the library
+      duplicateDescription: "“{{title}}” is already in the library. Add another copy?"
+      addAnyway: Add anyway
+      cancel: Cancel
     refresh: Refresh
     info: Info
     searchPlaceholder: Search this list (title / author / venue / tag / DOI)

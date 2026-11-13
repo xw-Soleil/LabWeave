@@ -19,7 +19,7 @@ vi.mock("./PdfReader", async (original) => ({ ...(await original<object>()), rea
 import { store, tabsAtom } from "@/state";
 import { DocumentTab } from "./DocumentTab";
 import { researchWorkspaceAtom } from "./ResearchWorkspace";
-import { readPdfText, resolveReadablePdfPath, searchPdf } from "./PdfTools";
+import { readPdfHead, readPdfText, resolveReadablePdfPath, searchPdf } from "./PdfTools";
 
 class TestWorker extends EventTarget {
   static instances: TestWorker[] = [];
@@ -253,6 +253,30 @@ describe("PDF tools", () => {
         { page: 1, text: "A Needle in the paper" },
       ]);
       expect(network).not.toHaveBeenCalled();
+    } finally {
+      await engine.destroy().toPromise();
+    }
+  });
+  it("reads the first pages and the document info of a PDF the user picked outside the research folder", async () => {
+    const stream = "BT /F1 12 Tf 40 100 Td (arXiv:2406.17763v2 [cs.LG] 20 Nov 2024) Tj ET";
+    const bytes = new TextEncoder().encode(
+      `%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n5 0 obj << /Length ${stream.length} >> stream\n${stream}\nendstream endobj\n6 0 obj << /Title (A Paper About Solvers) /Author (Ada Lovelace; Alan Turing) /Subject (doi:10.1000/example.1) >> endobj\ntrailer << /Root 1 0 R /Info 6 0 R >>\n%%EOF`,
+    );
+    const wasmBinary = await readFile(createRequire(import.meta.url).resolve("@embedpdf/pdfium/pdfium.wasm"));
+    const wasm = await init({ wasmBinary });
+    const engine = new PdfEngine(new PdfiumNative(wasm, { fontFallback: null }), {
+      imageConverter: browserImageDataToBlobConverter,
+    });
+    TestWorker.engine = engine;
+    mocks.read.mockImplementation(async () => bytes.slice().buffer);
+    try {
+      await expect(readPdfText({ path: "/downloads/paper.pdf", pages: "1" })).rejects.toThrow("pdf.pathNotAllowed");
+      const head = await readPdfHead("/downloads/paper.pdf");
+      expect(head.title).toBe("A Paper About Solvers");
+      expect(head.author).toBe("Ada Lovelace; Alan Turing");
+      expect(head.text).toContain("arXiv:2406.17763v2");
+      expect(head.text).toContain("doi:10.1000/example.1");
+      expect(mocks.read).toHaveBeenLastCalledWith("/downloads/paper.pdf", expect.anything(), expect.anything());
     } finally {
       await engine.destroy().toPromise();
     }

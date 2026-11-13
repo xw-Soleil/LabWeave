@@ -3321,6 +3321,10 @@ research:
       collectionNotFound: 分類不存在，請刷新後重試。
       itemsHaveErrors: 文獻庫中有讀不了的條目，先修好它們，再改名或刪除分類。
       readFailed: 無法讀取文獻條目，請檢查文件和權限。
+      lookupNotFound: 沒查到這個編號對應的文獻，請檢查編號。
+      lookupNetwork: 連不上 Crossref 或 arXiv，請檢查網絡後再試。
+      lookupNoId: 沒認出 DOI 或 arXiv 編號。
+      lookupMismatch: 這篇 PDF 開頭的 DOI 查到的是另一篇文獻，沒有采用。
       writeFailed: 保存失敗，未完成寫入的原文件已保留，請檢查磁盤和權限後重試。
       fileChanged: 文件已被其他程序修改，請刷新後重試。
       partialWrite: 分類修改中途失敗，部分條目沒能改回原樣。請刷新後檢查，不要覆蓋外部修改。
@@ -3346,6 +3350,19 @@ research:
     newItemTitle: 新建條目
     importPdf: 導入 PDF
     importTitle: 導入 PDF
+    addById: 按 DOI 或 arXiv 編號添加
+    addByIdHint: 貼上 DOI、arXiv 編號或它們的網址，聯網取回標題、作者、年份、摘要。只會發出這個編號。
+    addByIdPlaceholder: 10.1038/… 或 2406.17763 或 https://arxiv.org/abs/…
+    lookup:
+      reading: "正在識別「{{name}}」…"
+      searching: 正在查這篇文獻…
+      found: "已認出：{{title}}"
+      fromPdf: 沒能聯網查到這篇，先用了 PDF 裡自帶的標題，其餘信息可以在右欄補。
+      none: 沒認出這篇 PDF，先用文件名當標題。可以在右欄補信息，或改用「按 DOI 或 arXiv 編號添加」。
+      duplicateTitle: 庫裡已經有這篇了
+      duplicateDescription: "「{{title}}」已經在文獻庫裡，還要再添加一篇嗎？"
+      addAnyway: 仍然添加
+      cancel: 取消
     refresh: 刷新
     info: 信息
     searchPlaceholder: 在當前列表中快速搜索（標題 / 作者 / 期刊 / 標籤 / DOI）
