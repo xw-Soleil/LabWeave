@@ -65,8 +65,8 @@ import {
   type LibrarySnapshot,
   type ReadStatus,
 } from "./Library";
-import type { CreateLibraryItemFields } from "./LibraryFormat";
-import { findPaperId, lookupPaper, recognizePdf } from "./LibraryLookup";
+import type { CreateLibraryItemFields, LibraryItemPatch } from "./LibraryFormat";
+import { downloadArxivPdf, findPaperId, lookupChanges, lookupItem, lookupPaper, recognizePdf } from "./LibraryLookup";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import ZoteroSyncDialog from "./ZoteroSyncDialog";
 
@@ -129,6 +129,52 @@ function libraryError(error: unknown): string {
     : documentError(error);
 }
 const reportError = (error: unknown) => toast.error(libraryError(error));
+
+/** 「联网补全信息」：空着的直接补上；和现有内容不一样的，列出来问过再改 */
+async function completeItem(root: string, item: LibraryItem, t: ReturnType<typeof useLibraryText>) {
+  const working = toast.loading(t("library.lookup.searching"));
+  const found = await lookupItem(item).finally(() => toast.dismiss(working));
+  const { fill, replace } = lookupChanges(item, found);
+  const names = (patch: LibraryItemPatch) =>
+    Object.keys(patch)
+      .map((field) => t(`library.fields.${field}`))
+      .join(t("library.lookup.separator"));
+  const show = (value: unknown) => {
+    const text = [value].flat().join("; ");
+    return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  };
+  let patch = fill;
+  if (Object.keys(replace).length) {
+    const title = t("library.lookup.differTitle");
+    const lines = [
+      t("library.lookup.differDescription", { title: item.title }),
+      ...Object.entries(replace).map(([field, value]) =>
+        t("library.lookup.differLine", {
+          field: t(`library.fields.${field}`),
+          old: show(item[field as keyof LibraryItemPatch]),
+          new: show(value),
+        }),
+      ),
+    ];
+    const cancel = { id: "cancel", label: t("library.lookup.cancel"), variant: "ghost" } as const;
+    const useFound = { id: "replace", label: t("library.lookup.useFound") } as const;
+    const answer = Object.keys(fill).length
+      ? await Dialog.buttons(title, [...lines, t("library.lookup.willFill", { fields: names(fill) })].join("\n"), [
+          cancel,
+          { id: "fill", label: t("library.lookup.fillOnly"), variant: "outline" },
+          useFound,
+        ])
+      : await Dialog.buttons(title, lines.join("\n"), [cancel, useFound]);
+    if (answer === "cancel") return;
+    if (answer === "replace") patch = { ...fill, ...replace };
+  }
+  if (!Object.keys(patch).length) {
+    toast.info(t("library.lookup.upToDate"));
+    return;
+  }
+  await updateItem(root, item.key, patch);
+  toast.success(t("library.lookup.completed", { fields: names(patch) }));
+}
 const PANE_ROW = "group flex h-7 min-w-0 items-center gap-1.5 rounded-md pr-1.5 text-[13px] select-none";
 const PANE_IDLE = "text-foreground/80 hover:bg-foreground/[0.05]";
 const PANE_ACTIVE = "bg-foreground/[0.08] text-foreground";
@@ -259,9 +305,19 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
       const found = await lookupPaper(findPaperId(input.trim())).finally(() => toast.dismiss(working));
       const fields = { ...found, collections: targetCollections };
       if (!(await mayAdd(fields))) return;
-      const item = await createItem(root, fields);
+      // arXiv 上的 PDF 是公开的，和 Zotero 一样顺手下回来；下不动也照样建条目，原因告诉用户
+      let pdf: Uint8Array | undefined;
+      let problem: unknown;
+      if (found.arxiv) {
+        const downloading = toast.loading(t("library.lookup.downloading"));
+        pdf = await downloadArxivPdf(found.arxiv)
+          .catch((error: unknown) => void (problem = error))
+          .finally(() => toast.dismiss(downloading));
+      }
+      const item = await createItem(root, fields, pdf);
       setSelected(item.key);
-      toast.success(t("library.lookup.found", { title: item.title }));
+      if (problem) toast.warning(t("library.lookup.pdfFailed", { title: item.title, reason: libraryError(problem) }));
+      else toast.success(t("library.lookup.found", { title: item.title }));
     });
   const newItem = () =>
     run(async () => {
@@ -1077,6 +1133,12 @@ function ItemMenu({
               <NotebookPen />
               {t("library.openNote")}
             </DropdownMenuItem>
+            {!item.trashed && (
+              <DropdownMenuItem onSelect={() => run(() => completeItem(root, item, t))}>
+                <WandSparkles />
+                {t("library.lookup.complete")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             {STATUSES.map((status) => (
               <DropdownMenuItem key={status} onSelect={() => run(() => updateItem(root, item.key, { status }))}>
@@ -1273,6 +1335,17 @@ function InfoPane({
           <NotebookPen data-icon="inline-start" />
           {t("library.openNote")}
         </Button>
+        {!item.trashed && (
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={t("library.lookup.complete")}
+            title={t("library.lookup.complete")}
+            onClick={() => run(() => completeItem(root, item, t))}
+          >
+            <WandSparkles />
+          </Button>
+        )}
       </div>
     </div>
   );

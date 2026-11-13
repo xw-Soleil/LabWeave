@@ -3325,6 +3325,8 @@ research:
       lookupNetwork: 连不上 Crossref 或 arXiv，请检查网络后再试。
       lookupNoId: 没认出 DOI 或 arXiv 编号。
       lookupMismatch: 这篇 PDF 开头的 DOI 查到的是另一篇文献，没有采用。
+      lookupNoIdItem: 这篇没有登记 DOI 或 arXiv 编号，它的 PDF 里也没找到。在笔记开头的「doi」或「arxiv」一栏填上编号后再试。
+      lookupNoPdf: arXiv 上没有拿到这篇的 PDF。
       writeFailed: 保存失败，未完成写入的原文件已保留，请检查磁盘和权限后重试。
       fileChanged: 文件已被其他程序修改，请刷新后重试。
       partialWrite: 分类修改中途失败，部分条目没能改回原样。请刷新后检查，不要覆盖外部修改。
@@ -3351,7 +3353,7 @@ research:
     importPdf: 导入 PDF
     importTitle: 导入 PDF
     addById: 按 DOI 或 arXiv 编号添加
-    addByIdHint: 贴上 DOI、arXiv 编号或它们的网址，联网取回标题、作者、年份、摘要。只会发出这个编号。
+    addByIdHint: 贴上 DOI、arXiv 编号或它们的网址，联网取回标题、作者、年份、摘要；arXiv 上的文献会把 PDF 一起下载回来。只会发出这个编号。
     addByIdPlaceholder: 10.1038/… 或 2406.17763 或 https://arxiv.org/abs/…
     lookup:
       reading: "正在识别「{{name}}」…"
@@ -3363,6 +3365,18 @@ research:
       duplicateDescription: "「{{title}}」已经在文献库里，还要再添加一篇吗？"
       addAnyway: 仍然添加
       cancel: 取消
+      complete: 联网补全信息
+      completed: "已更新：{{fields}}"
+      upToDate: 联网查到的和现有的信息一样，没有要补的。
+      separator: 、
+      differTitle: 查到的信息和现有的不一样
+      differDescription: "「{{title}}」下面这几处和联网查到的不一样："
+      differLine: "{{field}}：{{old}} → {{new}}"
+      willFill: "另外会补上现在空着的：{{fields}}"
+      fillOnly: 只补空着的
+      useFound: 改成查到的
+      downloading: 正在从 arXiv 下载 PDF…
+      pdfFailed: "已添加「{{title}}」，但 PDF 没下载下来：{{reason}}"
     refresh: 刷新
     info: 信息
     searchPlaceholder: 在当前列表中快速搜索（标题 / 作者 / 期刊 / 标签 / DOI）
@@ -3400,6 +3414,12 @@ research:
       collections: 分类
       tags: 标签
       abstract: 摘要
+      volume: 卷
+      issue: 期
+      pages: 页码
+      doi: DOI
+      arxiv: arXiv
+      url: 网址
   zoteroSync:
     title: 同步 Zotero
     description: 正在读取两边的差别。

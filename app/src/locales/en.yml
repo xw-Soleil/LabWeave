@@ -3206,6 +3206,8 @@ research:
       lookupNetwork: Cannot reach Crossref or arXiv. Check your network and try again.
       lookupNoId: No DOI or arXiv number was recognised.
       lookupMismatch: The DOI at the start of this PDF belongs to a different paper, so it was not used.
+      lookupNoIdItem: This item has no DOI or arXiv number, and none was found in its PDF. Add one to the “doi” or “arxiv” line at the top of its note and try again.
+      lookupNoPdf: arXiv did not return a PDF for this paper.
       writeFailed: Saving failed. Files whose writes did not complete were preserved. Check disk space and permissions.
       fileChanged: Another application changed the file. Refresh and retry.
       partialWrite: The collection change failed and some items could not be restored. Refresh and check them without overwriting external edits.
@@ -3232,7 +3234,7 @@ research:
     importPdf: Import PDF
     importTitle: Import PDF
     addById: Add by DOI or arXiv number
-    addByIdHint: Paste a DOI, an arXiv number or their URL to fetch the title, authors, year and abstract. Only the identifier is sent.
+    addByIdHint: Paste a DOI, an arXiv number or their URL to fetch the title, authors, year and abstract. For arXiv papers the PDF is downloaded too. Only the identifier is sent.
     addByIdPlaceholder: 10.1038/… or 2406.17763 or https://arxiv.org/abs/…
     lookup:
       reading: "Recognising “{{name}}”…"
@@ -3244,6 +3246,18 @@ research:
       duplicateDescription: "“{{title}}” is already in the library. Add another copy?"
       addAnyway: Add anyway
       cancel: Cancel
+      complete: Fill in details online
+      completed: "Updated: {{fields}}"
+      upToDate: The details found online match what is already here. Nothing to fill in.
+      separator: ", "
+      differTitle: The details found online differ
+      differDescription: "“{{title}}” differs from what was found online in these fields:"
+      differLine: "{{field}}: {{old}} → {{new}}"
+      willFill: "Empty fields that will also be filled in: {{fields}}"
+      fillOnly: Only fill empty fields
+      useFound: Use what was found
+      downloading: Downloading the PDF from arXiv…
+      pdfFailed: "“{{title}}” was added, but its PDF could not be downloaded: {{reason}}"
     refresh: Refresh
     info: Info
     searchPlaceholder: Search this list (title / author / venue / tag / DOI)
@@ -3281,6 +3295,12 @@ research:
       collections: Collections
       tags: Tags
       abstract: Abstract
+      volume: Volume
+      issue: Issue
+      pages: Pages
+      doi: DOI
+      arxiv: arXiv
+      url: URL
   zoteroSync:
     title: Sync Zotero
     description: Reading the differences between both sides.

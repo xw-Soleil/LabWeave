@@ -519,13 +519,18 @@ function suffix(number: number): string {
   return result;
 }
 
-export function createItem(root: string, fields: CreateLibraryItemFields, pdfSource?: string): Promise<LibraryItem> {
+/** pdf 可以是磁盘上一个 PDF 的路径（复制进来），也可以是刚从网上下回来的内容（直接写进去，不落临时文件） */
+export function createItem(
+  root: string,
+  fields: CreateLibraryItemFields,
+  pdf?: string | Uint8Array,
+): Promise<LibraryItem> {
   return writeLibrary(root, async (canonical) => {
     validateLibraryPatch(fields);
     await readManifest(canonical);
     let source: string | undefined;
-    if (pdfSource) {
-      source = absolutePath(pdfSource);
+    if (typeof pdf === "string" && pdf) {
+      source = absolutePath(pdf);
       const info = await lstat(source);
       if (!/\.pdf$/i.test(source) || !info.isFile || info.isSymlink) throw new Error("library.pathNotAllowed");
     }
@@ -555,9 +560,10 @@ export function createItem(root: string, fields: CreateLibraryItemFields, pdfSou
     let published = false;
     try {
       if (source) await copyFile(source, await checkedPath(canonical, stagedPdf, true));
+      else if (pdf instanceof Uint8Array) await atomicWrite(canonical, stagedPdf, pdf, null);
       const bytes = createLibraryNote(
         meta,
-        source ? `${key}.pdf` : "",
+        pdf ? `${key}.pdf` : "",
         i18next.t("library.noteTemplate", { ns: "research", lng: "zh_CN" }),
       );
       await atomicWrite(canonical, stagedNote, bytes, null);

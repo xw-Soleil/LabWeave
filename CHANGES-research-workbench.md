@@ -905,3 +905,17 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 新增「按 DOI 或 arXiv 编号添加」按钮：贴编号或网址，查到就建一篇（不带 PDF）。
   - 库里已有同一个 DOI 或 arXiv 编号时，选中已有的那篇并先问要不要再加。
 - 测试：新增 `LibraryLookup.test.ts`（找编号的各种写法、Crossref 和 arXiv 的解析、各种失败、导入识别的几条退路）；`PdfTools.test.ts` 用真 PDF 引擎测了读开头文字和文件信息、以及研究文件夹外的文件只有这个入口能读。另用 DiffusionPDE 的编号实际查过一次两个接口，返回内容经解析后标题、作者、年份、类型、页码都对。
+
+### 72. 文献库：已有条目「联网补全信息」；按 arXiv 编号添加时自动下载 PDF（2026-11-13）
+
+- 起因：第 71 条之后和 Zotero 还差这两处，用户同意都做（含从 arxiv.org 下载 PDF 这一处联网，已写进 `CLAUDE.md` 的产品原则）。
+- `app/src/core/research/LibraryLookup.ts`：
+  - `lookupItem`：给库里已有的一篇联网查信息。先用它自己登记的编号，有 DOI 先查 Crossref（正式发表的版本信息更全），Crossref 不收这个 DOI 时再用 arXiv 编号；两个都没登记，就读它的 PDF 找编号。
+  - `lookupChanges`：把查回来的和现有的比一遍，分成「现在空着、可以直接补」和「两边都有但不一样、要问过才改」两堆。查回来是空的不算，不会清掉已有内容；只差大小写、空格、标点的不算不一样；编号、网址、摘要只补不改；arXiv 查回来的「预印本 / arXiv」不会顶掉已经登记的发表信息。
+  - `downloadArxivPdf`：从 `https://arxiv.org/pdf/<编号>` 下载，60 秒超时。编号必须符合 arXiv 编号的格式才会拼进地址；回来的内容不是 PDF（撤稿、只有源码时是一张网页）或 404 时报「没有拿到 PDF」。
+  - 联网请求改成一个公共函数，读正文的过程也算在超时里。
+- `app/src/core/research/Library.ts`：`createItem` 的 PDF 参数除了磁盘路径，也可以直接给下载回来的内容，写进条目文件夹，不落临时文件。
+- `app/src/core/research/LibraryView.tsx`：
+  - 条目右键菜单和右栏底部各加一个「联网补全信息」入口（回收站里的条目没有）。空着的直接补上并提示补了哪几项；有不一样的就弹窗逐项列出「现有的 → 查到的」，由用户选「只补空着的」「改成查到的」或取消。条目文件夹名不跟着改。
+  - 「按 DOI 或 arXiv 编号添加」查到的是 arXiv 上的文献时，接着下载 PDF 放进新条目；下载失败也照样建条目，并提示原因。
+- 测试：`LibraryLookup.test.ts` 新增三组（已有条目先用 DOI、退到 arXiv、退到读 PDF 及各种失败；补全时哪些补、哪些问、哪些不动；下载 PDF 的地址、非 PDF、404、断网、读到一半断开、非法编号不发请求）；`Library.test.ts` 新增直接给 PDF 内容建条目。另实际请求过 arxiv.org 的 PDF 地址：新旧两种编号都返回 PDF，不存在的编号返回 404。

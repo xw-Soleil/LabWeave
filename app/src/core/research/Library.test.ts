@@ -332,6 +332,18 @@ describe("atomic writes and imports", () => {
     expect((await disk.readdir(join(root, "条目"))).some((name) => name.startsWith("."))).toBe(false);
   });
 
+  it("stores a PDF that was just downloaded, given as bytes instead of a path", async () => {
+    const item = await createItem(
+      root,
+      { title: "Downloaded Paper", authors: ["Ada Lovelace"], year: "2024" },
+      new Uint8Array(smallPdf),
+    );
+    expect(await disk.readdir(item.dir)).toEqual(["Lovelace2024Downloaded.md", "Lovelace2024Downloaded.pdf"]);
+    expect(await disk.readFile(item.pdfPath!)).toEqual(Buffer.from(smallPdf));
+    expect(await disk.readFile(item.notePath, "utf8")).toContain('pdf: "Lovelace2024Downloaded.pdf"');
+    expect((await disk.readdir(join(root, "条目"))).some((name) => name.startsWith("."))).toBe(false);
+  });
+
   it("cleans up failed imports without publishing an incomplete item", async () => {
     const source = join(outside, "paper.pdf");
     await disk.writeFile(source, smallPdf);

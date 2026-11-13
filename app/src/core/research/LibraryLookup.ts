@@ -1,5 +1,5 @@
 import { fetch } from "@tauri-apps/plugin-http";
-import type { CreateLibraryItemFields } from "./LibraryFormat";
+import type { CreateLibraryItemFields, LibraryItemFields, LibraryItemPatch } from "./LibraryFormat";
 
 /** 一篇论文的编号 */
 export interface PaperId {
@@ -44,22 +44,24 @@ function tidy(value: unknown): string {
     .trim();
 }
 
-async function get(url: string): Promise<string> {
+/** 发一次请求。断网、超时、读到一半断了都是一回事：连不上（library.lookupNetwork）；404 是查不到 */
+async function request<T>(url: string, read: (response: Response) => Promise<T>, timeout = 10000): Promise<T> {
   const stop = new AbortController();
-  const timer = setTimeout(() => stop.abort(), 10000);
-  let response: Response;
+  const timer = setTimeout(() => stop.abort(), timeout);
   try {
-    response = await fetch(url, { signal: stop.signal });
-  } catch {
-    // 断网、超时、域名解析失败都是一回事：告诉用户连不上
-    throw new Error("library.lookupNetwork");
+    const response = await fetch(url, { signal: stop.signal });
+    if (response.ok) return await read(response);
+    throw new Error(response.status === 404 ? "library.lookupNotFound" : "library.lookupNetwork");
+  } catch (error) {
+    throw error instanceof Error && error.message === "library.lookupNotFound"
+      ? error
+      : new Error("library.lookupNetwork");
   } finally {
     clearTimeout(timer);
   }
-  if (response.status === 404) throw new Error("library.lookupNotFound");
-  if (!response.ok) throw new Error("library.lookupNetwork");
-  return response.text();
 }
+
+const get = (url: string) => request(url, (response) => response.text());
 
 const crossrefTypes: Record<string, string> = {
   "journal-article": "期刊文章",
@@ -180,4 +182,78 @@ export async function recognizePdf(path: string): Promise<RecognizedPdf> {
     source: title ? "pdf" : "none",
     problem,
   };
+}
+
+/**
+ * 给库里已有的一篇联网查信息。先用它自己登记的编号：有 DOI 用 DOI（正式发表的版本信息更全），
+ * Crossref 不收这个 DOI 时再用 arXiv 编号；两个都没登记，就读它的 PDF 找编号。
+ */
+export async function lookupItem(item: {
+  doi?: string;
+  arxiv?: string;
+  pdfPath?: string;
+}): Promise<CreateLibraryItemFields> {
+  const id = findPaperId(`${item.doi ?? ""} ${item.arxiv ? `arXiv:${item.arxiv}` : ""}`);
+  if (id.doi) {
+    const found = await fromCrossref(id.doi).catch((error: unknown) => {
+      if (id.arxiv && error instanceof Error && error.message === "library.lookupNotFound") return undefined;
+      throw error;
+    });
+    if (found) return found;
+  }
+  if (id.arxiv) return fromArxiv(id.arxiv);
+  if (!item.pdfPath) throw new Error("library.lookupNoIdItem");
+  const found = await recognizePdf(item.pdfPath);
+  if (found.source !== "online") throw found.problem ?? new Error("library.lookupNoIdItem");
+  return found.fields;
+}
+
+const REPLACEABLE = ["title", "authors", "year", "venue", "itemType", "volume", "issue", "pages"] as const;
+const FILL_ONLY = ["doi", "arxiv", "url", "abstract"] as const;
+
+/**
+ * 查回来的信息和这篇现有的比一遍，分成两堆：
+ * fill 是现在空着、可以直接补上的；replace 是两边都有但不一样的，要问过用户才改。
+ * 查回来是空的不算，补全不会清掉已有的内容。编号、网址、摘要只补不改。
+ */
+export function lookupChanges(
+  item: LibraryItemFields,
+  found: CreateLibraryItemFields,
+): { fill: LibraryItemPatch; replace: LibraryItemPatch } {
+  const fill: Record<string, unknown> = {};
+  const replace: Record<string, unknown> = {};
+  // 「其他」是建条目时的默认类型，等于没填
+  const blank = (field: string, value: unknown) =>
+    !(Array.isArray(value) ? value.length : value) || (field === "itemType" && value === "其他");
+  // arXiv 查回来的「预印本 / arXiv」只用来补空：已经登记了发表在哪的，不退回成预印本
+  const weak = (field: string, value: unknown) =>
+    (field === "itemType" && value === "预印本") || (field === "venue" && value === "arXiv");
+  // 只差大小写、空格、标点的不算不一样
+  const same = (a: unknown, b: unknown) => plain([a].flat().join(" ")) === plain([b].flat().join(" "));
+  for (const field of [...REPLACEABLE, ...FILL_ONLY]) {
+    const next = found[field];
+    if (blank(field, next)) continue;
+    if (blank(field, item[field])) fill[field] = next;
+    else if ((REPLACEABLE as readonly string[]).includes(field) && !weak(field, next) && !same(item[field], next))
+      replace[field] = next;
+  }
+  return { fill, replace };
+}
+
+/** 把 arXiv 上这篇的 PDF 下回来。公开文件，只发出编号；拿到的不是 PDF 就抛 library.lookupNoPdf */
+export async function downloadArxivPdf(id: string): Promise<Uint8Array> {
+  // 地址是拿编号拼的，编号必须就是编号
+  if (!new RegExp(`^${ARXIV_ID}$`, "i").test(id)) throw new Error("library.lookupNoId");
+  const bytes = await request(
+    `https://arxiv.org/pdf/${id}`,
+    async (response) => new Uint8Array(await response.arrayBuffer()),
+    60000,
+  ).catch((error: unknown) => {
+    throw error instanceof Error && error.message === "library.lookupNotFound"
+      ? new Error("library.lookupNoPdf")
+      : error;
+  });
+  // 撤稿或只交了源码的，arXiv 回的是一张网页
+  if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") throw new Error("library.lookupNoPdf");
+  return bytes;
 }
