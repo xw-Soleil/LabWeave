@@ -50,8 +50,11 @@ export const RESEARCH_SIDE_PANEL_LEFT = "calc(1rem + 2.25rem * var(--pg-ui-scale
 /*
  * 没有白板露在外面时（笔记、PDF、文献库、欢迎页）照 Obsidian 排：
  * 顶上一条放标签，竖栏、左右侧栏都贴着窗口边，彼此用细线隔开，不再浮着。
+ *
+ * 两种排法里，标签和右上角的按钮都占同一条带子：离窗口上边 6px、高 28px（中线 20px，和 macOS 的红绿灯在一条线上），
+ * 在白板和其他页面之间切换时标签不会上下跳、忽大忽小。贴边排法的这一条就是 6 + 28 = 34px 高，标签贴着它的下边。
  */
-export const DOCKED_TOP = "2.5rem";
+export const DOCKED_TOP = "2.125rem";
 export const RIBBON_WIDTH = "calc(2.5rem * var(--pg-ui-scale, 1))";
 
 /** 主编辑区里有没有白板露在外面；没有就用贴边的排法 */

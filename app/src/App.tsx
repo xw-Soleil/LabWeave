@@ -107,7 +107,7 @@ function FloatingCorners() {
           里面没东西时它宽度是 0，本来就看不见、点不到 */}
       <div
         ref={leftRef}
-        className="absolute top-1 z-30 flex h-7 items-center"
+        className="absolute top-1.5 z-30 flex h-7 items-center"
         style={{ left: isMac ? MAC_TRAFFIC_LIGHTS_WIDTH : 8 }}
       >
         <GlobalMenu />
@@ -115,9 +115,10 @@ function FloatingCorners() {
       <div
         ref={rightRef}
         className={cn(
-          "absolute right-2 z-30 flex h-7 items-center gap-1 rounded-full border px-1",
+          // 和标签占同一条带子（离上边 6px、高 28px），两种排法位置不变
+          "absolute top-1.5 right-2 z-30 flex h-7 items-center gap-1 rounded-full border px-1",
           // 贴边排法里放在顶上那一条里，不要浮起来的边框
-          docked ? "top-1.5 border-transparent" : "bg-background/95 border-border/60 top-1 shadow-xs",
+          docked ? "border-transparent" : "bg-background/95 border-border/60 shadow-xs",
         )}
       >
         <ThemeModeSwitch />

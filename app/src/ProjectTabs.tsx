@@ -183,7 +183,9 @@ export const ProjectTabs = memo(function ProjectTabs({
       data-pg-tab-group-bar-id={groupId}
       className={cn(
         "pointer-events-auto z-10 flex max-w-full min-w-0 transition-opacity hover:opacity-100",
-        strip ? "h-[34px]" : "bg-background/95 border-border/60 h-7 rounded-full border p-0.5 shadow-xs",
+        // 两种样子一样高（28px），切换时标签不跳
+        "h-7",
+        !strip && "bg-background/95 border-border/60 rounded-full border p-0.5 shadow-xs",
         isClassroomMode && "opacity-0",
       )}
     >

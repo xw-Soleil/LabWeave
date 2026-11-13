@@ -29,7 +29,16 @@ import { activeTabAtom, store, tabDropTargetAtom, tabGroupRootAtom, tabsAtom } f
 import { cn } from "@/utils/cn";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
-import { FolderOutput, MessageSquareText, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import {
+  FolderOutput,
+  MessageSquareText,
+  Minus,
+  PanelLeftClose,
+  PanelRight,
+  PanelRightClose,
+  Pin,
+  Plus,
+} from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -521,7 +530,14 @@ function SidePanelOverlay({
           )}
           onClick={() => setSidePanelPinned(edge, !state.pinned)}
         >
-          {state.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+          {/* 固定着时这个按钮是把面板收起来，画成「面板往边上收」，不用划掉的图钉（看着像出了错） */}
+          {!state.pinned ? (
+            <Pin className="size-3.5" />
+          ) : edge === "left" ? (
+            <PanelLeftClose className="size-3.5" />
+          ) : (
+            <PanelRightClose className="size-3.5" />
+          )}
         </button>
       )}
     </div>
@@ -550,7 +566,8 @@ function TabStrip() {
   return (
     <div
       aria-hidden="true"
-      className="bg-background border-border/70 absolute inset-x-0 top-0 h-10 border-b"
+      className="bg-background border-border/70 absolute inset-x-0 top-0 border-b"
+      style={{ height: DOCKED_TOP }}
       onMouseDown={(event) => {
         if (event.buttons !== 1) return;
         if (event.detail === 2) void getCurrentWindow().toggleMaximize();
@@ -670,20 +687,20 @@ export default function DockedArea({
       >
         {docked && <TabStrip />}
         <div
-          className={cn(
-            "absolute bottom-0 transition-[left,right] duration-200 ease-out motion-reduce:transition-none",
-            project ? "top-0" : "top-10",
-          )}
-          style={{ left: dockLeft, right: dockRight }}
+          className="absolute bottom-0 transition-[left,right] duration-200 ease-out motion-reduce:transition-none"
+          // 白板铺到顶；其他页从标签下面开始：贴边时紧贴那一条，浮着的小药丸下面留 6px
+          style={{ top: project ? 0 : docked ? DOCKED_TOP : "2.5rem", left: dockLeft, right: dockRight }}
         >
           {activeTab && React.createElement(activeTab.getComponent())}
         </div>
         <div
           className={cn(
             "pointer-events-none absolute inset-x-0 z-30 flex transition-[padding] duration-200 ease-out motion-reduce:transition-none",
-            docked ? "top-0 h-10 items-end" : "top-1",
+            // 两种排法的标签都在 6px 到 34px 这一条里（见 DOCKED_TOP 的说明）
+            docked ? "top-0 items-end" : "top-1.5",
           )}
           style={{
+            height: docked ? DOCKED_TOP : undefined,
             paddingLeft: tabsLeft,
             paddingRight: edges.top && edges.right ? "var(--pg-top-right-inset, 8px)" : `${SIDE_PANEL_GAP}px`,
           }}
