@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   annotationLoad: vi.fn(),
   annotationSave: vi.fn(),
   closeAnswer: vi.fn(),
+  sendExcerpt: vi.fn(),
 }));
+vi.mock("./PdfExcerpt", () => ({ sendPdfExcerpt: mocks.sendExcerpt }));
 vi.mock("./PdfAnnotationStore", async (original) => {
   const module = await original<typeof import("./PdfAnnotationStore")>();
   return {
@@ -830,6 +832,55 @@ describe("PDF annotation tools and persistence", () => {
       expect(tab.annotations!.annotations[0].position.rects?.[0][1]).toBeGreaterThan(600);
     },
   );
+
+  it("highlights a selection and sends it to the board with its page and annotation", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+    for (const [type, clientX, clientY] of [
+      ["pointerdown", 41, 85],
+      ["pointermove", 79, 115],
+      ["pointerup", 79, 115],
+    ] as const) {
+      await act(async () =>
+        page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+      );
+    }
+    const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
+    const send = [...menu.querySelectorAll("button")].find(
+      (button) => button.textContent === "document.toBoard.action",
+    )!;
+    await act(async () => send.click());
+    const [highlight] = tab.annotations!.annotations;
+    expect(highlight).toMatchObject({ type: "highlight", text: "test\nnext" });
+    await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
+    expect(mocks.sendExcerpt).toHaveBeenCalledWith({
+      path: "/r/a.pdf",
+      title: "a",
+      page: 1,
+      pageLabel: highlight.pageLabel,
+      pageCount: 8,
+      annotationId: highlight.id,
+      text: "test\nnext",
+    });
+  });
+
+  it("sends a boxed region to the board as an image", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    await show(tab);
+    await draw("image");
+    const [region] = tab.annotations!.annotations;
+    expect(region.type).toBe("image");
+    const card = container.querySelector(`[data-annotation-card="${region.id}"]`)!;
+    await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="document.toBoard.action"]')!.click());
+    await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
+    const [excerpt] = mocks.sendExcerpt.mock.calls[0];
+    expect(excerpt).toMatchObject({ path: "/r/a.pdf", page: 1, annotationId: region.id });
+    expect(excerpt.image.blob).toBeInstanceOf(Blob);
+    expect(excerpt.image.width).toBeGreaterThan(0);
+    expect(excerpt.text).toBeUndefined();
+  });
 
   it("lists embedded PDF annotations as external and read only without adding them to the JSON", async () => {
     TestWorker.externalAnnotations = true;

@@ -46,6 +46,18 @@ const KIND_HUES: Record<FileKind, Color> = {
   markdown: new Color(82, 116, 178),
 };
 const MISSING_COLOR = new Color(220, 38, 38);
+const QUOTE_MAX_LINES = 20;
+
+/** PDF 摘录卡片（圈的字）的高度：正好放下原文，最多 20 行，再长就省略 */
+export function quoteCardHeight(project: Project, text: string): number {
+  const lines = project.textRenderer.layoutClampedLines(
+    text.slice(0, EXCERPT_PREVIEW_LENGTH),
+    EXCERPT_FONT_SIZE,
+    FileCardNode.width - PADDING * 2,
+    QUOTE_MAX_LINES,
+  ).length;
+  return Math.ceil(BODY_TOP + Math.max(2, lines) * EXCERPT_FONT_SIZE * EXCERPT_LINE_HEIGHT + PADDING);
+}
 
 interface BadgeColors {
   background: Color;
@@ -134,14 +146,15 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
 
 /**
  * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
- * PDF 只画标题和完整首页；Markdown 画标题和开头文字。
+ * PDF 只画标题和完整首页；Markdown 画标题和开头文字。PDF 摘录卡片：框的图同图片卡片，圈的字画「第几页 · 论文名」和原文。
  * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
  */
 export function renderFileCard(project: Project, card: FileCardNode): void {
   card.ensureThumbnail();
   scheduleFileCardMissingCheck(project, card);
 
-  if (card.fileKind === "image" && card.bitmap && !Settings.protectingPrivacy) {
+  // PDF 里框下来的图和图片卡片一个画法；圈下来的字没有位图，走下面的文档卡片
+  if ((card.fileKind === "image" || card.pdfPage > 0) && card.bitmap && !Settings.protectingPrivacy) {
     renderImageCard(project, card, card.bitmap);
   } else {
     renderDocumentCard(project, card);
@@ -299,10 +312,13 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
   const innerWidth = rect.size.x - PADDING * 2;
   const fileName = fileNameOf(card.sourcePath);
   const showFileName = card.fileKind !== "pdf" && !hideContent && titleDiffersFromFileName(card.title, fileName);
+  // PDF 摘录卡片：标题处写「第几页 · 论文名」，下面是圈下来的原文
+  const quote = card.pdfPage > 0;
+  const title = quote ? card.caption || card.title : card.title;
   // 版面按世界坐标排，和缩放无关：放大缩小时缩略图不会跳
   const titleLineCount = hideContent
     ? 0
-    : project.textRenderer.layoutClampedLines(card.title, TITLE_FONT_SIZE, innerWidth, TITLE_MAX_LINES).length;
+    : project.textRenderer.layoutClampedLines(title, TITLE_FONT_SIZE, innerWidth, TITLE_MAX_LINES).length;
   const fileNameTop = TITLE_TOP + Math.max(1, titleLineCount) * TITLE_FONT_SIZE * TITLE_LINE_HEIGHT + FILE_NAME_GAP;
   const bodyTop = showFileName
     ? Math.max(BODY_TOP, Math.ceil(fileNameTop + FILE_NAME_FONT_SIZE * FILE_NAME_LINE_HEIGHT + BODY_GAP))
@@ -337,7 +353,7 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
     }
     if (!hideContent) {
       project.textRenderer.renderClampedMultiLineText(
-        card.title,
+        title,
         toView(new Vector(PADDING, TITLE_TOP)),
         TITLE_FONT_SIZE * cameraScale,
         innerWidth * cameraScale,
@@ -369,7 +385,7 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
     );
     excerptLeft = rect.size.x;
   }
-  if (card.fileKind === "pdf") return;
+  if (card.fileKind === "pdf" && !quote) return;
   const excerptWidth = rect.size.x - PADDING - excerptLeft;
   if (showText && card.excerpt && excerptWidth > 40) {
     project.textRenderer.renderClampedMultiLineText(
@@ -378,7 +394,8 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
       toView(new Vector(excerptLeft, bodyTop)),
       EXCERPT_FONT_SIZE * cameraScale,
       excerptWidth * cameraScale,
-      textColor.toNewAlpha(0.75),
+      // 摘录卡片的原文就是正文，不调淡
+      quote ? textColor : textColor.toNewAlpha(0.75),
       EXCERPT_LINE_HEIGHT,
       Math.max(1, Math.floor(bodyHeight / (EXCERPT_FONT_SIZE * EXCERPT_LINE_HEIGHT))),
     );

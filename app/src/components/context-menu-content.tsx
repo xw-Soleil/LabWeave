@@ -439,9 +439,10 @@ export default function MyContextMenuContent() {
   // 只选中一张图片卡片时，最上面多一项「图片标题…」：图片卡片不显示文件名，想要标题就在这里填
   const selected = p.stageManager.getSelectedEntities();
   const fileCard = selected.length === 1 && selected[0] instanceof FileCardNode ? selected[0] : undefined;
+  // PDF 里框下来的图也算图片卡片，可以改标题
   const imageCard =
-    selected.length === 1 && selected[0] instanceof FileCardNode && selected[0].fileKind === "image"
-      ? selected[0]
+    fileCard && (fileCard.fileKind === "image" || (fileCard.pdfPage > 0 && fileCard.attachmentId))
+      ? fileCard
       : undefined;
 
   return (
@@ -452,7 +453,7 @@ export default function MyContextMenuContent() {
           {tResearch("document.openSystem")}
         </Item>
       )}
-      {fileCard?.fileKind === "pdf" && (
+      {fileCard?.fileKind === "pdf" && !fileCard.pdfPage && (
         <Item onClick={() => void refreshFileCard(p, fileCard)}>
           <LucideIcons.RefreshCw />
           {tResearch("card.refresh")}

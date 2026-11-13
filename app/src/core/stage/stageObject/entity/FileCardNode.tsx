@@ -39,6 +39,14 @@ export class FileCardNode extends ConnectableEntity {
    */
   @serializable
   caption: string;
+  /**
+   * PDF 摘录卡片：从 PDF 里圈一段话或框一块图发上来的，记着第几页（从 1 数）和对应的那条批注，
+   * 双击跳回原处。普通文件卡片是 0 和 ""。圈的字放在 excerpt，框的图放在 attachmentId。
+   */
+  @serializable
+  pdfPage: number;
+  @serializable
+  pdfAnnotation: string;
   @serializable
   color: Color;
   @serializable
@@ -170,6 +178,8 @@ export class FileCardNode extends ConnectableEntity {
       excerpt = "",
       pageCount = 0,
       caption = "",
+      pdfPage = 0,
+      pdfAnnotation = "",
       collisionBox = new CollisionBox([
         new Rectangle(Vector.getZero(), new Vector(FileCardNode.width, FileCardNode.height)),
       ]),
@@ -186,6 +196,8 @@ export class FileCardNode extends ConnectableEntity {
     this.excerpt = excerpt.slice(0, FileCardNode.maxExcerptLength);
     this.pageCount = pageCount;
     this.caption = caption;
+    this.pdfPage = pdfPage;
+    this.pdfAnnotation = pdfAnnotation;
     this.color = color;
     this.collisionBox = collisionBox;
   }

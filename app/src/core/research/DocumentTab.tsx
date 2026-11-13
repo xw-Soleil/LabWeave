@@ -68,6 +68,8 @@ export class DocumentTab extends Tab {
   /** 读到哪了，大纲面板按它亮出当前标题；变了会发 outline-position */
   outlinePosition?: OutlinePosition;
   pdfLocation = { page: 1, scale: "fit-width" as string | number };
+  /** 白板上的 PDF 摘录卡片双击过来：跳到这一页（从 1 数）并选中这条批注，阅读器处理完清空 */
+  pdfTarget?: PdfTarget;
   private loading?: Promise<void>;
   private readonly component = () => (
     <Suspense fallback={<div className="text-muted-foreground p-6">{documentText("loading")}</div>}>
@@ -262,7 +264,15 @@ export function activeDocumentTab(): DocumentTab | undefined {
 
 const opening = new Map<string, Promise<DocumentTab>>();
 
-export async function openDocumentFile(path: string, options?: { heading?: string }): Promise<DocumentTab | undefined> {
+export interface PdfTarget {
+  page: number;
+  annotationId?: string;
+}
+
+export async function openDocumentFile(
+  path: string,
+  options?: { heading?: string; pdf?: PdfTarget },
+): Promise<DocumentTab | undefined> {
   const kind = fileKindOf(path);
   if (kind !== "markdown" && kind !== "pdf" && kind !== "image") {
     await open(path);
@@ -297,6 +307,12 @@ export async function openDocumentFile(path: string, options?: { heading?: strin
     const tab = await task;
     if (options?.heading && tab.kind === "markdown") {
       tab.markdownHeading = options.heading;
+      tab.changed();
+    }
+    if (options?.pdf && tab.kind === "pdf") {
+      // 刚打开的标签页按 pdfLocation 定初始页，先落到那一页，免得从上次读到的地方再跳一次
+      tab.pdfLocation.page = options.pdf.page;
+      tab.pdfTarget = options.pdf;
       tab.changed();
     }
     return tab;

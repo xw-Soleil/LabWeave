@@ -691,6 +691,22 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/LibraryView.tsx`：选文献库文件夹用系统的选文件夹窗口；导入 PDF 用系统的选文件窗口，只列 PDF。
 - 删掉 `ResearchFolderBrowser.tsx` 和它的测试；删掉只给它用的文案（`projectTree` 下的起点、主目录、外接磁盘、前往等，`library` 下的 `chooseHint`、`useFolder`、`importHint`、`import`），新增 `projectTree.createLocation`，`projectTree.createHint` 改成问名字时的说明。
 
+### 60. 从 PDF 圈一段话、框一块图发到白板（2026-11-12）
+
+- PDF 里选中文字，弹出的小菜单多一个「发到白板」：先在 PDF 上留一条高亮，再把这段原文发到主编辑区正在显示的白板上。侧栏每条高亮、下划线、框选区域的批注卡片底部也有「发到白板」按钮；框选区域用阅读器原有的框选工具画。
+- 白板上出现一张「PDF 摘录卡片」，摆在当前视野中间，压住别的卡片时自动挪开：
+  - 圈的字：标题写「第几页 · 论文名」，下面是原文；
+  - 框的图：按长边约 1600 像素截下来，存成白板文件里的附件（不在研究文件夹里另放图片文件），卡片按图片卡片的样子画，左下角写「第几页 · 论文名」，右键能改这个标题。
+- 双击摘录卡片：打开这份 PDF，翻到那一页，选中当初那条批注并滚过去；批注被删了就只翻到那一页。
+- `app/src/core/stage/stageObject/entity/FileCardNode.tsx`：文件卡片新增两个存盘字段 `pdfPage`（从 1 数，普通卡片是 0）和 `pdfAnnotation`（批注编号）。旧文件里没有这两个字段，读进来是 0 和空串，行为不变。摘录卡片仍然指向这份 PDF，所以改名、挪位置、文件不见了的处理和普通文件卡片一样。
+- `app/src/core/research/PdfExcerpt.ts`（新文件）：建摘录卡片、放上白板、提示「已发到某白板」（带「去看看」按钮）。没开白板时提示先打开一个。PDF 阅读器只在点「发到白板」时才加载它。
+- `app/src/core/research/PdfView.tsx`、`PdfAnnotationUI.tsx`：两处按钮；框的图用 PDF 引擎按区域渲染。`annotateSelection` 现在返回新建的批注。
+- `app/src/core/research/DocumentTab.tsx`：`openDocumentFile` 可以带 `pdf: { page, annotationId }`，阅读器在版面和批注都准备好后跳过去。
+- `app/src/core/render/canvas2d/entityRenderer/FileCardRenderer.tsx`：摘录卡片的两种画法；`quoteCardHeight` 按原文长短定卡片高度（最多 20 行）。
+- `app/src/components/context-menu-content.tsx`：摘录卡片不显示「刷新 PDF 卡片」（刷新会换回整篇 PDF 的样子）；框的图可以改标题。
+- `app/src/core/research/ResearchSession.ts`：`findMainProject` 改为导出。
+- 文案：`document.toBoard` 下新增五条。
+
 ### 61. Zotero 同步第一步：只读连接与预览（2026-11-12）
 
 - 文献库顶栏新增「同步 Zotero」，只打开一个预览窗口。窗口显示连接、读取和比较进度，可关闭取消、重新预览；没有授权、备份、执行或回退按钮。

@@ -69,6 +69,14 @@ describe("document tab actions", () => {
     expect(tab.markdownHeading).toBe("Results");
     expect(store.get(tabsAtom)).toHaveLength(1);
   });
+  it("opens a PDF at the page and annotation an excerpt card points to", async () => {
+    const tab = (await openDocumentFile("/r/p.pdf", { pdf: { page: 7, annotationId: "A1" } }))!;
+    expect(tab.pdfTarget).toEqual({ page: 7, annotationId: "A1" });
+    expect(tab.pdfLocation.page).toBe(7);
+    tab.pdfTarget = undefined;
+    expect(await openDocumentFile("/r/p.pdf", { pdf: { page: 2, annotationId: "B2" } })).toBe(tab);
+    expect(tab.pdfTarget).toEqual({ page: 2, annotationId: "B2" });
+  });
   it("reads actual PDF page labels once, falls back only when absent, and closes the metadata reader", async () => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     expect(await Promise.all([tab.pdfPageLabel(0), tab.pdfPageLabel(1)])).toEqual(["i", "ii"]);

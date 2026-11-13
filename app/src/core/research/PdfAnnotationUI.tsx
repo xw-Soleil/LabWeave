@@ -28,6 +28,7 @@ import {
   Redo2,
   RefreshCw,
   Save,
+  Send,
   StickyNote,
   Trash2,
   Type,
@@ -159,7 +160,8 @@ export function usePdfAnnotations(
       if (focusComment && live.current)
         requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${annotation.id}`)?.focus());
     });
-  const annotateSelection = (
+  /** 返回新建的批注（跨好几页时不止一条），什么都没建时是空数组 */
+  const annotateSelection = async (
     type: "highlight" | "underline",
     addComment = false,
     chosenColor = color,
@@ -170,12 +172,12 @@ export function usePdfAnnotations(
     const formatted = selection?.getFormattedSelection() ?? [];
     const geometries = selection?.getState().geometry;
     const textTask = selection && enabled && formatted.length ? selection.getSelectedText() : undefined;
-    return action(async () => {
+    const created: PdfAnnotation[] = [];
+    await action(async () => {
       if (!selection || !enabled) return;
       if (!formatted.length) return;
       const model = tab.annotations!;
       const texts = await textTask!.toPromise();
-      const created: PdfAnnotation[] = [];
       // Zotero represents at most two adjacent pages in one annotation via nextPageRects.
       for (let i = 0; i < formatted.length; i += 2) {
         const first = formatted[i];
@@ -205,6 +207,7 @@ export function usePdfAnnotations(
       if (addComment && live.current)
         requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${created[0].id}`)?.focus());
     });
+    return created;
   };
   const selectionAction = useRef(annotateSelection);
   selectionAction.current = annotateSelection;
@@ -474,11 +477,14 @@ export function PdfSelectionMenu({
   copy,
   onTranslate,
   onAskAi,
+  onSend,
 }: {
   controller: AnnotationController;
   copy: () => void;
   onTranslate?: (anchor: SelectionAnchor) => void;
   onAskAi?: () => void;
+  /** 发到白板：先高亮，再把这条高亮发过去 */
+  onSend?: (annotation: PdfAnnotation) => void;
 }) {
   const [type, setType] = useState<"highlight" | "underline">("highlight");
   const element = useRef<HTMLDivElement>(null);
@@ -584,7 +590,7 @@ export function PdfSelectionMenu({
       >
         <MessageSquarePlus />
       </Button>
-      {(onTranslate || onAskAi) && <span className="bg-border mx-0.5 h-5 w-px" />}
+      {(onTranslate || onAskAi || onSend) && <span className="bg-border mx-0.5 h-5 w-px" />}
       {onTranslate && (
         <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={() => onTranslate(anchor())}>
           <Languages />
@@ -595,6 +601,25 @@ export function PdfSelectionMenu({
         <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={onAskAi}>
           <Bot />
           {t("selection.askAi")}
+        </Button>
+      )}
+      {onSend && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 px-2 text-xs"
+          disabled={!c.enabled}
+          onClick={() =>
+            void c
+              .annotateSelection(type)
+              .then(([first, ...rest]) => {
+                if (first) onSend({ ...first, text: [first, ...rest].map((item) => item.text).join(" ") });
+              })
+              .catch(report)
+          }
+        >
+          <Send />
+          {t("toBoard.action")}
         </Button>
       )}
     </div>
@@ -651,11 +676,16 @@ function AnnotationCard({
   item,
   c,
   jump,
+  onSend,
 }: {
   item: PdfAnnotation;
   c: AnnotationController;
   jump: (page: number, x: number, y: number) => void;
+  onSend?: (annotation: PdfAnnotation) => void;
 }) {
+  // 圈的字和框的图能发到白板；便签、文字框、手绘没有可摘的内容
+  const sendable =
+    onSend && (item.type === "image" || ((item.type === "highlight" || item.type === "underline") && item.text));
   const [tags, setTags] = useState("");
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -751,18 +781,34 @@ function AnnotationCard({
           />
         )}
       </CardContent>
-      {!readOnly && (
+      {(!readOnly || sendable) && (
         <CardFooter className="justify-between gap-1 px-3">
-          <Colors value={item.color} onChange={(color) => c.edit(item.id, { color })} />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            aria-label={t("annotation.delete")}
-            onClick={() => c.commit(c.items.filter((annotation) => annotation.id !== item.id))}
-          >
-            <Trash2 />
-          </Button>
+          {readOnly ? <span /> : <Colors value={item.color} onChange={(color) => c.edit(item.id, { color })} />}
+          <div className="flex gap-1">
+            {sendable && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={t("toBoard.action")}
+                title={t("toBoard.action")}
+                onClick={() => onSend(item)}
+              >
+                <Send />
+              </Button>
+            )}
+            {!readOnly && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={t("annotation.delete")}
+                onClick={() => c.commit(c.items.filter((annotation) => annotation.id !== item.id))}
+              >
+                <Trash2 />
+              </Button>
+            )}
+          </div>
         </CardFooter>
       )}
     </Card>
@@ -772,9 +818,11 @@ function AnnotationCard({
 export function PdfAnnotationSidebar({
   controller: c,
   jump,
+  onSend,
 }: {
   controller: AnnotationController;
   jump: (page: number, x: number, y: number) => void;
+  onSend?: (annotation: PdfAnnotation) => void;
 }) {
   const [query, setQuery] = useState("");
   const [color, setColor] = useState("");
@@ -797,7 +845,7 @@ export function PdfAnnotationSidebar({
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
         {!filtered.length && <p className="text-muted-foreground text-sm">{t("annotation.empty")}</p>}
         {filtered.map((item) => (
-          <AnnotationCard key={item.id} item={item} c={c} jump={jump} />
+          <AnnotationCard key={item.id} item={item} c={c} jump={jump} onSend={onSend} />
         ))}
         {c.scanning && (
           <p role="status" className="text-muted-foreground text-xs">
