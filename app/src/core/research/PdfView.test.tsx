@@ -932,6 +932,36 @@ describe("PDF annotation tools and persistence", () => {
     expect(container.querySelector('[aria-label="document.annotation.selectionMenu"]')).toBeNull();
   });
 
+  it("keeps the highlight colours stacked in the selection menu until the pointer is over them", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+    for (const [type, clientX, clientY] of [
+      ["pointerdown", 41, 85],
+      ["pointermove", 79, 115],
+      ["pointerup", 79, 115],
+    ] as const) {
+      await act(async () =>
+        page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+      );
+    }
+    const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
+    const group = menu.querySelector<HTMLElement>('[aria-label="document.annotation.color"]')!;
+    const dots = [...group.querySelectorAll<HTMLButtonElement>("button")];
+    expect(dots).toHaveLength(8);
+    // 聚拢：八个圆点每个只露出 8px；散开：各占 20px
+    expect(group.style.width).toBe("84px");
+    expect(dots.map((dot) => dot.style.left)).toEqual(["0px", "8px", "16px", "24px", "32px", "40px", "48px", "56px"]);
+    await act(async () => group.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+    expect(group.style.width).toBe("168px");
+    expect(dots[7].style.left).toBe("140px");
+    await act(async () => group.dispatchEvent(new MouseEvent("pointerout", { bubbles: true })));
+    expect(group.style.width).toBe("84px");
+    await act(async () => dots[2].click());
+    expect(tab.annotations!.annotations[0]).toMatchObject({ type: "highlight", color: annotationColors.green });
+  });
+
   it("returns to the pointer after one highlight and leaves the sidebar alone", async () => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     tab.pdfLocation.scale = 1;

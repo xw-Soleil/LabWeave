@@ -335,11 +335,62 @@ function Colors({
   value,
   onChange,
   disabled = false,
+  stacked = false,
 }: {
   value: string;
   onChange: (color: string) => void;
   disabled?: boolean;
+  /** 选区菜单里用：平时几个圆点叠在一起，鼠标移上去才散开（照 Agentero），不占一长条 */
+  stacked?: boolean;
 }) {
+  const [spread, setSpread] = useState(false);
+  if (stacked) {
+    const colors = Object.entries(annotationColors);
+    // 聚拢时相邻两个圆点叠住一半，散开后各自分开
+    const step = spread ? 20 : 8;
+    const motion = "duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)] motion-reduce:transition-none";
+    return (
+      <div
+        role="group"
+        aria-label={t("annotation.color")}
+        className={cn("relative h-7 shrink-0 transition-[width]", motion)}
+        style={{ width: 28 + (colors.length - 1) * step }}
+        onPointerEnter={() => setSpread(true)}
+        onPointerLeave={() => setSpread(false)}
+        onFocusCapture={() => setSpread(true)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setSpread(false);
+        }}
+      >
+        {colors.map(([name, color], index) => (
+          <button
+            key={name}
+            type="button"
+            aria-label={t(`annotation.colors.${name}`)}
+            title={t(`annotation.colors.${name}`)}
+            aria-pressed={value === color}
+            disabled={disabled}
+            className={cn(
+              "focus-visible:ring-ring/50 absolute top-0 flex size-7 items-center justify-center rounded-full transition-[left] outline-none focus-visible:ring-2 active:scale-95 disabled:opacity-50",
+              motion,
+            )}
+            // 聚拢时上次用的颜色露在最上面，其余按顺序往下压
+            style={{ left: index * step, zIndex: value === color ? colors.length + 1 : colors.length - index }}
+            onClick={() => onChange(color)}
+          >
+            <span
+              className={cn(
+                "size-4 rounded-full border border-black/25 transition-shadow dark:border-white/25",
+                spread ? "shadow-md" : "shadow-sm",
+                value === color && "ring-foreground ring-offset-background ring-2 ring-offset-1",
+              )}
+              style={{ background: color }}
+            />
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div role="group" aria-label={t("annotation.color")} className="flex flex-wrap gap-1">
       {Object.entries(annotationColors).map(([name, color]) => (
@@ -579,6 +630,7 @@ export function PdfSelectionMenu({
         <Underline />
       </Button>
       <Colors
+        stacked
         value={c.color}
         disabled={!c.enabled}
         onChange={(color) => {
