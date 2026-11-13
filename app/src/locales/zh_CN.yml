@@ -3125,7 +3125,6 @@ research:
       ai: AI 对话
       aiNeedsWorkspace: AI 对话（打开白板后可用）
       files: 文件
-      outline: 大纲
       library: 文献库
       settings: 设置
     setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
@@ -3283,19 +3282,6 @@ research:
     saveFailed: 没能改好，原文没有变
   outline:
     title: 大纲
-    dragHint: 按住拖到窗口另一边，大纲就换到那一侧
-    search: 搜索标题
-    searchPlaceholder: 搜索标题
-    clearSearch: 清除搜索
-    collapseAll: 全部收起
-    expandAll: 全部展开
-    collapse: 收起
-    expand: 展开
-    moveLeft: 移到左侧栏
-    moveRight: 移到右侧栏
-    noNote: 打开一篇笔记，这里列出它的标题
-    empty: 这篇笔记没有标题
-    noMatch: 没有匹配的标题
   markdownTable:
     cell: "第 {{row}} 行第 {{column}} 列"
     rowAbove: 在上方插入行

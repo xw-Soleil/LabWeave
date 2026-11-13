@@ -64,6 +64,7 @@ import { DocumentTab, documentError, documentText as t, openDocumentFile } from 
 import MarkdownEditor, { type MarkdownEditMode } from "./MarkdownEditor";
 import type { LivePreviewConfig } from "./MarkdownLivePreview";
 import type { OutlineHeading, OutlinePosition } from "./NoteHeadings";
+import { NoteOutline } from "./NoteOutline";
 import { NoteProperties, noteStats, splitFrontmatter } from "./NoteProperties";
 import { documentWikilinkComponent } from "./ObsidianMarkdown";
 import PdfView from "./PdfView";
@@ -363,7 +364,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
         view.focus();
         return;
       }
-      headingsIn()[index]?.scrollIntoView({ block: "start" });
+      headingsIn()[index]?.scrollIntoView({ block: "start", behavior: "smooth" });
     };
     let frame = 0;
     const report = () => {
@@ -475,7 +476,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
   );
   return (
     <div
-      className="relative flex min-h-0 flex-1 flex-col"
+      className="@container/note relative flex min-h-0 flex-1 flex-col"
       style={readingThemeVars(resolveReadingTheme(theme)) as CSSProperties}
       onKeyDownCapture={(event) => {
         // Cmd/Ctrl+E 在阅读和编辑之间切换，和 Obsidian 一样
@@ -559,6 +560,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
           <PreviewSelection key={mode} area={previewArea} path={tab.path} title={tab.title} />
         </div>
       )}
+      {tab.markdown && <NoteOutline tab={tab} />}
       {/* 右下角的词数、字符数，和 Obsidian 的状态栏一样 */}
       {tab.markdown && (
         <div

@@ -3125,7 +3125,6 @@ research:
       ai: AI 對話
       aiNeedsWorkspace: AI 對話（打開白板後可用）
       files: 文件
-      outline: 大綱
       library: 文獻庫
       settings: 設置
     setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
@@ -3283,19 +3282,6 @@ research:
     saveFailed: 沒能改好，原文沒有變
   outline:
     title: 大綱
-    dragHint: 按住拖到窗口另一邊，大綱就換到那一側
-    search: 搜索標題
-    searchPlaceholder: 搜索標題
-    clearSearch: 清除搜索
-    collapseAll: 全部收起
-    expandAll: 全部展開
-    collapse: 收起
-    expand: 展開
-    moveLeft: 移到左側欄
-    moveRight: 移到右側欄
-    noNote: 打開一篇筆記，這裡列出它的標題
-    empty: 這篇筆記沒有標題
-    noMatch: 沒有匹配的標題
   markdownTable:
     cell: "第 {{row}} 行第 {{column}} 列"
     rowAbove: 在上方插入行

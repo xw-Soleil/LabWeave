@@ -3006,7 +3006,6 @@ research:
       ai: AI chat
       aiNeedsWorkspace: AI chat (open a board first)
       files: Files
-      outline: Outline
       library: Library
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
@@ -3164,19 +3163,6 @@ research:
     saveFailed: Couldn't apply the change; the note is unchanged
   outline:
     title: Outline
-    dragHint: Drag to the other side of the window to move the outline there
-    search: Search headings
-    searchPlaceholder: Search headings
-    clearSearch: Clear search
-    collapseAll: Collapse all
-    expandAll: Expand all
-    collapse: Collapse
-    expand: Expand
-    moveLeft: Move to left sidebar
-    moveRight: Move to right sidebar
-    noNote: Open a note to see its headings here
-    empty: This note has no headings
-    noMatch: No matching headings
   markdownTable:
     cell: "Row {{row}}, column {{column}}"
     rowAbove: Insert row above
