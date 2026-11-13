@@ -863,6 +863,10 @@ describe("PDF annotation tools and persistence", () => {
         page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
       );
     }
+    // 选区的色块不透明：相邻两行的框重叠时不会叠出深浅条纹
+    const blocks = [...page.querySelectorAll<HTMLElement>('div[style*="mix-blend-mode"] > div')];
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) expect(block.style.background).toBe("rgb(204, 228, 255)");
     const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
     const send = [...menu.querySelectorAll("button")].find(
       (button) => button.textContent === "document.toBoard.action",

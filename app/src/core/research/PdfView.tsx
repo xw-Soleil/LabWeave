@@ -154,11 +154,12 @@ function PdfPage({
         />
         <TilingLayer documentId={documentId} pageIndex={page.index} className="pointer-events-none absolute inset-0" />
         <SearchLayer documentId={documentId} pageIndex={page.index} className="absolute inset-0" />
-        {/* 照 macOS 原生选区的浅蓝，半透明压在页面上，字照样清楚 */}
+        {/* 照 macOS 原生选区的浅蓝。这一层是「正片叠底」压在页面上的，字照样清楚。
+            颜色要不透明：有的 PDF 相邻两行的框上下重叠，半透明色叠两层就一条深一条浅 */}
         <SelectionLayer
           documentId={documentId}
           pageIndex={page.index}
-          textStyle={{ background: "rgba(0, 122, 255, 0.2)" }}
+          textStyle={{ background: "rgb(204, 228, 255)" }}
         />
         {links.map((link) => {
           const destination = pdfDestination(link.target);
