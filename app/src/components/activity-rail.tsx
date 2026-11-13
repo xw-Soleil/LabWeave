@@ -18,7 +18,7 @@ import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelState
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
 import { findTabGroupByTabId, getTabGroups, separateFixedSideGroups, type FixedSideEdge } from "@/core/TabGroup";
-import { LibraryTab, openLibraryTab } from "@/core/research/LibraryTab";
+import { LibraryTab, openLibraryTab, warmLibrary } from "@/core/research/LibraryTab";
 import { activeTabAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { cn } from "@/utils/cn";
@@ -264,6 +264,11 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   const sideStates = useSidePanelStates();
   const [popoverOpen, setPopoverOpen] = useAtom(workspacePopoverOpenAtom);
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
+  // 启动一秒后（让开恢复标签页那一阵）先把文献库读好，第一次点开直接有内容
+  useEffect(() => {
+    const timer = setTimeout(warmLibrary, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // 面板在侧栏里时，按钮亮着表示「侧栏显示着，最前面就是它」；不在侧栏里（定制成了浮动等）时，打开着就算
   const panelShown = (panel: "files" | "ai") => {

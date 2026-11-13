@@ -99,6 +99,8 @@ function itemTypeIcon(itemType?: string): [LucideIcon, string] {
 }
 
 const LAYOUT_KEY = "labweave.libraryLayout";
+/** 列表第一眼先画这么多行（够铺满一屏），其余的紧接着补上 */
+const FIRST_SCREEN = 30;
 function storedLayout(): { tree: boolean; info: boolean } {
   const saved = globalThis.localStorage?.getItem(LAYOUT_KEY);
   const parsed = saved ? (JSON.parse(saved) as Partial<{ tree: boolean; info: boolean }>) : {};
@@ -880,10 +882,21 @@ function ItemTable({
   const t = useLibraryText();
   const body = useRef<HTMLDivElement>(null);
   const grid = "grid grid-cols-[minmax(0,1fr)_minmax(0,12rem)_3.5rem_4.5rem_4.5rem] items-center gap-3";
+  // 打开文献库时不等几百行全画完：先画第一屏，画出来后马上补上其余的
+  const [whole, setWhole] = useState(items.length <= FIRST_SCREEN);
+  useEffect(() => {
+    if (whole) return;
+    const timer = setTimeout(() => setWhole(true));
+    return () => clearTimeout(timer);
+  }, [whole]);
+  const rows = whole ? items : items.slice(0, FIRST_SCREEN);
+  // 右键菜单整张表共用一个（见 ItemMenu）：记着是哪一篇、鼠标点在哪
+  const [menu, setMenu] = useState<{ key: string; x: number; y: number; open: boolean }>();
+  const menuItem = menu && items.find((item) => item.key === menu.key);
   useEffect(() => {
     if (selected)
       body.current?.querySelector(`[data-key="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
+  }, [selected, whole]);
   const header = (key: SortKey | null, label: string, className = "") => (
     <button
       type="button"
@@ -928,73 +941,76 @@ function ItemTable({
         onKeyDown={onKeyDown}
       >
         {!items.length && <p className="text-muted-foreground px-6 py-10 text-center text-sm">{empty}</p>}
-        {items.map((item) => {
+        {rows.map((item) => {
           const [TypeIcon, typeColor] = itemTypeIcon(item.itemType);
           const active = item.key === selected;
           const open = expanded.has(item.key);
           return (
             <div key={item.key} data-key={item.key}>
-              <ItemMenu item={item} root={root} run={run}>
-                <div
-                  role="option"
-                  aria-selected={active}
-                  className={cn(
-                    grid,
-                    "mx-1.5 h-8 rounded-md pr-2.5 pl-1.5 select-none",
-                    active ? "bg-primary/10" : "hover:bg-foreground/[0.04]",
-                    item.trashed && "opacity-60",
-                  )}
-                  onClick={() => onSelect(item.key)}
-                  onDoubleClick={() => openItem(item)}
-                >
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      aria-label={t("library.toggleAttachments")}
-                      aria-expanded={open}
-                      className="text-muted-foreground/60 hover:text-foreground flex size-4 shrink-0 items-center justify-center"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggle(item.key);
-                      }}
-                    >
-                      <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-                    </button>
-                    <TypeIcon className={cn("size-4 shrink-0", typeColor)} strokeWidth={1.75} />
-                    <span className="truncate" title={item.title}>
-                      {item.title}
-                    </span>
-                  </div>
-                  <span className="text-foreground/75 truncate" title={item.authors.join("; ")}>
-                    {item.authors.join("; ")}
-                  </span>
-                  <span className="text-foreground/75 tabular-nums">{item.year}</span>
-                  <StatusPicker
-                    value={item.status}
-                    onPick={(status) => run(() => updateItem(root, item.key, { status }))}
-                  />
-                  <span className="flex items-center gap-1.5">
-                    <AttachmentIcon
-                      icon={FileText}
-                      label={t("library.openPdf")}
-                      className="text-red-500/85"
-                      path={item.pdfPath}
-                    />
-                    <AttachmentIcon
-                      icon={Languages}
-                      label={t("library.openTranslation")}
-                      className="text-sky-600/85"
-                      path={item.translations.dual ?? item.translations.mono}
-                    />
-                    <AttachmentIcon
-                      icon={NotebookPen}
-                      label={t("library.openNote")}
-                      className="text-orange-500/85"
-                      path={item.notePath}
-                    />
+              <div
+                role="option"
+                aria-selected={active}
+                className={cn(
+                  grid,
+                  "mx-1.5 h-8 rounded-md pr-2.5 pl-1.5 select-none",
+                  active ? "bg-primary/10" : "hover:bg-foreground/[0.04]",
+                  item.trashed && "opacity-60",
+                )}
+                onClick={() => onSelect(item.key)}
+                onDoubleClick={() => openItem(item)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({ key: item.key, x: event.clientX, y: event.clientY, open: true });
+                }}
+              >
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label={t("library.toggleAttachments")}
+                    aria-expanded={open}
+                    className="text-muted-foreground/60 hover:text-foreground flex size-4 shrink-0 items-center justify-center"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggle(item.key);
+                    }}
+                  >
+                    <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+                  </button>
+                  <TypeIcon className={cn("size-4 shrink-0", typeColor)} strokeWidth={1.75} />
+                  <span className="truncate" title={item.title}>
+                    {item.title}
                   </span>
                 </div>
-              </ItemMenu>
+                <span className="text-foreground/75 truncate" title={item.authors.join("; ")}>
+                  {item.authors.join("; ")}
+                </span>
+                <span className="text-foreground/75 tabular-nums">{item.year}</span>
+                <StatusPicker
+                  value={item.status}
+                  onPick={(status) => run(() => updateItem(root, item.key, { status }))}
+                  t={t}
+                />
+                <span className="flex items-center gap-1.5">
+                  <AttachmentIcon
+                    icon={FileText}
+                    label={t("library.openPdf")}
+                    className="text-red-500/85"
+                    path={item.pdfPath}
+                  />
+                  <AttachmentIcon
+                    icon={Languages}
+                    label={t("library.openTranslation")}
+                    className="text-sky-600/85"
+                    path={item.translations.dual ?? item.translations.mono}
+                  />
+                  <AttachmentIcon
+                    icon={NotebookPen}
+                    label={t("library.openNote")}
+                    className="text-orange-500/85"
+                    path={item.notePath}
+                  />
+                </span>
+              </div>
               {open && (
                 <div className="text-foreground/75 flex flex-col pb-1">
                   {attachmentsOf(item).map(({ path, label, icon: Icon }) => (
@@ -1014,6 +1030,16 @@ function ItemTable({
             </div>
           );
         })}
+        {menu && menuItem && (
+          <ItemMenu
+            item={menuItem}
+            position={menu}
+            open={menu.open}
+            onClose={() => setMenu((current) => current && { ...current, open: false })}
+            root={root}
+            run={run}
+          />
+        )}
       </div>
     </div>
   );
@@ -1064,8 +1090,27 @@ function AttachmentIcon({
   );
 }
 
-function StatusPicker({ value, onPick }: { value: ReadStatus; onPick: (status: ReadStatus) => void }) {
-  const t = useLibraryText();
+function StatusPicker({
+  value,
+  onPick,
+  t,
+}: {
+  value: ReadStatus;
+  onPick: (status: ReadStatus) => void;
+  t: ReturnType<typeof useLibraryText>;
+}) {
+  // 下拉菜单组件第一次点它时才装上：每行一开始就各带一个的话，画一行的时间要翻倍
+  const [armed, setArmed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const arm = () => {
+    setArmed(true);
+    setOpen(true);
+  };
+  const label = t("library.fields.status");
+  const look = cn(
+    "hover:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07] -ml-1.5 truncate rounded px-1.5 py-0.5 text-xs",
+    STATUS_COLOR[value],
+  );
   return (
     // 菜单画在别处，但点它的事件仍会冒到这一行：拦住，免得点状态变成选中或打开这篇
     <span
@@ -1073,98 +1118,102 @@ function StatusPicker({ value, onPick }: { value: ReadStatus; onPick: (status: R
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={t("library.fields.status")}
-          className={cn(
-            "hover:bg-foreground/[0.07] data-[state=open]:bg-foreground/[0.07] -ml-1.5 truncate rounded px-1.5 py-0.5 text-xs",
-            STATUS_COLOR[value],
-          )}
+      {armed ? (
+        <DropdownMenu open={open} onOpenChange={setOpen}>
+          <DropdownMenuTrigger aria-label={label} className={look}>
+            {t(`library.status.${value}`)}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-24">
+            {STATUSES.map((status) => (
+              <DropdownMenuItem key={status} onSelect={() => status !== value && onPick(status)}>
+                <Check className={cn(status !== value && "invisible")} />
+                {t(`library.status.${status}`)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        // 和下拉菜单的按钮一样，鼠标按下就弹出；键盘按回车、空格走 onClick
+        <button
+          type="button"
+          aria-label={label}
+          aria-haspopup="menu"
+          className={look}
+          onPointerDown={(event) => event.button === 0 && arm()}
+          onClick={arm}
         >
           {t(`library.status.${value}`)}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-24">
-          {STATUSES.map((status) => (
-            <DropdownMenuItem key={status} onSelect={() => status !== value && onPick(status)}>
-              <Check className={cn(status !== value && "invisible")} />
-              {t(`library.status.${status}`)}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </button>
+      )}
     </span>
   );
 }
 
+/** 条目的右键菜单。整张表共用一个，弹在鼠标按下的位置 */
 function ItemMenu({
   item,
+  position,
+  open,
+  onClose,
   root,
   run,
-  children,
 }: {
   item: LibraryItem;
+  position: { x: number; y: number };
+  open: boolean;
+  onClose: () => void;
   root: string;
   run: (task: () => Promise<unknown>) => void;
-  children: ReactNode;
 }) {
   const t = useLibraryText();
-  const [position, setPosition] = useState<{ x: number; y: number }>();
   return (
-    <div
-      onContextMenu={(event) => {
-        event.preventDefault();
-        setPosition({ x: event.clientX, y: event.clientY });
-      }}
-    >
-      {children}
-      <DropdownMenu open={!!position} onOpenChange={(open) => !open && setPosition(undefined)}>
-        <DropdownMenuTrigger asChild>
-          <span className="pointer-events-none fixed size-0" style={{ left: position?.x, top: position?.y }} />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuGroup>
-            {item.pdfPath && (
-              <DropdownMenuItem onSelect={() => void openDocumentFile(item.pdfPath!).catch(reportError)}>
-                <FileText />
-                {t("library.openPdf")}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={() => void openDocumentFile(item.notePath).catch(reportError)}>
-              <NotebookPen />
-              {t("library.openNote")}
+    <DropdownMenu open={open} onOpenChange={(next) => !next && onClose()}>
+      <DropdownMenuTrigger asChild>
+        <span className="pointer-events-none fixed size-0" style={{ left: position.x, top: position.y }} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuGroup>
+          {item.pdfPath && (
+            <DropdownMenuItem onSelect={() => void openDocumentFile(item.pdfPath!).catch(reportError)}>
+              <FileText />
+              {t("library.openPdf")}
             </DropdownMenuItem>
-            {!item.trashed && (
-              <DropdownMenuItem onSelect={() => run(() => completeItem(root, item, t))}>
-                <WandSparkles />
-                {t("library.lookup.complete")}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            {STATUSES.map((status) => (
-              <DropdownMenuItem key={status} onSelect={() => run(() => updateItem(root, item.key, { status }))}>
-                <span className={cn("mx-1 size-2 rounded-full", STATUS_DOT[status])} />
-                {t("library.markAs", { status: t(`library.status.${status}`) })}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void shellOpen(item.dir).catch(reportError)}>
-              {t("files.revealInFinder")}
+          )}
+          <DropdownMenuItem onSelect={() => void openDocumentFile(item.notePath).catch(reportError)}>
+            <NotebookPen />
+            {t("library.openNote")}
+          </DropdownMenuItem>
+          {!item.trashed && (
+            <DropdownMenuItem onSelect={() => run(() => completeItem(root, item, t))}>
+              <WandSparkles />
+              {t("library.lookup.complete")}
             </DropdownMenuItem>
-            {item.trashed ? (
-              <DropdownMenuItem onSelect={() => run(() => restoreItem(root, item.key))}>
-                <RotateCcw />
-                {t("library.restore")}
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem variant="destructive" onSelect={() => run(() => trashItem(root, item.key))}>
-                <Trash2 />
-                {t("library.moveToTrash")}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+          )}
+          <DropdownMenuSeparator />
+          {STATUSES.map((status) => (
+            <DropdownMenuItem key={status} onSelect={() => run(() => updateItem(root, item.key, { status }))}>
+              <span className={cn("mx-1 size-2 rounded-full", STATUS_DOT[status])} />
+              {t("library.markAs", { status: t(`library.status.${status}`) })}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => void shellOpen(item.dir).catch(reportError)}>
+            {t("files.revealInFinder")}
+          </DropdownMenuItem>
+          {item.trashed ? (
+            <DropdownMenuItem onSelect={() => run(() => restoreItem(root, item.key))}>
+              <RotateCcw />
+              {t("library.restore")}
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem variant="destructive" onSelect={() => run(() => trashItem(root, item.key))}>
+              <Trash2 />
+              {t("library.moveToTrash")}
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

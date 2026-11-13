@@ -84,6 +84,7 @@ import {
   restoreItem,
   trashItem,
   updateItem,
+  preloadLibrary,
   useLibrary,
   type LibrarySnapshot,
   type LibraryState,
@@ -599,6 +600,40 @@ describe("useLibrary refresh when the user comes back", () => {
     });
     expect(state.loading).toBe(false);
     expect(noteReads()).toEqual([note("One")]);
+  });
+
+  it("has the library ready on the first open when it was read ahead after startup", async () => {
+    await item("One");
+    await item("Two");
+    await preloadLibrary(root);
+    vi.mocked(fs.readFile).mockClear();
+    view = createRoot(document.createElement("div"));
+    act(() => view!.render(createElement(Probe, { path: root })));
+    // 第一眼就有内容，不是空的文献库
+    expect(state.loading).toBe(false);
+    expect(state.snapshot?.items.map((entry) => entry.key)).toEqual(["One", "Two"]);
+    await settle();
+    expect(noteReads()).toEqual([]);
+  });
+
+  it("waits for a read-ahead that is still running instead of reading the library twice", async () => {
+    await item("One");
+    await item("Two");
+    vi.mocked(fs.readFile).mockClear();
+    const ahead = preloadLibrary(root);
+    expect(preloadLibrary(root)).toBe(ahead);
+    await mount(root);
+    await ahead;
+    expect(state.snapshot?.items.map((entry) => entry.key)).toEqual(["One", "Two"]);
+    expect(noteReads().sort()).toEqual([note("One"), note("Two")]);
+  });
+
+  it("keeps quiet when the read-ahead fails and reports the problem once the library is opened", async () => {
+    await disk.rm(join(root, "文献库.litlib"));
+    await expect(preloadLibrary(root)).resolves.toBeUndefined();
+    await mount(root);
+    expect(state.snapshot).toBeNull();
+    expect(state.error?.message).toBe("library.manifestMissing");
   });
 
   it("checks again when the window regains focus, at most once every 1.5 seconds", async () => {

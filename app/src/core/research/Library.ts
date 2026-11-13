@@ -89,6 +89,8 @@ let authorization: { setting: string; canonical?: string; task: Promise<string> 
 const writes = new Map<string, Promise<unknown>>();
 /** 标签切走时界面会卸载；读好的内容留在这里，切回来先显示它，再在后台比一遍修改时间 */
 let kept: { root: string; snapshot: LibrarySnapshot; stamps: LibraryStamps } | undefined;
+/** 启动后正在预读的那一次（见 preloadLibrary）。这时打开文献库就等它读完，不另读一遍 */
+let warming: { root: string; done: Promise<void> } | undefined;
 
 /** 文件名看起来是译文（.zh / .mono / .dual / 译，或 zh- 开头） */
 export const isTranslatedName = (name: string) =>
@@ -751,6 +753,24 @@ export function countLibrary(snapshot: LibrarySnapshot): LibraryCounts {
   return counts;
 }
 
+/**
+ * 程序启动后空闲时先把文献库读好，第一次点开文献库直接有内容，不用先看一眼空的。
+ * 这里读不成不提示：真打开文献库时会再读一次，那时照常报错。
+ */
+export function preloadLibrary(root: string): Promise<void> {
+  if (kept?.root === root) return Promise.resolve();
+  if (warming?.root === root) return warming.done;
+  const done = (async () => {
+    const canonical = await authorizeLibrary(root);
+    const stamps = await libraryStamps(canonical);
+    const snapshot = await snapshotAt(canonical);
+    // 预读期间用户已经打开文献库并读完了，就以那一份为准
+    if (kept?.root !== root) kept = { root, snapshot, stamps };
+  })().catch(() => undefined);
+  warming = { root, done };
+  return done;
+}
+
 export function useLibrary(root: string | null): LibraryState {
   const [state, setState] = useState<{ root: string | null } & Omit<LibraryState, "refresh" | "reloadAll">>(() => {
     const snapshot = kept?.root === root ? kept.snapshot : null;
@@ -766,16 +786,34 @@ export function useLibrary(root: string | null): LibraryState {
     let pending: Promise<void> = Promise.resolve();
     let lastCheck = 0;
     const publish = (loading: boolean, error: Error | null) => {
-      if (!stopped) setState({ root, snapshot: snapshot ?? null, loading, error });
+      if (stopped) return;
+      const shown = snapshot ?? null;
+      // 内容没变就不动：每动一次，文献库整页几十上百行都要重画一遍
+      setState((current) =>
+        current.root === root && current.snapshot === shown && current.loading === loading && current.error === error
+          ? current
+          : { root, snapshot: shown, loading, error },
+      );
     };
     const reload = (full: boolean): Promise<void> => {
       const task = pending.then(async () => {
         if (stopped || !root) return;
+        let everything = full;
+        // 启动时的预读还没完：等它读完直接用，不另读一遍
+        if (!snapshot && warming?.root === root) {
+          await warming.done;
+          if (stopped) return;
+          if (kept?.root === root) {
+            ({ snapshot, stamps } = kept);
+            everything = false;
+            publish(false, null);
+          }
+        }
         try {
           const canonical = await authorizeLibrary(root);
           const next = await libraryStamps(canonical);
           let changed: Set<string> | undefined;
-          if (!full && snapshot && stamps) {
+          if (!everything && snapshot && stamps) {
             changed = changedItems(stamps, next);
             if (!changed.size && next.manifest === stamps.manifest) return;
           }
