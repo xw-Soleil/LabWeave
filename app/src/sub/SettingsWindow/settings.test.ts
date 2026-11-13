@@ -20,6 +20,8 @@ describe("settings pages", () => {
     const reading = settingsPages.find((page) => page.id === "reading")!;
     expect(reading.sections.flatMap((section) => section.items)).toEqual([
       "translateService",
+      "translateOnSelect",
+      "translateProxy",
       "literatureLibraryPath",
       { subPage: "readingTheme" },
     ]);
