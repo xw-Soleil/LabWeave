@@ -548,16 +548,17 @@ export function PdfReaderContent({
     }
     const rect = pdfRectToReader(page, annotationBounds(item.position));
     const { width, height } = rect.size;
+    // 引擎在后台线程里，那边没有画布，压不了 webp / png（会报 document is not available）；
+    // 所以只要原始像素，压缩回到页面上做（PdfExcerpt）
     engine
-      .renderPageRect(pdf, page, rect, {
+      .renderPageRectRaw(pdf, page, rect, {
         scaleFactor: Math.min(4, EXCERPT_IMAGE_SIDE / Math.max(width, height, 1)),
         dpr: 1,
-        imageType: "image/webp",
         withAnnotations: true,
         withForms: true,
       })
       .toPromise()
-      .then((blob) => sendPdfExcerpt({ ...excerpt, image: { blob, width, height } }))
+      .then((pixels) => sendPdfExcerpt({ ...excerpt, image: { pixels, width, height } }))
       .catch(reportToast);
   };
   const go = (value: string | number) => {

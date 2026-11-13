@@ -97,6 +97,16 @@ class TestWorker extends EventTarget {
         ],
       };
     if (name === "renderPage" || name === "renderPageRect") value = new Blob(["test"], { type: "image/bmp" });
+    // 真的后台线程里没有画布：要它压成 bmp 以外的格式会失败，只有原始像素和 bmp 给得出来
+    if (name === "renderPageRect" && args[3]?.imageType !== "image/bmp") {
+      this.send({
+        id: request.id,
+        type: "ExecuteResponse",
+        data: { type: "error", value: { type: "reject", reason: { code: 1, message: "ImageConverterError" } } },
+      });
+      return;
+    }
+    if (name === "renderPageRectRaw") value = { data: new Uint8ClampedArray(8), width: 2, height: 1 };
     if (name === "getPageGeometry")
       value = {
         runs: [80, 110].map((y, row) => ({
@@ -1027,8 +1037,11 @@ describe("PDF annotation tools and persistence", () => {
     await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
     const [excerpt] = mocks.sendExcerpt.mock.calls[0];
     expect(excerpt).toMatchObject({ path: "/r/a.pdf", page: 1, annotationId: region.id });
-    expect(excerpt.image.blob).toBeInstanceOf(Blob);
+    // 给出去的是原始像素，压成图片在页面这边做
+    expect(excerpt.image.pixels).toMatchObject({ width: 2, height: 1 });
+    expect(excerpt.image.pixels.data).toHaveLength(8);
     expect(excerpt.image.width).toBeGreaterThan(0);
+    expect(mocks.error).not.toHaveBeenCalled();
     expect(excerpt.text).toBeUndefined();
   });
 

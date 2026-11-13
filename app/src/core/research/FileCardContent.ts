@@ -83,11 +83,34 @@ export function pickPdfTitle(metadataTitle: unknown, fileName: string): string {
   return title;
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+function canvasToBlob(canvas: HTMLCanvasElement, quality = 0.8): Promise<Blob> {
   // 老版本 WebKit 不支持编码 webp 时 toBlob 会退回 PNG，两种都能当附件存
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("thumbnail encoding failed"))), "image/webp", 0.8);
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("thumbnail encoding failed"))),
+      "image/webp",
+      quality,
+    );
   });
+}
+
+/**
+ * 把一块原始像素压成图片（webp，不支持时是 PNG）。
+ * PDF 引擎跑在后台线程里，那边没有画布，压不了图，只能把像素拿回页面上压。
+ */
+export async function encodePixels(pixels: {
+  data: Uint8ClampedArray<ArrayBuffer>;
+  width: number;
+  height: number;
+}): Promise<Blob> {
+  const { canvas, context } = createCanvas(pixels.width, pixels.height);
+  try {
+    context.putImageData(new ImageData(pixels.data, pixels.width, pixels.height), 0, 0);
+    // 图里常有小字和细线，压得比缩略图轻
+    return await canvasToBlob(canvas, 0.92);
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
 }
 
 function createCanvas(width: number, height: number): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } {

@@ -3818,6 +3818,11 @@ research:
       login: 在终端中登录
       permissionTitle: "{{name}} 请求批准"
       permissionInput: 参数
+  boardPicker:
+    title: 发到哪块白板
+    hint: 列出的是现在开着的白板
+    placeholder: 发到哪块白板？输入名字筛选
+    empty: 开着的白板里没有这个名字
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话

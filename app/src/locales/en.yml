@@ -3699,6 +3699,11 @@ research:
       login: Sign in in Terminal
       permissionTitle: "{{name}} asks for approval"
       permissionInput: Arguments
+  boardPicker:
+    title: Send to which board
+    hint: Lists the boards that are open now
+    placeholder: Send to which board? Type a name to filter
+    empty: No open board has this name
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat
