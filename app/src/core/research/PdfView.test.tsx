@@ -102,7 +102,18 @@ class TestWorker extends EventTarget {
         runs: [80, 110].map((y, row) => ({
           rect: { x: 40, y, width: 40, height: 12 },
           charStart: row * 4,
-          glyphs: Array.from({ length: 4 }, (_, index) => ({ x: 40 + index * 10, y, width: 10, height: 12, flags: 0 })),
+          // 松框（按字体声明的高度）12 高，贴着字的紧框只有中间 7 高
+          glyphs: Array.from({ length: 4 }, (_, index) => ({
+            x: 40 + index * 10,
+            y,
+            width: 10,
+            height: 12,
+            flags: 0,
+            tightX: 40 + index * 10,
+            tightY: y + 3,
+            tightWidth: 10,
+            tightHeight: 7,
+          })),
         })),
       };
     if (name === "getTextSlices") value = ["test\nnext"];
@@ -863,10 +874,16 @@ describe("PDF annotation tools and persistence", () => {
         page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
       );
     }
-    // 选区的色块不透明：相邻两行的框重叠时不会叠出深浅条纹
-    const blocks = [...page.querySelectorAll<HTMLElement>('div[style*="mix-blend-mode"] > div')];
-    expect(blocks.length).toBeGreaterThan(0);
+    // 蓝块是我们自己画的那一层：一行一条，贴着字（不是 12 高的松框），不透明所以叠在一起也不出深浅条纹
+    const blocks = [...page.querySelectorAll<HTMLElement>('[data-pdf-selection="0"] > div')];
+    expect(blocks).toHaveLength(2);
     for (const block of blocks) expect(block.style.background).toBe("rgb(204, 228, 255)");
+    expect(parseFloat(blocks[0].style.top)).toBeCloseTo(81.6);
+    expect(parseFloat(blocks[0].style.height)).toBeCloseTo(9.8);
+    expect(parseFloat(blocks[1].style.top)).toBeCloseTo(111.6);
+    // 选区插件自己画的框还在（它那一层要接鼠标），但是透明的
+    const own = [...page.querySelectorAll<HTMLElement>('div[style*="mix-blend-mode"]:not([data-pdf-selection]) > div')];
+    for (const block of own) expect(block.style.background).toBe("transparent");
     const menu = container.querySelector('[aria-label="document.annotation.selectionMenu"]')!;
     const send = [...menu.querySelectorAll("button")].find(
       (button) => button.textContent === "document.toBoard.action",
@@ -874,6 +891,9 @@ describe("PDF annotation tools and persistence", () => {
     await act(async () => send.click());
     const [highlight] = tab.annotations!.annotations;
     expect(highlight).toMatchObject({ type: "highlight", text: "test\nnext" });
+    // 高亮存下来的框和蓝块是同一批，不是松框
+    const [, bottom, , top] = highlight.position.rects![0];
+    expect(top - bottom).toBeCloseTo(9.8, 1);
     await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
     expect(mocks.sendExcerpt).toHaveBeenCalledWith({
       path: "/r/a.pdf",

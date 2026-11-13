@@ -57,6 +57,7 @@ import {
   type PdfPoint,
 } from "./PdfAnnotations";
 import type { PdfReaderEngine } from "./PdfReader";
+import { formattedSelection } from "./PdfSelectionRects";
 import { autoTranslateEnabled } from "./TranslateCard";
 
 type Tool = "select" | AnnotationType | "eraser";
@@ -172,7 +173,8 @@ export function usePdfAnnotations(
     comment = "",
   ) => {
     // Capture selection state before plugin teardown or another gesture can clear it.
-    const formatted = selection?.getFormattedSelection() ?? [];
+    // 高亮的框用我们按行算的，不用选区插件的松框：那种框在有的 PDF 上比字高出三四倍
+    const formatted = selection ? formattedSelection(selection.getState()) : [];
     const geometries = selection?.getState().geometry;
     const textTask = selection && enabled && formatted.length ? selection.getSelectedText() : undefined;
     const created: PdfAnnotation[] = [];
@@ -504,7 +506,7 @@ export function PdfSelectionMenu({
   useEffect(() => {
     const menu = element.current;
     const panel = menu?.parentElement;
-    const selected = c.selection?.getFormattedSelection().at(-1);
+    const selected = c.selection ? formattedSelection(c.selection.getState()).at(-1) : undefined;
     if (!c.menu || !menu || !panel || !selected) return;
     const page = c.pdf.pages[selected.pageIndex];
     const surface = panel.querySelector(`[data-pdf-annotations="${page.index}"]`);

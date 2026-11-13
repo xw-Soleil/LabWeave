@@ -16,6 +16,7 @@ import {
   type PdfDocumentObject,
   type PdfLinkAnnoObject,
   type PdfLinkTarget,
+  type Rect,
 } from "@embedpdf/models";
 import { BookmarkPluginPackage, useBookmarkCapability } from "@embedpdf/plugin-bookmark/react";
 import { DocumentManagerPluginPackage } from "@embedpdf/plugin-document-manager/react";
@@ -66,6 +67,7 @@ import {
 } from "./PdfAnnotationUI";
 import { annotationBounds, pdfRectToReader, type PdfAnnotation } from "./PdfAnnotations";
 import type { PdfExcerpt } from "./PdfExcerpt";
+import { selectionRects } from "./PdfSelectionRects";
 import { askAiAboutSelection } from "./ReadingContext";
 import { selectionForTranslation, TranslateCard } from "./TranslateCard";
 
@@ -85,6 +87,50 @@ function IconButton({
     <Button variant="ghost" size="icon" aria-label={label} title={label} {...props}>
       {children}
     </Button>
+  );
+}
+
+/**
+ * 选中文字的蓝块，自己画。选区插件按引擎给的松框画，有的 PDF 上比字高出三四倍（见 PdfSelectionRects）。
+ * 颜色照 macOS 原生选区的浅蓝，这一层是「正片叠底」压在页面上的，字照样清楚；
+ * 颜色不透明，公式里上下挨着的两块叠在一起也不会一条深一条浅。
+ */
+function SelectionBlocks({ documentId, pageIndex, scale }: { documentId: string; pageIndex: number; scale: number }) {
+  const { provides } = useSelectionCapability();
+  const selection = useMemo(() => provides?.forDocument(documentId), [provides, documentId]);
+  const [rects, setRects] = useState<Rect[]>([]);
+  useEffect(() => {
+    if (!selection) return;
+    const read = () => {
+      const state = selection.getState();
+      const slice = state.slices[pageIndex];
+      const geometry = state.geometry[pageIndex];
+      setRects(slice && geometry ? selectionRects(geometry, slice.start, slice.start + slice.count - 1) : []);
+    };
+    read();
+    return selection.onSelectionChange(read);
+  }, [selection, pageIndex]);
+  if (!rects.length) return null;
+  return (
+    <div
+      data-pdf-selection={pageIndex}
+      className="pointer-events-none absolute inset-0"
+      style={{ mixBlendMode: "multiply", isolation: "isolate" }}
+    >
+      {rects.map((rect, index) => (
+        <div
+          key={index}
+          className="absolute"
+          style={{
+            left: rect.origin.x * scale,
+            top: rect.origin.y * scale,
+            width: rect.size.width * scale,
+            height: rect.size.height * scale,
+            background: "rgb(204, 228, 255)",
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -154,13 +200,9 @@ function PdfPage({
         />
         <TilingLayer documentId={documentId} pageIndex={page.index} className="pointer-events-none absolute inset-0" />
         <SearchLayer documentId={documentId} pageIndex={page.index} className="absolute inset-0" />
-        {/* 照 macOS 原生选区的浅蓝。这一层是「正片叠底」压在页面上的，字照样清楚。
-            颜色要不透明：有的 PDF 相邻两行的框上下重叠，半透明色叠两层就一条深一条浅 */}
-        <SelectionLayer
-          documentId={documentId}
-          pageIndex={page.index}
-          textStyle={{ background: "rgb(204, 228, 255)" }}
-        />
+        {/* 选区插件这一层只留着接鼠标（按下、拖动选字），它自己画的框设成透明，蓝块由 SelectionBlocks 画 */}
+        <SelectionLayer documentId={documentId} pageIndex={page.index} textStyle={{ background: "transparent" }} />
+        <SelectionBlocks documentId={documentId} pageIndex={page.index} scale={scale} />
         {links.map((link) => {
           const destination = pdfDestination(link.target);
           const url = pdfExternalUrl(link.target);
