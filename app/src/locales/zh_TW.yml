@@ -1220,10 +1220,14 @@ settings:
     description: 打開後，在 PDF 和筆記裡選中文字一鬆手就翻譯，不用再點「翻譯」。關著時，選中後點「翻譯」才翻。翻譯卡片上的「選中即譯」是同一個開關。
   translateProxy:
     title: 翻譯走哪條網絡
-    description: Google、Bing 翻譯的請求走系統代理還是直連。系統代理指「系統設置 → 網絡 → 代理」裡的 HTTP / HTTPS 代理。用 AI 翻譯時不看這一項，和 AI 對話走同一條路。
+    description: Google、Bing 翻譯的請求走系統代理、直連，還是走你自己填的代理。系統代理指「系統設置 → 網絡 → 代理」裡的 HTTP / HTTPS 代理。用 AI 翻譯時不看這一項，和 AI 對話走同一條路。
     options:
       system: 跟隨系統代理
       direct: 直連，不走代理
+      custom: 自己填代理地址
+  translateProxyUrl:
+    title: 翻譯代理地址
+    description: 代理軟件的 HTTP 端口或混合端口，寫成 http://127.0.0.1:7890 這樣，端口號照你的代理軟件填；只寫「地址:端口」也行。暫不支持 SOCKS 代理（socks5://）。
   readingTheme:
     title: 閱讀外觀
     description: 閱讀預設以及自定義的字體、字號、行高和正文寬度。
@@ -3276,6 +3280,7 @@ research:
       network: 連不上翻譯服務，檢查一下網絡
       rateLimited: 翻譯服務暫時限流了，稍等一會兒再試
       aiNotConfigured: 設置裡選了用 AI 翻譯，但還沒有配好 AI 模型
+      proxyAddress: 設置裡填的翻譯代理地址不對，要寫成 http://127.0.0.1:7890 這樣（暫不支持 SOCKS）
       failed: 翻譯失敗，再試一次
   noteProperties:
     title: 筆記屬性

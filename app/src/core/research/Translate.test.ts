@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   settings: {
     translateService: "google",
     translateProxy: "system",
+    translateProxyUrl: "http://127.0.0.1:7890",
     aiApiFormat: "openai",
     aiApiBaseUrl: "http://localhost:1234/v1",
     aiApiKey: "",
@@ -38,6 +39,7 @@ beforeEach(async () => {
   Object.assign(mocks.settings, {
     translateService: "google",
     translateProxy: "system",
+    translateProxyUrl: "http://127.0.0.1:7890",
     aiModel: "local",
     aiApiKey: "",
     aiCustomHeaders: "",
@@ -97,6 +99,29 @@ describe("translation services", () => {
     // 直连：声明所有地址都不经过代理
     expect(mocks.fetch.mock.calls[1][1].proxy).toEqual({ all: { url: "http://127.0.0.1:9", noProxy: "*" } });
   });
+
+  it("sends requests through the proxy address the user entered", async () => {
+    mocks.fetch.mockImplementation(async () => google());
+    mocks.settings.translateProxy = "custom";
+    mocks.settings.translateProxyUrl = " 127.0.0.1:7897 ";
+    await translateText("research");
+    // 只写「地址:端口」时补成 HTTP 代理
+    expect(mocks.fetch.mock.calls[0][1].proxy).toEqual({ all: { url: "http://127.0.0.1:7897" } });
+    // 带协议的照用，末尾多出来的斜杠去掉
+    mocks.settings.translateProxyUrl = "http://proxy.lan:8080/";
+    await translateText("another word");
+    expect(mocks.fetch.mock.calls[1][1].proxy).toEqual({ all: { url: "http://proxy.lan:8080" } });
+  });
+
+  it.each(["", "socks5://127.0.0.1:7890", "http://", "not a proxy"])(
+    "reports a proxy address it cannot use (%j) without sending anything",
+    async (address) => {
+      mocks.settings.translateProxy = "custom";
+      mocks.settings.translateProxyUrl = address;
+      await expect(translateText("research")).rejects.toThrow("translate.proxyAddress");
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("tries a service that could not be reached last for five minutes, separately for each network route", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

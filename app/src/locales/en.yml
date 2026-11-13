@@ -1188,10 +1188,14 @@ settings:
     description: When on, text selected in a PDF or a note is translated as soon as you release the mouse. When off, select text and then click Translate. The “Auto” toggle on the translation card is the same switch.
   translateProxy:
     title: Network route for translation
-    description: Whether requests to Google and Bing Translate go through the system proxy or connect directly. The system proxy is the HTTP / HTTPS proxy under System Settings → Network → Proxies. AI translation ignores this and uses the same route as the AI chat.
+    description: Whether requests to Google and Bing Translate go through the system proxy, connect directly, or use a proxy you enter. The system proxy is the HTTP / HTTPS proxy under System Settings → Network → Proxies. AI translation ignores this and uses the same route as the AI chat.
     options:
       system: Follow the system proxy
       direct: Connect directly, no proxy
+      custom: Use the proxy address I enter
+  translateProxyUrl:
+    title: Translation proxy address
+    description: The HTTP port or mixed port of your proxy app, written like http://127.0.0.1:7890. Use the port your proxy app shows. Just “address:port” also works. SOCKS proxies (socks5://) are not supported yet.
   readingTheme:
     title: Reading appearance
     description: Reading preset and custom fonts, text size, line spacing and reading width.
@@ -3157,6 +3161,7 @@ research:
       network: Can't reach the translation service. Check your network.
       rateLimited: The translation service is busy. Try again in a moment.
       aiNotConfigured: AI translation is selected in Settings, but no AI model is set up yet.
+      proxyAddress: The translation proxy address in Settings is not valid. Write it like http://127.0.0.1:7890 (SOCKS is not supported yet).
       failed: Translation failed. Try again.
   noteProperties:
     title: Properties

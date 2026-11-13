@@ -117,6 +117,7 @@ export const settingsIcons = {
   translateService: Languages,
   translateOnSelect: Zap,
   translateProxy: Network,
+  translateProxyUrl: Network,
   literatureLibraryPath: Folder,
   readingTheme: CaseSensitive,
   autoSaveInterval: Hourglass,

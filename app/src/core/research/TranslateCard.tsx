@@ -25,7 +25,13 @@ export function selectionForTranslation(text: string) {
     .trim();
 }
 
-const KNOWN_ERRORS = ["translate.network", "translate.rateLimited", "translate.aiNotConfigured", "translate.failed"];
+const KNOWN_ERRORS = [
+  "translate.network",
+  "translate.rateLimited",
+  "translate.aiNotConfigured",
+  "translate.proxyAddress",
+  "translate.failed",
+];
 
 /**
  * 划词翻译卡片，照用户 Obsidian 文献库插件的样子：浮在选区下方，可以拖动；

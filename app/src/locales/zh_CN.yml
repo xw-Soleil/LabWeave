@@ -1220,10 +1220,14 @@ settings:
     description: 打开后，在 PDF 和笔记里选中文字一松手就翻译，不用再点「翻译」。关着时，选中后点「翻译」才翻。翻译卡片上的「选中即译」是同一个开关。
   translateProxy:
     title: 翻译走哪条网络
-    description: Google、Bing 翻译的请求走系统代理还是直连。系统代理指「系统设置 → 网络 → 代理」里的 HTTP / HTTPS 代理。用 AI 翻译时不看这一项，和 AI 对话走同一条路。
+    description: Google、Bing 翻译的请求走系统代理、直连，还是走你自己填的代理。系统代理指「系统设置 → 网络 → 代理」里的 HTTP / HTTPS 代理。用 AI 翻译时不看这一项，和 AI 对话走同一条路。
     options:
       system: 跟随系统代理
       direct: 直连，不走代理
+      custom: 自己填代理地址
+  translateProxyUrl:
+    title: 翻译代理地址
+    description: 代理软件的 HTTP 端口或混合端口，写成 http://127.0.0.1:7890 这样，端口号照你的代理软件填；只写「地址:端口」也行。暂不支持 SOCKS 代理（socks5://）。
   readingTheme:
     title: 阅读外观
     description: 阅读预设以及自定义的字体、字号、行高和正文宽度。
@@ -3276,6 +3280,7 @@ research:
       network: 连不上翻译服务，检查一下网络
       rateLimited: 翻译服务暂时限流了，稍等一会儿再试
       aiNotConfigured: 设置里选了用 AI 翻译，但还没有配好 AI 模型
+      proxyAddress: 设置里填的翻译代理地址不对，要写成 http://127.0.0.1:7890 这样（暂不支持 SOCKS）
       failed: 翻译失败，再试一次
   noteProperties:
     title: 笔记属性

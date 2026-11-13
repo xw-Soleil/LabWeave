@@ -22,6 +22,7 @@ describe("settings pages", () => {
       "translateService",
       "translateOnSelect",
       "translateProxy",
+      "translateProxyUrl",
       "literatureLibraryPath",
       { subPage: "readingTheme" },
     ]);

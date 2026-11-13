@@ -73,6 +73,7 @@ export const settingsPages: SettingsPage[] = [
           "translateService",
           "translateOnSelect",
           "translateProxy",
+          "translateProxyUrl",
           "literatureLibraryPath",
           { subPage: "readingTheme" },
         ],
@@ -414,6 +415,16 @@ export default function SettingsTab() {
   );
 }
 
+/** 只在另一项选了某个值时才用得上的设置，平时不占地方 */
+const shownWhen: Partial<Record<keyof Settings, [keyof Settings, unknown]>> = {
+  translateProxyUrl: ["translateProxy", "custom"],
+};
+
+function DependentField({ settingKey, depends }: { settingKey: keyof Settings; depends: [keyof Settings, unknown] }) {
+  const [value] = Settings.use(depends[0]);
+  return value === depends[1] ? <SettingField settingKey={settingKey} /> : null;
+}
+
 function SettingList({
   items,
   onOpenSubPage,
@@ -424,10 +435,12 @@ function SettingList({
   return (
     <div className="border-border divide-border flex flex-col divide-y rounded-[8px] border">
       {items.map((item) =>
-        typeof item === "string" ? (
-          <SettingField key={item} settingKey={item} />
-        ) : (
+        typeof item !== "string" ? (
           <SubPageRow key={item.subPage} id={item.subPage} onOpen={() => onOpenSubPage(item.subPage)} />
+        ) : shownWhen[item] ? (
+          <DependentField key={item} settingKey={item} depends={shownWhen[item]} />
+        ) : (
+          <SettingField key={item} settingKey={item} />
         ),
       )}
     </div>

@@ -41,7 +41,10 @@ function checkAbort(signal?: AbortSignal) {
 }
 
 function translationError(error: unknown): Error {
-  if (error instanceof Error && /^translate\.(network|rateLimited|aiNotConfigured|failed)$/.test(error.message))
+  if (
+    error instanceof Error &&
+    /^translate\.(network|rateLimited|aiNotConfigured|proxyAddress|failed)$/.test(error.message)
+  )
     return error;
   if ((error as { statusCode?: number })?.statusCode === 429) return new Error("translate.rateLimited");
   if (typeof (error as { statusCode?: number })?.statusCode === "number") return new Error("translate.network");
@@ -58,14 +61,45 @@ const DIRECT = { all: { url: "http://127.0.0.1:9", noProxy: "*" } };
 const unreachable = new Map<string, number>();
 const RETRY_AFTER = 5 * 60 * 1000;
 
+/**
+ * 把设置里填的代理地址整理成联网组件要的写法，可以只写「地址:端口」。
+ * 只认 HTTP 代理（代理软件的「HTTP 端口」或「混合端口」）；SOCKS 要给联网组件另加依赖，现在不支持。
+ * 认不出来返回 undefined。
+ */
+export function proxyAddress(input: string): string | undefined {
+  const text = input.trim();
+  if (!text) return undefined;
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(text) ? text : `http://${text}`);
+  } catch {
+    // 不是网址：和别的填错一样，交给调用方报「代理地址不对」
+    return undefined;
+  }
+  return /^https?:$/.test(url.protocol) && url.hostname ? url.href.replace(/\/$/, "") : undefined;
+}
+
+/** 现在这条联网路线的名字，记「哪个服务连不上」时用：换了路线要重新试 */
+const route = () =>
+  Settings.translateProxy === "custom" ? `custom:${Settings.translateProxyUrl.trim()}` : Settings.translateProxy;
+
+function proxyOption() {
+  if (Settings.translateProxy === "direct") return { proxy: DIRECT };
+  if (Settings.translateProxy !== "custom") return {};
+  const url = proxyAddress(Settings.translateProxyUrl);
+  if (!url) throw new Error("translate.proxyAddress");
+  return { proxy: { all: { url } } };
+}
+
 async function request(url: string, signal: AbortSignal, init?: RequestInit): Promise<Response> {
+  const proxy = proxyOption();
   let response: Response;
   try {
     response = await fetch(url, {
       ...init,
       signal,
       headers: { ...browserHeaders, ...init?.headers },
-      ...(Settings.translateProxy === "direct" && { proxy: DIRECT }),
+      ...proxy,
     });
   } catch {
     checkAbort(signal);
@@ -285,7 +319,7 @@ export async function translateText(text: string, options: { signal?: AbortSigna
     preferred === "ai" ? ["ai"] : preferred === "bing" ? ["bing", "google"] : ["google", "bing"];
   // 刚才连不上的那个排到后面（比如直连时的 Google），不用每次都先等它超时
   const down = (service: TranslateService) =>
-    Date.now() - (unreachable.get(`${service}:${Settings.translateProxy}`) ?? -Infinity) < RETRY_AFTER;
+    Date.now() - (unreachable.get(`${service}:${route()}`) ?? -Infinity) < RETRY_AFTER;
   services.sort((a, b) => Number(down(a)) - Number(down(b)));
   let failure = new Error("translate.failed");
   for (const service of services) {
@@ -295,14 +329,14 @@ export async function translateText(text: string, options: { signal?: AbortSigna
       const result = await { google, bing, ai }[service](cleaned, to, singleWord, signal);
       checkAbort(options.signal);
       if (signal.aborted) throw new Error("translate.network");
-      unreachable.delete(`${service}:${Settings.translateProxy}`);
+      unreachable.delete(`${service}:${route()}`);
       cache.set(key, structuredClone(result));
       if (cache.size > 300) cache.delete(cache.keys().next().value!);
       return result;
     } catch (error) {
       checkAbort(options.signal);
       const next = timeout.aborted ? new Error("translate.network") : translationError(error);
-      if (next.message === "translate.network") unreachable.set(`${service}:${Settings.translateProxy}`, Date.now());
+      if (next.message === "translate.network") unreachable.set(`${service}:${route()}`, Date.now());
       if (failure.message !== "translate.rateLimited") failure = next;
     }
   }
