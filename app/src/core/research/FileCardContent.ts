@@ -68,6 +68,30 @@ export function extractMarkdownContent(text: string, fileName: string): { title:
   return { title, excerpt: normalizeExcerpt(body) };
 }
 
+// 汉字、假名，加上中文标点（U+3000–303F）和全角字符（U+FF00–FFEF）
+const CJK = String.raw`\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u{3000}-\u{303f}\u{ff00}-\u{ffef}`;
+const HYPHEN_BREAK = /([\p{L}\p{N}])-[^\S\n]*\n[^\S\n]*(?=\p{Ll})/gu;
+const CJK_BREAK = new RegExp(`([${CJK}])[^\\S\\n]*\\n[^\\S\\n]*(?=[${CJK}])`, "gu");
+
+/**
+ * PDF 里圈下来的字是按页面上的行一行行断开的，接回一段话：
+ * 中文两行之间不加空格；行尾的连字符留着、后面直接接上（分不清是「physics-informed」这种本来就有的，
+ * 还是排版把一个词拆开了，留着至少不丢原文里的字符）。
+ */
+export function joinPdfLines(text: string): string {
+  return (
+    text
+      .replace(/\r\n?/g, "\n")
+      // 软连字符（U+00AD）明说了「这里是排版拆开的」：连同后面的换行一起去掉
+      .replace(/\xad[^\S\n]*\n?[^\S\n]*/g, "")
+      .replace(HYPHEN_BREAK, "$1-")
+      .replace(CJK_BREAK, "$1")
+      .replace(/\s*\n\s*/g, " ")
+      .replace(/[^\S\n]{2,}/g, " ")
+      .trim()
+  );
+}
+
 /**
  * 很多 PDF 的 Title 元数据是空的，或者是「Microsoft Word - xxx.docx」这类导出工具留下的文件名，
  * 这种情况下文件名更像标题。

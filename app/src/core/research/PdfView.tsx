@@ -66,6 +66,7 @@ import {
   type SelectionAnchor,
 } from "./PdfAnnotationUI";
 import { annotationBounds, pdfRectToReader, type PdfAnnotation } from "./PdfAnnotations";
+import type { BoardChoice } from "./BoardPicker";
 import type { PdfExcerpt } from "./PdfExcerpt";
 import { pageSelectionRects } from "./PdfSelectionRects";
 import { askAiAboutSelection } from "./ReadingContext";
@@ -74,7 +75,8 @@ import { selectionForTranslation, TranslateCard } from "./TranslateCard";
 /** 框下来的图按长边约 1600 像素存：放大看图里的小字也清楚，又不至于把白板文件撑太大 */
 const EXCERPT_IMAGE_SIDE = 1600;
 // 白板那一套（工程、标签页、渲染）用到才加载，阅读器本身保持轻
-const sendPdfExcerpt = (excerpt: PdfExcerpt) => import("./PdfExcerpt").then((module) => module.sendPdfExcerpt(excerpt));
+const sendPdfExcerpt = (excerpt: PdfExcerpt, board: BoardChoice) =>
+  import("./PdfExcerpt").then((module) => module.sendPdfExcerpt(excerpt, board));
 
 const reportToast = (error: unknown) => toast.error(documentError(pdfReaderError(error)));
 
@@ -531,7 +533,7 @@ export function PdfReaderContent({
         selection?.clear();
       })
       .catch(reportToast);
-  const sendToBoard = (item: PdfAnnotation) => {
+  const sendToBoard = (item: PdfAnnotation, board: BoardChoice) => {
     const page = pdf.pages[item.position.pageIndex];
     if (!page) return;
     const excerpt = {
@@ -541,9 +543,10 @@ export function PdfReaderContent({
       pageLabel: item.pageLabel,
       pageCount: pages,
       annotationId: item.id,
+      color: item.color,
     };
     if (item.type !== "image") {
-      sendPdfExcerpt({ ...excerpt, text: item.text }).catch(reportToast);
+      sendPdfExcerpt({ ...excerpt, text: item.text }, board).catch(reportToast);
       return;
     }
     const rect = pdfRectToReader(page, annotationBounds(item.position));
@@ -558,7 +561,7 @@ export function PdfReaderContent({
         withForms: true,
       })
       .toPromise()
-      .then((pixels) => sendPdfExcerpt({ ...excerpt, image: { pixels, width, height } }))
+      .then((pixels) => sendPdfExcerpt({ ...excerpt, image: { pixels, width, height } }, board))
       .catch(reportToast);
   };
   const go = (value: string | number) => {

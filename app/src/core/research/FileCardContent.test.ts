@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractFileCardContent,
   extractMarkdownContent,
+  joinPdfLines,
   MAX_EXCERPT_LENGTH,
   normalizeExcerpt,
   pickPdfTitle,
@@ -44,6 +45,29 @@ describe("extractMarkdownContent", () => {
 describe("normalizeExcerpt", () => {
   it("keeps paragraph breaks but trims spaces around line breaks", () => {
     expect(normalizeExcerpt("  第一行  \n   第二行\n\n\n\n第三段  ")).toBe("第一行\n第二行\n\n第三段");
+  });
+});
+
+describe("joinPdfLines", () => {
+  it("joins the lines of a passage into one paragraph", () => {
+    expect(
+      joinPdfLines(
+        "Solving ill-posed inverse heat conduction:\r\nReconstruction of blast furnace \n inner wall temperature fields",
+      ),
+    ).toBe("Solving ill-posed inverse heat conduction: Reconstruction of blast furnace inner wall temperature fields");
+  });
+  it("keeps a hyphen at a line end and joins straight on, since it may belong to the word", () => {
+    expect(joinPdfLines("using a physics-\ninformed diffusion model")).toBe("using a physics-informed diffusion model");
+    // 行尾的减号后面不是小写字母（公式、列表），当普通换行
+    expect(joinPdfLines("x -\nY")).toBe("x - Y");
+    // 软连字符是排版自己标的拆词处，接回一个词
+    expect(joinPdfLines(`recon${String.fromCodePoint(0xad)}\nstruction`)).toBe("reconstruction");
+  });
+  it("adds no space between two lines of Chinese, but does between Chinese and Latin text", () => {
+    expect(joinPdfLines("高炉内壁温度场的重\n建是一个不适定问题，\n本文提出")).toBe(
+      "高炉内壁温度场的重建是一个不适定问题，本文提出",
+    );
+    expect(joinPdfLines("我们使用\nPINN 方法")).toBe("我们使用 PINN 方法");
   });
 });
 

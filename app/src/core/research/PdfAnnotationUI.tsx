@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { toast } from "sonner";
+import { BoardMenu } from "./BoardMenu";
+import type { BoardChoice } from "./BoardPicker";
 import { DocumentTab, documentError, documentText as t } from "./DocumentTab";
 import {
   annotationBounds,
@@ -542,8 +544,8 @@ export function PdfSelectionMenu({
   copy: () => void;
   onTranslate?: (anchor: SelectionAnchor) => void;
   onAskAi?: () => void;
-  /** 发到白板：先高亮，再把这条高亮发过去 */
-  onSend?: (annotation: PdfAnnotation) => void;
+  /** 发到白板：在菜单里选了哪块白板以后，先高亮，再把这条高亮发过去 */
+  onSend?: (annotation: PdfAnnotation, board: BoardChoice) => void;
 }) {
   const [type, setType] = useState<"highlight" | "underline">("highlight");
   const element = useRef<HTMLDivElement>(null);
@@ -664,23 +666,21 @@ export function PdfSelectionMenu({
         </Button>
       )}
       {onSend && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-xs"
-          disabled={!c.enabled}
-          onClick={() =>
+        <BoardMenu
+          onPick={(board) =>
             void c
               .annotateSelection(type)
               .then(([first, ...rest]) => {
-                if (first) onSend({ ...first, text: [first, ...rest].map((item) => item.text).join(" ") });
+                if (first) onSend({ ...first, text: [first, ...rest].map((item) => item.text).join(" ") }, board);
               })
               .catch(report)
           }
         >
-          <Send />
-          {t("toBoard.action")}
-        </Button>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" disabled={!c.enabled}>
+            <Send />
+            {t("toBoard.action")}
+          </Button>
+        </BoardMenu>
       )}
     </div>
   );
@@ -741,7 +741,7 @@ function AnnotationCard({
   item: PdfAnnotation;
   c: AnnotationController;
   jump: (page: number, x: number, y: number) => void;
-  onSend?: (annotation: PdfAnnotation) => void;
+  onSend?: (annotation: PdfAnnotation, board: BoardChoice) => void;
 }) {
   // 圈的字和框的图能发到白板；便签、文字框、手绘没有可摘的内容
   const sendable =
@@ -846,16 +846,17 @@ function AnnotationCard({
           {readOnly ? <span /> : <Colors value={item.color} onChange={(color) => c.edit(item.id, { color })} />}
           <div className="flex gap-1">
             {sendable && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                aria-label={t("toBoard.action")}
-                title={t("toBoard.action")}
-                onClick={() => onSend(item)}
-              >
-                <Send />
-              </Button>
+              <BoardMenu onPick={(board) => onSend(item, board)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t("toBoard.action")}
+                  title={t("toBoard.action")}
+                >
+                  <Send />
+                </Button>
+              </BoardMenu>
             )}
             {!readOnly && (
               <Button
@@ -882,7 +883,7 @@ export function PdfAnnotationSidebar({
 }: {
   controller: AnnotationController;
   jump: (page: number, x: number, y: number) => void;
-  onSend?: (annotation: PdfAnnotation) => void;
+  onSend?: (annotation: PdfAnnotation, board: BoardChoice) => void;
 }) {
   const [query, setQuery] = useState("");
   const [color, setColor] = useState("");

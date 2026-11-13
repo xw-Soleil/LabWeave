@@ -15,6 +15,12 @@ const mocks = vi.hoisted(() => ({
   sendExcerpt: vi.fn(),
 }));
 vi.mock("./PdfExcerpt", () => ({ sendPdfExcerpt: mocks.sendExcerpt }));
+vi.mock("./BoardPicker", () => ({
+  listBoards: async () => [
+    { key: "tab-1", name: "Reading", folder: "", open: true },
+    { key: "/r/notes/ideas.prg", name: "Ideas", folder: "notes", open: false },
+  ],
+}));
 vi.mock("./PdfAnnotationStore", async (original) => {
   const module = await original<typeof import("./PdfAnnotationStore")>();
   return {
@@ -206,12 +212,16 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: () => void) {
-        resize.push(callback);
+      private callback: () => void;
+      // 弹出菜单的定位代码会去拆回调的第一个参数（一组尺寸记录），给它一个空的
+      constructor(callback: (entries: unknown[]) => void) {
+        this.callback = () => callback([]);
+        resize.push(this.callback);
       }
       observe() {
         queueMicrotask(this.callback);
       }
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -259,6 +269,14 @@ afterEach(async () => {
 });
 
 const button = (key: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="document.${key}"]`)!;
+/** 按下「发到白板」，等白板列表出来，返回里面能点的各项 */
+async function boardMenu(trigger: HTMLElement) {
+  Element.prototype.scrollIntoView = vi.fn();
+  await act(async () => trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })));
+  const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]:not([data-disabled])')];
+  await vi.waitFor(() => expect(items().length).toBeGreaterThan(0));
+  return items();
+}
 async function show(tab: DocumentTab) {
   shownTabs.push(tab);
   store.set(tabsAtom, shownTabs);
@@ -898,22 +916,31 @@ describe("PDF annotation tools and persistence", () => {
     const send = [...menu.querySelectorAll("button")].find(
       (button) => button.textContent === "document.toBoard.action",
     )!;
-    await act(async () => send.click());
+    // 点「发到白板」先弹出白板列表：开着的在前，没打开的写着它所在的文件夹；这时还没有划高亮
+    const boards = await boardMenu(send);
+    expect(boards.map((item) => item.textContent)).toEqual(["Readingdocument.toBoard.opened", "Ideasnotes"]);
+    expect(tab.annotations!.annotations).toEqual([]);
+    await act(async () => boards[1].click());
     const [highlight] = tab.annotations!.annotations;
     expect(highlight).toMatchObject({ type: "highlight", text: "test\nnext" });
     // 高亮存下来的框和蓝块是同一批，不是松框
     const [, bottom, , top] = highlight.position.rects![0];
     expect(top - bottom).toBeCloseTo(9.8, 1);
     await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
-    expect(mocks.sendExcerpt).toHaveBeenCalledWith({
-      path: "/r/a.pdf",
-      title: "a",
-      page: 1,
-      pageLabel: highlight.pageLabel,
-      pageCount: 8,
-      annotationId: highlight.id,
-      text: "test\nnext",
-    });
+    expect(mocks.sendExcerpt).toHaveBeenCalledWith(
+      {
+        path: "/r/a.pdf",
+        title: "a",
+        page: 1,
+        pageLabel: highlight.pageLabel,
+        pageCount: 8,
+        annotationId: highlight.id,
+        // 高亮的颜色带过去，摘录卡片左边的竖线用它
+        color: highlight.color,
+        text: "test\nnext",
+      },
+      { key: "/r/notes/ideas.prg", name: "Ideas", folder: "notes", open: false },
+    );
   });
 
   it("clears the blue blocks and the selection menu on a click in the margin", async () => {
@@ -1033,9 +1060,11 @@ describe("PDF annotation tools and persistence", () => {
     expect(region.type).toBe("image");
     await clickOnPage(region.id);
     const card = container.querySelector(`[data-annotation-card="${region.id}"]`)!;
-    await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="document.toBoard.action"]')!.click());
+    const boards = await boardMenu(card.querySelector<HTMLButtonElement>('[aria-label="document.toBoard.action"]')!);
+    await act(async () => boards[0].click());
     await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());
-    const [excerpt] = mocks.sendExcerpt.mock.calls[0];
+    const [excerpt, board] = mocks.sendExcerpt.mock.calls[0];
+    expect(board).toMatchObject({ key: "tab-1", open: true });
     expect(excerpt).toMatchObject({ path: "/r/a.pdf", page: 1, annotationId: region.id });
     // 给出去的是原始像素，压成图片在页面这边做
     expect(excerpt.image.pixels).toMatchObject({ width: 2, height: 1 });

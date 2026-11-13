@@ -2967,8 +2967,12 @@ research:
       copy: 复制
     toBoard:
       action: 发到白板
-      caption: 第 {{page}} 页 · {{title}}
-      noBoard: 先打开或新建一个白板，再发过去
+      caption: "{{title}} · 第 {{page}} 页"
+      choose: 发到哪块白板
+      opened: 已打开
+      loading: 正在找白板…
+      noBoard: 这个项目里还没有白板，先新建一块
+      boardGone: 「{{board}}」打不开或者已经关了，没有发过去
       sent: 已发到「{{board}}」
       show: 去看看
     save: 保存
@@ -3818,11 +3822,6 @@ research:
       login: 在终端中登录
       permissionTitle: "{{name}} 请求批准"
       permissionInput: 参数
-  boardPicker:
-    title: 发到哪块白板
-    hint: 列出的是现在开着的白板
-    placeholder: 发到哪块白板？输入名字筛选
-    empty: 开着的白板里没有这个名字
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话

@@ -1,6 +1,6 @@
 import { splitFileName } from "@/components/ui/file-name";
 import type { Project } from "@/core/Project";
-import { cardText, stripExtension } from "@/core/research/FileCardContent";
+import { cardText, joinPdfLines, stripExtension } from "@/core/research/FileCardContent";
 import { fileNameOf, resolveFileCardPath, scheduleFileCardMissingCheck } from "@/core/research/FileCardFactory";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import type { FileKind } from "@/core/research/ResearchShell";
@@ -46,17 +46,52 @@ const KIND_HUES: Record<FileKind, Color> = {
   markdown: new Color(82, 116, 178),
 };
 const MISSING_COLOR = new Color(220, 38, 38);
-const QUOTE_MAX_LINES = 20;
 
-/** PDF 摘录卡片（圈的字）的高度：正好放下原文，最多 20 行，再长就省略 */
-export function quoteCardHeight(project: Project, text: string): number {
+/*
+ * PDF 摘录卡片（圈的字）画成一段引文：原文是主体，左边一条和高亮同色的竖线，卡片带一点同色的底，
+ * 出处（论文名、第几页）缩成底下一行小字。尺寸是世界坐标。
+ */
+const QUOTE_WIDTH = 320;
+const QUOTE_PADDING_X = 16;
+const QUOTE_PADDING_TOP = 15;
+const QUOTE_PADDING_BOTTOM = 12;
+const QUOTE_BAR_WIDTH = 3;
+const QUOTE_TEXT_LEFT = QUOTE_PADDING_X + QUOTE_BAR_WIDTH + 11;
+const QUOTE_FONT_SIZE = 13;
+const QUOTE_LINE_HEIGHT = 1.55;
+const QUOTE_MAX_LINES = 20;
+const QUOTE_SOURCE_GAP = 10;
+const QUOTE_SOURCE_FONT_SIZE = 11;
+const QUOTE_SOURCE_HEIGHT = 14;
+const QUOTE_TINT = 0.1;
+/** 卡片没带颜色时（比如早先发上来的）用高亮的默认黄 */
+const QUOTE_DEFAULT_ACCENT = new Color(255, 212, 0);
+const quoteLine = QUOTE_FONT_SIZE * QUOTE_LINE_HEIGHT;
+const quoteFrame = QUOTE_PADDING_TOP + QUOTE_SOURCE_GAP + QUOTE_SOURCE_HEIGHT + QUOTE_PADDING_BOTTOM;
+
+/** 早先发上来的摘录还带着 PDF 里的断行，画之前接成一段；一段只接一次 */
+const joinedQuotes = new Map<string, string>();
+function quoteText(excerpt: string): string {
+  const raw = excerpt.slice(0, EXCERPT_PREVIEW_LENGTH);
+  if (!raw.includes("\n")) return raw;
+  let joined = joinedQuotes.get(raw);
+  if (joined === undefined) {
+    if (joinedQuotes.size > 200) joinedQuotes.clear();
+    joined = joinPdfLines(raw);
+    joinedQuotes.set(raw, joined);
+  }
+  return joined;
+}
+
+/** PDF 摘录卡片的大小：正好放下原文，最多 20 行，再长就省略 */
+export function quoteCardSize(project: Project, text: string): Vector {
   const lines = project.textRenderer.layoutClampedLines(
-    text.slice(0, EXCERPT_PREVIEW_LENGTH),
-    EXCERPT_FONT_SIZE,
-    FileCardNode.width - PADDING * 2,
+    quoteText(text),
+    QUOTE_FONT_SIZE,
+    QUOTE_WIDTH - QUOTE_TEXT_LEFT - QUOTE_PADDING_X,
     QUOTE_MAX_LINES,
   ).length;
-  return Math.ceil(BODY_TOP + Math.max(2, lines) * EXCERPT_FONT_SIZE * EXCERPT_LINE_HEIGHT + PADDING);
+  return new Vector(QUOTE_WIDTH, Math.ceil(quoteFrame + Math.max(1, lines) * quoteLine));
 }
 
 interface BadgeColors {
@@ -146,20 +181,104 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
 
 /**
  * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
- * PDF 只画标题和完整首页；Markdown 画标题和开头文字。PDF 摘录卡片：框的图同图片卡片，圈的字画「第几页 · 论文名」和原文。
+ * PDF 只画标题和完整首页；Markdown 画标题和开头文字。PDF 摘录卡片：框的图同图片卡片，圈的字画成一段引文。
  * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
  */
 export function renderFileCard(project: Project, card: FileCardNode): void {
   card.ensureThumbnail();
   scheduleFileCardMissingCheck(project, card);
 
-  // PDF 里框下来的图和图片卡片一个画法；圈下来的字没有位图，走下面的文档卡片
+  // PDF 里框下来的图和图片卡片一个画法；圈下来的字没有图，画成引文
   if ((card.fileKind === "image" || card.pdfPage > 0) && card.bitmap && !Settings.protectingPrivacy) {
     renderImageCard(project, card, card.bitmap);
+  } else if (card.pdfPage > 0 && !card.attachmentId) {
+    renderQuoteCard(project, card);
   } else {
     renderDocumentCard(project, card);
   }
   renderHoverState(project, card);
+}
+
+function renderQuoteCard(project: Project, card: FileCardNode) {
+  const style = project.stageStyleManager.currentStyle;
+  const cameraScale = project.camera.currentScale;
+  const rect = card.rectangle;
+  const viewRect = project.renderer.transformWorld2View(rect);
+  const radius = CORNER_RADIUS * cameraScale;
+  const toView = (x: number, y: number) => project.renderer.transformWorld2View(rect.location.add(new Vector(x, y)));
+  // 卡片颜色就是竖线的颜色：发上来时取的是那条高亮的颜色，之后用调色板改卡片颜色也跟着变
+  const accent = card.color.a > 0 ? card.color.toSolid() : QUOTE_DEFAULT_ACCENT;
+  const textColor = style.StageObjectBorder;
+
+  if (card.isSelected) {
+    project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxSelected);
+  }
+  // 先铺不透明的底色，再盖一层很淡的高亮色；直接用半透明色会透出白板的点阵
+  project.shapeRenderer.renderRect(viewRect, style.Background, Color.Transparent, 0, radius);
+  project.shapeRenderer.renderRect(
+    viewRect,
+    accent.toNewAlpha(QUOTE_TINT),
+    card.missing ? MISSING_COLOR : mixColors(textColor.toSolid(), accent, 0.5).toNewAlpha(0.28),
+    (card.missing ? 3 : 1) * cameraScale,
+    radius,
+  );
+
+  const textWidth = rect.size.x - QUOTE_TEXT_LEFT - QUOTE_PADDING_X;
+  const maxLines = Math.max(1, Math.floor((rect.size.y - quoteFrame + 0.5) / quoteLine));
+  const showText =
+    QUOTE_FONT_SIZE * cameraScale > Settings.ignoreTextNodeTextRenderLessThanFontSize && !Settings.protectingPrivacy;
+
+  const ctx = project.canvas.ctx;
+  ctx.save();
+  try {
+    ctx.beginPath();
+    superellipseRect(ctx, viewRect.location.x, viewRect.location.y, viewRect.size.x, viewRect.size.y, radius);
+    ctx.clip();
+    // 字太小不画、或者开着隐私保护时，竖线照卡片能放下的行数画满，卡片不至于空着
+    const lines = showText
+      ? project.textRenderer.renderClampedMultiLineText(
+          quoteText(card.excerpt),
+          toView(QUOTE_TEXT_LEFT, QUOTE_PADDING_TOP),
+          QUOTE_FONT_SIZE * cameraScale,
+          textWidth * cameraScale,
+          textColor,
+          QUOTE_LINE_HEIGHT,
+          maxLines,
+        )
+      : maxLines;
+    project.shapeRenderer.renderRect(
+      new Rectangle(
+        toView(QUOTE_PADDING_X, QUOTE_PADDING_TOP + 2),
+        new Vector(QUOTE_BAR_WIDTH, Math.max(1, lines) * quoteLine - 4).multiply(cameraScale),
+      ),
+      accent,
+      Color.Transparent,
+      0,
+      (QUOTE_BAR_WIDTH / 2) * cameraScale,
+    );
+    if (!showText) return;
+    const sourceTop = rect.size.y - QUOTE_PADDING_BOTTOM - QUOTE_SOURCE_HEIGHT;
+    let sourceWidth = textWidth;
+    if (card.missing) {
+      sourceWidth -=
+        renderBadge(
+          project,
+          cardText("missing"),
+          new Vector(rect.right - QUOTE_PADDING_X, rect.top + sourceTop - (BADGE_HEIGHT - QUOTE_SOURCE_HEIGHT) / 2),
+          tintedBadge(MISSING_COLOR, textColor),
+          true,
+        ) + 8;
+    }
+    project.textRenderer.renderFittedText(
+      card.caption || card.title,
+      toView(QUOTE_TEXT_LEFT, sourceTop + (QUOTE_SOURCE_HEIGHT - QUOTE_SOURCE_FONT_SIZE) / 2),
+      QUOTE_SOURCE_FONT_SIZE * cameraScale,
+      sourceWidth * cameraScale,
+      textColor.toNewAlpha(0.55),
+    );
+  } finally {
+    ctx.restore();
+  }
 }
 
 // 图片卡片上浮着的小块（外部文件、文件不见了、用户填的标题），尺寸是世界坐标
@@ -312,9 +431,8 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
   const innerWidth = rect.size.x - PADDING * 2;
   const fileName = fileNameOf(card.sourcePath);
   const showFileName = card.fileKind !== "pdf" && !hideContent && titleDiffersFromFileName(card.title, fileName);
-  // PDF 摘录卡片：标题处写「第几页 · 论文名」，下面是圈下来的原文
-  const quote = card.pdfPage > 0;
-  const title = quote ? card.caption || card.title : card.title;
+  // 框下来的图还没解出来、或者开着隐私保护时会走到这里：标题处写它的出处（论文名、第几页）
+  const title = card.pdfPage > 0 ? card.caption || card.title : card.title;
   // 版面按世界坐标排，和缩放无关：放大缩小时缩略图不会跳
   const titleLineCount = hideContent
     ? 0
@@ -385,7 +503,7 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
     );
     excerptLeft = rect.size.x;
   }
-  if (card.fileKind === "pdf" && !quote) return;
+  if (card.fileKind === "pdf") return;
   const excerptWidth = rect.size.x - PADDING - excerptLeft;
   if (showText && card.excerpt && excerptWidth > 40) {
     project.textRenderer.renderClampedMultiLineText(
@@ -394,8 +512,7 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
       toView(new Vector(excerptLeft, bodyTop)),
       EXCERPT_FONT_SIZE * cameraScale,
       excerptWidth * cameraScale,
-      // 摘录卡片的原文就是正文，不调淡
-      quote ? textColor : textColor.toNewAlpha(0.75),
+      textColor.toNewAlpha(0.75),
       EXCERPT_LINE_HEIGHT,
       Math.max(1, Math.floor(bodyHeight / (EXCERPT_FONT_SIZE * EXCERPT_LINE_HEIGHT))),
     );

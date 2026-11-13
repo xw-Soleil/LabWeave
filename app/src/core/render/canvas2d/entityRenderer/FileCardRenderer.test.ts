@@ -12,6 +12,7 @@ vi.mock("@/core/research/ResearchFolder", () => ({ ResearchFolder: { getRoot: ()
 vi.mock("@/core/research/FileCardContent", () => ({
   cardText: (key: string) => key,
   stripExtension: (name: string) => name.replace(/\.[^.]+$/, ""),
+  joinPdfLines: (text: string) => text.replace(/\n/g, " "),
 }));
 vi.mock("@/core/service/controlService/MouseLocation", () => ({ MouseLocation: { vector: () => Vector.getZero() } }));
 vi.mock("@/utils/font", () => ({ getTextSize: (text: string) => new Vector(text.length * 6, 12) }));
@@ -87,5 +88,80 @@ describe("PDF cover cards", () => {
     renderFileCard(pdf.project as never, pdf.card as never);
     expect(pdf.project.imageRenderer.renderImageElement).not.toHaveBeenCalled();
     expect(pdf.project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
+  });
+});
+
+describe("PDF quote cards", () => {
+  const yellow = new Color(255, 212, 0);
+  function quote(overrides: Record<string, unknown> = {}) {
+    const { project, card } = fixture("pdf");
+    project.textRenderer.renderClampedMultiLineText.mockReturnValue(3);
+    Object.assign(project.canvas.ctx, { fill: vi.fn() });
+    Object.assign(card, {
+      // 圈下来的字没有图
+      bitmap: undefined,
+      pdfPage: 4,
+      attachmentId: "",
+      excerpt: "first line\nsecond line",
+      caption: "Paper · p. 4",
+      rectangle: new Rectangle(new Vector(100, 50), new Vector(320, 120)),
+      ...overrides,
+    });
+    return { project, card };
+  }
+  beforeEach(() => {
+    settings.protectingPrivacy = false;
+  });
+
+  it("draws the passage as the body with its line breaks joined, and the source as one small line at the bottom", () => {
+    const { project, card } = quote();
+    renderFileCard(project as never, card as never);
+    const [text, location, size, width, , , lines] = project.textRenderer.renderClampedMultiLineText.mock.calls[0];
+    expect(text).toBe("first line second line");
+    expect(size).toBe(13);
+    expect([location.x, location.y]).toEqual([130, 65]);
+    expect(width).toBe(274);
+    // 120 高的卡片放得下 3 行
+    expect(lines).toBe(3);
+    const [source, sourceAt, sourceSize] = project.textRenderer.renderFittedText.mock.calls[0];
+    expect(source).toBe("Paper · p. 4");
+    expect(sourceSize).toBe(11);
+    expect(sourceAt.x).toBe(130);
+    expect(sourceAt.y).toBeGreaterThan(65 + 3 * 13 * 1.55);
+    // 没有「PDF」小标签和大标题
+    expect(project.textRenderer.renderTextFromCenter).not.toHaveBeenCalled();
+  });
+
+  it("draws a bar beside the passage in the highlight colour over a faint tint of it", () => {
+    const blue = new Color(46, 168, 229);
+    for (const [color, accent] of [
+      [Color.Transparent, yellow],
+      [blue, blue],
+    ]) {
+      const { project, card } = quote({ color });
+      renderFileCard(project as never, card as never);
+      const fills = project.shapeRenderer.renderRect.mock.calls.map(([rect, fill]) => ({ rect, fill }));
+      // 先铺不透明的底，再盖一层淡淡的高亮色，最后是竖线
+      expect(fills[0].fill.equals(new Color(25, 25, 25))).toBe(true);
+      expect(fills[1].fill.equals(accent.toNewAlpha(0.1))).toBe(true);
+      const bar = fills.at(-1)!;
+      expect(bar.fill.equals(accent)).toBe(true);
+      expect(bar.rect.size.x).toBe(3);
+      expect(bar.rect.location.x).toBe(116);
+      expect(bar.rect.size.y).toBeCloseTo(3 * 13 * 1.55 - 4);
+    }
+  });
+
+  it("hides the passage in privacy mode and keeps drawing a boxed region as a picture", () => {
+    settings.protectingPrivacy = true;
+    const hidden = quote();
+    renderFileCard(hidden.project as never, hidden.card as never);
+    expect(hidden.project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
+    expect(hidden.project.textRenderer.renderFittedText).not.toHaveBeenCalled();
+    settings.protectingPrivacy = false;
+    const region = quote({ attachmentId: "img", excerpt: "", bitmap: { width: 300, height: 200 } });
+    renderFileCard(region.project as never, region.card as never);
+    expect(region.project.imageRenderer.renderImageElement).toHaveBeenCalledOnce();
+    expect(region.project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
   });
 });

@@ -2848,8 +2848,12 @@ research:
       copy: Copy
     toBoard:
       action: Send to board
-      caption: p. {{page}} · {{title}}
-      noBoard: Open or create a board first, then send it
+      caption: "{{title}} · p. {{page}}"
+      choose: Send to which board
+      opened: Open
+      loading: Looking for boards…
+      noBoard: This project has no board yet. Create one first
+      boardGone: “{{board}}” could not be opened or was closed. Nothing was sent
       sent: Sent to “{{board}}”
       show: Show
     save: Save
@@ -3699,11 +3703,6 @@ research:
       login: Sign in in Terminal
       permissionTitle: "{{name}} asks for approval"
       permissionInput: Arguments
-  boardPicker:
-    title: Send to which board
-    hint: Lists the boards that are open now
-    placeholder: Send to which board? Type a name to filter
-    empty: No open board has this name
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat

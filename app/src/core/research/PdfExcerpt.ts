@@ -1,13 +1,13 @@
-import { quoteCardHeight } from "@/core/render/canvas2d/entityRenderer/FileCardRenderer";
+import { quoteCardSize } from "@/core/render/canvas2d/entityRenderer/FileCardRenderer";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { TabWorkspace } from "@/core/TabWorkspace";
-import { Vector } from "@graphif/data-structures";
+import { Color } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { toast } from "sonner";
-import { boardName, chooseBoard, openBoards } from "./BoardPicker";
+import { boardName, resolveBoard, type BoardChoice } from "./BoardPicker";
 import { documentText as t } from "./DocumentTab";
-import { encodePixels } from "./FileCardContent";
+import { encodePixels, joinPdfLines } from "./FileCardContent";
 import { toStoredSourcePath } from "./FileCardFactory";
 import { nudgeEntitiesOutOfOverlap } from "./OverlapResolver";
 
@@ -21,6 +21,8 @@ export interface PdfExcerpt {
   pageLabel: string;
   pageCount: number;
   annotationId: string;
+  /** 那条批注的颜色（#rrggbb），摘录卡片左边的竖线和底色跟着它 */
+  color?: string;
   /** 圈的字；框的图给 image：引擎画出来的原始像素，width / height 是它在页面上的大小 */
   text?: string;
   image?: {
@@ -31,27 +33,25 @@ export interface PdfExcerpt {
 }
 
 /**
- * 把 PDF 里圈的一段话或框的一块图放到白板上，摆在当前视野中间、挤开压住的卡片。
- * 只开着一块白板就放那块，开着几块先问放哪块。
+ * 把 PDF 里圈的一段话或框的一块图放到用户在菜单里选的那块白板上，摆在当前视野中间、挤开压住的卡片。
+ * 那块白板还没打开的话先在后台打开，不把用户从 PDF 带走。
  * 卡片指向这份 PDF，双击跳回原处；图存成白板文件里的附件，不在研究文件夹里另放图片文件。
  */
-export async function sendPdfExcerpt(excerpt: PdfExcerpt): Promise<void> {
-  if (!openBoards().length) {
-    toast.warning(t("toBoard.noBoard"));
+export async function sendPdfExcerpt(excerpt: PdfExcerpt, board: BoardChoice): Promise<void> {
+  const [project, image] = await Promise.all([
+    resolveBoard(board),
+    excerpt.image && encodePixels(excerpt.image.pixels),
+  ]);
+  // 打不开；或者打开、压图的这一会儿它被关掉了
+  if (!project || project.closing) {
+    toast.warning(t("toBoard.boardGone", { board: board.name }));
     return;
   }
-  const project = await chooseBoard();
-  if (!project) return;
-  const image = excerpt.image && (await encodePixels(excerpt.image.pixels));
-  // 选白板、压图都要等，这期间白板可能被关掉了
-  if (project.closing) {
-    toast.warning(t("toBoard.noBoard"));
-    return;
-  }
-  const text = excerpt.text?.trim() ?? "";
+  // 圈下来的字按页面上的行断开，接回一段话再存
+  const text = joinPdfLines(excerpt.text ?? "");
   const size = excerpt.image
     ? FileCardNode.imageCardSize(excerpt.image.width, excerpt.image.height)
-    : new Vector(FileCardNode.width, quoteCardHeight(project, text));
+    : quoteCardSize(project, text);
   const card = new FileCardNode(project, {
     title: excerpt.title,
     sourcePath: toStoredSourcePath(project, excerpt.path),
@@ -62,6 +62,8 @@ export async function sendPdfExcerpt(excerpt: PdfExcerpt): Promise<void> {
     caption: t("toBoard.caption", { page: excerpt.pageLabel, title: excerpt.title }),
     pdfPage: excerpt.page,
     pdfAnnotation: excerpt.annotationId,
+    // 只给摘录的字上色：图片卡片的颜色是垫在透明图下面的底色
+    ...(!excerpt.image && /^#[\da-f]{6}$/i.test(excerpt.color ?? "") && { color: Color.fromHex(excerpt.color!) }),
     collisionBox: new CollisionBox([new Rectangle(project.camera.location.subtract(size.multiply(0.5)), size)]),
   });
   project.stageManager.add(card);
