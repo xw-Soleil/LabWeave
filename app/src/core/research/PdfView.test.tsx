@@ -631,6 +631,14 @@ describe("PDF annotation tools and persistence", () => {
       );
     }
   }
+  const pressed = (tool: string) =>
+    container.querySelector(`[aria-label="document.annotation.${tool}"]`)!.getAttribute("aria-pressed");
+  const clickOnPage = (id: string) =>
+    act(async () => {
+      container
+        .querySelector(`[data-annotation-id="${id}"]`)!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
   const note = () =>
     newAnnotation(
       "note",
@@ -698,6 +706,14 @@ describe("PDF annotation tools and persistence", () => {
       if (tool === "note") expect(item.position.rects).toEqual([[189, 649, 211, 671]]);
       if (tool === "image") expect(item.position.rects).toEqual([[100, 660, 200, 700]]);
       if (tool === "ink") expect(item.position.paths?.[0].slice(0, 4)).toEqual([100, 700, 150, 680]);
+      // 做完一次就回到普通光标；手绘要连着画好几笔，留在手绘上
+      expect(pressed(tool)).toBe(String(tool === "ink"));
+      if (tool === "image" || tool === "ink") {
+        // 框图、手绘画完不弹批注栏；点页面上的批注才打开
+        expect(container.querySelector('[aria-label="document.annotation.comment"]')).toBeNull();
+        if (tool === "ink") await click("annotation.select");
+        await clickOnPage(item.id);
+      }
       const comment = container.querySelector<HTMLTextAreaElement>('[aria-label="document.annotation.comment"]')!;
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(comment, "A useful result");
@@ -866,12 +882,66 @@ describe("PDF annotation tools and persistence", () => {
     });
   });
 
+  it("returns to the pointer after one highlight and leaves the sidebar alone", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    await click("annotation.highlight");
+    const page = container.querySelector<HTMLElement>('[data-pdf-page="0"]')!;
+    for (const [type, clientX, clientY] of [
+      ["pointerdown", 41, 85],
+      ["pointermove", 79, 115],
+      ["pointerup", 79, 115],
+    ] as const) {
+      await act(async () =>
+        page.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 })),
+      );
+    }
+    await vi.waitFor(() => expect(tab.annotations!.annotations).toHaveLength(1));
+    expect(tab.annotations!.annotations[0].type).toBe("highlight");
+    expect(pressed("highlight")).toBe("false");
+    expect(pressed("select")).toBe("true");
+    expect(container.querySelector("[data-annotation-card]")).toBeNull();
+  });
+
+  it("draws a region over text without selecting the text, and frames it only while selected or hovered", async () => {
+    const tab = new DocumentTab("/r/a.pdf", "pdf");
+    tab.pdfLocation.scale = 1;
+    await show(tab);
+    await draw("image", [
+      [41, 85],
+      [79, 115],
+      [79, 115],
+    ]);
+    await vi.waitFor(() => expect(tab.annotations!.annotations).toHaveLength(1));
+    const [region] = tab.annotations!.annotations;
+    expect(region.type).toBe("image");
+    expect(container.querySelector('[aria-label="document.annotation.selectionMenu"]')).toBeNull();
+    expect(pressed("select")).toBe("true");
+    const frame = () => container.querySelector(`[data-annotation-id="${region.id}"] [data-region-frame]`)!;
+    expect(frame().getAttribute("class")).toContain("opacity-100");
+    await act(async () => {
+      container
+        .querySelector('[data-pdf-page="0"]')!
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 300, clientY: 500, button: 0 }));
+    });
+    expect(frame().getAttribute("class")).toContain("opacity-0 group-hover:opacity-100");
+    // 框是中性色的细线，线宽不随缩放变粗
+    const lines = [...frame().querySelectorAll("rect")];
+    expect(lines.map((line) => line.getAttribute("vector-effect"))).toEqual([
+      "non-scaling-stroke",
+      "non-scaling-stroke",
+    ]);
+    expect(lines.some((line) => line.getAttribute("stroke") === region.color)).toBe(false);
+  });
+
   it("sends a boxed region to the board as an image", async () => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     await show(tab);
     await draw("image");
     const [region] = tab.annotations!.annotations;
     expect(region.type).toBe("image");
+    await clickOnPage(region.id);
     const card = container.querySelector(`[data-annotation-card="${region.id}"]`)!;
     await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="document.toBoard.action"]')!.click());
     await vi.waitFor(() => expect(mocks.sendExcerpt).toHaveBeenCalled());

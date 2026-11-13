@@ -135,10 +135,11 @@ export function usePdfAnnotations(
     tab.annotations!.change(annotations);
     tab.annotationsChanged();
   };
-  const select = (id: string) => {
+  /** 选中一条批注；show 为 false 时不动侧栏（刚划完高亮、框完图，不把批注栏弹出来） */
+  const select = (id: string, show = true) => {
     if (!live.current) return;
     setSelected(id);
-    reveal();
+    if (show) reveal();
   };
   const action = (work: () => Promise<void>) => {
     const release = engine.retain();
@@ -156,7 +157,9 @@ export function usePdfAnnotations(
       while (model.annotations.some((item) => item.id === annotation.id))
         annotation.id = newAnnotation(type, color, position, page, geometry).id;
       commit([...model.annotations, annotation]);
-      select(annotation.id);
+      select(annotation.id, focusComment);
+      // 做完一次就回到普通光标；手绘要连着画好几笔，留在手绘上
+      if (type !== "ink" && live.current) setTool("select");
       if (focusComment && live.current)
         requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${annotation.id}`)?.focus());
     });
@@ -202,8 +205,9 @@ export function usePdfAnnotations(
       if (live.current) {
         selection.clear();
         setMenu(false);
+        setTool("select");
       }
-      select(created[0].id);
+      select(created[0].id, addComment);
       if (addComment && live.current)
         requestAnimationFrame(() => document.getElementById(`annotation-comment-${tab.id}-${created[0].id}`)?.focus());
     });
@@ -217,6 +221,8 @@ export function usePdfAnnotations(
     const offEnd = selection.onEndSelection(() => {
       if (!selection.getFormattedSelection().length) return;
       if (tool === "highlight" || tool === "underline") void selectionAction.current(tool).catch(report);
+      // 框选、便签这些工具拖动时不该选中文字；万一选上了就清掉，也不弹菜单
+      else if (tool !== "select") selection.clear();
       else setMenu(true);
     });
     const offChange = selection.onSelectionChange((value) => {
@@ -897,16 +903,64 @@ export function PdfAnnotationSidebar({
 function AnnotationShape({
   item,
   page,
+  scale,
   selected,
   onSelect,
 }: {
   item: PdfAnnotation;
   page: PdfPageObject;
+  scale: number;
   selected: boolean;
   onSelect: () => void;
 }) {
   const position = item.position;
   const rects = position.pageIndex === page.index ? position.rects : position.nextPageRects;
+  if (item.type === "image" && rects?.length) {
+    // 照 Agentero：平时不画框，免得挡着看图；鼠标移上去或选中时才淡入一个中性的细框。
+    // 左上角留一个批注颜色的小点，知道这里框过。页面总是白底，颜色写死，不跟主题走。
+    return (
+      <g
+        data-annotation-id={item.id}
+        onClick={onSelect}
+        className="group"
+        style={{ cursor: "pointer", pointerEvents: "all" }}
+      >
+        {rects.map((rect, i) => {
+          const { origin, size } = pdfRectToReader(page, rect);
+          const box = { x: origin.x, y: origin.y, width: size.width, height: size.height };
+          const shown = selected ? "opacity-100" : "opacity-0 group-hover:opacity-100";
+          return (
+            <g key={i}>
+              <rect {...box} fill="transparent" />
+              <circle
+                cx={origin.x}
+                cy={origin.y}
+                r={3 / scale}
+                fill={item.color}
+                className={cn("transition-opacity duration-150", selected ? "opacity-0" : "group-hover:opacity-0")}
+              />
+              <g data-region-frame className={cn("transition-opacity duration-150", shown)}>
+                <rect
+                  {...box}
+                  fill="rgba(30, 34, 45, 0.07)"
+                  stroke="rgba(255, 255, 255, 0.8)"
+                  strokeWidth={4}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <rect
+                  {...box}
+                  fill="none"
+                  stroke="rgba(30, 34, 45, 0.92)"
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            </g>
+          );
+        })}
+      </g>
+    );
+  }
   if (item.type === "highlight" && rects?.length) {
     // 照 Zotero：整条高亮作为一层统一上色，透明度加在这一层上，行与行重叠的地方不会叠深；
     // 每行上下各放宽一点，相邻两行连成一片；不描边，选中时只是颜色稍深一点（侧栏卡片同时标出）。
@@ -989,9 +1043,9 @@ function AnnotationShape({
             y={item.type === "underline" ? origin.y + size.height - 1 : origin.y}
             width={size.width}
             height={item.type === "underline" ? 1.5 : size.height}
-            fill={item.type === "image" ? "transparent" : item.color}
-            stroke={item.type === "image" || selected ? item.color : "none"}
-            strokeWidth={selected ? 1.5 : 1}
+            fill={item.color}
+            stroke={selected ? item.color : "none"}
+            strokeWidth={1.5}
           />
         );
       })}
@@ -1082,7 +1136,8 @@ export function PdfAnnotationLayer({
         touchAction: painting ? "none" : undefined,
         cursor: painting ? "crosshair" : undefined,
       }}
-      onPointerDown={(event) => {
+      // 用「捕获」阶段接：这样拦得住 EmbedPDF 自己的选字，框选时不会同时选中文字
+      onPointerDownCapture={(event) => {
         if (!painting || event.button !== 0 || stroke.current) return;
         event.preventDefault();
         event.stopPropagation();
@@ -1093,7 +1148,7 @@ export function PdfAnnotationLayer({
         c.drawing.current = true;
         if (c.tool === "eraser") erase(p, p);
       }}
-      onPointerMove={(event) => {
+      onPointerMoveCapture={(event) => {
         const gesture = stroke.current;
         if (!gesture || gesture.id !== event.pointerId) return;
         event.preventDefault();
@@ -1105,7 +1160,7 @@ export function PdfAnnotationLayer({
         if (c.tool !== "eraser" && c.tool !== "note")
           setPreview(newAnnotation(c.tool as AnnotationType, c.color, shape(gesture), page, { runs: [] }));
       }}
-      onPointerUp={(event) => {
+      onPointerUpCapture={(event) => {
         const gesture = stroke.current;
         if (!gesture || gesture.id !== event.pointerId) return;
         event.preventDefault();
@@ -1146,6 +1201,7 @@ export function PdfAnnotationLayer({
             key={item.id}
             item={item}
             page={page}
+            scale={scale}
             selected={c.selected === item.id}
             onSelect={() => {
               if (!painting && !c.selection?.getState().selection) c.select(item.id);
@@ -1154,7 +1210,13 @@ export function PdfAnnotationLayer({
         ))}
       {preview && (
         <g pointerEvents="none">
-          <AnnotationShape item={preview} page={page} selected={false} onSelect={() => {}} />
+          <AnnotationShape
+            item={preview}
+            page={page}
+            scale={scale}
+            selected={preview.type === "image"}
+            onSelect={() => {}}
+          />
         </g>
       )}
     </svg>
