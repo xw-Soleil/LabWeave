@@ -3822,6 +3822,15 @@ research:
       login: 在终端中登录
       permissionTitle: "{{name}} 请求批准"
       permissionInput: 参数
+  activityLog:
+    failed: "活动记录没写成，稍后会再试：{{error}}"
+    mark:
+      menu: 标成…
+      progress: 进展
+      problem: 问题
+      idea: 想法
+      done: "已记进活动记录：{{mark}}（{{count}} 张）"
+      outside: 这块白板不在当前项目的文件夹里，没有记
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话

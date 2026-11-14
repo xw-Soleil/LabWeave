@@ -1025,3 +1025,26 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 框下来的图不受影响，还是图片卡片。
 - 测试：`FileCardRenderer.test.ts` 新增 3 条，`FileCardContent.test.ts` 新增 3 条。
 - 实测（开发版）：把 `测试白板2` 里一张旧的摘录卡片放大到 200% 截了窗口，淡黄底、黄色竖线、原文接成一段、底下一行出处，都在卡片里。
+
+### 84. 活动记录：项目里干了什么，程序自己记进 `.workbench/活动记录.jsonl`（2026-11-14）
+
+主线第 ① 步（任务书在方案仓库的 `主线-任务书.md`）。只写文件，没有界面。
+
+- 新文件 `app/src/core/research/ActivityLog.ts`：
+  - **记什么**：白板上加、改、删卡片（分组框也算）；从 PDF 发到白板的摘录；PDF 上加、改、删批注；笔记保存；文献库加论文；右键给卡片标「进展 / 问题 / 想法」。
+  - **怎么记**：比出来的。每次保存后把内容交给它，它和「上次记到哪」比，多了、改了、少了的各记一行。只挪位置、改大小、换颜色不记。剪切再粘贴会给卡片换编号：少掉的和多出来的内容一样，就当成同一张，不记。
+  - **什么时候写**：攒着，停手 2 分钟或最多 10 分钟写一批；关掉白板、切项目、关程序时立刻写。一张卡片打一段话中间存了很多回，只记最后的样子。
+  - **「上次记到哪」**存在 `.workbench/活动记录.状态.json`。程序崩了、别处改了白板文件，下次打开那块白板或那篇 PDF 时会补记；第一次见到一块白板只记下现状，不把已有的卡片算成新加。
+  - 每行的字段：`at`（时间，带时区）、`project`、`kind`、`where`（白板和卡片编号 / 文件、页、批注编号 / 文献库里的条目）、`title`、`text`（最多 300 字）、`more`。
+  - 写不成时只提示一次、攒着下次再写，不影响保存本身。
+- 挂上的地方：
+  - `app/src/core/Project.tsx`：`save()`、`saveAs()` 写盘成功后发一个 `saved` 事件，带上这次存盘的卡片数据。没人听时（命令行）什么也不发生。
+  - `app/src/core/research/DocumentTab.tsx`：批注读进来后、批注和笔记存成功后各一行。
+  - `app/src/core/research/Library.ts`：`createItem` 成功后一行。Zotero 同步写进来的论文不走这里，不记。
+  - `app/src/App.tsx`：启动时开始记；开着的白板变了就告诉记录模块；窗口销毁前把攒着的写掉（Mac 菜单的「退出」走的也是这一处）。
+  - `app/src/core/research/ResearchSession.ts`：换项目前把攒着的写进原项目。
+  - `app/src/components/context-menu-content.tsx`：选中卡片时右键多一项「标成… → 进展 / 问题 / 想法」。标记只记进活动记录，不改白板。
+- `app/src/core/research/AiSidecarBuilder.ts`：从 PDF 发上来的摘录卡片，文字版（`.ai.json`、`dump_workspace`）里的 `file` 多了 `page` 和 `annotation`，写明摘自哪一页、哪条批注。
+- 这一版不记：连线、卡片进出分组；是用户改的还是 AI 改的。
+- 测试：新增 `ActivityLog.test.ts` 18 条。
+- 实测（从这个工作树启动开发版，用临时代码在一块白板上加、改、删一张卡片）：第一次只写了「记到哪」（946 字节，4 张已有卡片），没有记录；之后三次保存各追加一行（`card.add`、`card.edit`、`card.delete`），白板恢复原样。批注、笔记、文献库、右键标记、两分钟定时和退出时写盘这几条只有单元测试，没有在真程序里跑。

@@ -8,6 +8,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
+import { ACTIVITY_MARKS, noteCardMarks } from "@/core/research/ActivityLog";
 import { promptImageCaption, refreshFileCard, resolveFileCardPath } from "@/core/research/FileCardFactory";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
@@ -465,6 +466,37 @@ export default function MyContextMenuContent() {
             <LucideIcons.Captions />
             {tResearch(imageCard.caption ? "card.caption.editMenu" : "card.caption.menu")}
           </Item>
+          <div className="bg-border my-1 h-px" />
+        </>
+      )}
+      {/* 给选中的卡片记一笔：做阶段小结时，标过的会优先写进去。只记在活动记录里，卡片本身不变 */}
+      {selected.length > 0 && (
+        <>
+          <Sub>
+            <SubTrigger>
+              <LucideIcons.Flag />
+              {tResearch("activityLog.mark.menu")}
+            </SubTrigger>
+            <SubContent>
+              {ACTIVITY_MARKS.map((mark) => (
+                <Item
+                  key={mark}
+                  onClick={() => {
+                    if (noteCardMarks(p, selected, mark)) {
+                      toast.success(
+                        tResearch("activityLog.mark.done", {
+                          mark: tResearch(`activityLog.mark.${mark}`),
+                          count: selected.length,
+                        }),
+                      );
+                    } else toast.warning(tResearch("activityLog.mark.outside"));
+                  }}
+                >
+                  {tResearch(`activityLog.mark.${mark}`)}
+                </Item>
+              ))}
+            </SubContent>
+          </Sub>
           <div className="bg-border my-1 h-px" />
         </>
       )}

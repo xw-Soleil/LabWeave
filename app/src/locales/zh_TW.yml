@@ -3822,6 +3822,15 @@ research:
       login: 在終端中登錄
       permissionTitle: "{{name}} 請求批准"
       permissionInput: 參數
+  activityLog:
+    failed: "活動記錄沒寫成，稍後會再試：{{error}}"
+    mark:
+      menu: 標成…
+      progress: 進展
+      problem: 問題
+      idea: 想法
+      done: "已記進活動記錄：{{mark}}（{{count}} 張）"
+      outside: 這塊白板不在當前項目的文件夾裡，沒有記
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

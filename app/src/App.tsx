@@ -8,6 +8,7 @@ import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
+import { flushActivityLog, startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
 import {
   beginResearchSessionChange,
   endResearchSessionChange,
@@ -301,6 +302,12 @@ export default function App() {
     return registerResearchSession();
   }, []);
 
+  // 活动记录：启动一次；开着的白板变了（开了一块、关了一块）就告诉它
+  useEffect(() => startActivityLog(), []);
+  useEffect(() => {
+    trackActivityBoards(tabs.filter((tab): tab is Project => tab instanceof Project && !tab.closing));
+  }, [tabs]);
+
   useEffect(() => {
     persistResearchSession();
   }, [tabs, activeResourceTab]);
@@ -371,6 +378,8 @@ export default function App() {
             return;
           }
           Telemetry.event("关闭应用");
+          // 活动记录里还攒着没写的，窗口销毁前写掉
+          await flushActivityLog();
           // 保存窗口位置
           await saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED);
           await getCurrentWindow().destroy();

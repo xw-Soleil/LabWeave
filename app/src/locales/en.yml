@@ -3703,6 +3703,15 @@ research:
       login: Sign in in Terminal
       permissionTitle: "{{name}} asks for approval"
       permissionInput: Arguments
+  activityLog:
+    failed: "The activity record could not be written and will be retried: {{error}}"
+    mark:
+      menu: Mark as…
+      progress: Progress
+      problem: Problem
+      idea: Idea
+      done: "Added to the activity record: {{mark}} ({{count}})"
+      outside: This board is not inside the current project folder, so nothing was recorded
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat

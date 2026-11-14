@@ -417,6 +417,8 @@ export class Project extends Tab {
       await this.fs.write(this.uri, content);
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
+      // 活动记录靠它知道「刚存了什么」（core/research/ActivityLog.ts）；没人听的时候（命令行）什么也不发生
+      this.emit("saved", { uri: this.uri, serializedStage: this.serializedStageByContent.get(content) });
       await this.writeAiSidecar(this.uri, content);
     } finally {
       this.isSaving = false;
@@ -448,6 +450,7 @@ export class Project extends Tab {
       }
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
+      this.emit("saved", { uri: targetUri, serializedStage: this.serializedStageByContent.get(content) });
       await this.writeAiSidecar(targetUri, content);
     } finally {
       this.saveAsTarget = null;

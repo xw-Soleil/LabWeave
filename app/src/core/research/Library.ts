@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { copyFile, exists, lstat, mkdir, open, readDir, readFile, remove, rename } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { noteLibraryItem } from "./ActivityLog";
 import { documentKey, documentPath } from "./DocumentFile";
 import {
   createLibraryNote,
@@ -584,7 +585,9 @@ export function createItem(
       }
     }
     await checkedPath(canonical, notePath);
-    return readItem(canonical, key);
+    const item = await readItem(canonical, key);
+    noteLibraryItem(item, canonical);
+    return item;
   });
 }
 
