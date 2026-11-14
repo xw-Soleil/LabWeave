@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Research Workbench",
-  "version": "4.2.6-alpha1",
+  "productName": "LabWeave",
+  "version": "0.1.0",
   "identifier": "com.ai4know.researchworkbench",
   "build": {
     "beforeDevCommand": "pnpm --filter @graphif/project-graph dev",
@@ -58,6 +58,8 @@
     },
     "macOS": {
       "minimumSystemVersion": "11.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": false,
       "dmg": {
         "background": "dmg/background.png",
         "windowSize": { "width": 720, "height": 460 },
@@ -67,8 +69,8 @@
     },
     "fileAssociations": [
       {
-        "name": "Research Workbench Workspace",
-        "description": "Research Workbench Workspace",
+        "name": "LabWeave Workspace",
+        "description": "LabWeave Workspace",
         "ext": ["prg"],
         "mimeType": "application/vnd.project-graph",
         "role": "Editor"
