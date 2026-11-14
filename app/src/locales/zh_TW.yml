@@ -1285,6 +1285,9 @@ settings:
   literatureLibraryPath:
     title: 文獻庫文件夾
     description: 填包含 .litlib 文件和「條目」文件夾的絕對路徑。留空時不啟用文獻庫。
+  progressFolderPath:
+    title: 「我的進展」放哪
+    description: 階段小結的報告和 PPT 存到這個文件夾，填絕對路徑。空著時放在項目文件夾旁邊的「我的進展」裡，第一次存報告時會問一次。
   writeAiSidecarOnSave:
     title: 保存時生成 AI 可讀的文字版
     description: |
@@ -3143,6 +3146,8 @@ research:
       aiNeedsWorkspace: AI 對話（打開白板後可用）
       files: 文件
       library: 文獻庫
+      summary: 階段小結
+      summaryNeedsWorkspace: 階段小結（打開白板後可用）
       settings: 設置
     setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
     restoreFailed: "沒能重新打開白板 {{path}}：{{message}}"
@@ -3757,6 +3762,8 @@ research:
       whatIsMissing: 還缺什麼？
     inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
     inputPlaceholderCommands: 問問白板上的內容；輸入 / 可以用命令，比如 /compact
+    link:
+      confirm: 用瀏覽器打開這個鏈接？
     composer:
       board: 當前白板「{{name}}」，AI 在這張白板上幹活
       selected: 已選 {{count}} 個
@@ -3843,6 +3850,44 @@ research:
     errors:
       noProject: 還沒有選項目文件夾，拍不了快照
       noBoard: 這個項目裡還沒有白板，沒有什麼可拍的
+  stageSummary:
+    title: 階段小結
+    loading: 正在看上次寫到哪…
+    lastSummary: "上次小結寫到 {{time}}，默認從那裡接著寫"
+    firstTime: "還沒做過小結，默認從最早的記錄（{{time}}）寫起"
+    noRecords: 這個項目還沒有活動記錄，寫出來的小結會很空
+    from: 從
+    to: 到
+    hint: 會先拍一份快照，再讓 AI 在對話裡寫；寫完自動存進「我的進展」並打開。
+    start: 開始寫
+    starting: 正在拍快照…
+    badRange: 開始的日期不能晚於結束的日期
+    notSent: AI 現在發不了（還沒配好，或者正在回答）。要說的話已經放進輸入框，好了以後按發送。
+    save: 存進我的進展
+    slides: 出 PPT
+    makeSlides: 轉成 PPT 文件
+    saved: "報告已存進「我的進展」：{{name}}"
+    slidesSaved: "PPT 已存在報告旁邊：{{name}}"
+    open: 打開
+    failed: "沒做成：{{error}}"
+    folderTitle: 報告存到哪裡？
+    folderDescription: "階段小結的報告會存成 Markdown 文件。默認放在項目文件夾旁邊的「我的進展」裡：{{path}}。以後可以在設置裡改。"
+    useDefault: 就放這裡
+    chooseFolder: 選別的文件夾…
+    cancel: 先不存
+    chooseTitle: 選一個放報告的文件夾
+    errors:
+      noProject: 還沒有選項目文件夾
+      outlineInvalid: AI 給的提綱不是約定的格式，轉不了。可以再點一次「出 PPT」讓它重寫
+      reportMissing: 找不到這份報告的文件（可能被挪走或刪掉了），先點「存進我的進展」
+  reportLink:
+    cardGone: 這張卡片已經不在了
+    noProject: 找不到鏈接裡說的項目，先把它加進項目列表
+    noLibrary: 還沒有設置文獻庫，打不開文獻庫裡的文件
+    outside: 鏈接指到了項目、文獻庫和「我的進展」以外的地方，沒有打開
+    missing: 鏈接指的文件已經不在了
+    unsupported: 這種文件打不開
+    failed: "鏈接打不開：{{message}}"
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

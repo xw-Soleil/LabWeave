@@ -148,6 +148,11 @@ export abstract class Tab extends React.Component<Record<string, never>, Record<
     this.rafHandle = requestAnimationFrame(animationFrame);
   }
 
+  /** 画面循环是不是在跑 */
+  get looping(): boolean {
+    return this.rafHandle !== -1;
+  }
+
   pause() {
     if (this.rafHandle === -1) return;
     cancelAnimationFrame(this.rafHandle);

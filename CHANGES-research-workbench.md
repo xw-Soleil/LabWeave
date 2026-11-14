@@ -1084,3 +1084,29 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 这些工具只通过白板自带的文件接口读 `项目文件夹/.workbench/` 下的文件，所以程序没开时也能用。一处例外：文献库里 PDF 的批注存在程序数据目录里，只有桌面端读得到；程序没开时 `read_annotations` 退一步，给出活动记录里记下的那部分（每条开头 300 字），并标明 `partial`。
 - 测试：新增 `ReportTools.test.ts` 15 条；`cli/ProjectGraphCli.test.ts` 加一条真的起命令行、对一块没打开的白板把这几个工具各调一遍；四组写死工具名单的测试和那条逐字核对系统说明的测试跟着改。
 - 实测（不经过模型，在本机起 MCP 服务直接调）：程序没开时和程序开着时（调用转进程序里执行）各调了一遍五个工具，对的是一个真项目：读到活动记录、3 份快照、快照和现在的差别（新加 2 张卡片、新连 2 条线）、一篇 PDF 的 3 条批注；程序开着时读文献库里一篇 PDF 的批注走的是程序的批注接口，没有报错。没有让真的模型来调，AI 会不会照说明去用这些工具要手测。
+
+### 87. 阶段小结：一键让 AI 写报告存进「我的进展」，报告里的链接能跳，再转成 PPT（2026-11-15）
+
+主线第 ④ 步。
+
+- 新文件 `app/src/core/research/StageSummary.ts`：
+  - 默认范围：从上一次小结写到的地方（活动记录里最后一条 `summary`）到现在；没做过小结就从最早的记录；没有记录是 7 天前。
+  - 开始时先把攒着没写的活动落盘、拍一份快照（原因记成 `summary`），挑一份快照做对比（范围开头之前最近的一份，没有就用范围里最早的），然后把一段话交给 AI 面板发出去。这段话第一行是「【阶段小结】起 ~ 止」，后面写明先调 `read_report_guide`、读哪段活动记录、比哪两份快照。
+  - AI 的回答存成 `我的进展/日期 阶段小结.md`：去掉标题前的客套话、代码块外壳和模型自己写的属性，最前面换成程序填的属性（类型、日期、范围、项目、快照）。同一份再存一次不会多出文件；同一天的第二份文件名加序号。存下来时在活动记录里记一行 `summary`（带范围和快照），下一次小结从这里接着算。
+  - 「我的进展」默认是项目文件夹同一级的文件夹，新设置项 `progressFolderPath` 可以改（设置 → 第一页）；第一次存报告时弹窗问一次。
+  - 出 PPT：把一段带着报告路径的话（「【出 PPT】路径」）发给 AI，让它把报告改写成一页一页的提纲（JSON）；程序把提纲转成 `.pptx` 放在报告旁边。提纲里指定了卡片的页，用那张卡片的截图当配图（只能截 AI 面板所在那块白板上的卡片）。只往「我的进展」里现成的报告旁边写。
+- 新文件 `app/src/core/research/SlidesExport.ts`：提纲转 `.pptx`。没有加库，用程序里已有的 zip.js 按 Office 的文件格式拼（一个母版、一个空白版式、一套主题，每页一个标题框、一个要点框、可选一张图）。
+- 新文件 `app/src/core/research/StageSummaryPanel.tsx`：竖栏按钮弹出来的那一小块（看默认范围、改起止日期、开始写），和 AI 回答下面的按钮（报告下面是「存进我的进展」「出 PPT」，提纲下面是「转成 PPT 文件」）。AI 回答完时自动存报告并在标签页里打开、自动转 PPT；回答不像一份写完的报告（被停掉、报错）时不自动存。
+- `app/src/components/activity-rail.tsx`：竖栏多一个「阶段小结」按钮，没开白板时是灰的。
+- `app/src/sub/AIWindow.tsx`：接收要发的话（会话读好、不在回答中时直接发，发不了就放进输入框并提示）；回答完成时通知上面的逻辑；回答下面放按钮。
+- 新文件 `app/src/core/research/ReportLinks.ts`：打开 `rwb://open?project=…&path=…` 这类链接——白板上的卡片（打开白板、把镜头对过去）、PDF 的页和批注、文献库里的 PDF、笔记。项目按文件夹名找，认项目列表里别的项目；路径不能跑到项目、文献库、「我的进展」外面；卡片已经删掉时提示一句，不报错。白板标签页刚切到前面时画布宽高还是 0，要等它排好再定位（否则算出 NaN，视野被重置）。
+- 补上链接原来的三个缺口：
+  - 笔记里点 `rwb://` 没反应：`app/src/core/research/DocumentView.tsx` 的阅读模式和实时预览都接上了。
+  - 同一个网址一次运行只处理一回：`app/src/core/service/dataFileService/DeepLinkHandler.ts` 改成只挡 1 秒内的重复（系统偶尔连递两次），隔一会儿再点照常打开。
+  - 只会打开白板：系统递进来的链接也先交给 `ReportLinks`，PDF、笔记、文献库、别的项目都能开。
+- 新文件 `app/src/core/research/ReportLinkMarkdown.tsx`：AI 面板里的回答也会带这些链接。面板渲染 Markdown 用的 Streamdown 默认只认 http 这类协议，`rwb://` 会被去掉、显示成「[blocked]」，所以放行了这个协议，并换掉链接的部件：`rwb://` 在程序里跳；网页链接先弹窗确认，再用系统浏览器打开（原来是组件自带的确认框）。
+- `app/src/core/research/ProjectRecord.ts`、`ActivityLog.ts`：活动种类加 `summary`；`app/src/core/Tab.tsx` 加一个只读的 `looping`（截图会把白板的画面循环停掉，原来在跑的要接着跑）。
+- 修了一个原来就有的问题（`aiEngine/BuiltInToolRegistry.ts`）：工具的执行代码是第一次调用时才加载的，原来每次调用各自发起一次加载。模型一步里并行调几个工具时，桌面端（WebKit）会让后几次在模块还没执行完时就拿到它，报「Cannot access uninitialized variable」——每次启动后的第一批并行调用，除了第一个全失败。改成只加载一次、大家等同一个。
+- 文案：`research.stageSummary.*`、`research.reportLink.*`、`research.shell.rail.summary*`、`research.ai.link.confirm`、`settings.progressFolderPath`。
+- 测试：新增 `StageSummary.test.ts` 15 条、`SlidesExport.test.ts` 3 条、`ReportLinks.test.ts` 11 条、`ReportLinkMarkdown.test.tsx` 2 条，`ReportTools.test.ts` 加 1 条。
+- 实测（从这个工作树启动开发版，用一套隔离的程序数据目录、一个临时项目和一个本机的假模型服务，没有用到真的密钥和真的项目）：从「开始写」到报告存好并打开约 0.4 秒（假模型立刻回话）；模型一步里并行调了五个工具，修好后都拿到了结果；报告的属性、正文、链接在标签页里都对，AI 面板里链接不再是「[blocked]」；白板不在前面时点卡片链接，白板切到前面、镜头对到卡片上；点已删卡片的链接提示「这张卡片已经不在了」；点笔记链接打开笔记；出 PPT 约 2 秒，文件里 4 页、2 张卡片截图，系统预览（QuickLook）能渲染。没有在 PowerPoint、Keynote 里打开过；真的模型写得怎么样、第一次问放哪的弹窗、竖栏按钮和日期框的点按都没试。

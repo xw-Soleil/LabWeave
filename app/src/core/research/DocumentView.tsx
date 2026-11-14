@@ -69,6 +69,7 @@ import { NoteProperties, noteStats, splitFrontmatter } from "./NoteProperties";
 import { documentWikilinkComponent } from "./ObsidianMarkdown";
 import PdfView from "./PdfView";
 import { askAiAboutSelection, clearReadingContext, watchMarkdownReadingSelection } from "./ReadingContext";
+import { followReportLink } from "./ReportLinks";
 import { readingThemeVars, resolveReadingTheme } from "./ReadingTheme";
 import { fileKindOf } from "./ResearchShell";
 import { autoTranslateEnabled, selectionForTranslation, TranslateCard } from "./TranslateCard";
@@ -302,6 +303,8 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
             event.preventDefault();
             void (async () => {
               if (!href) return;
+              // 报告里指到卡片、批注、笔记的链接（rwb://）
+              if (await followReportLink(href)) return;
               if (/^https?:\/\//i.test(href)) await open(href);
               else {
                 const path = resolveDocumentImage(tab.path, href);
@@ -408,6 +411,7 @@ function MarkdownView({ tab }: { tab: DocumentTab }) {
       createElement(wikilink, { "data-target": target, "data-embed": "1", "data-width": width }, target),
     openLink: (href) =>
       void (async () => {
+        if (await followReportLink(href)) return;
         if (/^https?:\/\//i.test(href)) return open(href);
         const path = resolveDocumentImage(tab.path, href);
         const kind = fileKindOf(path);

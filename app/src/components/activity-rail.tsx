@@ -15,6 +15,7 @@ import {
 } from "@/core/research/ResearchSession";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelStates } from "@/core/research/SidePanels";
+import { StageSummaryForm } from "@/core/research/StageSummaryPanel";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
 import { findTabGroupByTabId, getTabGroups, separateFixedSideGroups, type FixedSideEdge } from "@/core/TabGroup";
@@ -26,6 +27,7 @@ import { formatKeyBindSequenceToString } from "@/utils/keyDisplay";
 import { isMac } from "@/utils/platform";
 import { atom, useAtom, useAtomValue } from "jotai";
 import {
+  ClipboardList,
   FolderOpen,
   FolderSearch,
   LayoutDashboard,
@@ -267,6 +269,8 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   const sideStates = useSidePanelStates();
   const [popoverOpen, setPopoverOpen] = useAtom(workspacePopoverOpenAtom);
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const summaryButtonRef = useRef<HTMLButtonElement>(null);
   // 启动一秒后（让开恢复标签页那一阵）先把文献库读好，第一次点开直接有内容
   useEffect(() => {
     const timer = setTimeout(warmLibrary, 1000);
@@ -359,6 +363,32 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         >
           <Library />
         </RailButton>
+        {/* 阶段小结：AI 在对话面板里写，面板要有一块开着的白板才用得了 */}
+        <Popover open={summaryOpen} onOpenChange={setSummaryOpen}>
+          <PopoverAnchor asChild>
+            <div>
+              <RailButton
+                label={t("shell.rail.summary")}
+                active={summaryOpen}
+                buttonRef={summaryButtonRef}
+                unavailableHint={hasWorkspace ? undefined : t("shell.rail.summaryNeedsWorkspace")}
+                onClick={() => setSummaryOpen(!summaryOpen)}
+              >
+                <ClipboardList />
+              </RailButton>
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            side="right"
+            align="start"
+            className="w-64 rounded-[8px] p-3"
+            onInteractOutside={(event) => {
+              if (summaryButtonRef.current?.contains(event.target as Node)) event.preventDefault();
+            }}
+          >
+            <StageSummaryForm onDone={() => setSummaryOpen(false)} />
+          </PopoverContent>
+        </Popover>
         {!docked && (
           <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
         )}

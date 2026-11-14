@@ -24,6 +24,7 @@ export const ACTIVITY_KINDS = [
   "library.add",
   "mark",
   "snapshot",
+  "summary",
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 

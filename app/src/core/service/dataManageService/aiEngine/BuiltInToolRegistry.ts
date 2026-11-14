@@ -135,13 +135,20 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   return Object.freeze(value);
 }
 
+/*
+ * 工具怎么干活的那一半，第一次调工具时才加载，而且只发起一次、大家等同一个。
+ * 模型常常一步里并行调好几个工具。桌面端（WebKit）里同时发起几次 import()，后面几次会在模块还没执行完时
+ * 就拿到它，一用就报「Cannot access uninitialized variable」：每次启动后第一批并行的工具调用，除了第一个全失败。
+ */
+let executors: Promise<typeof import("./BuiltInToolExecutors")> | undefined;
+
 function defineTool(source: DefinitionSource): BuiltInToolDefinition {
   return {
     ...source,
     output,
     loadExecutor: async () => {
-      const { loadBuiltInToolExecutor } = await import("./BuiltInToolExecutors");
-      return loadBuiltInToolExecutor(source.name);
+      executors ??= import("./BuiltInToolExecutors");
+      return (await executors).loadBuiltInToolExecutor(source.name);
     },
   };
 }

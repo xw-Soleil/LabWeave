@@ -15,7 +15,9 @@ interface DeepLinkParams {
   target?: string;
 }
 
-const handledUrls = new Set<string>();
+/** 网址 → 上次处理它的时刻 */
+const handledUrls = new Map<string, number>();
+const REPEAT_WINDOW_MS = 1000;
 
 // 注册和生成的都是 rwb://（prg:// 协议留给可能同时装着的 Project Graph）；解析时 rwb:// 和 prg:// 都认
 export function isProjectGraphDeepLink(input: string) {
@@ -216,8 +218,21 @@ function applyCameraParams(project: Project, params: DeepLinkParams) {
 export async function handleDeepLink(urls: string[]) {
   for (const url of urls) {
     if (!isProjectGraphDeepLink(url)) continue;
-    if (handledUrls.has(url)) continue;
-    handledUrls.add(url);
+    // 系统有时会把同一个网址连着递进来两次，短时间内的第二次不理；
+    // 隔一会儿再来的是用户又点了一次（报告里同一个链接可以反复点）
+    const now = Date.now();
+    if (now - (handledUrls.get(url) ?? -Infinity) < REPEAT_WINDOW_MS) continue;
+    handledUrls.set(url, now);
+
+    // 报告里的链接：指到卡片、PDF 的批注、笔记，路径相对项目文件夹或文献库
+    try {
+      const { openReportLink } = await import("@/core/research/ReportLinks");
+      if (await openReportLink(url)) continue;
+    } catch (error) {
+      const { reportLinkError } = await import("@/core/research/ReportLinks");
+      toast.error(reportLinkError(error));
+      continue;
+    }
 
     const params = parseProjectGraphUrl(url);
     if (!params) continue;

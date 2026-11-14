@@ -1253,6 +1253,9 @@ settings:
   literatureLibraryPath:
     title: Literature library folder
     description: Enter the absolute path containing a .litlib file and the 条目 folder. Leave empty to disable the library.
+  progressFolderPath:
+    title: Where “My progress” lives
+    description: Stage summaries and their slide decks are saved to this folder (absolute path). Leave empty to use a “我的进展” folder next to the project folder; you are asked once the first time a report is saved.
   writeAiSidecarOnSave:
     title: Write an AI-readable copy when saving
     description: |
@@ -3024,6 +3027,8 @@ research:
       aiNeedsWorkspace: AI chat (open a board first)
       files: Files
       library: Library
+      summary: Stage summary
+      summaryNeedsWorkspace: Stage summary (open a board first)
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
     restoreFailed: "Couldn't reopen board {{path}}: {{message}}"
@@ -3638,6 +3643,8 @@ research:
       whatIsMissing: What is missing?
     inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
     inputPlaceholderCommands: "Ask about the board; type / for commands such as /compact"
+    link:
+      confirm: Open this link in your browser?
     composer:
       board: "Current board \"{{name}}\": the AI works on this board"
       selected: "{{count}} selected"
@@ -3724,6 +3731,44 @@ research:
     errors:
       noProject: No project folder is chosen yet, so there is nothing to snapshot
       noBoard: This project has no board yet, so there is nothing to snapshot
+  stageSummary:
+    title: Stage summary
+    loading: Checking where the last one ended…
+    lastSummary: "The last summary covered up to {{time}}; this one continues from there by default"
+    firstTime: "No summary yet; by default this one starts from the earliest record ({{time}})"
+    noRecords: This project has no activity records yet, so the summary will be nearly empty
+    from: From
+    to: To
+    hint: A snapshot is taken first, then the AI writes in the chat. When it finishes, the report is saved to “My progress” and opened.
+    start: Start writing
+    starting: Taking a snapshot…
+    badRange: The start date cannot be after the end date
+    notSent: The AI can't take this right now (not set up yet, or still answering). The request is in the input box; send it when ready.
+    save: Save to My progress
+    slides: Make slides
+    makeSlides: Convert to a PPT file
+    saved: "Report saved to “My progress”: {{name}}"
+    slidesSaved: "Slides saved next to the report: {{name}}"
+    open: Open
+    failed: "That didn't work: {{error}}"
+    folderTitle: Where should reports go?
+    folderDescription: "Stage summaries are saved as Markdown files. By default they go to a “我的进展” folder next to the project folder: {{path}}. You can change this later in Settings."
+    useDefault: Use this folder
+    chooseFolder: Choose another folder…
+    cancel: Don't save yet
+    chooseTitle: Choose a folder for reports
+    errors:
+      noProject: No project folder is chosen yet
+      outlineInvalid: The outline from the AI is not in the agreed format, so it can't be converted. Click “Make slides” again to have it rewritten
+      reportMissing: The report file can't be found (moved or deleted?). Click “Save to My progress” first
+  reportLink:
+    cardGone: This card no longer exists
+    noProject: The project named in the link can't be found. Add it to your project list first
+    noLibrary: No literature library is set up, so files in the library can't be opened
+    outside: The link points outside your projects, the library and “My progress”, so it was not opened
+    missing: The file this link points to no longer exists
+    unsupported: This kind of file can't be opened
+    failed: "The link couldn't be opened: {{message}}"
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat

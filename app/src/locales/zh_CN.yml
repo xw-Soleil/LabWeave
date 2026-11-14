@@ -1285,6 +1285,9 @@ settings:
   literatureLibraryPath:
     title: 文献库文件夹
     description: 填包含 .litlib 文件和「条目」文件夹的绝对路径。留空时不启用文献库。
+  progressFolderPath:
+    title: 「我的进展」放哪
+    description: 阶段小结的报告和 PPT 存到这个文件夹，填绝对路径。空着时放在项目文件夹旁边的「我的进展」里，第一次存报告时会问一次。
   writeAiSidecarOnSave:
     title: 保存时生成 AI 可读的文字版
     description: |
@@ -3143,6 +3146,8 @@ research:
       aiNeedsWorkspace: AI 对话（打开白板后可用）
       files: 文件
       library: 文献库
+      summary: 阶段小结
+      summaryNeedsWorkspace: 阶段小结（打开白板后可用）
       settings: 设置
     setRootFailed: "研究文件夹 {{path}} 暂时用不了：{{message}}"
     restoreFailed: "没能重新打开白板 {{path}}：{{message}}"
@@ -3757,6 +3762,8 @@ research:
       whatIsMissing: 还缺什么？
     inputPlaceholder: 问问白板上的内容，例如：这几篇论文之间是什么关系？
     inputPlaceholderCommands: 问问白板上的内容；输入 / 可以用命令，比如 /compact
+    link:
+      confirm: 用浏览器打开这个链接？
     composer:
       board: 当前白板「{{name}}」，AI 在这张白板上干活
       selected: 已选 {{count}} 个
@@ -3843,6 +3850,44 @@ research:
     errors:
       noProject: 还没有选项目文件夹，拍不了快照
       noBoard: 这个项目里还没有白板，没有什么可拍的
+  stageSummary:
+    title: 阶段小结
+    loading: 正在看上次写到哪…
+    lastSummary: "上次小结写到 {{time}}，默认从那里接着写"
+    firstTime: "还没做过小结，默认从最早的记录（{{time}}）写起"
+    noRecords: 这个项目还没有活动记录，写出来的小结会很空
+    from: 从
+    to: 到
+    hint: 会先拍一份快照，再让 AI 在对话里写；写完自动存进「我的进展」并打开。
+    start: 开始写
+    starting: 正在拍快照…
+    badRange: 开始的日期不能晚于结束的日期
+    notSent: AI 现在发不了（还没配好，或者正在回答）。要说的话已经放进输入框，好了以后按发送。
+    save: 存进我的进展
+    slides: 出 PPT
+    makeSlides: 转成 PPT 文件
+    saved: "报告已存进「我的进展」：{{name}}"
+    slidesSaved: "PPT 已存在报告旁边：{{name}}"
+    open: 打开
+    failed: "没做成：{{error}}"
+    folderTitle: 报告存到哪里？
+    folderDescription: "阶段小结的报告会存成 Markdown 文件。默认放在项目文件夹旁边的「我的进展」里：{{path}}。以后可以在设置里改。"
+    useDefault: 就放这里
+    chooseFolder: 选别的文件夹…
+    cancel: 先不存
+    chooseTitle: 选一个放报告的文件夹
+    errors:
+      noProject: 还没有选项目文件夹
+      outlineInvalid: AI 给的提纲不是约定的格式，转不了。可以再点一次「出 PPT」让它重写
+      reportMissing: 找不到这份报告的文件（可能被挪走或删掉了），先点「存进我的进展」
+  reportLink:
+    cardGone: 这张卡片已经不在了
+    noProject: 找不到链接里说的项目，先把它加进项目列表
+    noLibrary: 还没有设置文献库，打不开文献库里的文件
+    outside: 链接指到了项目、文献库和「我的进展」以外的地方，没有打开
+    missing: 链接指的文件已经不在了
+    unsupported: 这种文件打不开
+    failed: "链接打不开：{{message}}"
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话

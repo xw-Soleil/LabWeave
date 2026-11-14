@@ -514,6 +514,11 @@ export function noteSnapshot(root: string, name: string, more: Record<string, un
   live?.add(root, { kind: "snapshot", where: { snapshot: name }, title: name, more });
 }
 
+/** 做了一次阶段小结，报告存在 path。more 里记着范围和当时拍的快照，下一次小结从这里接着算 */
+export function noteSummary(root: string, path: string, more: Record<string, unknown>) {
+  live?.add(root, { kind: "summary", where: { file: posix(path) }, title: fileName(path), more });
+}
+
 export function flushActivityLog(): Promise<void> {
   return live?.flush() ?? Promise.resolve();
 }

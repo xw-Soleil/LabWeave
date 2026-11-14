@@ -194,6 +194,21 @@ describe("readActivityLog", () => {
     ]);
   });
 
+  it("做过的阶段小结也是一行记录，链接指到报告文件", async () => {
+    const report = "/research/我的进展/2026-11-14 阶段小结.md";
+    const result = await readActivityLog(
+      project({
+        ".workbench/活动记录.jsonl": `${line(at(14), "summary", { file: report }, "2026-11-14 阶段小结.md")}\n`,
+      }),
+      { kinds: ["summary"] },
+      now,
+    );
+    expect(result).toMatchObject({ total: 1, counts: { summary: 1 } });
+    expect(result.success && result.entries[0].link).toBe(
+      "rwb://open?path=/research/我的进展/2026-11-14%20阶段小结.md",
+    );
+  });
+
   it("还没有记录时照实说", async () => {
     const result = await readActivityLog(project(), {}, now);
     expect(result).toMatchObject({ success: true, total: 0, entries: [], counts: {} });
