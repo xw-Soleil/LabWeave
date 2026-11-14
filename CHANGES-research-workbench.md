@@ -1064,3 +1064,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `zotero-sync`（`358ce69e`）已经包含原主线 `research-shell` 的全部提交，主线直接快进到它，一次并入了 `acp-local-agent` → `file-features` → `pdf-reader` → `literature-library` → `zotero-sync` 这条分支链上的 91 个提交。
 - GitHub 上的默认分支从 `research-shell` 改名为 `main`。以后新分支都从 `main` 拉，做完测过再合回 `main`，不再一条接一条往下套。
 - `.github/workflows/check.yml`：触发检查的分支从 `[research-shell, acp-local-agent]` 改成 `[main]`。
+
+### 87. Windows 安装程序不再改用户的 PATH（2026-11-15）
+
+- 原来：上游留下的 `app/src-tauri/nsis/installer.nsh` 在安装后用 `setx` 把安装目录加进当前用户的 PATH，卸载时再用 `setx` 写回去。`setx` 会把超过 1024 个字符的值截断，PATH 长的电脑装一次就可能丢掉后面的条目。
+- 上游这样做是为了能在命令行里直接叫出程序。我们的安装包不带命令行入口，用不到。
+- 现在：删掉 `installer.nsh`，`app/src-tauri/tauri.conf.json` 里去掉 `bundle.windows.nsis.installerHooks`。安装和卸载都不再碰 PATH。
+- 还没有人装过 Windows 版，所以没有「旧版装过、卸载时要清 PATH」的情况。
+- 没验证：Windows 安装包还没打过，这一处只确认了配置能被读懂（Rust 测试编译通过）。
