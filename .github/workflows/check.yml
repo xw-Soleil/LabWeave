@@ -3,7 +3,7 @@ name: Check
 # LabWeave 自己的检查：每次推送都在 Windows 和 macOS 上装依赖、类型检查、跑测试、编译程序（不打安装包）
 on:
   push:
-    branches: [research-shell, acp-local-agent]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
