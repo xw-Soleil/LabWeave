@@ -1,0 +1,379 @@
+import { parseProjectFile } from "@/core/ProjectFile";
+import { Settings } from "@/core/service/Settings";
+import { Decoder } from "@msgpack/msgpack";
+import { exists, mkdir, readDir, readFile, writeFile } from "@tauri-apps/plugin-fs";
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
+import i18next from "i18next";
+import { toast } from "sonner";
+import { localTime, noteSnapshot, trackedBoards } from "./ActivityLog";
+import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
+import { documentKey } from "./DocumentFile";
+import { ResearchFolder } from "./ResearchFolder";
+
+/*
+ * 快照：把项目里每块白板当时的样子留一份，放在 项目/.workbench/快照/ 下面。
+ *
+ *   快照/2026-11-21 1030/清单.json        什么时候拍、为什么拍、有哪几块白板、每个图片附件对应哪个图片文件
+ *   快照/2026-11-21 1030/测试白板.prg      白板文件，拿掉了图片和缩略图
+ *   快照/2026-11-21 1030/测试白板.ai.json  这块白板的文字版，对比和给 AI 读都用它
+ *   快照/图片/<内容指纹>.png               所有快照共用，同一张图只有一份
+ *
+ * 图片按内容算指纹，不按附件编号：粘贴一次图片就换一个附件编号，内容还是那张图。
+ * 清单最后写：没有清单的文件夹是拍到一半的，不算数。
+ */
+
+export const SNAPSHOT_DIR = ".workbench/快照";
+const IMAGE_DIR = "图片";
+const MANIFEST = "清单.json";
+/** 超过这么久没拍，打开项目时自动拍一份 */
+export const SNAPSHOT_DUE_MS = 7 * 24 * 60 * 60 * 1000;
+const CHECK_DELAY_MS = 20 * 1000;
+const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+
+/** manual：点「现在拍一份」；auto：超过 7 天自动拍的；summary：做阶段小结时拍的 */
+export type SnapshotReason = "manual" | "auto" | "summary";
+
+export interface SnapshotBoard {
+  /** 白板文件，相对项目文件夹 */
+  file: string;
+  cards: number;
+  sections: number;
+  edges: number;
+  /** 这块白板里的图片附件：附件编号 → 快照/图片/ 里的文件名 */
+  images: Record<string, string>;
+}
+
+export interface SnapshotManifest {
+  v: 1;
+  at: string;
+  reason: SnapshotReason;
+  project: string;
+  boards: SnapshotBoard[];
+}
+
+export interface Snapshot {
+  /** 快照文件夹的名字，也是它的编号 */
+  name: string;
+  manifest: SnapshotManifest;
+}
+
+export interface SnapshotIO {
+  /** 文件不存在时给 undefined */
+  read(path: string): Promise<Uint8Array | undefined>;
+  /** 上级文件夹不在就先建 */
+  write(path: string, bytes: Uint8Array): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  /** 文件夹里的子文件夹名；文件夹不存在时给空 */
+  folders(path: string): Promise<string[]>;
+}
+
+const posix = (path: string) => path.replace(/\\/g, "/");
+const snapshotPath = (root: string, ...parts: string[]) =>
+  ResearchFolder.toAbsolute([SNAPSHOT_DIR, ...parts].join("/"), root);
+const sidecarFile = (boardFile: string) => `${boardFile.replace(/\.prg$/i, "")}.ai.json`;
+
+async function contentHash(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** 把一个白板文件拆开：拿掉图片和缩略图的白板文件，加上按内容指纹命名的图片 */
+export async function splitBoard(content: Uint8Array): Promise<{
+  stripped: Uint8Array;
+  images: Map<string, Uint8Array>;
+  refs: Record<string, string>;
+}> {
+  const reader = new ZipReader(new Uint8ArrayReader(content));
+  const output = new Uint8ArrayWriter();
+  const writer = new ZipWriter(output, { level: 0 });
+  const images = new Map<string, Uint8Array>();
+  const refs: Record<string, string> = {};
+  try {
+    for (const entry of await reader.getEntries()) {
+      // 缩略图能重新生成，不留
+      if (entry.directory || entry.filename === "thumbnail.png") continue;
+      const bytes = await entry.getData!(new Uint8ArrayWriter());
+      // 和读白板文件时认附件的规则一样（parseProjectFile）；名字不合规范的原样留在白板文件里
+      const attachment = /^attachments\/([a-zA-Z0-9-]+)\.([a-zA-Z0-9]+)$/.exec(entry.filename.trim());
+      if (!attachment) {
+        await writer.add(entry.filename, new Uint8ArrayReader(bytes), { level: 0 });
+        continue;
+      }
+      const name = `${await contentHash(bytes)}.${attachment[2].toLowerCase()}`;
+      images.set(name, bytes);
+      refs[attachment[1]] = name;
+    }
+  } finally {
+    await reader.close();
+    await writer.close();
+  }
+  return { stripped: await output.getData(), images, refs };
+}
+
+/** 把拆开的白板拼回完整的白板文件 */
+export async function joinBoard(
+  stripped: Uint8Array,
+  refs: Record<string, string>,
+  image: (name: string) => Promise<Uint8Array | undefined>,
+): Promise<Uint8Array> {
+  const reader = new ZipReader(new Uint8ArrayReader(stripped));
+  const output = new Uint8ArrayWriter();
+  const writer = new ZipWriter(output, { level: 0 });
+  try {
+    for (const entry of await reader.getEntries()) {
+      if (entry.directory) continue;
+      await writer.add(entry.filename, new Uint8ArrayReader(await entry.getData!(new Uint8ArrayWriter())), {
+        level: 0,
+      });
+    }
+    for (const [id, name] of Object.entries(refs)) {
+      const bytes = await image(name);
+      if (!bytes) throw new Error("snapshot.imageMissing");
+      await writer.add(`attachments/${id}.${name.slice(name.lastIndexOf(".") + 1)}`, new Uint8ArrayReader(bytes), {
+        level: 0,
+      });
+    }
+  } finally {
+    await reader.close();
+    await writer.close();
+  }
+  return output.getData();
+}
+
+async function boardSidecar(content: Uint8Array, path: string, root: string): Promise<ResearchSidecar> {
+  const parsed = await parseProjectFile(content, new Decoder(), new Map());
+  return buildAiSidecar({
+    serializedStage: parsed.serializedStageObjects,
+    tags: parsed.tags,
+    metadata: parsed.metadata,
+    readme: parsed.readme,
+    workspaceFile: path,
+    researchRoot: root,
+  }).json;
+}
+
+/** 两份文字版内容一样不一样。存盘时间每次都不同，不算 */
+const sameBoard = (a: ResearchSidecar, b: ResearchSidecar) =>
+  JSON.stringify({ ...a, workspace: { ...a.workspace, savedAt: "" } }) ===
+  JSON.stringify({ ...b, workspace: { ...b.workspace, savedAt: "" } });
+
+function decodeJson<T>(bytes: Uint8Array | undefined): T | undefined {
+  if (!bytes) return undefined;
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    // 写到一半断电留下的半个文件：和没有一样，这份快照不算数
+    return undefined;
+  }
+}
+
+/** 项目里的快照，最新的在前 */
+export async function listSnapshots(io: SnapshotIO, root: string, limit = Infinity): Promise<Snapshot[]> {
+  const names = (await io.folders(snapshotPath(root))).filter((name) => name !== IMAGE_DIR);
+  const snapshots: Snapshot[] = [];
+  for (const name of names.sort().reverse()) {
+    if (snapshots.length >= limit) break;
+    const manifest = decodeJson<SnapshotManifest>(await io.read(snapshotPath(root, name, MANIFEST)));
+    if (manifest?.v === 1 && Array.isArray(manifest.boards)) snapshots.push({ name, manifest });
+  }
+  return snapshots;
+}
+
+/** 某份快照里某块白板的文字版；那份快照里没有这块白板时给 undefined */
+export async function readSnapshotBoard(
+  io: SnapshotIO,
+  root: string,
+  name: string,
+  file: string,
+): Promise<ResearchSidecar | undefined> {
+  return decodeJson<ResearchSidecar>(await io.read(snapshotPath(root, name, sidecarFile(posix(file)))));
+}
+
+/**
+ * 拍一份快照。boards 是项目里每块白板这一刻的完整文件内容。
+ * unlessSameAs：和这份快照比，每块白板都没变就不拍，返回 undefined（自动拍时用）。
+ * unlessEmpty：所有白板上一张卡片都没有就不拍（项目的第一份自动快照用）。
+ */
+export async function writeSnapshot(
+  io: SnapshotIO,
+  root: string,
+  reason: SnapshotReason,
+  boards: readonly { file: string; content: Uint8Array }[],
+  options: { now?: Date; unlessSameAs?: Snapshot; unlessEmpty?: boolean } = {},
+): Promise<Snapshot | undefined> {
+  if (boards.length === 0) return undefined;
+  const prepared = [];
+  for (const board of boards) {
+    const file = posix(board.file);
+    const split = await splitBoard(board.content);
+    const sidecar = await boardSidecar(split.stripped, ResearchFolder.toAbsolute(file, root), root);
+    prepared.push({ file, ...split, sidecar });
+  }
+  if (options.unlessEmpty && prepared.every(({ sidecar }) => sidecar.cards.length + sidecar.sections.length === 0)) {
+    return undefined;
+  }
+  const previous = options.unlessSameAs;
+  if (previous && previous.manifest.boards.length === prepared.length) {
+    let same = true;
+    for (const board of prepared) {
+      const before = await readSnapshotBoard(io, root, previous.name, board.file);
+      if (!before || !sameBoard(before, board.sidecar)) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return undefined;
+  }
+
+  const now = options.now ?? new Date();
+  const at = localTime(now);
+  // 文件夹名用「日期 时分」：2026-11-21 1030；一分钟里拍了两份的，后一份加序号
+  const stamp = `${at.slice(0, 10)} ${at.slice(11, 13)}${at.slice(14, 16)}`;
+  let name = stamp;
+  for (let n = 2; await io.exists(snapshotPath(root, name)); n++) name = `${stamp}-${n}`;
+
+  const manifest: SnapshotManifest = { v: 1, at, reason, project: posix(root).split("/").pop() ?? "", boards: [] };
+  for (const board of prepared) {
+    for (const [image, bytes] of board.images) {
+      const path = snapshotPath(root, IMAGE_DIR, image);
+      if (!(await io.exists(path))) await io.write(path, bytes);
+    }
+    await io.write(snapshotPath(root, name, board.file), board.stripped);
+    await io.write(
+      snapshotPath(root, name, sidecarFile(board.file)),
+      new TextEncoder().encode(JSON.stringify(board.sidecar, null, 2)),
+    );
+    manifest.boards.push({
+      file: board.file,
+      cards: board.sidecar.cards.length,
+      sections: board.sidecar.sections.length,
+      edges: board.sidecar.edges.length,
+      images: board.refs,
+    });
+  }
+  await io.write(snapshotPath(root, name, MANIFEST), new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
+  return { name, manifest };
+}
+
+// —— 下面是和程序接起来的部分 ——
+
+export const snapshotFiles: SnapshotIO = {
+  read: async (path) => ((await exists(path)) ? await readFile(path) : undefined),
+  write: async (path, bytes) => {
+    const folder = posix(path).slice(0, posix(path).lastIndexOf("/"));
+    if (!(await exists(folder))) await mkdir(folder, { recursive: true });
+    await writeFile(path, bytes);
+  },
+  exists,
+  folders: async (path) =>
+    (await exists(path)) ? (await readDir(path)).filter((entry) => entry.isDirectory).map((entry) => entry.name) : [],
+};
+
+/** 项目里每块白板这一刻的内容：开着的用当前内容（哪怕还没存），没开的读文件 */
+async function collectBoards(root: string): Promise<{ file: string; content: Uint8Array }[]> {
+  const open = new Map(trackedBoards().map((project) => [documentKey(project.uri.fsPath), project]));
+  const boards = [];
+  for (const entry of await ResearchFolder.listFiles()) {
+    if (entry.kind !== "workspace") continue;
+    const project = open.get(documentKey(entry.absPath));
+    boards.push({
+      file: ResearchFolder.toRelative(entry.absPath, root),
+      content: project ? await project.getFileContent({ includeThumbnail: false }) : await readFile(entry.absPath),
+    });
+  }
+  return boards;
+}
+
+const listeners = new Set<(snapshot: Snapshot) => void>();
+/** 拍了新快照时叫一声（画布上的「自上次以来」要换成和新的比） */
+export function onSnapshotTaken(listener: (snapshot: Snapshot) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+let taking: Promise<Snapshot | undefined> | undefined;
+
+/**
+ * 给当前项目拍一份快照。同一时间只拍一份，正在拍时再调拿到的是同一份。
+ * unlessUnchanged：和最近一份比没变化就不拍；项目里一张卡片都没有时也不拍第一份。
+ * 没选项目抛 snapshot.noProject，项目里没有白板抛 snapshot.noBoard。
+ */
+export function takeSnapshot(
+  reason: SnapshotReason,
+  options: { unlessUnchanged?: boolean } = {},
+): Promise<Snapshot | undefined> {
+  taking ??= (async () => {
+    const root = ResearchFolder.getRoot();
+    if (!root) throw new Error("snapshot.noProject");
+    await ResearchFolder.ensureRootRegistered();
+    const boards = await collectBoards(root);
+    if (boards.length === 0) throw new Error("snapshot.noBoard");
+    const latest = options.unlessUnchanged ? (await listSnapshots(snapshotFiles, root, 1))[0] : undefined;
+    const snapshot = await writeSnapshot(snapshotFiles, root, reason, boards, {
+      unlessSameAs: latest,
+      unlessEmpty: options.unlessUnchanged && !latest,
+    });
+    if (snapshot) {
+      noteSnapshot(root, snapshot.name, {
+        reason,
+        boards: snapshot.manifest.boards.length,
+        cards: snapshot.manifest.boards.reduce((sum, board) => sum + board.cards, 0),
+      });
+      for (const listener of listeners) listener(snapshot);
+    }
+    return snapshot;
+  })().finally(() => {
+    taking = undefined;
+  });
+  return taking;
+}
+
+/** 当前项目最近的一份快照 */
+export async function latestSnapshot(): Promise<Snapshot | undefined> {
+  const root = ResearchFolder.getRoot();
+  if (!root) return undefined;
+  await ResearchFolder.ensureRootRegistered();
+  return (await listSnapshots(snapshotFiles, root, 1))[0];
+}
+
+/** 超过 7 天没拍（或者从来没拍过），而且白板有变化，就自动拍一份 */
+export async function snapshotIfDue(now = new Date()): Promise<Snapshot | undefined> {
+  const root = ResearchFolder.getRoot();
+  if (!root) return undefined;
+  const latest = await latestSnapshot();
+  if (latest && now.getTime() - Date.parse(latest.manifest.at) < SNAPSHOT_DUE_MS) return undefined;
+  if (!(await ResearchFolder.listFiles()).some((entry) => entry.kind === "workspace")) return undefined;
+  return takeSnapshot("auto", { unlessUnchanged: true });
+}
+
+/**
+ * 程序启动时调一次：过一会儿查一次要不要自动拍，之后每 6 小时、每次换项目后再查。
+ * 拍不成只提示，不打断别的事。返回的函数用来停掉。
+ */
+export function startSnapshotSchedule(): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const check = () =>
+    void snapshotIfDue().catch((error) =>
+      toast.warning(
+        i18next.t("snapshot.failed", {
+          ns: "research",
+          error: error instanceof Error ? error.message : String(error),
+          interpolation: { escapeValue: false },
+        }),
+        { id: "research-snapshot-failed" },
+      ),
+    );
+  // 等启动和换项目的那一阵忙完再查
+  const soon = () => {
+    clearTimeout(timer);
+    timer = setTimeout(check, CHECK_DELAY_MS);
+  };
+  soon();
+  const interval = setInterval(check, CHECK_EVERY_MS);
+  const unwatch = Settings.watch("researchFolderPath", soon);
+  return () => {
+    clearTimeout(timer);
+    clearInterval(interval);
+    unwatch();
+  };
+}

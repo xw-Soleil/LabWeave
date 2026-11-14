@@ -4,7 +4,7 @@ import { serialize } from "@graphif/serializer";
 import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { toast } from "sonner";
-import { buildAiSidecar } from "./AiSidecarBuilder";
+import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
 import type { DocumentTab } from "./DocumentTab";
 import type { LibraryItem } from "./Library";
 import type { PdfAnnotation } from "./PdfAnnotations";
@@ -36,7 +36,8 @@ export type ActivityKind =
   | "annotation.delete"
   | "note.save"
   | "library.add"
-  | "mark";
+  | "mark"
+  | "snapshot";
 
 /** 指向哪里。路径相对项目文件夹；文献库里的文件用 library，相对文献库 */
 export type ActivityWhere = Record<string, string | number>;
@@ -119,14 +120,37 @@ export function whereOfFile(path: string, root: string, library = ""): ActivityW
 }
 
 /**
- * 一块白板上的卡片（分组框也算），按编号列出来。
- * 只看内容：位置、大小、颜色、在哪个分组里都不算进指纹，挪一挪不算改。
+ * 白板文字版里的卡片（分组框也算），按编号列出来。活动记录和快照对比都用它，「改没改」是同一个标准：
+ * 只看内容，位置、大小、颜色、在哪个分组里都不算进指纹，挪一挪不算改。
  */
+export function sidecarItems(json: ResearchSidecar): ActivityItems {
+  const items: ActivityItems = {};
+  for (const card of json.cards) {
+    items[card.id] = {
+      f: fingerprint([card.type, card.title, card.text, card.notes, card.file?.path ?? "", card.url ?? ""]),
+      title: clip(card.title, TITLE_CHARS),
+      text: clip(card.text, TEXT_CHARS),
+      more: { type: card.type, ...(card.notes && { notes: clip(card.notes, TEXT_CHARS) }) },
+    };
+  }
+  for (const section of json.sections) {
+    items[section.id] = {
+      f: fingerprint(["Section", section.title, section.notes]),
+      title: clip(section.title, TITLE_CHARS),
+      text: clip(section.notes, TEXT_CHARS),
+      more: { type: "Section" },
+    };
+  }
+  return items;
+}
+
+/** 一块白板存盘时的卡片。比 sidecarItems 多一样：从 PDF 发上来的摘录卡片，记着它摘自哪个文件 */
 export function boardItems(
   serializedStage: unknown[],
   board: { path: string; root: string; library?: string },
 ): ActivityItems {
   const { json } = buildAiSidecar({ serializedStage, workspaceFile: board.path, researchRoot: board.root });
+  const items = sidecarItems(json);
   // 文字版里研究文件夹外的文件只留文件名；摘录卡片要知道 PDF 在哪，从原始数据里取。
   // 分组框里的卡片第一次出现是在框的 children 里（顶层那一格只是个回指），所以要顺着 children 找
   const stored = new Map<string, string>();
@@ -137,31 +161,14 @@ export function boardItems(
     if (Array.isArray(children)) children.forEach(collect);
   };
   serializedStage.forEach(collect);
-  const items: ActivityItems = {};
   for (const card of json.cards) {
-    const item: ActivityItem = {
-      f: fingerprint([card.type, card.title, card.text, card.notes, card.file?.path ?? "", card.url ?? ""]),
-      title: clip(card.title, TITLE_CHARS),
-      text: clip(card.text, TEXT_CHARS),
-      more: { type: card.type, ...(card.notes && { notes: clip(card.notes, TEXT_CHARS) }) },
-    };
-    if (card.file?.page) {
-      // 卡片里存的路径相对白板所在的文件夹；研究文件夹外的存的是完整路径，toAbsolute 两种都认
-      const absolute = ResearchFolder.toAbsolute(stored.get(card.id) ?? card.file.path, folderOf(board.path));
-      item.source = {
-        ...whereOfFile(absolute, board.root, board.library),
-        page: card.file.page,
-        ...(card.file.annotation && { annotation: card.file.annotation }),
-      };
-    }
-    items[card.id] = item;
-  }
-  for (const section of json.sections) {
-    items[section.id] = {
-      f: fingerprint(["Section", section.title, section.notes]),
-      title: clip(section.title, TITLE_CHARS),
-      text: clip(section.notes, TEXT_CHARS),
-      more: { type: "Section" },
+    if (!card.file?.page) continue;
+    // 卡片里存的路径相对白板所在的文件夹；研究文件夹外的存的是完整路径，toAbsolute 两种都认
+    const absolute = ResearchFolder.toAbsolute(stored.get(card.id) ?? card.file.path, folderOf(board.path));
+    items[card.id].source = {
+      ...whereOfFile(absolute, board.root, board.library),
+      page: card.file.page,
+      ...(card.file.annotation && { annotation: card.file.annotation }),
     };
   }
   return items;
@@ -588,6 +595,16 @@ export function noteCardMarks(
     });
   }
   return true;
+}
+
+/** 开着的、正在被盯着保存的白板。拍快照时用它们当前的内容，不用盘上可能旧一点的文件 */
+export function trackedBoards(): Project[] {
+  return [...tracked.keys()];
+}
+
+/** 拍了一份快照 */
+export function noteSnapshot(root: string, name: string, more: Record<string, unknown>) {
+  live?.add(root, { kind: "snapshot", where: { snapshot: name }, title: name, more });
 }
 
 export function flushActivityLog(): Promise<void> {

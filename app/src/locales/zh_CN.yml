@@ -3831,6 +3831,18 @@ research:
       idea: 想法
       done: "已记进活动记录：{{mark}}（{{count}} 张）"
       outside: 这块白板不在当前项目的文件夹里，没有记
+  snapshot:
+    since: 自上次以来
+    counts: "新 {{added}} · 改 {{edited}} · 删 {{removed}}"
+    sinceHint: "和 {{time}} 的快照比：新加的卡片描边，改过的右上角有个点，删掉的留一个淡影"
+    none: 还没有快照。先点右边的相机拍一份，之后才能看「自上次以来」
+    take: 现在拍一份快照
+    takeHint: "现在拍一份快照（上一份是 {{time}}）"
+    taken: "已拍快照 {{time}}：{{boards}} 块白板，{{cards}} 张卡片"
+    failed: "快照没拍成：{{error}}"
+    errors:
+      noProject: 还没有选项目文件夹，拍不了快照
+      noBoard: 这个项目里还没有白板，没有什么可拍的
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 对话

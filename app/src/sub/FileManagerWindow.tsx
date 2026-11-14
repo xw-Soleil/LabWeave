@@ -533,11 +533,14 @@ export default function FileManagerWindow() {
   };
 
   const focusRow = (path: string) =>
-    requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      // 这一帧之前用户已经点进了别的输入框（比如马上又开始给另一行改名）：不抢它的焦点。
+      // 抢了的话，新开的改名框会当场失焦、等于立刻确认
+      if (document.activeElement instanceof HTMLInputElement) return;
       rootRef.current
         ?.querySelector<HTMLElement>(`[data-file-key="${CSS.escape(projectPathKey(path))}"]`)
-        ?.focus({ preventScroll: true }),
-    );
+        ?.focus({ preventScroll: true });
+    });
   // 原位改名，照系统文件管理器：名字变成输入框，回车或点别处就改，Esc 取消
   const startRename = (entry: ResearchFileEntry, projectRoot: string) =>
     void beforeModify(projectRoot)

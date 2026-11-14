@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { renderSinceLast } from "@/core/research/SnapshotDiff";
 import { Settings } from "@/core/service/Settings";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
@@ -183,6 +184,8 @@ export class Renderer {
     this.renderEdges(viewRectangle); // 先渲染实体再渲染连线，因为连线要在图片上面
     this.project.entityRenderer.renderAllSectionsBigTitle(viewRectangle);
     this.renderTags(viewRectangle);
+    // 开着「自上次以来」时，标出和最近一份快照比新加、改过、删掉的卡片
+    renderSinceLast(this.project, viewRectangle);
     // debug
 
     // debugRender();

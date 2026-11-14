@@ -3831,6 +3831,18 @@ research:
       idea: 想法
       done: "已記進活動記錄：{{mark}}（{{count}} 張）"
       outside: 這塊白板不在當前項目的文件夾裡，沒有記
+  snapshot:
+    since: 自上次以來
+    counts: "新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
+    sinceHint: "和 {{time}} 的快照比：新加的卡片描邊，改過的右上角有個點，刪掉的留一個淡影"
+    none: 還沒有快照。先點右邊的相機拍一份，之後才能看「自上次以來」
+    take: 現在拍一份快照
+    takeHint: "現在拍一份快照（上一份是 {{time}}）"
+    taken: "已拍快照 {{time}}：{{boards}} 塊白板，{{cards}} 張卡片"
+    failed: "快照沒拍成：{{error}}"
+    errors:
+      noProject: 還沒有選項目文件夾，拍不了快照
+      noBoard: 這個項目裡還沒有白板，沒有什麼可拍的
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

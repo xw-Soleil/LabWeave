@@ -163,6 +163,11 @@ const press = (target: Element, key: string, init: KeyboardEventInit = {}) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }));
   });
 const renameBox = () => container.querySelector<HTMLInputElement>('input[aria-label="rename.title"]');
+/** 按改名的键，等输入框出来：改名前要先确认能不能改这个项目，是异步的，机器忙时会晚一拍 */
+async function beginRename(name: string, key = "F2") {
+  await press(row(name), key);
+  await vi.waitFor(() => expect(renameBox()).not.toBeNull());
+}
 /** React 不认直接赋的 value，要走原生的 setter 再发 input 事件 */
 function type(input: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -172,7 +177,7 @@ function type(input: HTMLInputElement, value: string) {
 describe("renaming in place", () => {
   it("turns the name into a text box on F2 with the part before the extension selected, and renames on Enter", async () => {
     await expandOther();
-    await press(row("a.pdf"), "F2");
+    await beginRename("a.pdf");
     // 先切到文件所在的项目，再在原位改
     expect(mocks.switchProject).toHaveBeenCalledWith("/other");
     const input = renameBox()!;
@@ -195,7 +200,7 @@ describe("renaming in place", () => {
 
     mocks.openDocument.mockClear();
     mocks.platform.mac = true;
-    await press(row("a.md"), "Enter");
+    await beginRename("a.md", "Enter");
     expect(renameBox()!.value).toBe("a.md");
     expect(mocks.openDocument).not.toHaveBeenCalled();
     await press(renameBox()!, "Escape");
@@ -205,18 +210,18 @@ describe("renaming in place", () => {
 
   it("keeps the old name on Escape, on an unchanged or empty name, and commits when focus leaves", async () => {
     await expandOther();
-    await press(row("a.md"), "F2");
+    await beginRename("a.md");
     type(renameBox()!, "other.md");
     await press(renameBox()!, "Escape");
     expect(renameBox()).toBeNull();
     for (const value of ["a.md", "  "]) {
-      await press(row("a.md"), "F2");
+      await beginRename("a.md");
       type(renameBox()!, value);
       await press(renameBox()!, "Enter");
     }
     expect(mocks.rename).not.toHaveBeenCalled();
 
-    await press(row("a.md"), "F2");
+    await beginRename("a.md");
     type(renameBox()!, "notes.md");
     await act(async () => renameBox()!.blur());
     expect(mocks.rename).toHaveBeenCalledExactlyOnceWith("/other/a.md", "notes.md");
@@ -224,7 +229,7 @@ describe("renaming in place", () => {
 
   it("shows a board without .prg, does not treat Enter while picking a pinyin candidate as confirm, and reports failures", async () => {
     await expandOther();
-    await press(row("a.prg"), "F2");
+    await beginRename("a.prg");
     const input = renameBox()!;
     expect(input.value).toBe("a");
     type(input, "板");

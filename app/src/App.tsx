@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import { flushActivityLog, startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
+import { startSnapshotSchedule } from "@/core/research/Snapshot";
 import {
   beginResearchSessionChange,
   endResearchSessionChange,
@@ -304,6 +305,8 @@ export default function App() {
 
   // 活动记录：启动一次；开着的白板变了（开了一块、关了一块）就告诉它
   useEffect(() => startActivityLog(), []);
+  // 快照：超过 7 天没拍就自动拍一份
+  useEffect(() => startSnapshotSchedule(), []);
   useEffect(() => {
     trackActivityBoards(tabs.filter((tab): tab is Project => tab instanceof Project && !tab.closing));
   }, [tabs]);

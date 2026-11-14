@@ -1,6 +1,7 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
+import { SinceLastToggle } from "@/core/research/SinceLastToggle";
 import { sideDropPreviewAtom } from "@/core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import {
@@ -192,6 +193,7 @@ function ResearchStatusBar({
       <span className="min-w-0 truncate" title={summary}>
         {summary}
       </span>
+      <SinceLastToggle project={project} />
       <TooltipProvider>
         <div className="flex shrink-0 items-center gap-0.5">
           <StatusBarButton

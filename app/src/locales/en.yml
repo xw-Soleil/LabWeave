@@ -3712,6 +3712,18 @@ research:
       idea: Idea
       done: "Added to the activity record: {{mark}} ({{count}})"
       outside: This board is not inside the current project folder, so nothing was recorded
+  snapshot:
+    since: Since last time
+    counts: "New {{added}} · Edited {{edited}} · Removed {{removed}}"
+    sinceHint: "Compared with the snapshot of {{time}}: new cards are outlined, edited ones have a dot at the top right, removed ones leave a faint shadow"
+    none: No snapshot yet. Take one with the camera on the right, then “Since last time” becomes available
+    take: Take a snapshot now
+    takeHint: "Take a snapshot now (the last one is from {{time}})"
+    taken: "Snapshot {{time}} taken: {{boards}} boards, {{cards}} cards"
+    failed: "The snapshot could not be taken: {{error}}"
+    errors:
+      noProject: No project folder is chosen yet, so there is nothing to snapshot
+      noBoard: This project has no board yet, so there is nothing to snapshot
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat
