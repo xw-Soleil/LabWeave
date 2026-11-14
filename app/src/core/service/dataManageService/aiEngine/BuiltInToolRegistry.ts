@@ -1,4 +1,6 @@
 import type { Project } from "@/core/Project";
+// 命令行的外层（MCP 服务）直接在 Node 里跑这个文件，不认 @/ 这种写法，所以用相对路径
+import { ACTIVITY_KINDS } from "../../../research/ProjectRecord";
 import type { AIObjectReferenceErrorCode, AIObjectReferenceRegistry } from "./AIObjectReferenceRegistry";
 import z from "zod/v4";
 
@@ -652,6 +654,78 @@ const researchDefinitions: BuiltInToolDefinition[] = [
     capabilities: ["project", "pdf-reader", "abort-signal"],
     projectReferences: { reads: false, allocates: false },
     cancellation: "cooperative",
+    transaction: "none",
+    persistence: "none",
+  }),
+  // 下面五个是做汇报用的，都只读项目文件夹里 .workbench/ 下的记录，程序没开时也能用
+  defineTool({
+    name: "read_report_guide",
+    description:
+      "取「怎么写阶段小结」的说明：先取哪些材料、报告分哪几节、出处链接怎么带。用户要写阶段小结、周报、汇报，或者问「这段时间我做了什么」时，先调用它，再照着做。只读。",
+    inputSchema: z.object({}),
+    capabilities: ["project"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "read_activity_log",
+    description:
+      "读项目的活动记录：程序自动记下的白板卡片增删改、从 PDF 发到白板的摘录、PDF 批注、笔记保存、文献库加论文、用户右键标的「进展 / 问题 / 想法」、拍快照。按时间从早到晚返回，每条带 at、kind、title、text（开头 300 字）、where 和能点回原处的 link。范围用 days 或 since、until，都不填是最近 7 天。total 是范围内总条数，counts 是各种活动各几条；truncated 为 true 时用 next 作 offset 接着读。只读。",
+    inputSchema: z.object({
+      days: z.number().int().min(1).max(366).optional().describe("最近几天：7 是今天和之前 6 天。和 since 二选一"),
+      since: z.string().optional().describe("从什么时候起，例如 2026-11-08 或 2026-11-08T09:00:00+08:00"),
+      until: z.string().optional().describe("到什么时候止，写日期时包含那一整天。不填是到现在"),
+      kinds: z
+        .array(z.enum(ACTIVITY_KINDS))
+        .optional()
+        .describe("只要这几种活动，不填是全部。例如只看批注：annotation.add、annotation.edit"),
+      limit: z.number().int().min(1).max(300).optional().describe("一次最多返回几条，默认 100"),
+      offset: z.number().int().min(0).optional().describe("跳过前面几条，接着上一次读时填上一次返回的 next"),
+    }),
+    capabilities: ["project", "settings"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "list_snapshots",
+    description:
+      "列出项目里的快照，最新的在前：名字（拍的日期和时间）、为什么拍（manual 手动、auto 自动、summary 做小结时）、当时有哪几块白板、各几张卡片。名字填给 compare_snapshots 用。只读。",
+    inputSchema: z.object({}),
+    capabilities: ["project", "settings"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "compare_snapshots",
+    description:
+      "比较两份快照，或者一份快照和白板现在的样子：每块白板新加、改过、删掉了哪些卡片（分组框也算），各带标题、内容开头和 link；改过的另给 was（原来的样子）；还有新连上和断开的连线。只挪位置、改颜色不算改。from、to 填 list_snapshots 里的名字：to 不填是和现在比；from 不填时，用 to 的前一份，to 也没填就用最近一份。totals 是整个项目的合计。只读。",
+    inputSchema: z.object({
+      from: z.string().min(1).optional().describe("较早的那份快照的名字，例如 2026-11-21 1030"),
+      to: z.string().min(1).optional().describe("较晚的那份快照的名字；不填是和现在比"),
+    }),
+    capabilities: ["project", "settings"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
+    transaction: "none",
+    persistence: "none",
+  }),
+  defineTool({
+    name: "read_annotations",
+    description:
+      "读一篇 PDF 上用户自己划的批注（高亮、下划线、便签、文字框、框选、手绘）：页码、原文、批注上写的话、标签、颜色和 link，按在文中的先后排。file 填项目里的 PDF（相对项目文件夹），library 填文献库里的 PDF（相对文献库），写法和活动记录里的 where 一样，只填一个。两个都不填时，列出哪些 PDF 有批注、各几条。文献库里的 PDF 在程序没开时只能给出活动记录里记下的部分（partial 为 true）。只读。",
+    inputSchema: z.object({
+      file: z.string().min(1).optional().describe("项目里的 PDF，相对项目文件夹，例如 论文/main.pdf"),
+      library: z.string().min(1).optional().describe("文献库里的 PDF，相对文献库，例如 作者2024标题/paper.pdf"),
+    }),
+    capabilities: ["project", "settings"],
+    projectReferences: { reads: false, allocates: false },
+    cancellation: "none",
     transaction: "none",
     persistence: "none",
   }),

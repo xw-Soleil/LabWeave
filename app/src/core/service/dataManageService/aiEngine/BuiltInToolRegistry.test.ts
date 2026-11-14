@@ -51,6 +51,11 @@ const researchToolNames = [
   "move_nodes",
   "read_pdf_text",
   "search_pdf",
+  "read_report_guide",
+  "read_activity_log",
+  "list_snapshots",
+  "compare_snapshots",
+  "read_annotations",
 ] as const;
 const expectedToolNames = [...upstreamToolNames, ...researchToolNames];
 
@@ -175,6 +180,11 @@ describe("Built-in Tool Registry catalog", () => {
       "create_text_node_at",
       "create_section",
       "move_nodes",
+      "read_report_guide",
+      "read_activity_log",
+      "list_snapshots",
+      "compare_snapshots",
+      "read_annotations",
     ]);
     expect(namesFor("live-selection")).toEqual([
       "delete_selected_nodes",

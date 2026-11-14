@@ -92,7 +92,7 @@ describe("Built-in Tool consumer adapters", () => {
 
   it("projects the canonical catalog into the unchanged tool-window shape without loading executors", () => {
     const windowEntries = getBuiltInToolWindowEntries();
-    expect(windowEntries).toHaveLength(36);
+    expect(windowEntries).toHaveLength(41);
     expect(windowEntries.map(({ name, description, parameters }) => ({ name, description, parameters }))).toEqual(
       builtInToolCatalog.map(({ name, description, inputSchema }) => ({
         name,
@@ -276,6 +276,11 @@ describe("Built-in Tool consumer adapters", () => {
       "dump_workspace",
       "read_pdf_text",
       "search_pdf",
+      "read_report_guide",
+      "read_activity_log",
+      "list_snapshots",
+      "compare_snapshots",
+      "read_annotations",
     ]);
   });
 });

@@ -14,6 +14,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { REPORT_GUIDE_HINT } from "../core/research/ReportGuide";
 import { getBuiltInToolCliEntries } from "../core/service/dataManageService/aiEngine/BuiltInToolCliAdapter";
 import { getBuiltInToolDefinition } from "../core/service/dataManageService/aiEngine/BuiltInToolRegistry";
 import {
@@ -41,7 +42,8 @@ const INSTRUCTIONS = `这是「科研工作台」（一个白板程序）的接�
 - 名字里带 selected、viewport 的工具，以及不带坐标的 create_text_node、create_file_card，要用到程序里的选中或视野，只能用于开着的工作区。要在没开的工作区里加卡片，用 create_text_node_at。
 - 坐标是白板的世界坐标：x 向右、y 向下。get_all_nodes 会给出每张卡片的位置和尺寸，摆新卡片时避开已有的。
 - 要调整位置用 move_nodes，不要删掉重建：删掉重建会换引用，连线也要重连。
-- 资源里每个工作区的「文字版」是上次保存时写出的，最新内容以 dump_workspace 为准。`;
+- 资源里每个工作区的「文字版」是上次保存时写出的，最新内容以 dump_workspace 为准。
+- ${REPORT_GUIDE_HINT}做汇报的几个工具（read_activity_log、list_snapshots、compare_snapshots、read_annotations）读的是整个项目的记录，workspace 填项目里任意一块白板就行。`;
 
 const WORKSPACE_PROPERTY = {
   type: "string",

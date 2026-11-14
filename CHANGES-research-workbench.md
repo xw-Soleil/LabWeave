@@ -1067,3 +1067,20 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 顺手修：`app/src/sub/FileManagerWindow.tsx` 改名结束后把焦点还给那一行时，如果用户已经点进了别的输入框就不抢。原来在机器忙的时候，紧接着开的改名框会被这一下弄得立刻失焦、当场确认；这条在整套测试里偶尔失败。测试里等输入框出现再往下走。
 - 测试：新增 `Snapshot.test.ts` 9 条、`SnapshotDiff.test.ts` 6 条。
 - 实测（从这个工作树启动开发版，用临时代码跑）：两块白板的项目拍一份 157 毫秒；2.97 MB 的白板文件拆出来是 4 KB 的白板文件加图片，四个图片附件里两个内容相同、只存了一份（图片共 1.8 MB）；紧接着再拍一份只多了约 11 KB。加一张、改一张、删一张后打开对比，数字是「新 1 · 改 1 · 删 1」，状态条上显示的也是这个。画布上三种标记的样子没截到图（当时窗口没露出来），自动拍和两个按钮的点按也没在真程序里试。
+
+### 86. 给 AI 的「怎么做汇报」说明和五个只读工具（2026-11-15）
+
+主线第 ③ 步。
+
+- 新文件 `app/src/core/research/ReportGuide.ts`：一份「怎么写阶段小结」的说明（先取哪些材料、报告分哪四节、出处链接怎么带、没有记录的不写）。平时不放进系统说明，AI 要写小结时通过工具来取。另有一句提示 `REPORT_GUIDE_HINT`（「写小结、周报、汇报前先调用 read_report_guide」），程序自带的 AI（`AIEngine.tsx` 的 `RESEARCH_ASSISTANT_GUIDE`，接着的本机 Claude Code、Codex 也用它）和 MCP 的说明（`cli/ProjectGraphMcpServer.ts`）各放了这一句，是同一个常量。
+- 工具目录（`BuiltInToolRegistry.ts`、`BuiltInToolExecutors.tsx`）加了五个只读工具，自带 AI 和 MCP 都能用，工具总数 36 → 41：
+  - `read_report_guide`：取上面那份说明。
+  - `read_activity_log`：读一段时间的活动记录（`days`，或 `since`、`until`；都不填是最近 7 天），可以按种类筛。按时间排好，带各种活动的条数、记录从哪天开始、每条能点回原处的链接；一次最多 300 条，读不完时告诉从哪接着读。
+  - `list_snapshots`：列出项目里的快照。
+  - `compare_snapshots`：比两份快照，或一份快照和现在。每块白板新加、改过、删掉的卡片（改过的带原来的样子），新连上和断开的连线；白板改了名认得出来；读不了的白板单独标出来。「改没改」和活动记录、画布上的「自上次以来」是同一个标准。
+  - `read_annotations`：读一篇 PDF 上自己划的批注；不指定时列出哪些 PDF 有批注、各几条。
+- 新文件 `app/src/core/research/ReportTools.ts`：这几个工具背后的逻辑，以及链接的写法（`rwb://open?project=…&path=…&target=…` 等四种；中文不转码，空格、括号这些会截断 Markdown 链接的字符转码）。链接点了能跳转是第 ④ 步的事。
+- 新文件 `app/src/core/research/ProjectRecord.ts`：把活动记录和快照「在盘上是什么样、怎么读」的那部分从 `ActivityLog.ts`、`Snapshot.ts` 里挪出来（原样挪，两个文件照旧导出这些名字）。原因：命令行（外部 AI 走 MCP、程序没开时）也要读这些文件，而那两个文件引着界面和桌面端接口，命令行里带不进去。
+- 这些工具只通过白板自带的文件接口读 `项目文件夹/.workbench/` 下的文件，所以程序没开时也能用。一处例外：文献库里 PDF 的批注存在程序数据目录里，只有桌面端读得到；程序没开时 `read_annotations` 退一步，给出活动记录里记下的那部分（每条开头 300 字），并标明 `partial`。
+- 测试：新增 `ReportTools.test.ts` 15 条；`cli/ProjectGraphCli.test.ts` 加一条真的起命令行、对一块没打开的白板把这几个工具各调一遍；四组写死工具名单的测试和那条逐字核对系统说明的测试跟着改。
+- 实测（不经过模型，在本机起 MCP 服务直接调）：程序没开时和程序开着时（调用转进程序里执行）各调了一遍五个工具，对的是一个真项目：读到活动记录、3 份快照、快照和现在的差别（新加 2 张卡片、新连 2 条线）、一篇 PDF 的 3 条批注；程序开着时读文献库里一篇 PDF 的批注走的是程序的批注接口，没有报错。没有让真的模型来调，AI 会不会照说明去用这些工具要手测。

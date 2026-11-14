@@ -107,7 +107,22 @@ describe("external AI MCP server", () => {
 
     const { tools } = await client.listTools();
     expect(tools[0].name).toBe("list_workspaces");
-    expect(tools).toHaveLength(37);
+    expect(tools).toHaveLength(42);
+    // 做汇报的五个工具都只读；说明里有一句让 AI 写小结前先取「怎么做汇报」
+    expect(client.getInstructions()).toContain("先调用 read_report_guide");
+    for (const name of [
+      "read_report_guide",
+      "read_activity_log",
+      "list_snapshots",
+      "compare_snapshots",
+      "read_annotations",
+    ]) {
+      expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      });
+    }
     const createEdges = tools.find(({ name }) => name === "create_edges")!;
     expect(createEdges.inputSchema.required).toEqual(["workspace", "edges"]);
     expect(Object.keys(createEdges.inputSchema.properties!)[0]).toBe("workspace");

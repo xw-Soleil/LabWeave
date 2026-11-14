@@ -5,9 +5,22 @@ import { exists, mkdir, readDir, readFile, writeFile } from "@tauri-apps/plugin-
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
 import i18next from "i18next";
 import { toast } from "sonner";
-import { localTime, noteSnapshot, trackedBoards } from "./ActivityLog";
+import { noteSnapshot, trackedBoards } from "./ActivityLog";
 import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
 import { documentKey } from "./DocumentFile";
+import {
+  SNAPSHOT_DIR,
+  SNAPSHOT_IMAGE_DIR,
+  SNAPSHOT_MANIFEST,
+  listSnapshots,
+  localTime,
+  readSnapshotBoard,
+  snapshotSidecarFile,
+  under,
+  type Snapshot,
+  type SnapshotManifest,
+  type SnapshotReason,
+} from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 
 /*
@@ -22,40 +35,21 @@ import { ResearchFolder } from "./ResearchFolder";
  * 清单最后写：没有清单的文件夹是拍到一半的，不算数。
  */
 
-export const SNAPSHOT_DIR = ".workbench/快照";
-const IMAGE_DIR = "图片";
-const MANIFEST = "清单.json";
+// 快照的格式和读的那一半在 ProjectRecord.ts（命令行里也要用，不能带着这里的界面和桌面端接口）
+export {
+  SNAPSHOT_DIR,
+  listSnapshots,
+  readSnapshotBoard,
+  type Snapshot,
+  type SnapshotBoard,
+  type SnapshotManifest,
+  type SnapshotReason,
+} from "./ProjectRecord";
+
 /** 超过这么久没拍，打开项目时自动拍一份 */
 export const SNAPSHOT_DUE_MS = 7 * 24 * 60 * 60 * 1000;
 const CHECK_DELAY_MS = 20 * 1000;
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
-
-/** manual：点「现在拍一份」；auto：超过 7 天自动拍的；summary：做阶段小结时拍的 */
-export type SnapshotReason = "manual" | "auto" | "summary";
-
-export interface SnapshotBoard {
-  /** 白板文件，相对项目文件夹 */
-  file: string;
-  cards: number;
-  sections: number;
-  edges: number;
-  /** 这块白板里的图片附件：附件编号 → 快照/图片/ 里的文件名 */
-  images: Record<string, string>;
-}
-
-export interface SnapshotManifest {
-  v: 1;
-  at: string;
-  reason: SnapshotReason;
-  project: string;
-  boards: SnapshotBoard[];
-}
-
-export interface Snapshot {
-  /** 快照文件夹的名字，也是它的编号 */
-  name: string;
-  manifest: SnapshotManifest;
-}
 
 export interface SnapshotIO {
   /** 文件不存在时给 undefined */
@@ -68,9 +62,7 @@ export interface SnapshotIO {
 }
 
 const posix = (path: string) => path.replace(/\\/g, "/");
-const snapshotPath = (root: string, ...parts: string[]) =>
-  ResearchFolder.toAbsolute([SNAPSHOT_DIR, ...parts].join("/"), root);
-const sidecarFile = (boardFile: string) => `${boardFile.replace(/\.prg$/i, "")}.ai.json`;
+const snapshotPath = (root: string, ...parts: string[]) => under(root, SNAPSHOT_DIR, ...parts);
 
 async function contentHash(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
@@ -157,38 +149,6 @@ const sameBoard = (a: ResearchSidecar, b: ResearchSidecar) =>
   JSON.stringify({ ...a, workspace: { ...a.workspace, savedAt: "" } }) ===
   JSON.stringify({ ...b, workspace: { ...b.workspace, savedAt: "" } });
 
-function decodeJson<T>(bytes: Uint8Array | undefined): T | undefined {
-  if (!bytes) return undefined;
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as T;
-  } catch {
-    // 写到一半断电留下的半个文件：和没有一样，这份快照不算数
-    return undefined;
-  }
-}
-
-/** 项目里的快照，最新的在前 */
-export async function listSnapshots(io: SnapshotIO, root: string, limit = Infinity): Promise<Snapshot[]> {
-  const names = (await io.folders(snapshotPath(root))).filter((name) => name !== IMAGE_DIR);
-  const snapshots: Snapshot[] = [];
-  for (const name of names.sort().reverse()) {
-    if (snapshots.length >= limit) break;
-    const manifest = decodeJson<SnapshotManifest>(await io.read(snapshotPath(root, name, MANIFEST)));
-    if (manifest?.v === 1 && Array.isArray(manifest.boards)) snapshots.push({ name, manifest });
-  }
-  return snapshots;
-}
-
-/** 某份快照里某块白板的文字版；那份快照里没有这块白板时给 undefined */
-export async function readSnapshotBoard(
-  io: SnapshotIO,
-  root: string,
-  name: string,
-  file: string,
-): Promise<ResearchSidecar | undefined> {
-  return decodeJson<ResearchSidecar>(await io.read(snapshotPath(root, name, sidecarFile(posix(file)))));
-}
-
 /**
  * 拍一份快照。boards 是项目里每块白板这一刻的完整文件内容。
  * unlessSameAs：和这份快照比，每块白板都没变就不拍，返回 undefined（自动拍时用）。
@@ -235,12 +195,12 @@ export async function writeSnapshot(
   const manifest: SnapshotManifest = { v: 1, at, reason, project: posix(root).split("/").pop() ?? "", boards: [] };
   for (const board of prepared) {
     for (const [image, bytes] of board.images) {
-      const path = snapshotPath(root, IMAGE_DIR, image);
+      const path = snapshotPath(root, SNAPSHOT_IMAGE_DIR, image);
       if (!(await io.exists(path))) await io.write(path, bytes);
     }
     await io.write(snapshotPath(root, name, board.file), board.stripped);
     await io.write(
-      snapshotPath(root, name, sidecarFile(board.file)),
+      snapshotPath(root, name, snapshotSidecarFile(board.file)),
       new TextEncoder().encode(JSON.stringify(board.sidecar, null, 2)),
     );
     manifest.boards.push({
@@ -251,7 +211,10 @@ export async function writeSnapshot(
       images: board.refs,
     });
   }
-  await io.write(snapshotPath(root, name, MANIFEST), new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
+  await io.write(
+    snapshotPath(root, name, SNAPSHOT_MANIFEST),
+    new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
+  );
   return { name, manifest };
 }
 

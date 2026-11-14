@@ -4,10 +4,27 @@ import { serialize } from "@graphif/serializer";
 import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { toast } from "sonner";
-import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
+import { buildAiSidecar } from "./AiSidecarBuilder";
 import type { DocumentTab } from "./DocumentTab";
 import type { LibraryItem } from "./Library";
 import type { PdfAnnotation } from "./PdfAnnotations";
+import {
+  ACTIVITY_LOG_FILE,
+  ACTIVITY_STATE_FILE,
+  TEXT_CHARS,
+  TITLE_CHARS,
+  clip,
+  diffItems,
+  fingerprint,
+  localTime,
+  sidecarItems,
+  type ActivityEntry,
+  type ActivityItem,
+  type ActivityItems,
+  type ActivityKind,
+  type ActivityState,
+  type ActivityWhere,
+} from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 
 /*
@@ -19,64 +36,22 @@ import { ResearchFolder } from "./ResearchFolder";
  * 「上次记到哪」单独存一个文件，程序崩了、外面的 AI 直接改了白板文件，下次打开时也能补记。
  */
 
-export const ACTIVITY_LOG_FILE = ".workbench/活动记录.jsonl";
-export const ACTIVITY_STATE_FILE = ".workbench/活动记录.状态.json";
+// 记录的格式和读的那一半在 ProjectRecord.ts（命令行里也要用，不能带着这里的界面和桌面端接口）
+export {
+  ACTIVITY_LOG_FILE,
+  ACTIVITY_STATE_FILE,
+  diffItems,
+  localTime,
+  sidecarItems,
+  type ActivityEntry,
+  type ActivityItem,
+  type ActivityItems,
+  type ActivityKind,
+  type ActivityWhere,
+} from "./ProjectRecord";
+
 const QUIET_MS = 2 * 60 * 1000;
 const MAX_WAIT_MS = 10 * 60 * 1000;
-const TITLE_CHARS = 80;
-const TEXT_CHARS = 300;
-
-export type ActivityKind =
-  | "card.add"
-  | "card.edit"
-  | "card.delete"
-  | "excerpt.send"
-  | "annotation.add"
-  | "annotation.edit"
-  | "annotation.delete"
-  | "note.save"
-  | "library.add"
-  | "mark"
-  | "snapshot";
-
-/** 指向哪里。路径相对项目文件夹；文献库里的文件用 library，相对文献库 */
-export type ActivityWhere = Record<string, string | number>;
-
-/** 活动记录里的一行 */
-export interface ActivityEntry {
-  /** 时间，带时区 */
-  at: string;
-  /** 项目文件夹的名字 */
-  project: string;
-  kind: ActivityKind;
-  where: ActivityWhere;
-  title: string;
-  text?: string;
-  more?: Record<string, unknown>;
-}
-
-/** 一张卡片、一条批注记下来的样子；f 是内容的指纹，用来看它变没变 */
-export interface ActivityItem {
-  f: string;
-  title: string;
-  text: string;
-  more?: Record<string, unknown>;
-  /** 卡片是从 PDF 发上来的摘录时：摘自哪个文件、哪一页、哪条批注 */
-  source?: ActivityWhere;
-  /** 批注自带的时间 */
-  created?: string;
-  modified?: string;
-  page?: number;
-}
-export type ActivityItems = Record<string, ActivityItem>;
-
-/** 「上次记到哪」：每块白板（按相对路径）、每个 PDF 上次记下的样子，每篇笔记上次的指纹 */
-interface ActivityState {
-  v: 1;
-  boards: Record<string, ActivityItems>;
-  annotations: Record<string, ActivityItems>;
-  notes: Record<string, { f: string; chars: number }>;
-}
 
 export interface ActivityIO {
   /** 文件不存在时给 undefined */
@@ -85,63 +60,15 @@ export interface ActivityIO {
   write(path: string, text: string): Promise<void>;
 }
 
-function fingerprint(parts: unknown): string {
-  const text = JSON.stringify(parts);
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index++) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  // 带上长度：只有 32 位的指纹，多一道保险
-  return `${(hash >>> 0).toString(16).padStart(8, "0")}${text.length.toString(36)}`;
-}
-
-const clip = (text: string, length: number) => (text.length > length ? `${text.slice(0, length)}…` : text);
 const posix = (path: string) => path.replace(/\\/g, "/");
 const fileName = (path: string) => posix(path).split("/").pop() ?? path;
 const folderOf = (path: string) => posix(path).slice(0, Math.max(posix(path).lastIndexOf("/"), 0));
-
-/** 本地时间，带时区：2026-11-15T10:32:08+08:00 */
-export function localTime(date: Date): string {
-  const pad = (value: number) => String(Math.trunc(Math.abs(value))).padStart(2, "0");
-  const offset = -date.getTimezoneOffset();
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
-    `${offset < 0 ? "-" : "+"}${pad(offset / 60)}:${pad(offset % 60)}`
-  );
-}
 
 /** 一个文件在记录里怎么写：项目里的写相对路径，文献库里的写相对文献库的路径，别处的写完整路径 */
 export function whereOfFile(path: string, root: string, library = ""): ActivityWhere {
   if (ResearchFolder.isInside(path, root)) return { file: ResearchFolder.toRelative(path, root) };
   if (library && ResearchFolder.isInside(path, library)) return { library: ResearchFolder.toRelative(path, library) };
   return { file: posix(path) };
-}
-
-/**
- * 白板文字版里的卡片（分组框也算），按编号列出来。活动记录和快照对比都用它，「改没改」是同一个标准：
- * 只看内容，位置、大小、颜色、在哪个分组里都不算进指纹，挪一挪不算改。
- */
-export function sidecarItems(json: ResearchSidecar): ActivityItems {
-  const items: ActivityItems = {};
-  for (const card of json.cards) {
-    items[card.id] = {
-      f: fingerprint([card.type, card.title, card.text, card.notes, card.file?.path ?? "", card.url ?? ""]),
-      title: clip(card.title, TITLE_CHARS),
-      text: clip(card.text, TEXT_CHARS),
-      more: { type: card.type, ...(card.notes && { notes: clip(card.notes, TEXT_CHARS) }) },
-    };
-  }
-  for (const section of json.sections) {
-    items[section.id] = {
-      f: fingerprint(["Section", section.title, section.notes]),
-      title: clip(section.title, TITLE_CHARS),
-      text: clip(section.notes, TEXT_CHARS),
-      more: { type: "Section" },
-    };
-  }
-  return items;
 }
 
 /** 一块白板存盘时的卡片。比 sidecarItems 多一样：从 PDF 发上来的摘录卡片，记着它摘自哪个文件 */
@@ -202,26 +129,6 @@ export function annotationItems(annotations: readonly PdfAnnotation[]): Activity
     };
   }
   return items;
-}
-
-/**
- * 两次之间多了、改了、少了哪些。
- * 剪切再粘贴会给卡片换一个新编号：少掉的和多出来的内容一样，就当成同一张，两边都不算。
- */
-export function diffItems(
-  before: ActivityItems,
-  after: ActivityItems,
-): { added: string[]; edited: string[]; removed: string[] } {
-  const added = Object.keys(after).filter((id) => !(id in before));
-  const edited = Object.keys(after).filter((id) => id in before && before[id].f !== after[id].f);
-  const removed: string[] = [];
-  for (const id of Object.keys(before)) {
-    if (id in after) continue;
-    const same = added.findIndex((candidate) => after[candidate].f === before[id].f);
-    if (same < 0) removed.push(id);
-    else added.splice(same, 1);
-  }
-  return { added, edited, removed };
 }
 
 type Timestamped<T> = T & { at: Date };
