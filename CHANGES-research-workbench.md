@@ -1025,3 +1025,42 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 框下来的图不受影响，还是图片卡片。
 - 测试：`FileCardRenderer.test.ts` 新增 3 条，`FileCardContent.test.ts` 新增 3 条。
 - 实测（开发版）：把 `测试白板2` 里一张旧的摘录卡片放大到 200% 截了窗口，淡黄底、黄色竖线、原文接成一段、底下一行出处，都在卡片里。
+
+### 84. 补记：本机 AI 程序（ACP）接入（2026-11-05～11-06）
+
+这一节是合并进主线时补写的，后续的改动见第 25、34、35 节。
+
+- AI 面板除了自己填的 AI 接口，还能用这台电脑上装好、登录好的 AI 程序（Codex、Claude Code 等），通过 ACP（Agent Client Protocol）对话。新增依赖 `@agentclientprotocol/sdk` 2.4.0。
+- `app/src-tauri/src/local_agent.rs`：
+  - 固定的 7 个程序目录（Codex、Claude Code 实测过，其余 5 个标「未实测」），不能填自定义命令；手动指定的位置也必须是目录里那个程序名。
+  - 从登录 shell 的 PATH、当前 PATH 和常见的安装目录里找程序。找程序的做法部分改写自 Agentero（MIT），文件开头有注明。
+  - 启动、写入、停止、打开终端四个命令。程序在研究文件夹里运行，用账号真实的 HOME。
+  - 每个程序单独一个进程组；停止时先发 SIGTERM，2 秒后还在就 SIGKILL；退出程序时全部停掉。
+- `app/src/core/service/dataManageService/aiEngine/LocalAgent.ts`、`LocalAgentTransport.ts`：ACP 连接和 AI 面板的对话通道。一个面板一个进程，一段对话一个会话。判断「是不是白板工具」只认转接器设的固定字段，不看 AI 程序自己填的参数。
+- 界面：设置 → AI 多了「AI 来源」和「本机 AI 程序」页（在终端中安装、登录，复制安装命令，手动指定位置）；AI 面板标题下面可以切换来源，输入框上方显示连接状态。
+- Codex、Claude Code 和它们的转接器都不打进安装包，由用户自己安装。
+
+### 85. 内测安装包：改名 LabWeave、版本号 0.1.0、本机签名、新图标（2026-11-14）
+
+第一次打安装包发给内测的人。原来的名字「Research Workbench」、版本号 `4.2.6-alpha1` 和图标都是上游或早期留下的。
+
+- `app/src-tauri/tauri.conf.json`：
+  - `productName` 改成 `LabWeave`，决定 `.app`、安装包的文件名和菜单栏上的名字；`.prg` 文件类型的名字改成 `LabWeave Workspace`。
+  - `version` 改成 `0.1.0`，从这版起用自己的版本号。代码里版本号只用来显示。
+  - `identifier` 不变（`com.ai4know.researchworkbench`）。设置和数据存在哪是按它定的，已有的数据照常能用。
+  - `bundle.macOS.signingIdentity` 设为 `-`（ad-hoc 签名，不用证书，签名里没有姓名、账号和团队编号）。完全没签名的程序从网上下载后，在苹果芯片的 Mac 上会被系统说成「已损坏」。
+  - `bundle.macOS.hardenedRuntime` 设为 `false`。强化运行时是公证才需要的；开着又没配权限文件，可能拦住「在终端中安装」（它通过 `osascript` 让「终端」执行命令）。以后用正式证书签名、公证时要改回来，并补权限文件。
+- 图标换成 LabWeave 的「织结」（朱橙色织结、暖白底）：
+  - `app/src-tauri/icons/` 里 `icon.icns`、`icon.png`、`32x32.png`、`64x64.png`、`128x128.png`、`128x128@2x.png`：原图是铺满的方图，按 macOS 的图标规范缩进 1024 画布中间 824×824 的圆角方块，四周留边、带一点阴影。`icon.icns` 用 `iconutil` 生成，含 10 个尺寸。
+  - `icon.ico`、`Square*Logo.png`、`StoreLogo.png`：用原样的方图。
+  - `app/src/assets/icon.png`（设置 →「关于」里那张）：只有圆角方块，512×512。
+  - `icons/ios/` 和 `gen/android/` 里手机用的图标没换，这两个平台不打包。
+- 没改的：界面里的「科研工作台」/ Research Workbench 文案；「关于」页上的 Project Graph 字样；安装窗口的背景图（上面还写着 Project Graph）。
+- 没验证：没有跑打包（约定 AI 不跑 build）。安装包能不能打出来、签名后别人第一次打开看到什么提示、安装包版里「在终端中安装」能不能用、图标在程序坞里的样子，都要打包后手测。
+- 检查：Rust 测试 83 条通过（改完配置和图标后各编译一次）；`prettier --check` 通过。
+
+### 86. 分支链合回主线，主线改名 `main`（2026-11-14）
+
+- `zotero-sync`（`358ce69e`）已经包含原主线 `research-shell` 的全部提交，主线直接快进到它，一次并入了 `acp-local-agent` → `file-features` → `pdf-reader` → `literature-library` → `zotero-sync` 这条分支链上的 91 个提交。
+- GitHub 上的默认分支从 `research-shell` 改名为 `main`。以后新分支都从 `main` 拉，做完测过再合回 `main`，不再一条接一条往下套。
+- `.github/workflows/check.yml`：触发检查的分支从 `[research-shell, acp-local-agent]` 改成 `[main]`。
