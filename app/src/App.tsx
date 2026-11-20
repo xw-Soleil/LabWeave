@@ -8,6 +8,8 @@ import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
+import { ResearchReportTaskBar } from "@/core/research/ResearchProgressDialog";
+import { WeeklyProgressFloat, WeeklyProgressLauncher } from "@/core/research/WeeklyProgressPanel";
 import {
   beginResearchSessionChange,
   endResearchSessionChange,
@@ -111,6 +113,7 @@ function FloatingCorners() {
         style={{ left: isMac ? MAC_TRAFFIC_LIGHTS_WIDTH : 8 }}
       >
         <GlobalMenu />
+        <WeeklyProgressLauncher />
       </div>
       <div
         ref={rightRef}
@@ -527,6 +530,8 @@ export default function App() {
 
         <CommandPalette zoomStyle={zoomStyle} />
         <RenderOverlays />
+        <ResearchReportTaskBar />
+        <WeeklyProgressFloat />
         {/* macOS uses native decorated-window resize regions; Tauri resize dragging is unsupported there. */}
         {!isMac && <WindowResizeHandles />}
       </div>

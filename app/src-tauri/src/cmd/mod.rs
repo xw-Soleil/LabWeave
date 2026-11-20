@@ -4,4 +4,6 @@ pub mod fs;
 pub mod macos_menu;
 pub mod pdf_annotations;
 pub mod research;
+pub mod research_history;
 pub mod research_workspace;
+pub mod weekly_progress;

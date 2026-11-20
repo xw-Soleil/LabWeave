@@ -10,6 +10,16 @@ use tauri_plugin_fs::FsExt;
 pub struct ResearchRoot(Mutex<Option<PathBuf>>, Mutex<HashMap<String, PathBuf>>);
 
 impl ResearchRoot {
+    pub(crate) fn authorized_path(&self, path: &str) -> Result<PathBuf, String> {
+        let canonical = std::fs::canonicalize(path).map_err(|_| "history.projectUnavailable")?;
+        let allowed = self.1.lock().map_err(|_| "history.busy")?;
+        if allowed.values().any(|registered| registered == &canonical) {
+            Ok(canonical)
+        } else {
+            Err("history.projectNotAuthorized".into())
+        }
+    }
+
     pub(crate) fn annotation_root(&self, key: &str) -> Result<PathBuf, String> {
         self.1
             .lock()

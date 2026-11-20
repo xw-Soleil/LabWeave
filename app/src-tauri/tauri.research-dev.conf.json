@@ -1,0 +1,8 @@
+{
+  "identifier": "com.ai4know.researchworkbench.dev",
+  "productName": "LabWeave Preview",
+  "build": {
+    "beforeDevCommand": "pnpm --config.verify-deps-before-run=ignore --filter @graphif/project-graph dev --port 1421",
+    "devUrl": "http://localhost:1421"
+  }
+}

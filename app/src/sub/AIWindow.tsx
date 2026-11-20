@@ -100,6 +100,7 @@ import {
   MousePointerClick,
   Pencil,
   Plus,
+  Presentation,
   Settings2,
   Sparkles,
   Square,
@@ -265,6 +266,7 @@ function formatSessionUpdatedAt(timestamp: number): string {
 }
 
 function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }) {
+  const { t: progressText } = useTranslation("research");
   const projectUri = getAIChatProjectKey(project);
   // 存储键换了但记录跟着搬过去时（草稿第一次存盘）viewKey 不变，不必重新载入
   const viewKey = getAIChatViewKey(project);
@@ -434,6 +436,23 @@ function AIChatWorkspace({ project, tabId }: { project: Project; tabId: string }
           </div>
           <AISourceMenu catalog={catalog} onOpen={refreshCatalog} model={model} disabled={actionsDisabled} />
         </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={progressText("progress.report")}
+              onClick={() => {
+                void import("@/core/research/ResearchProgressDialog")
+                  .then(({ openResearchProgressDialog }) => openResearchProgressDialog("report"))
+                  .catch((error) => toast.error(String(error)));
+              }}
+            >
+              <Presentation />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{progressText("progress.report")}</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

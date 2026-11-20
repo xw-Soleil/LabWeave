@@ -2787,6 +2787,251 @@ projectOwnership:
 
 # Research Workbench. Each work unit adds keys only to its own subsection.
 research:
+  weekly:
+    title: Weekly progress
+    subtitle: One record per week, with the essentials in view
+    section:
+      done: This week's progress
+      todo: To do
+      notes: Questions and decisions
+      next: Next week's direction
+    empty:
+      done: Note what you accomplished this week
+      todo: Add work you are moving forward
+      notes: Keep key questions and decisions
+      next: Set the direction for next week
+    markPending: 'Mark "{{text}}" as pending'
+    markDone: 'Mark "{{text}}" as complete'
+    less: Show less
+    more: "Show {{count}} more"
+    previousWeek: Previous week
+    nextWeek: Next week
+    chooseWeek: Choose a week
+    thisWeek: This week
+    refresh: Refresh
+    loading: Reading weekly progress…
+    emptyWeek: No record for this week yet. Adding your first item saves one Markdown file.
+    detailLinks: Detailed records
+    addItem: Add a key point
+    itemSection: Item category
+    itemTitle: Item title
+    editItem: Edit item
+    editItemNamed: 'Edit "{{title}}"'
+    editItemHint: Update the title, details, links, or images. Save or cancel before switching weeks.
+    saveChanges: Save changes
+    cancelEdit: Cancel editing
+    editNamedLink: 'Edit link "{{name}}"'
+    removeNamedLink: 'Remove link "{{name}}"'
+    cancelLink: Cancel link editing
+    linkRequired: Enter a file link or cancel editing this link.
+    linkedRecord: Linked record
+    titlePlaceholder: Name the essential point
+    itemDetails: Details
+    detailsPlaceholder: Optional details, kept in full. You can also paste an image.
+    summaryHint: Suggested locally and editable. AI is used only when clicked.
+    aiSummary: Refine with AI
+    editTitle: Edit title
+    editItemTitle: 'Edit the title of "{{title}}"'
+    saveTitle: Save title
+    cancelTitle: Cancel
+    inspectItem: 'View details for "{{title}}"'
+    enlargeFloat: Enlarge memo
+    shrinkFloat: Restore memo size
+    addImage: Add image
+    pasteImage: Paste image
+    imageRecord: Image record
+    imageCount: "{{count}} images"
+    viewImage: 'View image "{{name}}"'
+    removeImage: 'Remove image "{{name}}"'
+    noClipboardImage: No image in the clipboard. Copy an image or choose an image file.
+    confirmLink: Show linked file
+    editLink: Edit link path
+    removeLink: Remove link
+    itemPlaceholder: Briefly note an accomplishment, a task, or your next step…
+    linkLabel: Link name
+    linkTarget: File or specific location
+    linkPlaceholder: e.g. ../../papers/paper.pdf#page=3
+    attachCurrent: Link current content
+    attachFile: Add a file link
+    source: View details
+    saveItem: Save item
+    noContext: Open a note, paper, or board inside this project before linking the current content.
+    fullRecord: Open full record
+    showFloat: Show floating memo
+    report: Generate report
+    noProject: Open a project first.
+    preferenceReadFailed: Could not read the memo position. The default position is used.
+    preferenceWriteFailed: Could not remember the memo position. You can continue using it.
+    toggleFloat: Show or hide floating memo
+    floatTitle: This week's items
+    pendingCount: "{{count}} pending"
+    fullProgress: Open weekly progress
+    expand: Expand memo
+    minimize: Minimize memo
+    closeFloat: Close memo
+    floatEmpty: Keep this week's essentials visible while thinking on a board or reading papers.
+    recordProgress: Record progress
+    reportTitle: Generate a report from weekly progress
+    reportHint: Organize the selected weekly record and its explicitly linked materials into an editable presentation and report.
+    reportWeek: Reporting week
+    noReportWeeks: Add this week's key points or link reading materials first.
+    editWeek: Edit weekly progress
+    reportGenerate: Generate presentation and report
+    linkedScope: Uses only the selected weekly record and its linked materials
+    errors:
+      summaryEmpty: Enter details before generating an item title.
+      emptyItem: Keep at least a title, details, link, or image.
+      summaryInvalid: The AI title did not meet the requirements. Retry or edit the title directly.
+      summaryTooLong: The AI title is too long. Retry or edit the title directly.
+      imageUnsupported: Choose a valid PNG, JPEG, or WebP image.
+      imageTooLarge: Use an image no larger than 8 MB and 25 million pixels.
+      imageReadFailed: Could not read the image. Check the file and access permissions.
+      imageWriteFailed: Could not save the image. Check free space and folder permissions.
+      clipboardImageFailed: Could not read the clipboard image. Copy it again and retry.
+      tooManyImages: Choose up to 12 images at a time.
+      invalidWeek: This week's date is invalid. Choose a week again.
+      invalidPath: The weekly record location is invalid. Check the project folder.
+      conflict: Another window changed this record. Refresh and try again.
+      documentBusy: This record has unsaved edits. Save it before updating an item.
+      readFailed: Could not read weekly progress. Check the file and access permissions.
+      writeFailed: Could not save weekly progress. Check free space and folder permissions.
+      tooLarge: This record is too large. Keep detailed materials in separate files and add links.
+      unsafeLink: This link points outside the project or to an unsupported location. Link a file inside the project.
+      fileNotFound: The linked file was not found. Check whether it was moved or deleted.
+  progress:
+    title: Weekly progress & reports
+    subtitle: Keep the process, share the findings
+    history: Weekly snapshots
+    report: Generate report
+    refresh: Refresh
+    capture: Save a snapshot
+    compare: Compare versions
+    selectHint: Select two versions to compare
+    coverageHint: Versions are grouped by week and show when they were captured. Changes made while the app was closed cannot be reconstructed.
+    emptyTitle: Start recording this project
+    emptyHint: Save the first snapshot to revisit your materials and compare later versions. Papers, notes, boards and annotations are captured together.
+    versions: "{{count}} versions"
+    files: "{{count}} materials"
+    selectVersion: "Select version from {{time}}"
+    partial: Missing materials
+    useVersion: Use in report
+    loading: Loading…
+    working: Working…
+    saved: Project snapshot saved
+    warnings: "Review {{count}} material notices"
+    archivedFiles: Archived materials
+    capturedAt: "Captured at {{time}}"
+    readOnlyHint: This view reads archived content and does not change the current project.
+    chooseFile: Choose an archived material…
+    archivePreview: Archived content preview
+    previewTooLarge: This material is too large for this preview. Its full content is still stored in the snapshot.
+    previewTruncated: Preview truncated here. The snapshot retains the full content.
+    binaryPreview: This file is stored in the snapshot. Notes, annotations, boards and images can be previewed here; reports use the archived version of the materials.
+    comparison: Version differences
+    changeCount: "{{count}} content changes"
+    showLayout: "Show {{count}} layout changes"
+    hideLayout: Hide layout changes
+    noChanges: No content changes detected.
+    noConfirmedChanges: No changes were confirmed within the comparable material. Review the material notices for comparison limits.
+    before: Before
+    after: After
+    binaryChange: The file version changed. Open the corresponding snapshot to inspect its material list.
+    sameVersion: Choose two different versions.
+    reportTitle: Turn reading and thinking into a report
+    reportHint: Generate a presentation and written report from project notes, excerpts, boards and images. Optionally compare an earlier version to highlight new work.
+    source: Report materials
+    currentMaterials: Current project (save first)
+    baseline: Comparison baseline (optional)
+    noBaseline: No comparison; use selected materials
+    instructions: Additional instructions (optional)
+    instructionsPlaceholder: "For example: a 5-minute lab meeting update, focusing on the differences between two papers and keeping key figures."
+    generate: Generate PPT & report
+    saveGenerate: Save & generate
+    outputHint: Editable PPT · Markdown report · Sources
+    otherProjectBusy: Another project is generating a report. Wait for it to finish or cancel it first.
+    backgroundHint: You can close this dialog and keep working. Exiting the app stops the running task.
+    openPpt: Open PPT
+    retryExport: Retry export only
+    savedDrafts: "Saved report content ({{count}})"
+    draftsHint: Export saved content again without another AI request or overwriting previous reports.
+    draftsSkipped: Some saved drafts are damaged or incomplete ({{count}} skipped). Other drafts can still be exported.
+    reexport: Export again
+    openReport: Open report
+    openFolder: Open folder
+    viewTask: View
+    cancel: Cancel
+    close: Close
+    footerHint: Reports are saved as new files. Existing materials are kept unchanged.
+    reason:
+      manual: Manual snapshot
+      auto: Automatic capture
+      report: Report materials
+    change:
+      added: Added
+      removed: Removed
+      modified: Modified
+      moved: Moved
+      layout: Layout
+    stage:
+      collecting: Collecting report materials…
+      analyzing: AI is organizing the content…
+      exporting: Exporting PPT and report…
+    task:
+      done: PPT and report are ready
+      failed: Report generation is incomplete
+      cancelled: Generation cancelled
+    errors:
+      noRoot: Select a research project first.
+      unnamedDraft: Save the unnamed board in this project before capturing a snapshot or generating a report.
+      saveFailed: Some materials could not be saved. Resolve the save warning and try again.
+      busy: The project is being saved or switched. Try again shortly.
+      changed: The project changed while its materials were being collected. Try again.
+      autoFailed: "Automatic snapshot failed: {{error}}"
+      history:
+        busy: Another snapshot is being processed. Please try again shortly.
+        cleanupFailed: The snapshot was written, but temporary files could not be removed. Check the project folder permissions.
+        corruptObject: This archived file is damaged or failed its content check and cannot be read.
+        corruptProject: The project's history information is damaged. Snapshots cannot be read right now.
+        corruptSnapshot: This snapshot record is damaged and cannot be read safely.
+        fileChanged: A file changed during capture. Wait for saving to finish and try again.
+        fileMissing: A required file was not found. Check that it still exists.
+        fileNotInSnapshot: The selected file is not in this snapshot. Please select another file.
+        fileTooLarge: This file exceeds the snapshot read limit and cannot be processed.
+        invalidDate: The snapshot date is invalid. Check the system clock and try again.
+        invalidPath: The material path cannot be accessed safely. Check the file location.
+        invalidReason: The snapshot request was not recognized. Reopen the dialog and try again.
+        invalidSnapshot: The snapshot identifier is invalid. Refresh the version list and try again.
+        manifestTooLarge: This snapshot's material list is too large to read.
+        noMaterials: This project has no saved materials yet. Save a note, board, or other research material first.
+        noReadableMaterials: No materials could be read. Check file sizes and access permissions.
+        operationFailed: The snapshot operation did not finish. Please try again later.
+        randomFailed: A snapshot identifier could not be created. Restart the app and try again.
+        readFailed: Archived materials could not be read. Check file integrity and access permissions.
+        tooManySnapshots: The snapshot count has reached the current limit. Back up the history first.
+        writeFailed: The snapshot could not be written. Check free disk space and project folder permissions.
+        projectNotAuthorized: Open this project in the workspace before viewing or saving snapshots.
+        projectUnavailable: The project folder is unavailable. Check its location and the disk connection.
+        differentProjects: Only snapshots from the same project can be compared.
+        invalidWorkspace: The archived board could not be read. Check that the historical file is complete.
+        snapshotMissing: The selected snapshot was not found. Refresh the version list.
+        workspaceTooLarge: This board exceeds the preview size limit and cannot be expanded.
+    reportErrors:
+      weeklyMissing: The selected weekly record was not found. Refresh and try again.
+      materialUnsaved: Save this material and wait for saving or loading to finish before generating the report.
+      weekRecordChanged: Weekly progress changed while the report was being prepared. Generate it again to use the latest record.
+      aiNotConfigured: Configure an AI API and model in settings first. Reports use the API connection rather than a local AI program.
+      rateLimited: The AI API is rate limited. Please try again later.
+      network: Cannot connect to the AI API. Check your connection and API settings.
+      timeout: The AI request timed out. Try again later or reduce the material scope.
+      invalidResponse: The AI response was incomplete. Please try again.
+      invalidReferences: The AI response cited materials that could not be verified. Please try again.
+      noMaterials: This snapshot has no notes, board text or annotations to report on. Add some reading records first.
+      snapshotMissing: The selected snapshot was not found. Refresh the version list.
+      workspaceTooLarge: The board is too large for this report. Reduce the material scope.
+      invalidWorkspace: The board file could not be read. Check that this version is complete.
+      unsafeOutput: Cannot safely write to the report folder. Check its location and permissions.
+      exportFailed: File export did not finish. The organized content is saved; you can retry just the export.
+      invalidDraft: The saved report draft could not be read. Generate a new report.
   reading:
     citation: "— {{title}}"
     citationPage: "— {{title}}, page {{page}}"

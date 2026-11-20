@@ -2504,6 +2504,251 @@ projectOwnership:
   ok: 確定
 
 research:
+  weekly:
+    title: 每週進度
+    subtitle: 每週一份紀錄，重點隨時可看
+    section:
+      done: 本週進度
+      todo: 待辦事項
+      notes: 問題與決定
+      next: 下週方向
+    empty:
+      done: 記下本週完成了什麼
+      todo: 記下正在推進的事項
+      notes: 留下關鍵問題或決定
+      next: 明確下週的工作方向
+    markPending: "將「{{text}}」標為待辦"
+    markDone: "將「{{text}}」標為完成"
+    less: 收起
+    more: "展開其餘 {{count}} 項"
+    previousWeek: 上一週
+    nextWeek: 下一週
+    chooseWeek: 選擇週次
+    thisWeek: 本週
+    refresh: 重新整理
+    loading: 讀取每週進度…
+    emptyWeek: 本週還沒有紀錄。新增第一條事項後，會儲存為一份 Markdown 檔案。
+    detailLinks: 詳細紀錄
+    addItem: 新增一條重點
+    itemSection: 事項分類
+    itemTitle: 事項標題
+    editItem: 編輯事項
+    editItemNamed: "編輯「{{title}}」"
+    editItemHint: 修改標題、詳細內容、連結或圖片。儲存或取消後可切換週次。
+    saveChanges: 儲存修改
+    cancelEdit: 取消編輯
+    editNamedLink: "編輯連結「{{name}}」"
+    removeNamedLink: "移除連結「{{name}}」"
+    cancelLink: 取消連結編輯
+    linkRequired: 請輸入檔案連結，或取消本次連結編輯。
+    linkedRecord: 連結紀錄
+    titlePlaceholder: 用一句話點出重點
+    itemDetails: 詳細內容
+    detailsPlaceholder: 詳細內容（選填，保留原文；也可直接貼上圖片）
+    summaryHint: 本機提煉，可編輯；AI 僅在點選時使用
+    aiSummary: AI 提煉
+    editTitle: 編輯標題
+    editItemTitle: "編輯「{{title}}」的標題"
+    saveTitle: 儲存標題
+    cancelTitle: 取消
+    inspectItem: "查看「{{title}}」的詳情"
+    enlargeFloat: 放大浮窗
+    shrinkFloat: 恢復浮窗大小
+    addImage: 新增圖片
+    pasteImage: 貼上圖片
+    imageRecord: 圖片紀錄
+    imageCount: "{{count}} 張圖片"
+    viewImage: "查看圖片「{{name}}」"
+    removeImage: "移除圖片「{{name}}」"
+    noClipboardImage: 剪貼簿中沒有圖片，請先複製圖片或選擇圖片檔案。
+    confirmLink: 顯示連結檔案
+    editLink: 編輯連結路徑
+    removeLink: 移除連結
+    itemPlaceholder: 簡單寫下完成了什麼、待辦事項或下一步方向…
+    linkLabel: 連結名稱
+    linkTarget: 檔案或具體位置
+    linkPlaceholder: 例如 ../../文獻/論文.pdf#page=3
+    attachCurrent: 連結目前內容
+    attachFile: 新增檔案連結
+    source: 查看詳情
+    saveItem: 儲存事項
+    noContext: 請先開啟專案內的筆記、論文或白板，再連結目前內容。
+    fullRecord: 查看完整紀錄
+    showFloat: 顯示事項浮窗
+    report: 產生報告
+    noProject: 請先開啟一個專案。
+    preferenceReadFailed: 無法讀取浮窗位置，已使用預設位置。
+    preferenceWriteFailed: 無法記住浮窗位置，本次仍可繼續使用。
+    toggleFloat: 顯示或收起事項浮窗
+    floatTitle: 本週事項
+    pendingCount: "{{count}} 項待辦"
+    fullProgress: 開啟每週進度
+    expand: 展開浮窗
+    minimize: 最小化浮窗
+    closeFloat: 關閉浮窗
+    floatEmpty: 記下本週重點，在畫布思考和閱讀文獻時隨時查看。
+    recordProgress: 記錄進度
+    reportTitle: 從每週進度產生報告
+    reportHint: 讀取所選週的簡要紀錄和明確連結的材料，整理為可編輯的 PPT 與報告。
+    reportWeek: 報告週次
+    noReportWeeks: 請先記錄本週重點或連結閱讀材料。
+    editWeek: 編輯每週進度
+    reportGenerate: 產生 PPT 與報告
+    linkedScope: 僅使用所選週紀錄及連結材料
+    errors:
+      summaryEmpty: 請先輸入詳細內容，再提煉事項標題。
+      emptyItem: 請至少保留標題、詳細內容、連結或圖片中的一項。
+      summaryInvalid: AI 回傳的標題不符合要求，請重試或直接編輯標題。
+      summaryTooLong: AI 回傳的標題過長，請重試或直接編輯標題。
+      imageUnsupported: 請選擇有效的 PNG、JPEG 或 WebP 圖片。
+      imageTooLarge: 圖片過大，請使用不超過 8 MB、2500 萬像素的圖片。
+      imageReadFailed: 無法讀取圖片，請檢查檔案和存取權限。
+      imageWriteFailed: 無法儲存圖片，請檢查磁碟空間和資料夾權限。
+      clipboardImageFailed: 無法讀取剪貼簿圖片，請重新複製後再試。
+      tooManyImages: 每次最多選擇 12 張圖片，請分批新增。
+      invalidWeek: 週次日期無效，請重新選擇。
+      invalidPath: 每週進度檔案位置無效，請檢查專案資料夾。
+      conflict: 紀錄已被另一個視窗修改，請重新整理後再試。
+      documentBusy: 這份紀錄有尚未儲存的編輯，請先儲存，再更新事項。
+      readFailed: 無法讀取每週進度，請檢查檔案和存取權限。
+      writeFailed: 無法儲存每週進度，請檢查磁碟空間和資料夾權限。
+      tooLarge: 紀錄內容過多，請將詳細材料放入獨立檔案並新增連結。
+      unsafeLink: 連結指向專案外或不支援的位置，請連結專案內的檔案。
+      fileNotFound: 找不到連結檔案，請檢查檔案是否已移動或刪除。
+  progress:
+    title: 每週進展與報告
+    subtitle: 留下過程，整理成果
+    history: 每週快照
+    report: 產生報告
+    refresh: 重新整理
+    capture: 儲存目前快照
+    compare: 比較版本
+    selectHint: 選取兩個版本查看變化
+    coverageHint: 按週保留實際記錄到的專案版本。軟體關閉期間的變化無法補錄，擷取時間顯示在每筆記錄旁。
+    emptyTitle: 從目前專案開始記錄
+    emptyHint: 儲存第一份快照後，即可查看歷史資料並與後續版本比較。論文、筆記、白板及註記會一併記錄。
+    versions: "{{count}} 個版本"
+    files: "{{count}} 份資料"
+    selectVersion: "選取 {{time}} 的版本"
+    partial: 有缺漏資料
+    useVersion: 用於報告
+    loading: 正在讀取…
+    working: 正在處理…
+    saved: 目前專案快照已儲存
+    warnings: "查看 {{count}} 項資料提示"
+    archivedFiles: 歷史資料
+    capturedAt: "擷取於 {{time}}"
+    readOnlyHint: 此處讀取快照中的內容，不會修改目前專案。
+    chooseFile: 選擇一份歷史資料…
+    archivePreview: 歷史內容預覽
+    previewTooLarge: 這份資料較大，暫不在視窗內預覽；完整內容仍保存在快照中。
+    previewTruncated: 預覽在此截斷，快照仍保留完整內容。
+    binaryPreview: 此檔案已隨快照儲存。這裡可預覽筆記、註記、白板及圖片；產生報告時會讀取此版本的資料。
+    comparison: 版本差異
+    changeCount: "{{count}} 項內容變化"
+    showLayout: "另有 {{count}} 項排版變化"
+    hideLayout: 收起排版變化
+    noChanges: 未偵測到內容變化。
+    noConfirmedChanges: 可比對的資料中暫未確認內容變化，請查看資料提示了解本次比對範圍。
+    before: 之前
+    after: 之後
+    binaryChange: 檔案版本已變更，可在對應快照中查看資料清單。
+    sameVersion: 請選擇兩個不同的版本。
+    reportTitle: 將閱讀與思考整理成報告
+    reportHint: 使用專案中的筆記、摘錄、白板及圖片產生 PPT 與文字報告。可選取舊版本比較，凸顯新增內容。
+    source: 報告資料
+    currentMaterials: 目前專案（儲存後產生）
+    baseline: 比較基準（選填）
+    noBaseline: 不比較，整理所選資料
+    instructions: 補充要求（選填）
+    instructionsPlaceholder: 例如：實驗室會議報告約 5 分鐘，著重兩篇論文的差異，保留關鍵圖片。
+    generate: 產生 PPT 與報告
+    saveGenerate: 儲存並產生
+    outputHint: 可編輯 PPT · Markdown 報告 · 來源說明
+    otherProjectBusy: 另一個專案正在產生報告，完成或取消後即可繼續。
+    backgroundHint: 可以關閉此對話框繼續工作；結束軟體會中止正在產生的工作。
+    openPpt: 開啟 PPT
+    retryExport: 僅重試匯出
+    savedDrafts: "已儲存的報告內容（{{count}}）"
+    draftsHint: 直接使用已整理的內容重新匯出，不再次呼叫 AI，也不會覆寫之前的報告。
+    draftsSkipped: 有 {{count}} 份已儲存的草稿損壞或不完整，已略過；其他草稿仍可匯出。
+    reexport: 重新匯出
+    openReport: 開啟報告
+    openFolder: 開啟資料夾
+    viewTask: 查看
+    cancel: 取消
+    close: 關閉
+    footerHint: 報告會儲存為新檔案，原有資料維持不變。
+    reason:
+      manual: 手動儲存
+      auto: 自動記錄
+      report: 報告資料
+    change:
+      added: 新增
+      removed: 刪除
+      modified: 修改
+      moved: 移動
+      layout: 排版
+    stage:
+      collecting: 正在收集報告資料…
+      analyzing: AI 正在整理內容…
+      exporting: 正在匯出 PPT 與報告…
+    task:
+      done: PPT 與報告已產生
+      failed: 報告產生未完成
+      cancelled: 已取消產生
+    errors:
+      noRoot: 請先選擇研究專案。
+      unnamedDraft: 專案中有尚未命名的白板，請先儲存後再建立快照或產生報告。
+      saveFailed: 部分資料無法儲存，請處理儲存提示後重試。
+      busy: 專案正在儲存或切換，請稍後重試。
+      changed: 收集資料時專案發生變化，請重試。
+      autoFailed: "自動快照未完成：{{error}}"
+      history:
+        busy: 正在處理另一份快照，請稍後重試。
+        cleanupFailed: 快照已寫入，但暫存檔案無法清理，請檢查專案資料夾權限。
+        corruptObject: 歷史資料已損壞或內容驗證失敗，無法讀取此檔案。
+        corruptProject: 專案的歷史記錄資訊已損壞，目前無法讀取快照。
+        corruptSnapshot: 這份快照的記錄已損壞，無法安全讀取。
+        fileChanged: 擷取期間檔案發生變化，請等待儲存完成後重試。
+        fileMissing: 找不到所需資料，請檢查檔案是否仍然存在。
+        fileNotInSnapshot: 所選檔案不在這份快照中，請重新選擇。
+        fileTooLarge: 檔案超過快照讀取上限，目前無法處理。
+        invalidDate: 快照日期無效，請檢查系統時間後重試。
+        invalidPath: 無法安全存取資料路徑，請檢查檔案位置。
+        invalidReason: 無法辨識這次快照請求，請重新開啟對話框後重試。
+        invalidSnapshot: 快照識別碼無效，請重新整理版本清單後重試。
+        manifestTooLarge: 這份快照的資料清單過大，目前無法讀取。
+        noMaterials: 專案中尚未儲存資料，請先儲存筆記、白板或其他研究資料。
+        noReadableMaterials: 這次沒有可讀取的資料，請檢查檔案大小與存取權限。
+        operationFailed: 快照操作未完成，請稍後重試。
+        randomFailed: 無法建立快照識別碼，請重新啟動軟體後重試。
+        readFailed: 無法讀取歷史資料，請檢查檔案是否完整及存取權限。
+        tooManySnapshots: 快照數量已達目前上限，請先備份歷史記錄。
+        writeFailed: 無法寫入快照，請檢查剩餘磁碟空間與專案資料夾權限。
+        projectNotAuthorized: 請先在工作區開啟這個專案，再查看或儲存快照。
+        projectUnavailable: 專案資料夾無法使用，請檢查磁碟連線與資料夾位置。
+        differentProjects: 只能比較同一個專案中的兩份快照。
+        invalidWorkspace: 無法讀取快照中的白板，請檢查歷史檔案是否完整。
+        snapshotMissing: 找不到所選快照，請重新整理版本清單。
+        workspaceTooLarge: 這份白板的內容超過預覽上限，目前無法展開。
+    reportErrors:
+      weeklyMissing: 找不到所選週的進度紀錄，請重新整理後再試。
+      materialUnsaved: 請先儲存這份材料，並等待儲存或載入完成後再產生報告。
+      weekRecordChanged: 每週進度在整理期間發生了變化，請重新產生，以使用最新紀錄。
+      aiNotConfigured: 請先在設定中配置 AI API 與模型。報告使用 API 連線，不依賴本機 AI 程式。
+      rateLimited: AI API 暫時限制流量，請稍後重試。
+      network: 無法連線至 AI API，請檢查網路與設定。
+      timeout: AI 請求逾時，請稍後重試或縮小資料範圍。
+      invalidResponse: AI 回傳的內容格式不完整，請重試。
+      invalidReferences: AI 回傳了無法核對的資料引用，請重試。
+      noMaterials: 此快照沒有可供報告的筆記、白板文字或註記，請先新增閱讀記錄。
+      snapshotMissing: 找不到所選快照，請重新整理版本清單。
+      workspaceTooLarge: 白板檔案過大，請縮小資料範圍。
+      invalidWorkspace: 無法讀取白板檔案，請檢查此版本是否完整。
+      unsafeOutput: 無法安全寫入報告資料夾，請檢查位置與權限。
+      exportFailed: 檔案匯出未完成。已儲存整理後的內容，可以僅重試匯出。
+      invalidDraft: 無法讀取儲存的報告草稿，請重新產生。
   fileMenu:
     open: 開啟
     reveal: 開啟所在資料夾

@@ -74,7 +74,12 @@ import type { StageManager } from "@/core/stage/stageManager/StageManager";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import type { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
-import { SIDECAR_JSON_SUFFIX, SIDECAR_MD_SUFFIX, WORKBENCH_DIR } from "@/core/research/ResearchShell";
+import {
+  notifyResearchContentSaved,
+  SIDECAR_JSON_SUFFIX,
+  SIDECAR_MD_SUFFIX,
+  WORKBENCH_DIR,
+} from "@/core/research/ResearchShell";
 import { Settings } from "@/core/service/Settings";
 import { nextProjectIdAtom, store, tabsAtom } from "@/state";
 import { createDefaultMetadata, PrgMetadata, readWorkbenchMetadata, WorkbenchMetadata } from "@/types/metadata";
@@ -418,6 +423,7 @@ export class Project extends Tab {
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
       await this.writeAiSidecar(this.uri, content);
+      notifyResearchContentSaved(this.uri.fsPath);
     } finally {
       this.isSaving = false;
     }
@@ -449,6 +455,7 @@ export class Project extends Tab {
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
       await this.writeAiSidecar(targetUri, content);
+      notifyResearchContentSaved(targetUri.fsPath);
     } finally {
       this.saveAsTarget = null;
       this.isSaving = false;

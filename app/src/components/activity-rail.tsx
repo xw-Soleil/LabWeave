@@ -28,11 +28,13 @@ import { atom, useAtom, useAtomValue } from "jotai";
 import {
   FolderOpen,
   FolderSearch,
+  History,
   LayoutDashboard,
   Library,
   LoaderCircle,
   MessageSquareText,
   Plus,
+  Presentation,
   Settings as SettingsIcon,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
@@ -227,6 +229,27 @@ function WorkspaceList({ onOpened }: { onOpened: () => void }) {
           ))
         )}
       </div>
+      {root && (
+        <div className="grid grid-cols-2 gap-1 border-t pt-2">
+          {(["history", "report"] as const).map((tab) => (
+            <Button
+              key={tab}
+              size="sm"
+              variant="ghost"
+              className="h-8 justify-start rounded-[6px] px-2 text-[12px]"
+              onClick={() => {
+                onOpened();
+                void import("@/core/research/ResearchProgressDialog")
+                  .then(({ openResearchProgressDialog }) => openResearchProgressDialog(tab))
+                  .catch((error) => toast.error(String(error)));
+              }}
+            >
+              {tab === "history" ? <History className="size-3.5" /> : <Presentation className="size-3.5" />}
+              {tab === "history" ? t("weekly.title") : t("progress.report")}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className="flex gap-2 border-t px-2 pt-2">
         <Button
           size="sm"

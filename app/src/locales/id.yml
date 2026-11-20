@@ -2569,6 +2569,251 @@ projectOwnership:
   ok: OK
 
 research:
+  weekly:
+    title: Kemajuan mingguan
+    subtitle: Satu catatan per minggu, dengan poin penting selalu terlihat
+    section:
+      done: Kemajuan minggu ini
+      todo: Tugas
+      notes: Pertanyaan dan keputusan
+      next: Arah minggu depan
+    empty:
+      done: Catat pencapaian minggu ini
+      todo: Tambahkan pekerjaan yang sedang berlangsung
+      notes: Simpan pertanyaan dan keputusan penting
+      next: Tentukan arah minggu depan
+    markPending: 'Tandai "{{text}}" sebagai belum selesai'
+    markDone: 'Tandai "{{text}}" sebagai selesai'
+    less: Tampilkan lebih sedikit
+    more: "Tampilkan {{count}} lainnya"
+    previousWeek: Minggu sebelumnya
+    nextWeek: Minggu berikutnya
+    chooseWeek: Pilih minggu
+    thisWeek: Minggu ini
+    refresh: Muat ulang
+    loading: Membaca kemajuan mingguan…
+    emptyWeek: Belum ada catatan minggu ini. Menambahkan item pertama akan menyimpan satu berkas Markdown.
+    detailLinks: Catatan terperinci
+    addItem: Tambahkan poin penting
+    itemSection: Kategori item
+    itemTitle: Judul item
+    editItem: Edit item
+    editItemNamed: 'Edit "{{title}}"'
+    editItemHint: Ubah judul, detail, tautan, atau gambar. Simpan atau batalkan sebelum berpindah minggu.
+    saveChanges: Simpan perubahan
+    cancelEdit: Batalkan pengeditan
+    editNamedLink: 'Edit tautan "{{name}}"'
+    removeNamedLink: 'Hapus tautan "{{name}}"'
+    cancelLink: Batalkan pengeditan tautan
+    linkRequired: Masukkan tautan berkas atau batalkan pengeditan tautan ini.
+    linkedRecord: Catatan tertaut
+    titlePlaceholder: Tulis inti hal ini
+    itemDetails: Detail
+    detailsPlaceholder: Detail opsional disimpan utuh. Anda juga dapat menempel gambar.
+    summaryHint: Judul lokal dapat diedit. AI hanya digunakan saat diklik.
+    aiSummary: Ringkas dengan AI
+    editTitle: Edit judul
+    editItemTitle: 'Edit judul "{{title}}"'
+    saveTitle: Simpan judul
+    cancelTitle: Batal
+    inspectItem: 'Lihat detail "{{title}}"'
+    enlargeFloat: Perbesar memo
+    shrinkFloat: Pulihkan ukuran memo
+    addImage: Tambahkan gambar
+    pasteImage: Tempel gambar
+    imageRecord: Catatan gambar
+    imageCount: "{{count}} gambar"
+    viewImage: 'Lihat gambar "{{name}}"'
+    removeImage: 'Hapus gambar "{{name}}"'
+    noClipboardImage: Tidak ada gambar di papan klip. Salin gambar atau pilih berkas gambar.
+    confirmLink: Tampilkan berkas tertaut
+    editLink: Edit jalur tautan
+    removeLink: Hapus tautan
+    itemPlaceholder: Catat pencapaian, tugas, atau langkah selanjutnya secara singkat…
+    linkLabel: Nama tautan
+    linkTarget: Berkas atau lokasi tertentu
+    linkPlaceholder: Contoh ../../makalah/makalah.pdf#page=3
+    attachCurrent: Tautkan konten saat ini
+    attachFile: Tambahkan tautan berkas
+    source: Lihat detail
+    saveItem: Simpan item
+    noContext: Buka catatan, makalah, atau papan dalam proyek ini sebelum menautkan kontennya.
+    fullRecord: Buka catatan lengkap
+    showFloat: Tampilkan memo mengambang
+    report: Buat laporan
+    noProject: Buka proyek terlebih dahulu.
+    preferenceReadFailed: Posisi memo tidak dapat dibaca. Posisi bawaan digunakan.
+    preferenceWriteFailed: Posisi memo tidak dapat disimpan. Anda tetap dapat menggunakannya.
+    toggleFloat: Tampilkan atau sembunyikan memo
+    floatTitle: Item minggu ini
+    pendingCount: "{{count}} belum selesai"
+    fullProgress: Buka kemajuan mingguan
+    expand: Perluas memo
+    minimize: Perkecil memo
+    closeFloat: Tutup memo
+    floatEmpty: Lihat poin penting minggu ini saat berpikir di papan atau membaca makalah.
+    recordProgress: Catat kemajuan
+    reportTitle: Buat laporan dari kemajuan mingguan
+    reportHint: Susun catatan minggu terpilih beserta materi yang ditautkan menjadi presentasi dan laporan yang dapat diedit.
+    reportWeek: Minggu laporan
+    noReportWeeks: Tambahkan poin penting minggu ini atau tautkan materi bacaan terlebih dahulu.
+    editWeek: Edit kemajuan mingguan
+    reportGenerate: Buat presentasi dan laporan
+    linkedScope: Hanya menggunakan catatan minggu terpilih dan materi tertaut
+    errors:
+      summaryEmpty: Masukkan detail sebelum membuat judul item.
+      emptyItem: Sisakan setidaknya judul, detail, tautan, atau gambar.
+      summaryInvalid: Judul AI tidak sesuai. Coba lagi atau edit judul secara langsung.
+      summaryTooLong: Judul AI terlalu panjang. Coba lagi atau edit judul secara langsung.
+      imageUnsupported: Pilih gambar PNG, JPEG, atau WebP yang valid.
+      imageTooLarge: Gunakan gambar maksimal 8 MB dan 25 juta piksel.
+      imageReadFailed: Gambar tidak dapat dibaca. Periksa berkas dan izin akses.
+      imageWriteFailed: Gambar tidak dapat disimpan. Periksa ruang kosong dan izin folder.
+      clipboardImageFailed: Gambar papan klip tidak dapat dibaca. Salin ulang dan coba lagi.
+      tooManyImages: Pilih maksimal 12 gambar sekaligus.
+      invalidWeek: Tanggal minggu tidak valid. Pilih minggu kembali.
+      invalidPath: Lokasi catatan mingguan tidak valid. Periksa folder proyek.
+      conflict: Jendela lain mengubah catatan ini. Muat ulang dan coba lagi.
+      documentBusy: Catatan ini memiliki perubahan yang belum disimpan. Simpan sebelum memperbarui item.
+      readFailed: Kemajuan mingguan tidak dapat dibaca. Periksa berkas dan izin akses.
+      writeFailed: Kemajuan mingguan tidak dapat disimpan. Periksa ruang kosong dan izin folder.
+      tooLarge: Catatan terlalu besar. Simpan materi terperinci dalam berkas terpisah dan tambahkan tautan.
+      unsafeLink: Tautan mengarah ke luar proyek atau lokasi yang tidak didukung. Tautkan berkas dalam proyek.
+      fileNotFound: Berkas tertaut tidak ditemukan. Periksa apakah berkas dipindahkan atau dihapus.
+  progress:
+    title: Progres mingguan dan laporan
+    subtitle: Simpan proses, bagikan hasil
+    history: Snapshot mingguan
+    report: Buat laporan
+    refresh: Muat ulang
+    capture: Simpan snapshot
+    compare: Bandingkan versi
+    selectHint: Pilih dua versi untuk dibandingkan
+    coverageHint: Versi dikelompokkan per minggu dengan waktu pengambilannya. Perubahan saat aplikasi ditutup tidak dapat direkonstruksi.
+    emptyTitle: Mulai merekam proyek ini
+    emptyHint: Simpan snapshot pertama untuk meninjau materi dan membandingkan versi berikutnya. Makalah, catatan, papan, dan anotasi disimpan bersama.
+    versions: "{{count}} versi"
+    files: "{{count}} materi"
+    selectVersion: "Pilih versi dari {{time}}"
+    partial: Materi tidak lengkap
+    useVersion: Buat laporan
+    loading: Memuat…
+    working: Memproses…
+    saved: Snapshot proyek disimpan
+    warnings: "Lihat {{count}} catatan materi"
+    archivedFiles: Materi arsip
+    capturedAt: "Direkam pada {{time}}"
+    readOnlyHint: Tampilan ini membaca arsip tanpa mengubah proyek saat ini.
+    chooseFile: Pilih materi arsip…
+    archivePreview: Pratinjau arsip
+    previewTooLarge: Materi terlalu besar untuk pratinjau. Konten lengkap tetap tersimpan dalam snapshot.
+    previewTruncated: Pratinjau dipotong di sini. Snapshot menyimpan konten lengkap.
+    binaryPreview: Berkas ini tersimpan dalam snapshot. Catatan, anotasi, papan, dan gambar dapat dipratinjau; laporan menggunakan materi versi arsip.
+    comparison: Perbedaan versi
+    changeCount: "{{count}} perubahan konten"
+    showLayout: "Tampilkan {{count}} perubahan tata letak"
+    hideLayout: Sembunyikan perubahan tata letak
+    noChanges: Tidak ada perubahan konten terdeteksi.
+    noConfirmedChanges: Belum ada perubahan yang dikonfirmasi dalam materi yang dapat dibandingkan. Lihat catatan materi untuk batas perbandingan.
+    before: Sebelum
+    after: Sesudah
+    binaryChange: Versi berkas berubah. Buka snapshot terkait untuk memeriksa daftar materi.
+    sameVersion: Pilih dua versi yang berbeda.
+    reportTitle: Jadikan bacaan dan pemikiran sebuah laporan
+    reportHint: Buat presentasi dan laporan tertulis dari catatan, kutipan, papan, dan gambar proyek. Bandingkan versi lama untuk menyoroti pekerjaan baru.
+    source: Materi laporan
+    currentMaterials: Proyek saat ini (simpan dahulu)
+    baseline: Versi pembanding (opsional)
+    noBaseline: Tanpa perbandingan
+    instructions: Petunjuk tambahan (opsional)
+    instructionsPlaceholder: "Contoh: pembaruan rapat 5 menit, fokus pada perbedaan dua makalah dan pertahankan gambar utama."
+    generate: Buat PPT dan laporan
+    saveGenerate: Simpan dan buat
+    outputHint: PPT yang dapat diedit · Laporan Markdown · Sumber
+    otherProjectBusy: Proyek lain sedang membuat laporan. Tunggu hingga selesai atau batalkan dahulu.
+    backgroundHint: Anda dapat menutup dialog ini dan terus bekerja. Keluar dari aplikasi menghentikan tugas yang berjalan.
+    openPpt: Buka PPT
+    retryExport: Coba ekspor lagi
+    savedDrafts: "Konten laporan tersimpan ({{count}})"
+    draftsHint: Ekspor konten tersimpan tanpa permintaan AI baru atau menimpa laporan sebelumnya.
+    draftsSkipped: Ada {{count}} draf tersimpan yang rusak atau tidak lengkap dan telah dilewati. Draf lain tetap dapat diekspor.
+    reexport: Ekspor lagi
+    openReport: Buka laporan
+    openFolder: Buka folder
+    viewTask: Lihat
+    cancel: Batal
+    close: Tutup
+    footerHint: Laporan disimpan sebagai berkas baru. Materi asli tidak berubah.
+    reason:
+      manual: Snapshot manual
+      auto: Rekaman otomatis
+      report: Materi laporan
+    change:
+      added: Ditambahkan
+      removed: Dihapus
+      modified: Diubah
+      moved: Dipindahkan
+      layout: Tata letak
+    stage:
+      collecting: Mengumpulkan materi laporan…
+      analyzing: AI sedang menyusun konten…
+      exporting: Mengekspor PPT dan laporan…
+    task:
+      done: PPT dan laporan siap
+      failed: Pembuatan laporan belum selesai
+      cancelled: Pembuatan dibatalkan
+    errors:
+      noRoot: Pilih proyek penelitian dahulu.
+      unnamedDraft: Simpan papan yang belum bernama sebelum membuat snapshot atau laporan.
+      saveFailed: Sebagian materi tidak dapat disimpan. Tangani peringatan penyimpanan dan coba lagi.
+      busy: Proyek sedang disimpan atau dialihkan. Coba lagi sebentar.
+      changed: Proyek berubah saat materi dikumpulkan. Coba lagi.
+      autoFailed: "Snapshot otomatis gagal: {{error}}"
+      history:
+        busy: Snapshot lain sedang diproses. Coba lagi sebentar.
+        cleanupFailed: Snapshot telah ditulis, tetapi berkas sementara tidak dapat dihapus. Periksa izin folder proyek.
+        corruptObject: Berkas arsip ini rusak atau gagal diperiksa dan tidak dapat dibaca.
+        corruptProject: Informasi riwayat proyek rusak. Snapshot belum dapat dibaca.
+        corruptSnapshot: Catatan snapshot ini rusak dan tidak dapat dibaca dengan aman.
+        fileChanged: Berkas berubah saat pengambilan snapshot. Tunggu penyimpanan selesai lalu coba lagi.
+        fileMissing: Berkas yang diperlukan tidak ditemukan. Periksa apakah berkas masih ada.
+        fileNotInSnapshot: Berkas terpilih tidak ada dalam snapshot ini. Pilih berkas lain.
+        fileTooLarge: Berkas melebihi batas pembacaan snapshot dan tidak dapat diproses.
+        invalidDate: Tanggal snapshot tidak valid. Periksa waktu sistem lalu coba lagi.
+        invalidPath: Jalur materi tidak dapat diakses dengan aman. Periksa lokasi berkas.
+        invalidReason: Permintaan snapshot tidak dikenali. Buka kembali dialog lalu coba lagi.
+        invalidSnapshot: ID snapshot tidak valid. Muat ulang daftar versi lalu coba lagi.
+        manifestTooLarge: Daftar materi snapshot ini terlalu besar untuk dibaca.
+        noMaterials: Proyek ini belum memiliki materi tersimpan. Simpan catatan, papan, atau materi penelitian terlebih dahulu.
+        noReadableMaterials: Tidak ada materi yang dapat dibaca. Periksa ukuran berkas dan izin akses.
+        operationFailed: Operasi snapshot belum selesai. Coba lagi nanti.
+        randomFailed: ID snapshot tidak dapat dibuat. Mulai ulang aplikasi lalu coba lagi.
+        readFailed: Materi arsip tidak dapat dibaca. Periksa kelengkapan berkas dan izin akses.
+        tooManySnapshots: Jumlah snapshot telah mencapai batas saat ini. Cadangkan riwayat terlebih dahulu.
+        writeFailed: Snapshot tidak dapat ditulis. Periksa ruang disk kosong dan izin folder proyek.
+        projectNotAuthorized: Buka proyek ini di ruang kerja sebelum melihat atau menyimpan snapshot.
+        projectUnavailable: Folder proyek tidak tersedia. Periksa lokasi folder dan koneksi disk.
+        differentProjects: Hanya snapshot dari proyek yang sama yang dapat dibandingkan.
+        invalidWorkspace: Papan dalam arsip tidak dapat dibaca. Periksa kelengkapan berkas riwayat.
+        snapshotMissing: Snapshot terpilih tidak ditemukan. Muat ulang daftar versi.
+        workspaceTooLarge: Isi papan melebihi batas pratinjau dan tidak dapat ditampilkan.
+    reportErrors:
+      weeklyMissing: Catatan mingguan terpilih tidak ditemukan. Muat ulang dan coba lagi.
+      materialUnsaved: Simpan materi ini dan tunggu hingga penyimpanan atau pemuatan selesai sebelum membuat laporan.
+      weekRecordChanged: Kemajuan mingguan berubah saat laporan disiapkan. Buat ulang agar menggunakan catatan terbaru.
+      aiNotConfigured: Atur API AI dan model di pengaturan dahulu. Laporan menggunakan koneksi API, bukan program AI lokal.
+      rateLimited: API AI sedang membatasi permintaan. Coba lagi nanti.
+      network: Tidak dapat terhubung ke API AI. Periksa jaringan dan pengaturan API.
+      timeout: Permintaan AI kehabisan waktu. Coba lagi atau kurangi cakupan materi.
+      invalidResponse: Respons AI tidak lengkap. Coba lagi.
+      invalidReferences: Respons AI mengutip materi yang tidak dapat diverifikasi. Coba lagi.
+      noMaterials: Snapshot ini tidak memiliki catatan, teks papan, atau anotasi untuk laporan. Tambahkan catatan bacaan dahulu.
+      snapshotMissing: Snapshot terpilih tidak ditemukan. Muat ulang daftar versi.
+      workspaceTooLarge: Papan terlalu besar untuk laporan ini. Kurangi cakupan materi.
+      invalidWorkspace: Berkas papan tidak dapat dibaca. Periksa kelengkapan versi ini.
+      unsafeOutput: Tidak dapat menulis ke folder laporan dengan aman. Periksa lokasi dan izin.
+      exportFailed: Ekspor belum selesai. Konten telah disimpan; Anda dapat mencoba ekspor lagi.
+      invalidDraft: Draf laporan tersimpan tidak dapat dibaca. Buat laporan baru.
   fileMenu:
     open: Buka
     reveal: Buka folder lokasi

@@ -49,9 +49,9 @@ pub struct AnnotationSnapshot {
 }
 
 #[derive(Clone)]
-struct Location {
-    root: PathBuf,
-    relative: PathBuf,
+pub(crate) struct Location {
+    pub(crate) root: PathBuf,
+    pub(crate) relative: PathBuf,
 }
 
 fn hex_key(key: &str) -> bool {
@@ -180,7 +180,7 @@ fn location(
 }
 
 // Keep directory capabilities for the entire operation; checking a path then reopening it follows races.
-struct PinnedPath {
+pub(crate) struct PinnedPath {
     path: PathBuf,
     parent: File,
     #[cfg(windows)]
@@ -193,7 +193,7 @@ fn c_name(path: &Path) -> Result<CString, String> {
 }
 
 impl Location {
-    fn pin(&self, create: bool) -> Result<Option<PinnedPath>, String> {
+    pub(crate) fn pin(&self, create: bool) -> Result<Option<PinnedPath>, String> {
         if !self.root.is_absolute()
             || !self
                 .relative
@@ -299,7 +299,7 @@ impl Location {
     }
 }
 
-fn is_link(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -312,7 +312,7 @@ fn is_link(meta: &fs::Metadata) -> bool {
 }
 
 impl PinnedPath {
-    fn sibling(&self, extension: &str) -> Result<Self, String> {
+    pub(crate) fn sibling(&self, extension: &str) -> Result<Self, String> {
         Ok(Self {
             path: self.path.with_extension(extension),
             parent: self
@@ -329,7 +329,7 @@ impl PinnedPath {
         })
     }
 
-    fn open(&self, write: bool, exclusive: bool) -> Result<Option<File>, String> {
+    pub(crate) fn open(&self, write: bool, exclusive: bool) -> Result<Option<File>, String> {
         #[cfg(unix)]
         let result = {
             let name = c_name(Path::new(
@@ -393,7 +393,7 @@ impl PinnedPath {
             .transpose()
     }
 
-    fn remove(&self) -> Result<(), String> {
+    pub(crate) fn remove(&self) -> Result<(), String> {
         #[cfg(unix)]
         {
             let name = c_name(Path::new(
@@ -408,7 +408,7 @@ impl PinnedPath {
         Ok(())
     }
 
-    fn publish(&self, to: &Self, replace: bool) -> Result<(), String> {
+    pub(crate) fn publish(&self, to: &Self, replace: bool) -> Result<(), String> {
         #[cfg(unix)]
         {
             let from_name = c_name(Path::new(
@@ -447,7 +447,7 @@ impl PinnedPath {
         Ok(())
     }
 
-    fn sync_parent(&self) -> Result<(), String> {
+    pub(crate) fn sync_parent(&self) -> Result<(), String> {
         #[cfg(unix)]
         self.parent
             .sync_all()

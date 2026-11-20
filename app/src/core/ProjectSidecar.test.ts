@@ -27,13 +27,16 @@ vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {}
 vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24, NODE_PADDING: 10 } }));
 vi.mock("@/core/research/ResearchFolder", async () => {
   const { posix } = await import("node:path");
+  const normalized = (path: string) => path.replace(/\\/g, "/");
   return {
     ResearchFolder: {
       getRoot: () => "/research",
-      isInside: (path: string) => path.startsWith("/research/"),
-      toRelative: (path: string, baseDir = "/research") => posix.relative(baseDir, path),
+      isInside: (path: string) => normalized(path).startsWith("/research/"),
+      toRelative: (path: string, baseDir = "/research") => posix.relative(normalized(baseDir), normalized(path)),
       toAbsolute: (path: string, baseDir = "/research") =>
-        posix.isAbsolute(path) ? posix.normalize(path) : posix.join(baseDir, path),
+        posix.isAbsolute(normalized(path))
+          ? posix.normalize(normalized(path))
+          : posix.join(normalized(baseDir), normalized(path)),
     },
   };
 });
@@ -67,6 +70,7 @@ import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { parseProjectFile } from "@/core/ProjectFile";
 import { Settings } from "@/core/service/Settings";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
+import { RESEARCH_CONTENT_SAVED_EVENT } from "@/core/research/ResearchShell";
 import { Decoder, encode } from "@msgpack/msgpack";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
@@ -310,6 +314,71 @@ describe("saved state while a save is in flight", () => {
   });
 });
 
+describe("research snapshot save notifications", () => {
+  it.each([false, true])("notifies after a successful disk write (Save As: %s)", async (saveAs) => {
+    const project = makeProject("/research/a.prg");
+    const target = saveAs ? "/research/copy.prg" : "/research/a.prg";
+    const events: { path: string; exists: boolean }[] = [];
+    const onSaved = (event: Event) => {
+      const path = (event as CustomEvent<{ path: string }>).detail.path;
+      events.push({ path, exists: files.has(URI.file(path).path) });
+    };
+    window.addEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    beforePrgWrite = () => expect(events).toEqual([]);
+    try {
+      if (saveAs) await project.saveAs(URI.file(target), { includeThumbnail: false });
+      else await project.save({ includeThumbnail: false });
+      expect(events).toEqual([{ path: URI.file(target).fsPath, exists: true }]);
+    } finally {
+      window.removeEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    }
+  });
+
+  it.each([false, true])("does not notify when the disk write fails (Save As: %s)", async (saveAs) => {
+    const project = makeProject("/research/a.prg");
+    failPrgWrites = true;
+    const onSaved = vi.fn();
+    window.addEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    try {
+      const save = saveAs
+        ? project.saveAs(URI.file("/research/copy.prg"), { includeThumbnail: false })
+        : project.save({ includeThumbnail: false });
+      await expect(save).rejects.toThrow("volume unplugged");
+      expect(onSaved).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    }
+  });
+
+  it("still notifies for a saved board when only the optional AI sidecar fails", async () => {
+    const project = makeProject("/research/a.prg");
+    failSidecarWrites = true;
+    const onSaved = vi.fn();
+    window.addEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    try {
+      await project.save({ includeThumbnail: false });
+      expect(onSaved).toHaveBeenCalledOnce();
+      expect(files.has("/research/a.prg")).toBe(true);
+      expect(toastWarning).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    }
+  });
+
+  it("does not notify when serializing an unsaved backup without writing the project", async () => {
+    const project = makeProject("/research/a.prg");
+    const onSaved = vi.fn();
+    window.addEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    try {
+      await project.getFileContent({ includeThumbnail: false });
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(files.has("/research/a.prg")).toBe(false);
+    } finally {
+      window.removeEventListener(RESEARCH_CONTENT_SAVED_EVENT, onSaved);
+    }
+  });
+});
+
 describe("workbench id", () => {
   /** 写一个元数据里没有 workbench 的旧 .prg */
   async function writeLegacyFile(path: string) {
@@ -425,7 +494,7 @@ describe("Save As", () => {
     const expected = ["topic/papers/a.pdf", "/research/c.pdf", "/Volumes/Archive/d.pdf"];
     expect(await storedSourcePaths("/research/b.prg")).toEqual(expected);
     expect(cards.map((card) => card.sourcePath)).toEqual(expected);
-    expect(project.uri.fsPath).toBe("/research/b.prg");
+    expect(project.uri.fsPath).toBe(URI.file("/research/b.prg").fsPath);
     expect(project.projectState).toBe(ProjectState.Saved);
 
     const id = project.metadata.workbench?.id;
@@ -443,7 +512,7 @@ describe("Save As", () => {
       "volume unplugged",
     );
     expect(cards.map((card) => card.sourcePath)).toEqual(originalPaths);
-    expect(project.uri.fsPath).toBe("/research/topic/a.prg");
+    expect(project.uri.fsPath).toBe(URI.file("/research/topic/a.prg").fsPath);
     expect(project.metadata.workbench?.id).toBe("original");
   });
 
@@ -473,7 +542,9 @@ describe("Save As", () => {
     await expect(
       draft.saveAs(URI.file("/research/draft.prg"), { includeThumbnail: false, createNew: true }),
     ).rejects.toThrow("already exists");
-    expect(writeFile).toHaveBeenCalledWith("/research/draft.prg", expect.any(Uint8Array), { createNew: true });
+    expect(writeFile).toHaveBeenCalledWith(URI.file("/research/draft.prg").fsPath, expect.any(Uint8Array), {
+      createNew: true,
+    });
     expect(draft.uri.scheme).toBe("draft");
     expect(draft.projectState).toBe(ProjectState.Unsaved);
   });
@@ -484,6 +555,6 @@ describe("Save As", () => {
     await expect(project.saveAs(URI.file("/Users/me/Desktop/b.prg"), { includeThumbnail: false })).rejects.toThrow();
     expect(toast.error).toHaveBeenCalledOnce();
     expect(files.size).toBe(0);
-    expect(project.uri.fsPath).toBe("/research/topic/a.prg");
+    expect(project.uri.fsPath).toBe(URI.file("/research/topic/a.prg").fsPath);
   });
 });

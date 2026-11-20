@@ -3,6 +3,13 @@
 export const WORKBENCH_DIR = ".workbench";
 export const SIDECAR_JSON_SUFFIX = ".ai.json";
 export const SIDECAR_MD_SUFFIX = ".ai.md";
+export const RESEARCH_CONTENT_SAVED_EVENT = "research:content-saved";
+
+export function notifyResearchContentSaved(path: string) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(RESEARCH_CONTENT_SAVED_EVENT, { detail: { path } }));
+  }
+}
 
 export type FileKind = "pdf" | "image" | "markdown";
 

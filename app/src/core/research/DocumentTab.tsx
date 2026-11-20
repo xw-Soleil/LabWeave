@@ -12,7 +12,7 @@ import { URI } from "vscode-uri";
 import { identifyDocument, documentKey, documentPath, MarkdownDocument, markdownFileIO } from "./DocumentFile";
 import type { OutlinePosition } from "./NoteHeadings";
 import { notifyResearchFilesChanged, ResearchFolder } from "./ResearchFolder";
-import { fileKindOf } from "./ResearchShell";
+import { fileKindOf, notifyResearchContentSaved } from "./ResearchShell";
 import { loadAnnotationStore, type PdfAnnotationStore } from "./PdfAnnotationStore";
 
 const DocumentView = lazy(() => import("./DocumentView"));
@@ -245,6 +245,7 @@ export class DocumentTab extends Tab {
       await document.save();
       this.error = "";
       notifyResearchFilesChanged();
+      notifyResearchContentSaved(this.path);
       return true;
     } catch (error) {
       this.error = documentError(error);
