@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     shown: vi.fn(),
     hidden: vi.fn(),
     droppedSet: vi.fn(),
+    sealed: vi.fn(async (): Promise<unknown> => undefined),
   };
 });
 vi.mock("@/state", async () => ({ store: (await import("jotai")).createStore() }));
@@ -42,6 +43,7 @@ vi.mock("./ResearchFolder", () => ({
     toRelative: (path: string, root: string) => path.slice(root.length + 1),
   },
 }));
+vi.mock("./NodeRecord", () => ({ sealNodeRecord: mocks.sealed }));
 vi.mock("./Snapshot", () => ({
   snapshotFiles: { read: mocks.read, folders: mocks.folders, exists: mocks.exists, write: async () => {} },
   takeNode: mocks.taken,
@@ -123,6 +125,8 @@ beforeEach(() => {
   mocks.root = root;
   mocks.disk.clear();
   store.set(stageReviewAtom, null);
+  mocks.sealed.mockReset();
+  mocks.sealed.mockResolvedValue(undefined);
   for (const mock of [mocks.flushed, mocks.taken, mocks.shown, mocks.hidden, mocks.droppedSet]) {
     mock.mockClear();
   }
@@ -189,8 +193,9 @@ describe("what gets listed", () => {
       { kind: "annotation.add", where: { library: "Bastek2024/paper.pdf", page: 5, annotation: "B7" } },
       { kind: "note.save", where: { file: "笔记/想法.md" } },
       { kind: "note.save", where: { file: "笔记/想法.md" } },
-      // 程序生成的报告、项目外的笔记不算这段时间写的笔记
+      // 程序生成的报告、手填的进展记录、项目外的笔记不算这段时间写的笔记
       { kind: "note.save", where: { file: "汇报/2026-11-21 组会/报告.md" } },
+      { kind: "note.save", where: { file: "进展记录/进行中.md" } },
       { kind: "note.save", where: { file: "/Users/someone/我的进展/2026-11-14 阶段小结.md" } },
       // 后标的算数；认不出的标记不要
       { kind: "mark", where: { board: "白板.prg", card: "c1" }, more: { mark: "problem" } },
@@ -306,6 +311,8 @@ describe("reviewing a board", () => {
       picked: ["c1", "另一块.prg", "论文/main.pdf"],
       dropped: ["junk", "笔记/想法.md"],
     });
+    // 手填的记录跟着封存进这个节点
+    expect(mocks.sealed).toHaveBeenCalledWith(root, "今天 meeting");
     expect(mocks.hidden).toHaveBeenCalledWith(board);
     expect(store.get(stageReviewAtom)).toBeNull();
     // 已经退出了：再定格、再退出都不做事
@@ -313,6 +320,22 @@ describe("reviewing a board", () => {
     leaveStageReview();
     expect(mocks.taken).toHaveBeenCalledOnce();
     expect(mocks.hidden).toHaveBeenCalledOnce();
+  });
+
+  it("says so, and stays in the review, when the node is frozen but the hand-written record could not be sealed", async () => {
+    await oneWeekOfWork();
+    await enterStageReview(fakeBoard(now) as never);
+    mocks.taken.mockResolvedValue({ name: "2026-11-21 1000", manifest: { node: { title: "今天 meeting" } } });
+    const busy = new Error("nodeRecord.documentBusy");
+    mocks.sealed.mockRejectedValueOnce(busy);
+    const failed = await freezeStageReview([]).catch((error: unknown) => error);
+    expect(failed).toMatchObject({ message: "nodeRecord.sealFailed", cause: busy });
+    expect(mocks.taken).toHaveBeenCalledOnce();
+    // 还在整理里：处理好以后再按一次定格，算同一个节点，记录会补上
+    expect(store.get(stageReviewAtom)).not.toBeNull();
+    await freezeStageReview([]);
+    expect(mocks.sealed).toHaveBeenCalledTimes(2);
+    expect(store.get(stageReviewAtom)).toBeNull();
   });
 
   it("keeps what the other boards' comparison found, for the report to use as material", async () => {

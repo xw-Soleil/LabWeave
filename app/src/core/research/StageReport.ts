@@ -16,11 +16,10 @@ import {
 } from "./ResearchReport";
 import type { ReportMeta } from "./ResearchReportExport";
 import { ResearchFolder } from "./ResearchFolder";
-import { takeNode } from "./Snapshot";
 import {
+  freezeNode,
   leaveStageReview,
   recordFiles,
-  reviewNode,
   stageReviewAtom,
   type ComparedBoard,
   type ReviewItem,
@@ -333,8 +332,8 @@ export async function freezeAndReport(cards: readonly ReviewItem[]): Promise<voi
   const skip = all.filter((item) => state.dropped.has(item.id)).map((item) => item.title);
 
   await flushActivityLog();
-  const node = reviewNode(state, cards);
-  const snapshot = await takeNode(node);
+  // 手填的记录没封存成时这里会抛错：节点已经定格，汇报先不出，处理好再按一次
+  const { node, snapshot } = await freezeNode(state, cards);
   const until = localTime(new Date());
   const meta: ReportMeta = {
     title: node.title,

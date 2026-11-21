@@ -1202,3 +1202,21 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/NodeStrip.tsx`：节点条不再按整块白板居中，改成在让开左右侧栏以后剩下的那一段里居中。
 - 阶段小结的素材卡片（`StageReviewTray`）用的是同一个让位的数，一起改了。
 - 实测：用隔离的程序数据启动开发版，临时代码（已删）定格一个节点、打开回看、切到更早的节点、回到现在，都通；改之前和改之后各截了图。
+
+### 93. 节点记录和便签：手填的进展、待办、问题、下一步，定格时跟着节点封存（2026-11-21）
+
+主线第 ⑧b 步。解析和改写 Markdown 的部分、便签的外壳出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号）。
+
+- 新文件 `app/src/core/research/NodeRecord.ts`（从他的 `WeeklyProgress.ts` 搬来）：
+  - 记录存成 Markdown：`项目/进展记录/进行中.md` 是上个节点以后记的，定格时封存成 `进展记录/节点名.md`。分四节：进展、待办、问题与决定、下一步。
+  - 留下：把 Markdown 读成一条条事项（勾没勾、标题、详细内容、关联的链接、图片）；加一条、勾一条、改一条时只动那一条占的几行，别的字、别的节、开头的属性、换行方式原样留着；链接只认项目里面的文件。
+  - 去掉：按周分文件的那一套；经过 Rust 后端的读写（改成前端直接读写）。
+  - 改了：存之前再读一遍文件，和当初读到的不一样（别处改过、在 Obsidian 里改过）就不覆盖；「问题」也带勾选框；打开关联的白板卡片改走报告链接的那条路。
+  - 新加 `sealMarkdown`、`sealNodeRecord`：定格时把「进行中」封存进节点，没勾的待办、没勾的问题带到新的「进行中」，「下一步」里的变成待办；同一个节点再定格，按事项逐条补（认同一条看内容），不丢不重复；不属于哪一条的零散文字也留在封存的那份里。
+- 新文件 `app/src/core/research/NodeRecordFloat.tsx`：便签。能拖、能收起、位置按项目记着（这部分出自他的事项浮窗）；顶上一个输入框，回车记一条，能选记成待办、进展、问题还是下一步，能顺手关联眼前的卡片、论文页、笔记；下面列出待办和各节最近几条，点勾完成；收起时一行写着几件待办、距上次小结几天。
+- `app/src/core/research/StageReview.ts`：加 `freezeNode`——拍节点快照以后封存手填的记录；「只定格」和「定格并生成汇报」都走它。快照拍好了、记录没封存成时抛 `nodeRecord.sealFailed`，整理不退出，再定格一次会补上。活动记录里 `进展记录/` 下的保存不再列成「改过的笔记」。
+- `app/src/core/research/StageReport.ts`、`StageReviewTray.tsx`：改用 `freezeNode`；封存没成时单独提示。
+- `app/src/components/activity-rail.tsx`：竖栏加便签的开关。`app/src/App.tsx`：挂上便签。
+- 文案：新增 `research.nodeRecord.*`。
+- 测试：新增 `NodeRecord.test.ts` 17 条；`StageReview.test.ts` 加 1 条、改 2 条；`StageReport.test.ts` 改 1 条。他那 630 行测试里改条目、改链接和图片的部分这一步没搬，留到记录面板（⑧c）用到这些功能时再搬。
+- 便签的界面没有在开发版里看过。

@@ -9,6 +9,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { recordErrorText } from "./NodeRecordFloat";
 import { NODE_TYPES, isNode, type NodeType } from "./ProjectRecord";
 import { followReportLink } from "./ReportLinks";
 import { reportErrorText, reportTaskAtom } from "./ReportTask";
@@ -39,6 +40,18 @@ const shortTime = (name: string) => name.replace(/^\d{4}-(\d\d-\d\d) (\d\d)(\d\d
 /** 整理、定格没做成时提示一句。自己抛的错误是 stageReview.outside 这样的代码，有对应的文案；别的原样显示 */
 export function stageReviewFailed(error: unknown) {
   const code = error instanceof Error ? error.message : String(error);
+  // 节点定格了、手填的记录没封存成：不是「没做成」，单独说清楚
+  if (code === "nodeRecord.sealFailed") {
+    toast.error(
+      i18next.t("nodeRecord.sealFailed", {
+        ns: "research",
+        error: recordErrorText((error as Error).cause),
+        interpolation: { escapeValue: false },
+      }),
+      { duration: 12000 },
+    );
+    return;
+  }
   const [group, name, ...rest] = code.split(".");
   const known = ["stageReview", "stageSummary"].includes(group) && name && rest.length === 0;
   toast.error(

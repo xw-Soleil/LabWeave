@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
 import { flushActivityLog, startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
+import { NodeRecordFloat } from "@/core/research/NodeRecordFloat";
 import { startSnapshotSchedule } from "@/core/research/Snapshot";
 import {
   beginResearchSessionChange,
@@ -506,6 +507,8 @@ export default function App() {
         <FloatingCorners />
         {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放 */}
         <ActivityRail isClassroomMode={isClassroomMode} />
+        {/* 便签：浮在最上面，能拖到窗口里任何地方 */}
+        <NodeRecordFloat />
 
         {/* Zoomed UI layer - 缩放所有 DOM UI 元素，不缩放 Canvas 画布 */}
         <div

@@ -3875,6 +3875,52 @@ research:
     errors:
       noNode: 這個項目還沒有節點，先做一次階段小結
       noBoard: 這個節點定格的時候，還沒有這塊白板（或者它那時叫別的名字）
+  nodeRecord:
+    float: 便籤
+    toggleFloat: 便籤：隨手記待辦、進展、問題和下一步
+    noProject: 先選一個項目，再用便籤
+    short:
+      done: 進展
+      todo: 待辦
+      notes: 問題
+      next: 下一步
+    section:
+      done: 進展
+      todo: 待辦
+      notes: 問題與決定
+      next: 下一步
+    placeholder:
+      done: 做完了什麼？敲一句，回車記下
+      todo: 要做什麼？敲一句，回車記下
+      notes: 碰到什麼問題、定了什麼？回車記下
+      next: 下一步打算做什麼？回車記下
+    attach: 關聯當前內容
+    attachHint: 記的時候順手掛上眼前的東西：選中的卡片、打開的論文那一頁、正在看的筆記
+    noContext: 眼前沒有能關聯的東西（要是項目裡的白板、論文或筆記），這一條沒掛鏈接
+    pending: "{{count}} 件待辦"
+    sinceNode: "距上次小結 {{days}} 天"
+    sinceToday: 今天做過小結
+    noNode: 還沒做過小結
+    empty: 還沒記過東西。在上面敲一句，回車就記下了。
+    more: "還有 {{count}} 條"
+    less: 收起
+    untitled: （沒有文字）
+    markDone: "把「{{text}}」勾成做完"
+    markPending: "把「{{text}}」改回沒做完"
+    openFile: 打開記錄文件
+    minimize: 收起
+    expand: 展開
+    close: 關掉便籤
+    reloaded: 記錄在別處改過，已經重新讀了一遍，請再點一次
+    failed: "沒記成：{{error}}"
+    sealFailed: "節點已經定格了，但手填的記錄沒封存進去：{{error}}。處理好以後再定格一次，會補上。"
+    errors:
+      conflict: 記錄文件在別處改過了
+      documentBusy: 記錄文件正開著，裡面有還沒保存的改動，先把它保存了
+      unsafeLink: 只能關聯項目文件夾裡面的文件
+      fileNotFound: 關聯的文件找不到了
+      emptyItem: 內容是空的
+      invalidPath: 記錄文件的位置不對
   stageReview:
     title: 階段小結 · 整理
     sinceNode: "和「{{title}}」定格時比"

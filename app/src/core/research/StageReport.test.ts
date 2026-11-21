@@ -39,15 +39,14 @@ vi.mock("./ResearchReport", async (original) => ({
   },
   generateResearchReport: mocks.generated,
 }));
-vi.mock("./Snapshot", () => ({ takeNode: mocks.taken }));
 vi.mock("./StageReview", async () => ({
   stageReviewAtom: (await import("jotai")).atom(null),
   recordFiles: {},
   leaveStageReview: mocks.left,
-  reviewNode: (state: { type: string; note: string }) => ({
-    type: state.type,
-    title: "2026-11-21 组会",
-    note: state.note,
+  // 定格：拍节点快照，手填的记录跟着封存（那一半在 StageReview.test.ts 里测）
+  freezeNode: async (state: { type: string; note: string }, cards: unknown) => ({
+    node: { type: state.type, title: "2026-11-21 组会", note: state.note },
+    snapshot: await mocks.taken(state.note, cards),
   }),
 }));
 
@@ -305,11 +304,7 @@ describe("freezing and starting the report", () => {
     reviewing();
     await freezeAndReport(cards);
     expect(mocks.flushed).toHaveBeenCalled();
-    expect(mocks.taken).toHaveBeenCalledWith({
-      type: "meeting",
-      title: "2026-11-21 组会",
-      note: "这周主要试了 B 方法",
-    });
+    expect(mocks.taken).toHaveBeenCalledWith("这周主要试了 B 方法", cards);
     expect(mocks.left).toHaveBeenCalledOnce();
     const [task] = mocks.started.mock.calls[0];
     expect(task).toMatchObject({ root, title: "2026-11-21 组会" });

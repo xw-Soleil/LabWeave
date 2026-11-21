@@ -18,6 +18,7 @@ import {
   type RecordReader,
   type Snapshot,
 } from "./ProjectRecord";
+import { sealNodeRecord } from "./NodeRecord";
 import { compareSnapshots, readActivityLog, recordLink, type ReportSource } from "./ReportTools";
 import { ResearchFolder } from "./ResearchFolder";
 import { nodeTitle, snapshotFiles, takeNode, type NodeInput } from "./Snapshot";
@@ -146,8 +147,9 @@ export function logItems(
     }
     if (kind === "note.save") {
       const file = where.file;
-      // 项目外的笔记记的是完整路径；汇报文件夹里的是程序生成的报告。都不算这段时间写的笔记
-      if (typeof file !== "string" || /^(?:[\\/]|[a-zA-Z]:)/.test(file) || /^汇报\//.test(file)) continue;
+      // 项目外的笔记记的是完整路径；汇报文件夹里的是程序生成的报告；进展记录是手填的那一份，另有地方列。
+      // 都不算这段时间写的笔记
+      if (typeof file !== "string" || /^(?:[\\/]|[a-zA-Z]:)/.test(file) || /^(?:汇报|进展记录)\//.test(file)) continue;
       notes.set(file, { id: file, kind: "note", title: baseName(file), link: recordLink(root, { file }) });
       continue;
     }
@@ -353,12 +355,28 @@ export function reviewNode(state: StageReviewState, cards: readonly ReviewItem[]
   };
 }
 
+/**
+ * 定格一个节点：拍节点快照，再把手填的记录（进展记录/进行中.md）封存进这个节点、换上新的一份。
+ * 快照拍好了、记录却没封存成（比如那份记录正开着没保存）时抛 nodeRecord.sealFailed，原因在 cause 里；
+ * 这时节点已经在了，处理好以后再定格一次（算同一个节点）就会补上。
+ */
+export async function freezeNode(state: StageReviewState, cards: readonly ReviewItem[]) {
+  const node = reviewNode(state, cards);
+  const snapshot = await takeNode(node);
+  try {
+    await sealNodeRecord(state.root, node.title);
+  } catch (cause) {
+    throw new Error("nodeRecord.sealFailed", { cause });
+  }
+  return { node, snapshot };
+}
+
 /** 只定格：拍一份节点快照，退出整理。之后的对比从这个节点算起 */
 export async function freezeStageReview(cards: readonly ReviewItem[]): Promise<Snapshot | undefined> {
   const state = store.get(stageReviewAtom);
   if (!state) return undefined;
   await flushActivityLog();
-  const snapshot = await takeNode(reviewNode(state, cards));
+  const { snapshot } = await freezeNode(state, cards);
   leaveStageReview();
   return snapshot;
 }

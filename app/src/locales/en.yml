@@ -3756,6 +3756,52 @@ research:
     errors:
       noNode: This project has no node yet. Do a stage summary first
       noBoard: This board did not exist yet when that node was frozen (or it had another name)
+  nodeRecord:
+    float: Sticky note
+    toggleFloat: "Sticky note: jot down to-dos, progress, problems and next steps"
+    noProject: Choose a project before using the sticky note
+    short:
+      done: Progress
+      todo: To-do
+      notes: Problem
+      next: Next
+    section:
+      done: Progress
+      todo: To-do
+      notes: Problems and decisions
+      next: Next steps
+    placeholder:
+      done: What got done? Type a line and press Enter
+      todo: What needs doing? Type a line and press Enter
+      notes: What problem came up, or what was decided? Press Enter
+      next: What do you plan to do next? Press Enter
+    attach: Link what is open
+    attachHint: Attach what is in front of you to the note — the selected card, the open page of a paper, the note you are reading
+    noContext: Nothing here can be linked (it has to be a board, paper or note in the project), so this item has no link
+    pending: "{{count}} to do"
+    sinceNode: "{{days}} days since the last summary"
+    sinceToday: Summarised today
+    noNode: No summary yet
+    empty: Nothing noted yet. Type a line above and press Enter.
+    more: "{{count}} more"
+    less: Show fewer
+    untitled: (no text)
+    markDone: "Mark “{{text}}” as done"
+    markPending: "Mark “{{text}}” as not done"
+    openFile: Open the record file
+    minimize: Collapse
+    expand: Expand
+    close: Close the sticky note
+    reloaded: The record was changed elsewhere and has been read again. Please click once more
+    failed: "Could not note that: {{error}}"
+    sealFailed: "The node is frozen, but the hand-written record was not sealed into it: {{error}}. Fix that and freeze again to fill it in."
+    errors:
+      conflict: The record file was changed elsewhere
+      documentBusy: The record file is open with unsaved changes. Save it first
+      unsafeLink: Only files inside the project folder can be linked
+      fileNotFound: The linked file can't be found
+      emptyItem: The item is empty
+      invalidPath: The record file is not where it should be
   stageReview:
     title: Stage summary · Review
     sinceNode: "Compared with “{{title}}”"

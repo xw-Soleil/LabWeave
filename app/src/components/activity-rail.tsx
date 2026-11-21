@@ -22,6 +22,7 @@ import { Settings } from "@/core/service/Settings";
 import { findTabGroupByTabId, getTabGroups, separateFixedSideGroups, type FixedSideEdge } from "@/core/TabGroup";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { LibraryTab, openLibraryTab, warmLibrary } from "@/core/research/LibraryTab";
+import { toggleRecordFloat, useRecordFloatOpen } from "@/core/research/NodeRecordFloat";
 import { activeTabAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
 import { cn } from "@/utils/cn";
@@ -38,6 +39,7 @@ import {
   MessageSquareText,
   Plus,
   Settings as SettingsIcon,
+  StickyNote,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -272,6 +274,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   const [popoverOpen, setPopoverOpen] = useAtom(workspacePopoverOpenAtom);
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
   const review = useAtomValue(stageReviewAtom);
+  const noteOpen = useRecordFloatOpen();
   // 启动一秒后（让开恢复标签页那一阵）先把文献库读好，第一次点开直接有内容
   useEffect(() => {
     const timer = setTimeout(warmLibrary, 1000);
@@ -393,6 +396,10 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
           onClick={toggleReview}
         >
           <ClipboardList />
+        </RailButton>
+        {/* 便签：随手记待办、进展、问题、下一步，记下的在定格时跟着节点封存 */}
+        <RailButton label={t("nodeRecord.toggleFloat")} active={noteOpen} onClick={toggleRecordFloat}>
+          <StickyNote />
         </RailButton>
         {!docked && (
           <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
