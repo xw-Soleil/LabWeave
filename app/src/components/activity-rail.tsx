@@ -15,10 +15,12 @@ import {
 } from "@/core/research/ResearchSession";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { isSidePanelShown, leaveSidePeekArea, sideEdgeOfGroup, useSidePanelStates } from "@/core/research/SidePanels";
-import { StageSummaryForm } from "@/core/research/StageSummaryPanel";
+import { enterStageReview, leaveStageReview, stageReviewAtom } from "@/core/research/StageReview";
+import { stageReviewFailed } from "@/core/research/StageReviewTray";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { Settings } from "@/core/service/Settings";
 import { findTabGroupByTabId, getTabGroups, separateFixedSideGroups, type FixedSideEdge } from "@/core/TabGroup";
+import { TabWorkspace } from "@/core/TabWorkspace";
 import { LibraryTab, openLibraryTab, warmLibrary } from "@/core/research/LibraryTab";
 import { activeTabAtom, tabGroupRootAtom, tabsAtom } from "@/state";
 import SettingsWindow from "@/sub/SettingsWindow";
@@ -269,8 +271,7 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   const sideStates = useSidePanelStates();
   const [popoverOpen, setPopoverOpen] = useAtom(workspacePopoverOpenAtom);
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const summaryButtonRef = useRef<HTMLButtonElement>(null);
+  const review = useAtomValue(stageReviewAtom);
   // 启动一秒后（让开恢复标签页那一阵）先把文献库读好，第一次点开直接有内容
   useEffect(() => {
     const timer = setTimeout(warmLibrary, 1000);
@@ -289,6 +290,27 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
   const hasWorkspace = tabs.some((tab) => tab instanceof Project && !tab.closing);
   const activeTab = useAtomValue(activeTabAtom);
   const docked = useAtomValue(dockedChromeAtom);
+
+  const toggleReview = () => {
+    if (review) {
+      leaveStageReview();
+      return;
+    }
+    // 在哪块白板上整理：正开着的那块；正在看 PDF、笔记时用项目里开着的一块，并把它切到前面
+    const board =
+      activeTab instanceof Project
+        ? activeTab
+        : (tabs.find(
+            (tab): tab is Project =>
+              tab instanceof Project &&
+              !tab.closing &&
+              tab.uri.scheme === "file" &&
+              ResearchFolder.isInside(tab.uri.fsPath),
+          ) ?? tabs.find((tab): tab is Project => tab instanceof Project && !tab.closing));
+    if (!board) return;
+    if (board !== activeTab) TabWorkspace.focus(board.id);
+    void enterStageReview(board).catch(stageReviewFailed);
+  };
 
   return (
     <nav
@@ -363,32 +385,15 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
         >
           <Library />
         </RailButton>
-        {/* 阶段小结：AI 在对话面板里写，面板要有一块开着的白板才用得了 */}
-        <Popover open={summaryOpen} onOpenChange={setSummaryOpen}>
-          <PopoverAnchor asChild>
-            <div>
-              <RailButton
-                label={t("shell.rail.summary")}
-                active={summaryOpen}
-                buttonRef={summaryButtonRef}
-                unavailableHint={hasWorkspace ? undefined : t("shell.rail.summaryNeedsWorkspace")}
-                onClick={() => setSummaryOpen(!summaryOpen)}
-              >
-                <ClipboardList />
-              </RailButton>
-            </div>
-          </PopoverAnchor>
-          <PopoverContent
-            side="right"
-            align="start"
-            className="w-64 rounded-[8px] p-3"
-            onInteractOutside={(event) => {
-              if (summaryButtonRef.current?.contains(event.target as Node)) event.preventDefault();
-            }}
-          >
-            <StageSummaryForm onDone={() => setSummaryOpen(false)} />
-          </PopoverContent>
-        </Popover>
+        {/* 阶段小结：点了以后画布变成题板来整理，再点一次退出。要有一块白板开着 */}
+        <RailButton
+          label={t("shell.rail.summary")}
+          active={!!review}
+          unavailableHint={hasWorkspace ? undefined : t("shell.rail.summaryNeedsWorkspace")}
+          onClick={toggleReview}
+        >
+          <ClipboardList />
+        </RailButton>
         {!docked && (
           <div className="bg-border/80 my-[calc(0.125rem*var(--pg-ui-scale,1))] h-px w-[calc(1.25rem*var(--pg-ui-scale,1))]" />
         )}

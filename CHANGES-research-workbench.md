@@ -1130,3 +1130,23 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 给 AI 的说明里加两句：用户说「自上次小结以来」时 `from` 用 `baseline`；节点上的原话可以当材料用。
 - 文案：`research.snapshot.since`、`none`、`takeHint` 改了，`sinceHint` 拆成 `sinceNodeHint`、`sinceFirstHint`；新增 `research.stageNode.types.*`。
 - 测试：`Snapshot.test.ts` 加 4 条，`ReportTools.test.ts` 加 2 条；`StageSummary.test.ts` 去掉 `baselineSnapshot` 的 1 条、改 1 条。
+
+### 89. 阶段小结改成在画布上整理：没变的卡片压暗，角落一张素材卡片挑要讲的（2026-11-20）
+
+主线第 ⑥ 步。
+
+- 新文件 `app/src/core/research/StageReview.ts`：整理的逻辑。
+  - 进入整理时定好和哪份快照比（今天已经定格过同一种类型的节点，就接着改那一次：基准和它一样，上次去掉的、敲的原话带回来）。
+  - 列出上个节点以来的事：这块白板上新加的、改过的、右键标记过的卡片（标记过的排最前）；别的白板有变化的各一条；从活动记录里把每篇论文归并成一条（几条批注、几段摘录）、每篇改过的笔记一条。
+  - 勾选：默认全要，去掉的记在 `dropped` 里；「只讲选中的」「不讲选中的」照画布上选中的卡片来。
+  - 定格：把类型、原话、要讲的和不讲的写进节点；「只定格」不调 AI，「定格并生成汇报」定格后接到现有的那条路（AI 在对话面板里写）。
+- 新文件 `app/src/core/research/StageReviewTray.tsx`：浮在白板右下角的素材卡片。清单、勾选、两个按选区操作的按钮、原话输入框、节点类型、两个定格按钮。它不拦画布，白板改了清单跟着变。
+- `app/src/core/research/SnapshotDiff.ts`：整理时多两种画法——没变的卡片盖一层半透明的背景色（压暗），去掉不讲的也压暗并描一圈灰边；右键标记过的不压。分组框不压（会连里面的新卡片一起盖住）。对外多给 `sinceLastLive`（现在比出来的差别和白板上的卡片）、`setSinceLastDropped`。
+- `app/src/components/activity-rail.tsx`：竖栏的「阶段小结」按钮不再弹选日期的那一小块，点了直接进整理，再点一次退出；正在看 PDF、笔记时会把项目里开着的白板切到前面。
+- `app/src/components/docked-area.tsx`：白板区域挂上素材卡片，右侧栏固定显示时让开它。
+- `app/src/core/research/SinceLastToggle.tsx`：整理时状态条上的开关不能点（画布上的标记归整理管）。
+- `app/src/core/research/StageSummary.ts`、`StageSummaryPanel.tsx`：`startStageSummary` 能带上整理定好的节点和去掉的条目；给 AI 的话里多两行（用户的原话、不要写进报告的条目）。去掉选日期的 `StageSummaryForm`。
+- `app/src/core/research/ProjectRecord.ts`：加 `nodeOnDay`（某一天已经定格过的同类型节点）。
+- 文案：新增 `research.stageReview.*`；去掉 `research.stageSummary` 里选日期用的 10 条。
+- 测试：新增 `StageReview.test.ts` 9 条；`SnapshotDiff.test.ts` 加 1 条、改 1 条；`StageSummary.test.ts` 加 1 条。
+- 实测：用一套隔离的程序数据和临时项目启动了开发版，用临时代码（已删）加了三张卡片、改了一张、进入整理，程序里算出的基准和别处的条目是对的。没有截到画面：开发版的窗口被别的窗口盖住时页面不重画，截到的是旧画面。压暗、变灰、素材卡片的样子都没亲眼看过。

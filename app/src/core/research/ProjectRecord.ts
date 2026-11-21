@@ -255,9 +255,14 @@ export function sinceOf(snapshots: readonly Snapshot[], node: Snapshot): string 
  * 同一天已经定格过同一种类型的：算同一个节点，照抄那一次的基准，重新定格不推基准；否则和 baselineOf 一样。
  */
 export function nodeSince(snapshots: readonly Snapshot[], type: NodeType, at: string): string | undefined {
-  const key = `${at.slice(0, 10)} ${type}`;
-  const again = snapshots.find((snapshot) => isNode(snapshot) && nodeKey(snapshot) === key);
+  const again = nodeOnDay(snapshots, type, at);
   return again ? sinceOf(snapshots, again) : baselineOf(snapshots)?.name;
+}
+
+/** at 那一天已经定格过的同一种类型的节点（有几份时是最后一份）；没有给 undefined */
+export function nodeOnDay(snapshots: readonly Snapshot[], type: NodeType, at: string): Snapshot | undefined {
+  const key = `${at.slice(0, 10)} ${type}`;
+  return snapshots.find((snapshot) => isNode(snapshot) && nodeKey(snapshot) === key);
 }
 
 /** 被同一天同类型的后一次定格顶替掉的节点：它的名字 → 顶替它的那份的名字 */

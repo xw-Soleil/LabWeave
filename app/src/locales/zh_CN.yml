@@ -3856,18 +3856,39 @@ research:
       meeting: 组会
       weekly: 周报
       review: 自己复盘
+  stageReview:
+    title: 阶段小结 · 整理
+    sinceNode: "和「{{title}}」定格时比"
+    sinceFirst: "还没做过小结，和最早的一份快照（{{time}}）比"
+    sinceNothing: 还没有快照，白板上的卡片都算新加的
+    thisBoard: 这块白板
+    onlySelected: 只讲选中的
+    dropSelected: 不讲选中的
+    selectFirst: 先在画布上选中几张列在这里的卡片
+    added: 新
+    edited: 改
+    untitled: （没有标题）
+    removed: "另有 {{count}} 张删掉的，画布上留着淡影"
+    elsewhere: 别的白板、论文和笔记
+    boardCounts: "白板：新 {{added}} · 改 {{edited}} · 删 {{removed}}"
+    paperCounts: "论文：{{annotations}} 条批注 · {{excerpts}} 段摘录"
+    noteSaved: 笔记：改过
+    empty: 上次小结以来没有记到变化。可以直接定格，也可以先退出去干活。
+    notePlaceholder: 这次想讲什么？敲几句大白话就行，可以不填
+    type: 这次是
+    picked: "讲 {{picked}} / {{total}}"
+    freeze: 只定格
+    freezeHint: 拍一份节点快照，不让 AI 写。之后的对比从这里算起
+    summarize: 定格并生成汇报
+    summarizeHint: 定格以后让 AI 在对话里写报告，写完存进「我的进展」
+    frozen: "已定格「{{title}}」，之后的对比从这里算起"
+    leave: 退出整理
+    toggleBusy: 正在做阶段小结的整理，退出整理后再用这个开关
+    failed: "没做成：{{error}}"
+    errors:
+      outside: 这块白板不在当前项目里，做不了阶段小结
   stageSummary:
     title: 阶段小结
-    loading: 正在看上次写到哪…
-    lastSummary: "上次小结写到 {{time}}，默认从那里接着写"
-    firstTime: "还没做过小结，默认从最早的记录（{{time}}）写起"
-    noRecords: 这个项目还没有活动记录，写出来的小结会很空
-    from: 从
-    to: 到
-    hint: 会先拍一份快照，再让 AI 在对话里写；写完自动存进「我的进展」并打开。
-    start: 开始写
-    starting: 正在拍快照…
-    badRange: 开始的日期不能晚于结束的日期
     notSent: AI 现在发不了（还没配好，或者正在回答）。要说的话已经放进输入框，好了以后按发送。
     save: 存进我的进展
     slides: 出 PPT

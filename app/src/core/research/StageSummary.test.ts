@@ -143,6 +143,33 @@ describe("发给 AI 的话", () => {
     expect(parseSummaryRequest("这周我做了什么")).toBeUndefined();
   });
 
+  it("整理时敲的原话和去掉不讲的写进去，不影响读回范围", async () => {
+    const request = { since: at(8, 9), until: at(15, 12), from: "2026-11-08 0900", to: "2026-11-15 1200" };
+    const prompt = summaryPrompt(request, {
+      note: "这周主要试了 B 方法，\n发现边界条件会炸",
+      skip: ["随手试的废卡", "  ", "另一块"],
+    });
+    // 原话里的换行压成一行，免得把后面的话挤乱
+    expect(prompt).toContain("用户自己想讲的（照这个定重点，可以引用原话）：这周主要试了 B 方法， 发现边界条件会炸");
+    expect(prompt).toContain("用户整理时去掉了这些，不要写进报告：随手试的废卡、另一块");
+    expect(prompt.split("\n").at(-1)).toContain("只输出报告本身");
+    expect(parseSummaryRequest(prompt)).toEqual(request);
+    expect(summaryPrompt(request, { note: "  ", skip: [] })).toBe(summaryPrompt(request));
+
+    // 整理定好的节点原样拿去定格
+    const node = { type: "weekly" as const, title: "今天 周报", note: "原话", picked: ["a"], dropped: ["b"] };
+    mocks.taken.mockResolvedValue({ name: "2026-11-15 1200", manifest: { node: {} } });
+    const sent: string[] = [];
+    const stop = subscribeStageRequests((text) => sent.push(text));
+    await startStageSummary({ since: at(9), until: at(15, 12) }, { node, skip: ["废卡"] });
+    expect(mocks.taken).toHaveBeenLastCalledWith(node);
+    expect(sent[0]).toContain("用户自己想讲的（照这个定重点，可以引用原话）：原话");
+    expect(sent[0]).toContain("不要写进报告：废卡");
+    // 这是项目的第一个节点，前面没有可以比的
+    expect(parseSummaryRequest(sent[0])).toEqual({ since: at(9), until: at(15, 12), to: "2026-11-15 1200" });
+    stop();
+  });
+
   it("开始做小结：先写掉攒着的活动，定格一个节点，再把话交给 AI 面板", async () => {
     // 和哪份比由节点说了算：上一个节点，不看范围从哪天开始
     mocks.taken.mockResolvedValue({ name: "2026-11-15 1200", manifest: { node: { since: "2026-11-08 0900" } } });

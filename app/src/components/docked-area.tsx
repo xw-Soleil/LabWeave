@@ -2,6 +2,7 @@ import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
 import { SinceLastToggle } from "@/core/research/SinceLastToggle";
+import { StageReviewTray } from "@/core/research/StageReviewTray";
 import { sideDropPreviewAtom } from "@/core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import {
@@ -723,6 +724,14 @@ export default function DockedArea({
             project={project}
             isClassroomMode={isClassroomMode}
             left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
+          />
+        )}
+        {project && (
+          <StageReviewTray
+            key={`review-${project.id}`}
+            project={project}
+            // 右侧栏固定显示时让开它
+            right={edges.right && rightPinned ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px` : `${SIDE_PANEL_GAP}px`}
           />
         )}
         <DropPreview groupId={group.id} />

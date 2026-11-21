@@ -14,7 +14,15 @@ vi.mock("@graphif/serializer", async (original) => ({
 vi.mock("./ResearchFolder", () => ({ ResearchFolder: { getRoot: () => "/research" } }));
 
 import { buildAiSidecar } from "./AiSidecarBuilder";
-import { compareBoards, hideSinceLast, renderSinceLast, showSinceLast, sinceLastCounts } from "./SnapshotDiff";
+import {
+  compareBoards,
+  hideSinceLast,
+  renderSinceLast,
+  setSinceLastDropped,
+  showSinceLast,
+  sinceLastCounts,
+  sinceLastLive,
+} from "./SnapshotDiff";
 
 const box = (x: number, y: number, w = 100, h = 50) => ({
   _: "CollisionBox",
@@ -43,7 +51,10 @@ function fakeBoard(stage: unknown[]) {
     camera: { currentScale: 1 },
     renderer: { transformWorld2View: (value: unknown) => value },
     stageStyleManager: {
-      currentStyle: { Background: { name: "bg" }, StageObjectBorder: { toNewAlpha: (a: number) => `border@${a}` } },
+      currentStyle: {
+        Background: { name: "bg", toNewAlpha: (a: number) => `bg@${a}` },
+        StageObjectBorder: { toNewAlpha: (a: number) => `border@${a}` },
+      },
     },
     stageManager: {
       get: (id: string) => {
@@ -106,7 +117,13 @@ describe("the marks on the canvas", () => {
     const base = sidecar([text("edited", "原来的话", 0, 200), text("gone", "删掉的想法", 400, 300)]);
     const board = fakeBoard([text("edited", "改过的话", 0, 200), text("fresh", "新想法", 0, 400)]);
     showSinceLast(board as never, "2026-11-21 1030", base);
-    expect(sinceLastCounts(board as never)).toEqual({ name: "2026-11-21 1030", added: 1, edited: 1, removed: 1 });
+    expect(sinceLastCounts(board as never)).toEqual({
+      name: "2026-11-21 1030",
+      added: 1,
+      edited: 1,
+      removed: 1,
+      review: false,
+    });
     renderSinceLast(board as never, everything);
 
     const [ghost, outline] = board.shapeRenderer.renderRect.mock.calls;
@@ -135,6 +152,62 @@ describe("the marks on the canvas", () => {
     expect(board.shapeRenderer.renderRect).toHaveBeenCalledOnce();
     // 缩到 10% 时线宽不会细到看不见
     expect(board.shapeRenderer.renderRect.mock.calls[0][3]).toBe(1.5);
+  });
+
+  it("while reviewing, dims unchanged cards and grays out dropped ones, but keeps marked ones lit", () => {
+    const group = {
+      _: "Section",
+      uuid: "group",
+      text: "方法",
+      _collisionBoxNormal: box(600, 0, 300, 200),
+      children: [],
+    };
+    const base = sidecar([text("old", "没动过"), text("flagged", "标成进展的旧卡片", 0, 100), group]);
+    const board = fakeBoard([
+      text("old", "没动过"),
+      text("flagged", "标成进展的旧卡片", 0, 100),
+      text("fresh", "新想法", 0, 200),
+      text("junk", "随手试的废卡", 0, 300),
+      group,
+    ]);
+    showSinceLast(board as never, "s", base, { dropped: new Set(["junk"]), lit: new Set(["flagged"]) });
+    expect(sinceLastCounts(board as never)).toMatchObject({ added: 2, review: true });
+    // 清单要用的：比出来的差别，和白板上每张卡片的标题
+    const live = sinceLastLive(board as never)!;
+    expect([...live.diff.same].sort()).toEqual(["flagged", "old"]);
+    expect(live.items.fresh.title).toBe("新想法");
+
+    renderSinceLast(board as never, everything);
+    const rects = board.shapeRenderer.renderRect.mock.calls.map(([rect, fill, stroke]) => ({
+      y: rect.location.y,
+      fill: typeof fill === "string" ? fill : "none",
+      stroke: typeof stroke === "string" ? stroke : stroke.a === 0 ? "none" : "color",
+    }));
+    expect(rects).toEqual([
+      // 没变的压暗；标记过的不压；分组框不压（不然连里面的新卡片一起盖住）
+      { y: -2, fill: "bg@0.62", stroke: "none" },
+      // 去掉不讲的：压暗，描一圈灰边
+      { y: 298, fill: "bg@0.62", stroke: "border@0.45" },
+      // 要讲的新卡片照旧描绿边
+      { y: 195, fill: "none", stroke: "color" },
+    ]);
+
+    // 把废卡勾回来，再把标记过的那张去掉
+    setSinceLastDropped(board as never, new Set(["flagged"]));
+    board.shapeRenderer.renderRect.mockClear();
+    renderSinceLast(board as never, everything);
+    expect(board.shapeRenderer.renderRect.mock.calls.map(([rect, fill]) => [rect.location.y, typeof fill])).toEqual([
+      [-2, "string"],
+      [98, "string"],
+      [195, "object"],
+      [295, "object"],
+    ]);
+    // 平时的开关没有这些画法，也改不了
+    showSinceLast(board as never, "s", base);
+    setSinceLastDropped(board as never, new Set(["fresh"]));
+    board.shapeRenderer.renderRect.mockClear();
+    renderSinceLast(board as never, everything);
+    expect(board.shapeRenderer.renderRect).toHaveBeenCalledTimes(2);
   });
 
   it("compares again after the board was edited, at most twice a second", () => {

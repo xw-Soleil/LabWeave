@@ -64,7 +64,10 @@ export function SinceLastToggle({ project }: { project: Project }) {
         if (!alive) return;
         setBase(snapshot ?? null);
         const shown = sinceLastCounts(project);
-        if (snapshot && shown && shown.name !== snapshot.name) void compareWith(snapshot).catch(report);
+        // 整理状态下定格的，画布由整理那边收尾，这里不接手
+        if (snapshot && shown && !shown.review && shown.name !== snapshot.name) {
+          void compareWith(snapshot).catch(report);
+        }
       }, report);
     });
     // 画布那边随着编辑重新比，这里跟着读数字
@@ -72,6 +75,7 @@ export function SinceLastToggle({ project }: { project: Project }) {
       const next = sinceLastCounts(project);
       setCounts((previous) =>
         previous?.name === next?.name &&
+        previous?.review === next?.review &&
         previous?.added === next?.added &&
         previous?.edited === next?.edited &&
         previous?.removed === next?.removed
@@ -130,8 +134,9 @@ export function SinceLastToggle({ project }: { project: Project }) {
       <button
         type="button"
         aria-pressed={!!counts}
-        disabled={!base}
-        title={hint}
+        // 正在做阶段小结整理时，画布上的标记归整理管，退出整理再用这个开关
+        disabled={!base || counts?.review}
+        title={counts?.review ? t("stageReview.toggleBusy") : hint}
         className={cn(BUTTON, counts && "bg-accent text-foreground")}
         onClick={toggle}
       >

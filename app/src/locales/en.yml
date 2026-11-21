@@ -3737,18 +3737,39 @@ research:
       meeting: Group meeting
       weekly: Weekly report
       review: Self review
+  stageReview:
+    title: Stage summary · Review
+    sinceNode: "Compared with “{{title}}”"
+    sinceFirst: "No summary yet; compared with the earliest snapshot ({{time}})"
+    sinceNothing: No snapshot yet, so every card on the board counts as new
+    thisBoard: This board
+    onlySelected: Only the selected
+    dropSelected: Skip the selected
+    selectFirst: Select some of the cards listed here on the canvas first
+    added: New
+    edited: Edited
+    untitled: (untitled)
+    removed: "{{count}} more were removed; the canvas keeps a faint shadow of each"
+    elsewhere: Other boards, papers and notes
+    boardCounts: "Board: new {{added}} · edited {{edited}} · removed {{removed}}"
+    paperCounts: "Paper: {{annotations}} annotations · {{excerpts}} excerpts"
+    noteSaved: "Note: edited"
+    empty: Nothing has been recorded since the last summary. You can freeze right away, or leave and get some work done first.
+    notePlaceholder: What do you want to say this time? A few plain sentences will do; optional
+    type: This is a
+    picked: "{{picked}} of {{total}} picked"
+    freeze: Freeze only
+    freezeHint: Take a node snapshot without asking the AI to write. Later comparisons start from here
+    summarize: Freeze and write the report
+    summarizeHint: After freezing, the AI writes the report in the chat and it is saved to “My progress”
+    frozen: "“{{title}}” is frozen; later comparisons start from here"
+    leave: Leave the review
+    toggleBusy: A stage summary review is in progress; use this switch after leaving it
+    failed: "That didn't work: {{error}}"
+    errors:
+      outside: This board is not in the current project, so it cannot be summarized
   stageSummary:
     title: Stage summary
-    loading: Checking where the last one ended…
-    lastSummary: "The last summary covered up to {{time}}; this one continues from there by default"
-    firstTime: "No summary yet; by default this one starts from the earliest record ({{time}})"
-    noRecords: This project has no activity records yet, so the summary will be nearly empty
-    from: From
-    to: To
-    hint: A snapshot is taken first, then the AI writes in the chat. When it finishes, the report is saved to “My progress” and opened.
-    start: Start writing
-    starting: Taking a snapshot…
-    badRange: The start date cannot be after the end date
     notSent: The AI can't take this right now (not set up yet, or still answering). The request is in the input box; send it when ready.
     save: Save to My progress
     slides: Make slides

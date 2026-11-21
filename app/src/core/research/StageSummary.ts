@@ -7,7 +7,7 @@ import { flushActivityLog, noteSummary } from "./ActivityLog";
 import { ACTIVITY_LOG_FILE, localTime, under } from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 import { buildPptx, type Slide } from "./SlidesExport";
-import { nodeTitle, takeNode } from "./Snapshot";
+import { nodeTitle, takeNode, type NodeInput } from "./Snapshot";
 
 /*
  * 阶段小结：点一下，定个范围，拍一份快照，让 AI 照「怎么做汇报」的说明写一份报告，
@@ -67,9 +67,20 @@ export function summaryStart(
   };
 }
 
+/** 整理时用户给的：敲的原话，去掉不讲的那些条目的标题 */
+export interface SummaryPicks {
+  note?: string;
+  skip?: readonly string[];
+}
+
+const MAX_SKIPPED = 40;
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
 /** 发给 AI 的话 */
-export function summaryPrompt(request: SummaryRequest): string {
+export function summaryPrompt(request: SummaryRequest, picks: SummaryPicks = {}): string {
   const { since, until, from, to } = request;
+  const note = oneLine(picks.note ?? "");
+  const skip = (picks.skip ?? []).map(oneLine).filter(Boolean);
   return [
     `${SUMMARY_MARK}${since} ~ ${until}`,
     "请写这段时间的阶段小结。先调用 read_report_guide，照里面的步骤取材料：",
@@ -79,6 +90,12 @@ export function summaryPrompt(request: SummaryRequest): string {
       : to
         ? `- 这个项目只有做这次小结时刚拍的「${to}」这一份快照，没有可以比的：跳过比快照这一步，并在「没写进来的」里交代。`
         : "- 这次没有快照可以比：跳过比快照这一步，并在「没写进来的」里交代。",
+    ...(note ? [`用户自己想讲的（照这个定重点，可以引用原话）：${note}`] : []),
+    ...(skip.length > 0
+      ? [
+          `用户整理时去掉了这些，不要写进报告：${skip.slice(0, MAX_SKIPPED).join("、")}${skip.length > MAX_SKIPPED ? " 等" : ""}`,
+        ]
+      : []),
     "只输出报告本身：从「# 日期 阶段小结」这一行标题开始，到「没写进来的」一节结束。最前面的属性不用写，程序会加；前后不要加别的话。",
   ].join("\n");
 }
@@ -241,15 +258,27 @@ export async function loadSummaryStart(now = new Date()) {
   return summaryStart((await exists(path)) ? await readTextFile(path) : undefined, now);
 }
 
-/** 开始做一次阶段小结：定格一个节点，让 AI 写。项目里没有白板时抛 snapshot.noBoard */
-export async function startStageSummary(range: { since: string; until: string }): Promise<void> {
+/**
+ * 开始做一次阶段小结：定格一个节点，让 AI 写。项目里没有白板时抛 snapshot.noBoard。
+ * node 是整理时定好的节点信息（类型、原话、勾选），不给就定格一个什么都没填的「组会」；
+ * skip 是去掉不讲的那些条目的标题，写进给 AI 的话里。
+ */
+export async function startStageSummary(
+  range: { since: string; until: string },
+  options: { node?: NodeInput; skip?: readonly string[] } = {},
+): Promise<void> {
   if (!ResearchFolder.getRoot()) throw new Error("stageSummary.noProject");
   // AI 读的是盘上的活动记录，攒着没写的要先落盘
   await flushActivityLog();
   // 白板的变化和上一个节点比；这一份定格下来以后，它就是下一次的基准
-  const taken = await takeNode({ type: "meeting", title: nodeTitle("meeting") });
+  const taken = await takeNode(options.node ?? { type: "meeting", title: nodeTitle("meeting") });
   const from = taken?.manifest.node?.since;
-  askAi(summaryPrompt({ ...range, ...(from && { from }), ...(taken && { to: taken.name }) }));
+  askAi(
+    summaryPrompt(
+      { ...range, ...(from && { from }), ...(taken && { to: taken.name }) },
+      { note: options.node?.note, skip: options.skip },
+    ),
+  );
 }
 
 /** 让 AI 把存好的报告改写成 PPT 提纲 */

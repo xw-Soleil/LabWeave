@@ -6,25 +6,22 @@ import { open as chooseFolder } from "@tauri-apps/plugin-dialog";
 import { open as openWithSystem } from "@tauri-apps/plugin-shell";
 import i18next from "i18next";
 import { FileText, LoaderCircle, Presentation } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { localTime } from "./ProjectRecord";
 import {
   cardImage,
   exportSlides,
-  loadSummaryStart,
   looksLikeReport,
   parseSlidesRequest,
   parseSummaryRequest,
   progressFolder,
   requestSlides,
   saveStageReport,
-  startStageSummary,
   type SummaryRequest,
 } from "./StageSummary";
 
-/* 「阶段小结」的界面：竖栏按钮弹出来的那一小块（选范围、开始写），和 AI 回答下面的两个按钮。 */
+/* AI 写完阶段小结以后的界面：自动存报告，和回答下面的两个按钮。怎么开始一次小结在 StageReviewTray.tsx。 */
 
 const text = (key: string, options?: Record<string, unknown>) =>
   i18next.t(`stageSummary.${key}`, { ns: "research", interpolation: { escapeValue: false }, ...options });
@@ -41,92 +38,6 @@ function errorText(error: unknown): string {
 
 const fail = (error: unknown) => void toast.error(text("failed", { error: errorText(error) }));
 const fileName = (path: string) => path.replace(/\\/g, "/").split("/").pop() ?? path;
-const day = (time: string) => time.slice(0, 10);
-const shownTime = (time: string) => `${time.slice(0, 10)} ${time.slice(11, 16)}`;
-
-/** 竖栏「阶段小结」按钮弹出来的内容：看默认范围、改日期、开始 */
-export function StageSummaryForm({ onDone }: { onDone: () => void }) {
-  const { t } = useTranslation("research");
-  const [start, setStart] = useState<Awaited<ReturnType<typeof loadSummaryStart>>>();
-  const [since, setSince] = useState("");
-  const [until, setUntil] = useState(() => day(localTime(new Date())));
-  const [starting, setStarting] = useState(false);
-
-  useEffect(() => {
-    let disposed = false;
-    loadSummaryStart().then((loaded) => {
-      if (disposed) return;
-      setStart(loaded);
-      setSince(day(loaded.since));
-    }, fail);
-    return () => {
-      disposed = true;
-    };
-  }, []);
-
-  const begin = async () => {
-    if (!start || !since || !until) return;
-    if (since > until) {
-      toast.error(t("stageSummary.badRange"));
-      return;
-    }
-    setStarting(true);
-    try {
-      const now = localTime(new Date());
-      await startStageSummary({
-        // 日期没动过就用精确到秒的时间：从上一次小结写到的那一刻接着算，到此刻为止
-        since: since === day(start.since) ? start.since : since,
-        until: until === day(now) ? now : until,
-      });
-      onDone();
-    } catch (error) {
-      fail(error);
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const dateInput = "border-input bg-background h-7 min-w-0 flex-1 rounded-[6px] border px-2 text-[13px]";
-  return (
-    <div className="flex flex-col gap-2.5 px-1 text-[13px]">
-      <div className="font-semibold">{t("stageSummary.title")}</div>
-      <div className="text-muted-foreground text-[12px]">
-        {!start
-          ? t("stageSummary.loading")
-          : start.lastSummary
-            ? t("stageSummary.lastSummary", { time: shownTime(start.lastSummary) })
-            : start.startedAt
-              ? t("stageSummary.firstTime", { time: shownTime(start.startedAt) })
-              : t("stageSummary.noRecords")}
-      </div>
-      <label className="flex items-center gap-2">
-        <span className="w-5 shrink-0">{t("stageSummary.from")}</span>
-        <input
-          type="date"
-          className={dateInput}
-          value={since}
-          max={until}
-          onChange={(event) => setSince(event.target.value)}
-        />
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="w-5 shrink-0">{t("stageSummary.to")}</span>
-        <input
-          type="date"
-          className={dateInput}
-          value={until}
-          min={since}
-          onChange={(event) => setUntil(event.target.value)}
-        />
-      </label>
-      <div className="text-muted-foreground text-[12px]">{t("stageSummary.hint")}</div>
-      <Button size="sm" className="h-7 rounded-[6px] text-[13px]" disabled={!start || starting} onClick={begin}>
-        {starting && <LoaderCircle className="animate-spin" />}
-        {t(starting ? "stageSummary.starting" : "stageSummary.start")}
-      </Button>
-    </div>
-  );
-}
 
 /** 第一次存报告时问一次放哪；选过以后不再问（设置里能改）。用户点了「先不存」返回 false */
 async function confirmProgressFolder(): Promise<boolean> {
