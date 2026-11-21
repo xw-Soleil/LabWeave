@@ -65,6 +65,7 @@ function reportResearchCloseError(error: unknown) {
 
 /** 给人看的工作区名，和标签栏一致：文件名去掉 .prg，草稿叫「未命名 1」 */
 function researchWorkspaceName(project: Project, untitled: (n: string) => string): string {
+  if (project.tabName) return project.tabName;
   if (project.isDraft) return untitled(project.uri.path);
   if (project.uri.scheme === "file") return displayWorkspaceName(project.title);
   return project.title;

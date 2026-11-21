@@ -1173,3 +1173,23 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：新增 `research.report.*`；`research.stageSummary` 只留标题和「没选项目」；去掉 `settings.progressFolderPath`。
 - 测试：新增 `ResearchReport.test.ts` 12 条、`ResearchReportExport.test.ts` 5 条、`StageReport.test.ts` 8 条、`ReportTask.test.ts` 5 条；`StageReview.test.ts` 换 1 条、改 1 条；随旧文件删掉 18 条。
 - 没有调真的模型，也没有在开发版里走过这条路，只有单元测试。
+
+### 91. 在画布上回看历史：把某个节点定格时的白板原样打开，标出它比再前一个节点变了什么（2026-11-21）
+
+主线第 ⑧a 步。
+
+- 新文件 `app/src/core/research/SnapshotBoard.ts`：项目有哪些节点（同一天同一种类型定格过几次的只算最后一次）、一个节点当初是和哪份快照比的（记着的那份不在了就往前找）、把快照里的一块白板拼回完整的白板文件（图片装回去）。
+- 新文件 `app/src/core/research/LookbackBoard.ts`：
+  - `LookbackBoard` 是一块只读的白板，继承自普通白板。地址用草稿的写法，所以程序里对草稿的那些保护照样成立：不自动保存、不备份、不进活动记录和快照、切换项目时关掉。
+  - 另外三样：永远不会变成「未保存」（拖了、改了，关标签和关程序都不问要不要存）；「保存」「另存为」只提示这是回看；工作区编号换一个新的，AI 对话记录不和真的那块白板共用。
+  - `openLookback` 打开回看：不指定节点就是最近的那个（也就是「上上次到上次」）；从一个回看切到另一个时镜头留在原处，旧的标签关掉。`leaveLookback` 关掉回看、把真的那块白板切到前面。
+- 新文件 `app/src/core/research/NodeStrip.tsx`：回看时白板上方的节点条。从左到右是每个节点，最右边是「现在」；左右箭头切节点；下面一行写和谁比、新加改过删掉各几张、当时敲的原话；那个节点出过汇报就有「打开汇报」。
+- `app/src/core/research/SnapshotDiff.ts`：加 `showSnapshotDiff`——拿两份快照的文字版直接比，不跟着白板的改动重新比（回看时白板是静止的；现算的话文件卡片的路径对不上）。画法没变。
+- `app/src/core/research/SinceLastToggle.tsx`：状态条上加「回看」按钮，做过小结才亮，整理时不能点。
+- `app/src/core/Project.tsx`：加一个 `tabName`（标签上不照「未命名 N」或文件名写的白板在这里给名字），普通白板不给。`App.tsx`、`ProjectTabs.tsx`、`core/research/BoardPicker.ts` 三处取名字的地方先看它。
+- `app/src/core/research/BoardPicker.ts`：「发到哪块白板」的列表里不列回看白板（发过去存不下来）。
+- `app/src/components/activity-rail.tsx`：正在回看时点「阶段小结」，用项目里开着的真白板，不在回看白板上整理。
+- `app/src/components/docked-area.tsx`：白板区域挂上节点条。
+- 文案：新增 `research.lookback.*`、`research.snapshot.errors.boardMissing`、`imageMissing`。
+- 测试：新增 `SnapshotBoard.test.ts` 5 条、`LookbackBoard.test.ts` 7 条；`SnapshotDiff.test.ts` 加 1 条。`LookbackBoard.test.ts` 里的白板基类是假的，只验证了这一层自己的逻辑。
+- 没有在开发版里打开过，节点条和回看的画面都没看过。

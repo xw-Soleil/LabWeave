@@ -20,6 +20,7 @@ import {
   renderSinceLast,
   setSinceLastDropped,
   showSinceLast,
+  showSnapshotDiff,
   sinceLastCounts,
   sinceLastLive,
 } from "./SnapshotDiff";
@@ -223,5 +224,39 @@ describe("the marks on the canvas", () => {
     vi.advanceTimersByTime(500);
     renderSinceLast(board as never, everything);
     expect(sinceLastCounts(board as never)).toMatchObject({ added: 1 });
+  });
+
+  it("when looking back, marks what one snapshot has over the one before, and does not follow edits", () => {
+    vi.useFakeTimers();
+    const then = [text("a", "改过的话", 0, 0), text("b", "那时新加的", 200, 0)];
+    const board = fakeBoard(then);
+    showSnapshotDiff(
+      board as never,
+      "2026-11-14 1000",
+      sidecar([text("a", "原来的话"), text("gone", "后来删了", 400, 0)]),
+      sidecar(then),
+    );
+    expect(sinceLastCounts(board as never)).toEqual({
+      name: "2026-11-14 1000",
+      added: 1,
+      edited: 1,
+      removed: 1,
+      review: false,
+    });
+    renderSinceLast(board as never, everything);
+    // 删掉的留影、新加的描边各一个矩形；改过的一个点
+    expect(board.shapeRenderer.renderRect).toHaveBeenCalledTimes(2);
+    expect(board.shapeRenderer.renderCircle).toHaveBeenCalledTimes(1);
+
+    // 回看时不小心拖了、改了：标记还是当时那两份快照比出来的
+    board.stage = [...then, text("c", "回看时手滑加的")];
+    board.editRevision = 2;
+    vi.advanceTimersByTime(2000);
+    renderSinceLast(board as never, everything);
+    expect(sinceLastCounts(board as never)).toMatchObject({ added: 1, edited: 1, removed: 1 });
+
+    // 第一份记录：前面没有可以比的，全算新加
+    showSnapshotDiff(board as never, "", undefined, sidecar(then));
+    expect(sinceLastCounts(board as never)).toMatchObject({ added: 2, edited: 0, removed: 0 });
   });
 });

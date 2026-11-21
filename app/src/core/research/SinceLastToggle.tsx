@@ -1,9 +1,11 @@
 import type { Project } from "@/core/Project";
 import { cn } from "@/utils/cn";
-import { Camera, History } from "lucide-react";
+import { Camera, History, Rewind } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { openLookback } from "./LookbackBoard";
+import { lookbackFailed } from "./NodeStrip";
 import { ResearchFolder } from "./ResearchFolder";
 import {
   currentBaseline,
@@ -24,8 +26,9 @@ const BUTTON =
 const shortTime = (name: string) => name.replace(/^\d{4}-(\d\d-\d\d) (\d\d)(\d\d)(?:-\d+)?$/, "$1 $2:$3");
 
 /**
- * 白板状态条上的两个按钮：
+ * 白板状态条上的三个按钮：
  * 「自上次小结以来」开关——和上一个节点比，新加的描边、改过的打点、删掉的留影，旁边写着各有几张；
+ * 回看——打开上一个节点定格时这块白板的样子，从那里能一个节点一个节点往回看（做过小结才亮）；
  * 相机——现在拍一份快照留底，不改变和谁比。还没有快照时开关是灰的。
  */
 export function SinceLastToggle({ project }: { project: Project }) {
@@ -34,6 +37,7 @@ export function SinceLastToggle({ project }: { project: Project }) {
   const [base, setBase] = useState<Snapshot | null>();
   const [counts, setCounts] = useState<Counts>();
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
   const report = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     // 自己抛的错误是 snapshot.noBoard 这样的代码，有对应的文案；别的原样显示
@@ -118,6 +122,13 @@ export function SinceLastToggle({ project }: { project: Project }) {
       }, report)
       .finally(() => setBusy(false));
   };
+  const lookBack = () => {
+    setOpening(true);
+    openLookback(project)
+      .catch(lookbackFailed)
+      .finally(() => setOpening(false));
+  };
+  const hasNode = !!base && isNode(base);
 
   // 和谁比：节点写它的名字；一次小结都没做过时，是和最早的那份快照比
   const hint = !base
@@ -142,6 +153,17 @@ export function SinceLastToggle({ project }: { project: Project }) {
       >
         <History />
         {counts ? t("snapshot.counts", counts) : t("snapshot.since")}
+      </button>
+      <button
+        type="button"
+        // 整理的时候不让开回看：那会把正在整理的这块白板切到后面去
+        disabled={!hasNode || opening || counts?.review}
+        title={hasNode ? t("lookback.openHint") : t("lookback.noNodeHint")}
+        className={BUTTON}
+        onClick={lookBack}
+      >
+        <Rewind />
+        {t("lookback.open")}
       </button>
       <button
         type="button"

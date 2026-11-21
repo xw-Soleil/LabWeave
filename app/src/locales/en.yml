@@ -3729,11 +3729,33 @@ research:
     errors:
       noProject: No project folder is chosen yet, so there is nothing to snapshot
       noBoard: This project has no board yet, so there is nothing to snapshot
+      boardMissing: The board file in this snapshot can't be found. It may have been deleted
+      imageMissing: An image in this snapshot can't be found. It may have been deleted
   stageNode:
     types:
       meeting: Group meeting
       weekly: Weekly report
       review: Self review
+  lookback:
+    open: Look back
+    openHint: See this board as it was frozen at the last node, with what was added, edited and removed since the node before it. From there you can step back node by node
+    noNodeHint: Looking back is available after your first stage summary
+    tabName: "Look back · {{node}} · {{board}}"
+    previous: Previous node
+    next: Next node
+    now: Now
+    nowHint: Close the look-back and return to the board as it is now
+    since: "Compared with “{{title}}”"
+    firstSnapshot: "the snapshot of {{time}}"
+    first: This is the first record, so there is nothing earlier to compare with and every card counts as new
+    counts: "{{added}} new · {{edited}} edited · {{removed}} removed"
+    note: "Written then: {{note}}"
+    report: Open report
+    readOnly: This is a look-back and is read-only. Changes made here are not saved
+    failed: "The look-back could not be opened: {{error}}"
+    errors:
+      noNode: This project has no node yet. Do a stage summary first
+      noBoard: This board did not exist yet when that node was frozen (or it had another name)
   stageReview:
     title: Stage summary · Review
     sinceNode: "Compared with “{{title}}”"

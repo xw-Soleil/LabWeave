@@ -3848,11 +3848,33 @@ research:
     errors:
       noProject: 還沒有選項目文件夾，拍不了快照
       noBoard: 這個項目裡還沒有白板，沒有什麼可拍的
+      boardMissing: 這份快照裡的白板文件找不到了，可能被刪了
+      imageMissing: 這份快照裡有圖片找不到了，可能被刪了
   stageNode:
     types:
       meeting: 組會
       weekly: 週報
       review: 自己覆盤
+  lookback:
+    open: 回看
+    openHint: 看上一個節點定格時這塊白板的樣子，標出它比再前一個節點多了、改了、少了什麼；從那裡可以一個節點一個節點往回看
+    noNodeHint: 做過一次階段小結以後才能回看
+    tabName: "回看 · {{node}} · {{board}}"
+    previous: 上一個節點
+    next: 下一個節點
+    now: 現在
+    nowHint: 關掉回看，回到現在的白板
+    since: "和「{{title}}」比"
+    firstSnapshot: "{{time}} 的快照"
+    first: 這是第一份記錄，前面沒有可以比的，卡片都算新加的
+    counts: "新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
+    note: "當時寫的：{{note}}"
+    report: 打開彙報
+    readOnly: 這是回看，只能看：在這裡的改動不會保存
+    failed: "回看沒打開：{{error}}"
+    errors:
+      noNode: 這個項目還沒有節點，先做一次階段小結
+      noBoard: 這個節點定格的時候，還沒有這塊白板（或者它那時叫別的名字）
   stageReview:
     title: 階段小結 · 整理
     sinceNode: "和「{{title}}」定格時比"

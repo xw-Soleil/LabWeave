@@ -358,6 +358,10 @@ export class Project extends Tab {
   get isDraft() {
     return this.uri.scheme === "draft";
   }
+  /** 标签上不照「未命名 N」或文件名写的白板在这里给名字（只读的回看白板，见 LookbackBoard.ts）；别的不给 */
+  get tabName(): string | undefined {
+    return undefined;
+  }
   get isCollab() {
     return this.uri.scheme === "collab";
   }

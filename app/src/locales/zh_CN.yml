@@ -3848,11 +3848,33 @@ research:
     errors:
       noProject: 还没有选项目文件夹，拍不了快照
       noBoard: 这个项目里还没有白板，没有什么可拍的
+      boardMissing: 这份快照里的白板文件找不到了，可能被删了
+      imageMissing: 这份快照里有图片找不到了，可能被删了
   stageNode:
     types:
       meeting: 组会
       weekly: 周报
       review: 自己复盘
+  lookback:
+    open: 回看
+    openHint: 看上一个节点定格时这块白板的样子，标出它比再前一个节点多了、改了、少了什么；从那里可以一个节点一个节点往回看
+    noNodeHint: 做过一次阶段小结以后才能回看
+    tabName: "回看 · {{node}} · {{board}}"
+    previous: 上一个节点
+    next: 下一个节点
+    now: 现在
+    nowHint: 关掉回看，回到现在的白板
+    since: "和「{{title}}」比"
+    firstSnapshot: "{{time}} 的快照"
+    first: 这是第一份记录，前面没有可以比的，卡片都算新加的
+    counts: "新 {{added}} · 改 {{edited}} · 删 {{removed}}"
+    note: "当时写的：{{note}}"
+    report: 打开汇报
+    readOnly: 这是回看，只能看：在这里的改动不会保存
+    failed: "回看没打开：{{error}}"
+    errors:
+      noNode: 这个项目还没有节点，先做一次阶段小结
+      noBoard: 这个节点定格的时候，还没有这块白板（或者它那时叫别的名字）
   stageReview:
     title: 阶段小结 · 整理
     sinceNode: "和「{{title}}」定格时比"

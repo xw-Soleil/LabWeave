@@ -2,6 +2,7 @@ import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
 import { SinceLastToggle } from "@/core/research/SinceLastToggle";
+import { NodeStrip } from "@/core/research/NodeStrip";
 import { StageReviewTray } from "@/core/research/StageReviewTray";
 import { sideDropPreviewAtom } from "@/core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
@@ -726,6 +727,7 @@ export default function DockedArea({
             left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
           />
         )}
+        {project && <NodeStrip key={`lookback-${project.id}`} project={project} />}
         {project && (
           <StageReviewTray
             key={`review-${project.id}`}

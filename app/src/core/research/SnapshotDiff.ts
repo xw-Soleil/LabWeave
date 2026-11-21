@@ -55,6 +55,8 @@ interface Overlay {
   /** 白板现在的卡片（分组框也算）：标题和内容开头，整理时列清单用 */
   items: ActivityItems;
   review?: ReviewMarks;
+  /** 回看历史时：差别是两份快照比出来的，不跟着白板的改动重新比 */
+  frozen?: boolean;
   revision: number;
   computedAt: number;
 }
@@ -86,6 +88,27 @@ export function showSinceLast(project: Project, name: string, base: ResearchSide
     base,
     ...compare(project, base),
     ...(review && { review }),
+    revision: project.editRevision,
+    computedAt: performance.now(),
+  });
+}
+
+/**
+ * 回看历史用：project 是照某个节点的快照打开的只读白板，after 是那份快照里它的文字版，
+ * base 是再前一个节点的。两份都是当时存下的，直接比，不拿白板现算（现算的话文件卡片的路径对不上）。
+ */
+export function showSnapshotDiff(
+  project: Project,
+  name: string,
+  base: ResearchSidecar | undefined,
+  after: ResearchSidecar,
+) {
+  overlays.set(project, {
+    name,
+    base,
+    diff: compareBoards(base, after),
+    items: sidecarItems(after),
+    frozen: true,
     revision: project.editRevision,
     computedAt: performance.now(),
   });
@@ -138,7 +161,11 @@ export function renderSinceLast(project: Project, view: Rectangle) {
   const overlay = overlays.get(project);
   if (!overlay) return;
   // 白板改过了就重新比；连着改的时候隔一会儿比一次，不是每帧都比
-  if (overlay.revision !== project.editRevision && performance.now() - overlay.computedAt > REFRESH_MS) {
+  if (
+    !overlay.frozen &&
+    overlay.revision !== project.editRevision &&
+    performance.now() - overlay.computedAt > REFRESH_MS
+  ) {
     try {
       Object.assign(overlay, compare(project, overlay.base));
     } catch (error) {

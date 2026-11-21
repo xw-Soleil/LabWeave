@@ -296,9 +296,9 @@ export default function ActivityRail({ isClassroomMode }: { isClassroomMode: boo
       leaveStageReview();
       return;
     }
-    // 在哪块白板上整理：正开着的那块；正在看 PDF、笔记时用项目里开着的一块，并把它切到前面
+    // 在哪块白板上整理：正开着的那块；正在看 PDF、笔记、回看历史时用项目里开着的一块，并把它切到前面
     const board =
-      activeTab instanceof Project
+      activeTab instanceof Project && !activeTab.tabName
         ? activeTab
         : (tabs.find(
             (tab): tab is Project =>

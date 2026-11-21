@@ -156,16 +156,18 @@ export const ProjectTabs = memo(function ProjectTabs({
   const shown = (text: string) => (protectingPrivacy ? replaceTextWhenProtect(text) : text);
   const aiPanelTab = findResearchPanelTab("ai");
   const projectLabel = (project: Project) =>
-    project.isDraft
-      ? { name: t("tabs.untitled", { n: project.uri.path }), title: t("tabs.untitled", { n: project.uri.path }) }
-      : project.uri.scheme === "file"
-        ? {
-            name: displayWorkspaceName(project.title),
-            title: isTemporaryWorkspace(project)
-              ? t("tabs.outsideFolder", { path: project.uri.fsPath, interpolation: { escapeValue: false } })
-              : project.uri.fsPath,
-          }
-        : { name: project.title, title: project.title };
+    project.tabName
+      ? { name: project.tabName, title: project.tabName }
+      : project.isDraft
+        ? { name: t("tabs.untitled", { n: project.uri.path }), title: t("tabs.untitled", { n: project.uri.path }) }
+        : project.uri.scheme === "file"
+          ? {
+              name: displayWorkspaceName(project.title),
+              title: isTemporaryWorkspace(project)
+                ? t("tabs.outsideFolder", { path: project.uri.fsPath, interpolation: { escapeValue: false } })
+                : project.uri.fsPath,
+            }
+          : { name: project.title, title: project.title };
   const tabLabel = (tab: Tab): { name: string; title: string; context?: string } => {
     if (tab instanceof Project) return projectLabel(tab);
     if (tab === aiPanelTab) return { name: t("tabs.aiChat"), title: t("tabs.aiChat") };
