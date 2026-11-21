@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   root: "/research/课题",
   library: "/papers",
-  progress: "/research/我的进展",
   projects: ["/research/课题", "/research/另一个项目"],
   files: new Set<string>(),
   openBoard: vi.fn(),
@@ -43,7 +42,6 @@ vi.mock("./ResearchWorkspace", () => ({
   loadResearchWorkspace: async () => ({}),
   activeResearchWorkspace: () => ({ projects: mocks.projects.map((path) => ({ path })) }),
 }));
-vi.mock("./StageSummary", () => ({ progressFolder: () => mocks.progress }));
 vi.mock("./DocumentTab", () => ({ openDocumentFile: mocks.openDocument }));
 vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: mocks.openBoard }));
 vi.mock("@/core/service/dataFileService/DeepLinkHandler", () => ({ handleDeepLink: mocks.oldLinks }));

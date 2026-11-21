@@ -1150,3 +1150,26 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：新增 `research.stageReview.*`；去掉 `research.stageSummary` 里选日期用的 10 条。
 - 测试：新增 `StageReview.test.ts` 9 条；`SnapshotDiff.test.ts` 加 1 条、改 1 条；`StageSummary.test.ts` 加 1 条。
 - 实测：用一套隔离的程序数据和临时项目启动了开发版，用临时代码（已删）加了三张卡片、改了一张、进入整理，程序里算出的基准和别处的条目是对的。没有截到画面：开发版的窗口被别的窗口盖住时页面不重画，截到的是旧画面。压暗、变灰、素材卡片的样子都没亲眼看过。
+
+### 90. 阶段小结的汇报换成同伴的引擎：照勾选的材料在后台生成报告和 PPT，放进项目的「汇报」文件夹（2026-11-20）
+
+主线第 ⑦ 步。汇报引擎出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号），只搬了引擎这一部分。
+
+- 新文件 `app/src/core/research/ResearchReport.ts`（从他的同名文件搬来）：
+  - 留下：给材料编号（S1、S2……，图片 I1、I2……）、调设置里配好的 AI、核对 AI 引用的编号（不对就让它重来一次）、草稿存进 `.workbench/report-jobs/`、导出、拿草稿重新导出。
+  - 去掉：读周记录、读他那套旧快照的两条路。材料改成由调用方一条条加进来（`collectReportMaterials`）。
+  - 改了：汇报放进 `项目/汇报/节点名/`（原来是带时间戳的文件夹）；同一个节点再生成一次，文件名加序号（`报告-2.md`、`汇报-2.pptx`、`素材-2/`），不盖掉上一份；`来源.json` 分开列用上的和没用上的材料；给 AI 的话换成针对节点小结的（没勾的不写、材料里没有的不编、打算不能写成做完了）；等 AI 的时间从 2 分钟放宽到 4 分钟。
+- 新文件 `app/src/core/research/ResearchReportExport.ts`（从他的同名文件搬来）：生成 `.pptx` 的部分没动。报告的 Markdown 改了三处：开头加属性（类型、日期、范围、项目、快照）；每节后面的出处写成能点的链接（卡片、批注是 `rwb://`，笔记是相对路径）；放图的文件夹名由调用方给。
+- 新文件 `app/src/core/research/ReportTask.tsx`（任务状态和小条取自他的 `ResearchProgressDialog.tsx`，对话框没搬）：汇报在后台生成，窗口底部正中一个小条显示进度，能取消；生成完能打开报告、PPT、文件夹；只是导出没成时能重新导出。生成完报告自动在标签页里打开。
+- 新文件 `app/src/core/research/StageReport.ts`：把整理时勾选的条目编成材料，定格后把任务跑起来。
+  - 材料的顺序：用户敲的原话 → 这块白板勾选的卡片（文字、备注、所在分组、来源文件；右键标记过的标签前面带【进展】【问题】【想法】）→ 勾选的卡片之间的连线 → 别的白板（新加、改过的卡片）→ 论文在上个节点以后动过的批注（每篇最多 40 条）→ 笔记正文。
+  - 配图：带图的卡片（图片卡片、PDF 框选的摘录）用原图；一个分组里有两张以上要讲的，给这个分组截一张图（最多 6 张）。截图在退出整理之后截，题板上的压暗和描边不会截进去。
+  - AI 接口没配好、已经有一份在生成、什么都没勾也没敲话时，不定格，直接提示。
+- `app/src/core/research/StageReview.ts`、`StageReviewTray.tsx`：「定格并生成汇报」接到上面这条路；整理的状态里多留一份别的白板比出来的细节；有一份汇报正在生成时这个按钮不能点。
+- 删掉旧的那条路：`StageSummary.ts`、`StageSummaryPanel.tsx`、`SlidesExport.ts` 和它们的测试；`sub/AIWindow.tsx` 里 AI 回答下面的「存进我的进展」「出 PPT」按钮和自动存报告；设置里「『我的进展』放哪」这一项（`progressFolderPath`）。
+- `app/src/core/research/ReportLinks.ts`：不再读那个设置项；项目旁边的「我的进展」文件夹仍然认，第一版存下的旧报告和旧记录里的链接照样点得开。
+- `app/src/core/research/ActivityLog.ts`：`汇报/` 里的文件保存不再记成「改了笔记」；生成一份汇报时记一行 `summary`，路径改成相对项目文件夹。
+- `app/src/main.tsx`：挂上汇报的小条。
+- 文案：新增 `research.report.*`；`research.stageSummary` 只留标题和「没选项目」；去掉 `settings.progressFolderPath`。
+- 测试：新增 `ResearchReport.test.ts` 12 条、`ResearchReportExport.test.ts` 5 条、`StageReport.test.ts` 8 条、`ReportTask.test.ts` 5 条；`StageReview.test.ts` 换 1 条、改 1 条；随旧文件删掉 18 条。
+- 没有调真的模型，也没有在开发版里走过这条路，只有单元测试。

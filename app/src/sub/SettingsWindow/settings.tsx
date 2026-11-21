@@ -59,7 +59,7 @@ export const settingsPages: SettingsPage[] = [
     sections: [
       {
         id: "main",
-        items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave", "progressFolderPath"],
+        items: ["researchFolderPath", "researchOutsideFileMode", "writeAiSidecarOnSave"],
       },
     ],
   },

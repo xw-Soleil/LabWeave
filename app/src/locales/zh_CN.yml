@@ -1285,9 +1285,6 @@ settings:
   literatureLibraryPath:
     title: 文献库文件夹
     description: 填包含 .litlib 文件和「条目」文件夹的绝对路径。留空时不启用文献库。
-  progressFolderPath:
-    title: 「我的进展」放哪
-    description: 阶段小结的报告和 PPT 存到这个文件夹，填绝对路径。空着时放在项目文件夹旁边的「我的进展」里，第一次存报告时会问一次。
   writeAiSidecarOnSave:
     title: 保存时生成 AI 可读的文字版
     description: |
@@ -3880,7 +3877,7 @@ research:
     freeze: 只定格
     freezeHint: 拍一份节点快照，不让 AI 写。之后的对比从这里算起
     summarize: 定格并生成汇报
-    summarizeHint: 定格以后让 AI 在对话里写报告，写完存进「我的进展」
+    summarizeHint: 定格以后在后台生成报告和 PPT，放进项目的「汇报」文件夹
     frozen: "已定格「{{title}}」，之后的对比从这里算起"
     leave: 退出整理
     toggleBusy: 正在做阶段小结的整理，退出整理后再用这个开关
@@ -3889,29 +3886,42 @@ research:
       outside: 这块白板不在当前项目里，做不了阶段小结
   stageSummary:
     title: 阶段小结
-    notSent: AI 现在发不了（还没配好，或者正在回答）。要说的话已经放进输入框，好了以后按发送。
-    save: 存进我的进展
-    slides: 出 PPT
-    makeSlides: 转成 PPT 文件
-    saved: "报告已存进「我的进展」：{{name}}"
-    slidesSaved: "PPT 已存在报告旁边：{{name}}"
-    open: 打开
-    failed: "没做成：{{error}}"
-    folderTitle: 报告存到哪里？
-    folderDescription: "阶段小结的报告会存成 Markdown 文件。默认放在项目文件夹旁边的「我的进展」里：{{path}}。以后可以在设置里改。"
-    useDefault: 就放这里
-    chooseFolder: 选别的文件夹…
-    cancel: 先不存
-    chooseTitle: 选一个放报告的文件夹
     errors:
       noProject: 还没有选项目文件夹
-      outlineInvalid: AI 给的提纲不是约定的格式，转不了。可以再点一次「出 PPT」让它重写
-      reportMissing: 找不到这份报告的文件（可能被挪走或删掉了），先点「存进我的进展」
+  report:
+    stage:
+      collecting: 正在收集汇报材料…
+      analyzing: AI 正在写汇报…
+      exporting: 正在导出报告和 PPT…
+    task:
+      done: "汇报已生成：{{title}}"
+      failed: "汇报没生成：{{error}}"
+      cancelled: 已取消生成汇报
+    warnings: "{{count}} 项待核对"
+    openReport: 报告
+    openSlides: PPT
+    openFolder: 文件夹
+    retryExport: 重新导出
+    cancel: 取消
+    close: 关闭
+    errors:
+      busy: 上一份汇报还在生成，等它完成或取消后再试。这次可以先「只定格」
+      nothingPicked: 一条都没勾，也没写想讲什么，没有可以写的。勾几条或者敲两句再试
+      aiNotConfigured: 还没配好 AI 接口。先在设置的「AI」里填好接口和模型；这次可以先「只定格」
+      rateLimited: AI 接口说请求太频繁，过一会儿再试
+      network: 连不上 AI 接口，检查网络和接口设置
+      timeout: AI 太久没写完。过一会儿再试，或者少勾几条
+      invalidResponse: AI 给的内容不完整，再试一次
+      invalidReferences: AI 引用了材料里没有的编号，核对不了，再试一次
+      noMaterials: 勾选的条目里没有读到文字内容，没有可以写的
+      unsafeOutput: 没法往项目的「汇报」文件夹里写文件，检查它的位置和权限
+      exportFailed: 文件没导出成。AI 写好的内容已经存下，可以只重新导出
+      invalidDraft: 存下的草稿读不出来，要重新生成
   reportLink:
     cardGone: 这张卡片已经不在了
     noProject: 找不到链接里说的项目，先把它加进项目列表
     noLibrary: 还没有设置文献库，打不开文献库里的文件
-    outside: 链接指到了项目、文献库和「我的进展」以外的地方，没有打开
+    outside: 链接指到了项目和文献库以外的地方，没有打开
     missing: 链接指的文件已经不在了
     unsupported: 这种文件打不开
     failed: "链接打不开：{{message}}"

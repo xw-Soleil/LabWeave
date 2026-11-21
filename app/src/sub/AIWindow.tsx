@@ -55,8 +55,6 @@ import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { subscribeReadingAiDraft } from "@/core/research/ReadingContext";
 import { ReportLinkAnchor, reportLinkRehypePlugins } from "@/core/research/ReportLinkMarkdown";
-import { subscribeStageRequests } from "@/core/research/StageSummary";
-import { isStageRequest, StageReplyActions, stageReplyFinished } from "@/core/research/StageSummaryPanel";
 import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
@@ -873,30 +871,6 @@ function AIChatPanel({
   }
 
   // 「阶段小结」「出 PPT」要发的话：会话读好、不在回答中时直接发出去；发不了就放进输入框，说明原因
-  const sendStageRequest = useRef<(text: string) => void>(() => undefined);
-  sendStageRequest.current = (text) => {
-    if (sendText(text, false)) return;
-    setInputValue(text);
-    toast.warning(t("stageSummary.notSent"));
-  };
-  useEffect(() => {
-    if (!sessionLoaded) return;
-    return subscribeStageRequests((text) => sendStageRequest.current(text));
-  }, [sessionLoaded]);
-
-  // 回答完了：是阶段小结的报告就存进「我的进展」，是 PPT 的提纲就转成文件
-  const wasRequesting = useRef(false);
-  useEffect(() => {
-    if (wasRequesting.current && status === "ready") {
-      const last = messagesRef.current.at(-1);
-      const asked = messagesRef.current.findLast((message) => message.role === "user");
-      if (last?.role === "assistant" && asked) {
-        stageReplyFinished(messageText(asked), messageText(last), project);
-      }
-    }
-    wasRequesting.current = requesting;
-  }, [project, requesting, status]);
-
   function sendText(rawText: string, withSelection = true): boolean {
     const text = rawText.trim();
     if (contextCommand && text === `/${contextCommand.name}`) {
@@ -1000,17 +974,6 @@ function AIChatPanel({
     [ObjectRefCode],
   );
 
-  // 每条 AI 回答前面那条用户消息，要是「阶段小结」「出 PPT」的请求就记下来，回答下面放对应的按钮
-  const stageRequests = useMemo(() => {
-    let asked: string | undefined;
-    return messages.map((message) => {
-      if (message.role !== "user") return asked;
-      const text = messageText(message);
-      asked = isStageRequest(text) ? text : undefined;
-      return undefined;
-    });
-  }, [messages]);
-
   if (configProblems.length > 0) {
     return <AIConfigNotice problems={configProblems} />;
   }
@@ -1070,7 +1033,6 @@ function AIChatPanel({
               <MessageBubble
                 key={message.id}
                 message={message as any}
-                stageRequest={stageRequests[index]}
                 components={markdownComponents}
                 project={project}
                 selectedCount={selection.entityCount}
@@ -1486,7 +1448,6 @@ function ContextWindowUsage({
 
 function MessageBubble({
   message,
-  stageRequest,
   components,
   project,
   selectedCount,
@@ -1495,8 +1456,6 @@ function MessageBubble({
   onToolApproval,
 }: {
   message: any;
-  /** 这条回答是应「阶段小结」「出 PPT」写的时候，前面那条用户消息的原文 */
-  stageRequest?: string;
   components?: Record<string, React.ComponentType<any>>;
   project: Project;
   selectedCount: number;
@@ -1543,7 +1502,6 @@ function MessageBubble({
           {String(message.content ?? "")}
         </Streamdown>
       )}
-      {finished && stageRequest && <StageReplyActions userText={stageRequest} reply={copyText} project={project} />}
       {finished && (copyText || (selectedCount === 1 && hasText)) && (
         <div className="flex items-center justify-end gap-2">
           {copyText && <CopyReplyButton text={copyText} />}
@@ -1564,11 +1522,6 @@ function MessageBubble({
 function replyText(message: any, parts: any[]): string {
   const texts = parts.filter((part) => part.type === "text").map((part) => String(part.text ?? ""));
   return (texts.length > 0 ? texts.join("\n\n") : String(message.content ?? "")).trim();
-}
-
-/** 一条消息里的文字（不算工具调用和思考过程） */
-function messageText(message: any): string {
-  return replyText(message, Array.isArray(message.parts) ? message.parts : []);
 }
 
 function CopyReplyButton({ text }: { text: string }) {

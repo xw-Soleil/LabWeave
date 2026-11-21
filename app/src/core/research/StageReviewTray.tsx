@@ -11,12 +11,13 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { NODE_TYPES, isNode, type NodeType } from "./ProjectRecord";
 import { followReportLink } from "./ReportLinks";
+import { reportErrorText, reportTaskAtom } from "./ReportTask";
 import { sinceLastLive } from "./SnapshotDiff";
+import { freezeAndReport } from "./StageReport";
 import {
   cardItems,
   dropSelected,
   enterStageReview,
-  freezeAndSummarize,
   freezeStageReview,
   leaveStageReview,
   onlySelected,
@@ -39,11 +40,12 @@ const shortTime = (name: string) => name.replace(/^\d{4}-(\d\d-\d\d) (\d\d)(\d\d
 export function stageReviewFailed(error: unknown) {
   const code = error instanceof Error ? error.message : String(error);
   const [group, name, ...rest] = code.split(".");
-  const known = ["stageReview", "stageSummary", "snapshot"].includes(group) && name && rest.length === 0;
+  const known = ["stageReview", "stageSummary"].includes(group) && name && rest.length === 0;
   toast.error(
     i18next.t("stageReview.failed", {
       ns: "research",
-      error: known ? i18next.t(`${group}.errors.${name}`, { ns: "research" }) : code,
+      // 汇报和快照的错误代码由 reportErrorText 管
+      error: known ? i18next.t(`${group}.errors.${name}`, { ns: "research" }) : reportErrorText(error),
       interpolation: { escapeValue: false },
     }),
   );
@@ -60,6 +62,8 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
   const { t } = useTranslation("research");
   const { project, root, board, base, marks, dropped, others } = state;
   const [busy, setBusy] = useState<"freeze" | "summarize" | "type">();
+  // 同一时间只生成一份汇报：上一份还在跑的时候只能先「只定格」
+  const reporting = useAtomValue(reportTaskAtom)?.state === "running";
 
   // 这块白板上的卡片跟着修改现算：画布那边每重新比一次，这里跟着换
   const cardsNow = () => {
@@ -255,9 +259,9 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
           <Button
             size="sm"
             className="h-7 flex-1 rounded-[6px] text-[12px]"
-            disabled={!!busy}
-            title={t("stageReview.summarizeHint")}
-            onClick={() => run("summarize", () => freezeAndSummarize(cards))}
+            disabled={!!busy || reporting}
+            title={reporting ? t("report.errors.busy") : t("stageReview.summarizeHint")}
+            onClick={() => run("summarize", () => freezeAndReport(cards))}
           >
             {busy === "summarize" && <LoaderCircle className="animate-spin" />}
             {t("stageReview.summarize")}

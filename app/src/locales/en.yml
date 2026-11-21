@@ -1253,9 +1253,6 @@ settings:
   literatureLibraryPath:
     title: Literature library folder
     description: Enter the absolute path containing a .litlib file and the 条目 folder. Leave empty to disable the library.
-  progressFolderPath:
-    title: Where “My progress” lives
-    description: Stage summaries and their slide decks are saved to this folder (absolute path). Leave empty to use a “我的进展” folder next to the project folder; you are asked once the first time a report is saved.
   writeAiSidecarOnSave:
     title: Write an AI-readable copy when saving
     description: |
@@ -3761,7 +3758,7 @@ research:
     freeze: Freeze only
     freezeHint: Take a node snapshot without asking the AI to write. Later comparisons start from here
     summarize: Freeze and write the report
-    summarizeHint: After freezing, the AI writes the report in the chat and it is saved to “My progress”
+    summarizeHint: After freezing, the report and slides are generated in the background and saved to the project's “汇报” folder
     frozen: "“{{title}}” is frozen; later comparisons start from here"
     leave: Leave the review
     toggleBusy: A stage summary review is in progress; use this switch after leaving it
@@ -3770,29 +3767,42 @@ research:
       outside: This board is not in the current project, so it cannot be summarized
   stageSummary:
     title: Stage summary
-    notSent: The AI can't take this right now (not set up yet, or still answering). The request is in the input box; send it when ready.
-    save: Save to My progress
-    slides: Make slides
-    makeSlides: Convert to a PPT file
-    saved: "Report saved to “My progress”: {{name}}"
-    slidesSaved: "Slides saved next to the report: {{name}}"
-    open: Open
-    failed: "That didn't work: {{error}}"
-    folderTitle: Where should reports go?
-    folderDescription: "Stage summaries are saved as Markdown files. By default they go to a “我的进展” folder next to the project folder: {{path}}. You can change this later in Settings."
-    useDefault: Use this folder
-    chooseFolder: Choose another folder…
-    cancel: Don't save yet
-    chooseTitle: Choose a folder for reports
     errors:
       noProject: No project folder is chosen yet
-      outlineInvalid: The outline from the AI is not in the agreed format, so it can't be converted. Click “Make slides” again to have it rewritten
-      reportMissing: The report file can't be found (moved or deleted?). Click “Save to My progress” first
+  report:
+    stage:
+      collecting: Collecting report materials…
+      analyzing: The AI is writing the report…
+      exporting: Exporting the report and slides…
+    task:
+      done: "Report ready: {{title}}"
+      failed: "The report was not generated: {{error}}"
+      cancelled: Report generation cancelled
+    warnings: "{{count}} to check"
+    openReport: Report
+    openSlides: Slides
+    openFolder: Folder
+    retryExport: Export again
+    cancel: Cancel
+    close: Close
+    errors:
+      busy: The previous report is still being generated. Wait for it to finish or cancel it; for now you can use “Freeze only”
+      nothingPicked: Nothing is ticked and no note is written, so there is nothing to write about. Tick a few items or type a sentence and try again
+      aiNotConfigured: The AI API is not set up yet. Fill in the endpoint and model under Settings › AI; for now you can use “Freeze only”
+      rateLimited: The AI API is rate limited. Try again later
+      network: Cannot reach the AI API. Check your connection and API settings
+      timeout: The AI took too long. Try again later, or tick fewer items
+      invalidResponse: The AI response was incomplete. Try again
+      invalidReferences: The AI cited material numbers that do not exist, so they could not be verified. Try again
+      noMaterials: No text could be read from the ticked items, so there is nothing to write about
+      unsafeOutput: Cannot write to the project's “汇报” folder. Check its location and permissions
+      exportFailed: The files were not exported. What the AI wrote is saved; you can export again without calling the AI
+      invalidDraft: The saved draft could not be read. Generate the report again
   reportLink:
     cardGone: This card no longer exists
     noProject: The project named in the link can't be found. Add it to your project list first
     noLibrary: No literature library is set up, so files in the library can't be opened
-    outside: The link points outside your projects, the library and “My progress”, so it was not opened
+    outside: The link points outside your projects and the library, so it was not opened
     missing: The file this link points to no longer exists
     unsupported: This kind of file can't be opened
     failed: "The link couldn't be opened: {{message}}"

@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => {
     shown: vi.fn(),
     hidden: vi.fn(),
     droppedSet: vi.fn(),
-    started: vi.fn(async () => {}),
   };
 });
 vi.mock("@/state", async () => ({ store: (await import("jotai")).createStore() }));
@@ -53,10 +52,6 @@ vi.mock("./SnapshotDiff", () => ({
   hideSinceLast: mocks.hidden,
   setSinceLastDropped: mocks.droppedSet,
 }));
-vi.mock("./StageSummary", () => ({
-  loadSummaryStart: async () => ({ since: "2026-11-03T09:00:00+08:00" }),
-  startStageSummary: mocks.started,
-}));
 
 import { store } from "@/state";
 import { buildAiSidecar } from "./AiSidecarBuilder";
@@ -66,7 +61,6 @@ import {
   cardItems,
   dropSelected,
   enterStageReview,
-  freezeAndSummarize,
   freezeStageReview,
   leaveStageReview,
   logItems,
@@ -129,7 +123,7 @@ beforeEach(() => {
   mocks.root = root;
   mocks.disk.clear();
   store.set(stageReviewAtom, null);
-  for (const mock of [mocks.flushed, mocks.taken, mocks.shown, mocks.hidden, mocks.droppedSet, mocks.started]) {
+  for (const mock of [mocks.flushed, mocks.taken, mocks.shown, mocks.hidden, mocks.droppedSet]) {
     mock.mockClear();
   }
 });
@@ -321,20 +315,12 @@ describe("reviewing a board", () => {
     expect(mocks.hidden).toHaveBeenCalledOnce();
   });
 
-  it("hands the node, the range and the dropped titles to the AI when asked to write the report", async () => {
+  it("keeps what the other boards' comparison found, for the report to use as material", async () => {
     await oneWeekOfWork();
     await enterStageReview(fakeBoard(now) as never);
-    setReviewDropped(new Set(["junk"]));
-    const cards = [
-      { id: "c1", kind: "card" as const, title: "改过的话" },
-      { id: "junk", kind: "card" as const, title: "随手试的废卡" },
-    ];
-    await freezeAndSummarize(cards);
-    expect(mocks.started).toHaveBeenCalledWith(
-      { since: day(14), until: expect.any(String) },
-      { node: expect.objectContaining({ type: "meeting", dropped: ["junk"] }), skip: ["随手试的废卡"] },
-    );
-    expect(store.get(stageReviewAtom)).toBeNull();
+    const other = store.get(stageReviewAtom)!.boards.find(({ board }) => board === "另一块.prg")!;
+    expect(other.counts).toMatchObject({ added: 1, edited: 0, removed: 0 });
+    expect(other.added!.map(({ text }) => text)).toEqual(["另一块白板上新加的"]);
   });
 
   it("picks up today's node again: same baseline, with what was dropped and written last time", async () => {
@@ -372,13 +358,9 @@ describe("reviewing a board", () => {
     const state = store.get(stageReviewAtom)!;
     expect(state.base).toBeUndefined();
     expect(state.others.map(({ id }) => id)).toEqual(["笔记/很早写的.md"]);
+    expect(state.boards).toEqual([]);
     expect(mocks.shown).toHaveBeenCalledWith(board, "", undefined, { dropped: new Set(), lit: new Set() });
-    // 没有基准时，交给 AI 的范围从最早的记录算起
-    await freezeAndSummarize([]);
-    expect(mocks.started).toHaveBeenCalledWith(
-      { since: "2026-11-03T09:00:00+08:00", until: expect.any(String) },
-      expect.anything(),
-    );
+    leaveStageReview();
 
     await expect(enterStageReview(fakeBoard(now, "/别处/白板.prg") as never)).rejects.toThrow("stageReview.outside");
     mocks.root = "";

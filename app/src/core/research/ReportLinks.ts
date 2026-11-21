@@ -72,10 +72,11 @@ export async function resolveReportLink(link: ReportLink): Promise<string> {
   if (root && !projects.includes(root)) projects.unshift(root);
   let path: string;
   if (isAbsolute(link.path)) {
-    // 项目外的文件记的是完整路径。链接可能是别的程序递进来的，只认项目、文献库和「我的进展」里面的
+    // 项目外的文件记的是完整路径。链接可能是别的程序递进来的，只认项目、文献库里面的；
+    // 再加上项目旁边的「我的进展」——第一版的阶段小结存在那里，旧记录里的链接还要点得开
     path = ResearchFolder.toAbsolute(link.path);
-    const { progressFolder } = await import("./StageSummary");
-    if (![...projects, library, progressFolder()].some((base) => base && ResearchFolder.isInside(path, base))) {
+    const legacy = projects.map((project) => `${project.replace(/[\\/]+$/, "").replace(/[\\/][^\\/]*$/, "")}/我的进展`);
+    if (![...projects, library, ...legacy].some((base) => base && ResearchFolder.isInside(path, base))) {
       throw new Error("reportLink.outside");
     }
   } else {

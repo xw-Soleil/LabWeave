@@ -22,13 +22,13 @@ import { compareSnapshots, readActivityLog, recordLink, type ReportSource } from
 import { ResearchFolder } from "./ResearchFolder";
 import { nodeTitle, snapshotFiles, takeNode, type NodeInput } from "./Snapshot";
 import { hideSinceLast, setSinceLastDropped, showSinceLast, type BoardDiff } from "./SnapshotDiff";
-import { loadSummaryStart, startStageSummary } from "./StageSummary";
 
 /*
  * 阶段小结的整理：点「阶段小结」以后，画布变成题板（没变的卡片压暗），
  * 角落的素材卡片列出上个节点以来的事，用户去掉不讲的、敲两句原话，再定格成一个节点。
  *
- * 这里是逻辑：有哪些事、怎么归并、勾选、定格。界面在 StageReviewTray.tsx，画布上的画法在 SnapshotDiff.ts。
+ * 这里是逻辑：有哪些事、怎么归并、勾选、定格。界面在 StageReviewTray.tsx，画布上的画法在 SnapshotDiff.ts，
+ * 定格以后生成汇报在 StageReport.ts。
  */
 
 export interface ReviewItem {
@@ -83,12 +83,23 @@ export function cardItems(
   return listed.sort((a, b) => rank(a) - rank(b));
 }
 
+/** compare_snapshots 结果里的一张卡片，只取这里用得到的 */
+export interface ComparedCard {
+  title: string;
+  text?: string;
+  notes?: string;
+}
+
 /** compare_snapshots 结果里的一块白板，只取这里用得到的 */
 export interface ComparedBoard {
   board: string;
   unreadable?: boolean;
   status?: string;
   counts?: { added: number; edited: number; removed: number };
+  /** 新加的、改过的卡片（太多时只有前面一部分，truncated 是 true）：写汇报时当材料 */
+  added?: ComparedCard[];
+  edited?: ComparedCard[];
+  truncated?: boolean;
 }
 
 /** 别的白板：有变化的各归并成一条。已经删掉的、读不出来的不列 */
@@ -215,13 +226,16 @@ export interface StageReviewState {
   dropped: ReadonlySet<string>;
   /** 别的白板、论文、笔记：进来时算一次 */
   others: readonly ReviewItem[];
+  /** 别的白板和基准比出来的细节，写汇报时当材料 */
+  boards: readonly ComparedBoard[];
   marks: Readonly<Record<string, ActivityMark>>;
 }
 
 /** 正在整理的那一次；没在整理是 null */
 export const stageReviewAtom = atom<StageReviewState | null>(null);
 
-const recordFiles: RecordReader = {
+/** 读项目里的记录（活动记录、快照、批注）用的文件接口 */
+export const recordFiles: RecordReader = {
   read: snapshotFiles.read,
   folders: snapshotFiles.folders,
   files: async (path) =>
@@ -266,9 +280,9 @@ export async function enterStageReview(project: Project, type: NodeType = "meeti
   const board = ResearchFolder.toRelative(project.uri.fsPath, root);
   const source: ReportSource = { root, reader: recordFiles };
   const { papers, notes, marks } = logItems(root, await entriesSince(source, base?.manifest.at, now));
-  let boards: ReviewItem[] = [];
+  let compared: ComparedBoard[] = [];
   if (base) {
-    const compared = await compareSnapshots(
+    const result = await compareSnapshots(
       source,
       { from: base.name },
       {
@@ -278,9 +292,10 @@ export async function enterStageReview(project: Project, type: NodeType = "meeti
       },
       now,
     );
-    if (!compared.success) throw new Error(compared.error);
-    boards = boardItems(root, board, compared.boards as unknown as ComparedBoard[]);
+    if (!result.success) throw new Error(result.error);
+    compared = result.boards as unknown as ComparedBoard[];
   }
+  const boards = boardItems(root, board, compared);
   const dropped = new Set(again?.manifest.node?.dropped ?? []);
   showSinceLast(
     project,
@@ -297,6 +312,7 @@ export async function enterStageReview(project: Project, type: NodeType = "meeti
     note: note ?? again?.manifest.node?.note ?? "",
     dropped,
     others: [...boards, ...papers, ...notes],
+    boards: compared,
     marks,
   });
   // 白板可能暂停着渲染，让它马上重画
@@ -345,19 +361,4 @@ export async function freezeStageReview(cards: readonly ReviewItem[]): Promise<S
   const snapshot = await takeNode(reviewNode(state, cards));
   leaveStageReview();
   return snapshot;
-}
-
-/** 定格并生成汇报：定格以后让 AI 在对话面板里写。范围从基准那份快照的时间到现在 */
-export async function freezeAndSummarize(cards: readonly ReviewItem[]): Promise<void> {
-  const state = store.get(stageReviewAtom);
-  if (!state) return;
-  const since = state.base?.manifest.at ?? (await loadSummaryStart()).since;
-  await startStageSummary(
-    { since, until: localTime(new Date()) },
-    {
-      node: reviewNode(state, cards),
-      skip: [...cards, ...state.others].filter((item) => state.dropped.has(item.id)).map((item) => item.title),
-    },
-  );
-  leaveStageReview();
 }

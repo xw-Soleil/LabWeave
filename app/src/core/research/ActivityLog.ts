@@ -444,6 +444,8 @@ export function noteDocument(tab: Pick<DocumentTab, "path" | "kind" | "annotatio
     if (tab.kind === "pdf" && tab.annotations) {
       recorder.observeAnnotations(root, key, where, fileName(tab.path), annotationItems(tab.annotations.annotations));
     } else if (tab.kind === "markdown" && tab.markdown && !tab.markdown.dirty) {
+      // 汇报文件夹里是程序生成的报告，打开、改两个字不算这段时间写的笔记
+      if (typeof where.file === "string" && /^汇报[\\/]/.test(where.file)) return;
       recorder.observeNote(root, key, where, fileName(tab.path), tab.markdown.text);
     }
   });
@@ -514,9 +516,9 @@ export function noteSnapshot(root: string, name: string, more: Record<string, un
   live?.add(root, { kind: "snapshot", where: { snapshot: name }, title: name, more });
 }
 
-/** 做了一次阶段小结，报告存在 path。more 里记着范围和当时拍的快照，下一次小结从这里接着算 */
+/** 出了一份阶段小结的汇报，报告存在 path（项目的「汇报」文件夹里）。more 里记着范围和当时定格的快照 */
 export function noteSummary(root: string, path: string, more: Record<string, unknown>) {
-  live?.add(root, { kind: "summary", where: { file: posix(path) }, title: fileName(path), more });
+  live?.add(root, { kind: "summary", where: whereOfFile(path, root), title: fileName(path), more });
 }
 
 export function flushActivityLog(): Promise<void> {

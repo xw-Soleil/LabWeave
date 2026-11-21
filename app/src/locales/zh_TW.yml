@@ -1285,9 +1285,6 @@ settings:
   literatureLibraryPath:
     title: 文獻庫文件夾
     description: 填包含 .litlib 文件和「條目」文件夾的絕對路徑。留空時不啟用文獻庫。
-  progressFolderPath:
-    title: 「我的進展」放哪
-    description: 階段小結的報告和 PPT 存到這個文件夾，填絕對路徑。空著時放在項目文件夾旁邊的「我的進展」裡，第一次存報告時會問一次。
   writeAiSidecarOnSave:
     title: 保存時生成 AI 可讀的文字版
     description: |
@@ -3880,7 +3877,7 @@ research:
     freeze: 只定格
     freezeHint: 拍一份節點快照，不讓 AI 寫。之後的對比從這裡算起
     summarize: 定格並生成彙報
-    summarizeHint: 定格以後讓 AI 在對話裡寫報告，寫完存進「我的進展」
+    summarizeHint: 定格以後在後臺生成報告和 PPT，放進項目的「彙報」文件夾
     frozen: "已定格「{{title}}」，之後的對比從這裡算起"
     leave: 退出整理
     toggleBusy: 正在做階段小結的整理，退出整理後再用這個開關
@@ -3889,29 +3886,42 @@ research:
       outside: 這塊白板不在當前項目裡，做不了階段小結
   stageSummary:
     title: 階段小結
-    notSent: AI 現在發不了（還沒配好，或者正在回答）。要說的話已經放進輸入框，好了以後按發送。
-    save: 存進我的進展
-    slides: 出 PPT
-    makeSlides: 轉成 PPT 文件
-    saved: "報告已存進「我的進展」：{{name}}"
-    slidesSaved: "PPT 已存在報告旁邊：{{name}}"
-    open: 打開
-    failed: "沒做成：{{error}}"
-    folderTitle: 報告存到哪裡？
-    folderDescription: "階段小結的報告會存成 Markdown 文件。默認放在項目文件夾旁邊的「我的進展」裡：{{path}}。以後可以在設置裡改。"
-    useDefault: 就放這裡
-    chooseFolder: 選別的文件夾…
-    cancel: 先不存
-    chooseTitle: 選一個放報告的文件夾
     errors:
       noProject: 還沒有選項目文件夾
-      outlineInvalid: AI 給的提綱不是約定的格式，轉不了。可以再點一次「出 PPT」讓它重寫
-      reportMissing: 找不到這份報告的文件（可能被挪走或刪掉了），先點「存進我的進展」
+  report:
+    stage:
+      collecting: 正在收集彙報材料…
+      analyzing: AI 正在寫彙報…
+      exporting: 正在導出報告和 PPT…
+    task:
+      done: "彙報已生成：{{title}}"
+      failed: "彙報沒生成：{{error}}"
+      cancelled: 已取消生成彙報
+    warnings: "{{count}} 項待核對"
+    openReport: 報告
+    openSlides: PPT
+    openFolder: 文件夾
+    retryExport: 重新導出
+    cancel: 取消
+    close: 關閉
+    errors:
+      busy: 上一份彙報還在生成，等它完成或取消後再試。這次可以先「只定格」
+      nothingPicked: 一條都沒勾，也沒寫想講什麼，沒有可以寫的。勾幾條或者敲兩句再試
+      aiNotConfigured: 還沒配好 AI 接口。先在設置的「AI」裡填好接口和模型；這次可以先「只定格」
+      rateLimited: AI 接口說請求太頻繁，過一會兒再試
+      network: 連不上 AI 接口，檢查網絡和接口設置
+      timeout: AI 太久沒寫完。過一會兒再試，或者少勾幾條
+      invalidResponse: AI 給的內容不完整，再試一次
+      invalidReferences: AI 引用了材料裡沒有的編號，核對不了，再試一次
+      noMaterials: 勾選的條目裡沒有讀到文字內容，沒有可以寫的
+      unsafeOutput: 沒法往項目的「彙報」文件夾裡寫文件，檢查它的位置和權限
+      exportFailed: 文件沒導出成。AI 寫好的內容已經存下，可以只重新導出
+      invalidDraft: 存下的草稿讀不出來，要重新生成
   reportLink:
     cardGone: 這張卡片已經不在了
     noProject: 找不到鏈接裡說的項目，先把它加進項目列表
     noLibrary: 還沒有設置文獻庫，打不開文獻庫裡的文件
-    outside: 鏈接指到了項目、文獻庫和「我的進展」以外的地方，沒有打開
+    outside: 鏈接指到了項目和文獻庫以外的地方，沒有打開
     missing: 鏈接指的文件已經不在了
     unsupported: 這種文件打不開
     failed: "鏈接打不開：{{message}}"
