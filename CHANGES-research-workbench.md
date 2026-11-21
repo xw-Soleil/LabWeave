@@ -1193,3 +1193,12 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：新增 `research.lookback.*`、`research.snapshot.errors.boardMissing`、`imageMissing`。
 - 测试：新增 `SnapshotBoard.test.ts` 5 条、`LookbackBoard.test.ts` 7 条；`SnapshotDiff.test.ts` 加 1 条。`LookbackBoard.test.ts` 里的白板基类是假的，只验证了这一层自己的逻辑。
 - 没有在开发版里打开过，节点条和回看的画面都没看过。
+
+### 92. 回看的节点条和阶段小结的素材卡片让开显示着的右侧栏（2026-11-21）
+
+在开发版里看回看历史时发现的：窗口窄的时候，节点条的右半截被右边的 AI 面板盖住。
+
+- `app/src/components/docked-area.tsx`：右侧栏只要显示着（固定住的、临时弹出来的都算），浮在白板上的两个小件就让开它的宽度。原来只在「固定住」时让，而白板上的侧栏不管固不固定都是盖在画布上的。
+- `app/src/core/research/NodeStrip.tsx`：节点条不再按整块白板居中，改成在让开左右侧栏以后剩下的那一段里居中。
+- 阶段小结的素材卡片（`StageReviewTray`）用的是同一个让位的数，一起改了。
+- 实测：用隔离的程序数据启动开发版，临时代码（已删）定格一个节点、打开回看、切到更早的节点、回到现在，都通；改之前和改之后各截了图。

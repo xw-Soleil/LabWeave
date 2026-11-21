@@ -674,6 +674,11 @@ export default function DockedArea({
           : rightPinned
             ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
             : "0px";
+    // 浮在白板上的小件（回看的节点条、阶段小结的素材卡片）要让开右侧栏：固定住的、临时弹出来的都会盖在画布上
+    const rightInset =
+      edges.right && rightTabs.length > 0 && isSidePanelShown(sideStates.right)
+        ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
+        : `${SIDE_PANEL_GAP}px`;
     // 贴边时标签从正文左边开始，和 Obsidian 一样排在正文正上方；挨着窗口上边时还要让开红绿灯
     const tabsLeft = docked
       ? edges.top && edges.left
@@ -727,15 +732,15 @@ export default function DockedArea({
             left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
           />
         )}
-        {project && <NodeStrip key={`lookback-${project.id}`} project={project} />}
         {project && (
-          <StageReviewTray
-            key={`review-${project.id}`}
+          <NodeStrip
+            key={`lookback-${project.id}`}
             project={project}
-            // 右侧栏固定显示时让开它
-            right={edges.right && rightPinned ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px` : `${SIDE_PANEL_GAP}px`}
+            left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
+            right={rightInset}
           />
         )}
+        {project && <StageReviewTray key={`review-${project.id}`} project={project} right={rightInset} />}
         <DropPreview groupId={group.id} />
       </section>
     );

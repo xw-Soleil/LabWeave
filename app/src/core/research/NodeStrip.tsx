@@ -28,11 +28,17 @@ export function lookbackFailed(error: unknown) {
 }
 
 /** 这块白板是回看的才显示 */
-export function NodeStrip({ project }: { project: Project }) {
-  return project instanceof LookbackBoard ? <Strip board={project} /> : null;
+export function NodeStrip({ project, left, right }: { project: Project } & Insets) {
+  return project instanceof LookbackBoard ? <Strip board={project} left={left} right={right} /> : null;
 }
 
-function Strip({ board }: { board: LookbackBoard }) {
+/** 离左右两边多远：让开显示着的侧栏，节点条在剩下的那一段里居中 */
+interface Insets {
+  left: string;
+  right: string;
+}
+
+function Strip({ board, left, right }: { board: LookbackBoard } & Insets) {
   const { t } = useTranslation("research");
   const { nodes, node, base, counts, report } = board.lookback;
   const [busy, setBusy] = useState(false);
@@ -59,7 +65,7 @@ function Strip({ board }: { board: LookbackBoard }) {
   const chip = "h-6 shrink-0 cursor-pointer rounded-full px-2.5 text-[12px] whitespace-nowrap";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-11 z-10 flex justify-center px-3">
+    <div className="pointer-events-none absolute top-11 z-10 flex justify-center px-3" style={{ left, right }}>
       <div className="bg-background/95 border-border/60 text-foreground pointer-events-auto flex max-w-full min-w-0 flex-col gap-1 rounded-[14px] border px-2 py-1.5 text-[12px] shadow-md select-none">
         <div className="flex min-w-0 items-center gap-1">
           <button
