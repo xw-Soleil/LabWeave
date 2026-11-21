@@ -1110,3 +1110,23 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：`research.stageSummary.*`、`research.reportLink.*`、`research.shell.rail.summary*`、`research.ai.link.confirm`、`settings.progressFolderPath`。
 - 测试：新增 `StageSummary.test.ts` 15 条、`SlidesExport.test.ts` 3 条、`ReportLinks.test.ts` 11 条、`ReportLinkMarkdown.test.tsx` 2 条，`ReportTools.test.ts` 加 1 条。
 - 实测（从这个工作树启动开发版，用一套隔离的程序数据目录、一个临时项目和一个本机的假模型服务，没有用到真的密钥和真的项目）：从「开始写」到报告存好并打开约 0.4 秒（假模型立刻回话）；模型一步里并行调了五个工具，修好后都拿到了结果；报告的属性、正文、链接在标签页里都对，AI 面板里链接不再是「[blocked]」；白板不在前面时点卡片链接，白板切到前面、镜头对到卡片上；点已删卡片的链接提示「这张卡片已经不在了」；点笔记链接打开笔记；出 PPT 约 2 秒，文件里 4 页、2 张卡片截图，系统预览（QuickLook）能渲染。没有在 PowerPoint、Keynote 里打开过；真的模型写得怎么样、第一次问放哪的弹窗、竖栏按钮和日期框的点按都没试。
+
+### 88. 快照加「节点」：对比永远和上一个节点比（2026-11-20）
+
+主线第 ⑤ 步（第二版的第一步）。
+
+- `app/src/core/research/ProjectRecord.ts`：
+  - 快照清单多一段可选的节点信息 `node`：类型（`meeting` 组会、`weekly` 周报、`review` 自己复盘）、显示用的名字、`since`（这个节点和哪份快照比的）、用户的原话、要讲的和不讲的。拍的原因多一种 `node`。没有这一段的旧清单照常能读。
+  - 新函数：`isNode`（是不是节点；加节点信息之前做阶段小结时拍的 `summary` 也算）、`baselineOf`（现在该和哪份比：最近的节点，一个节点都没有时用最早的那份）、`sinceOf`（一个节点当初和哪份比）、`nodeSince`（定格一个节点时它该和哪份比：同一天已经定格过同一种类型的，照抄那一次的基准，所以重新定格不推基准）、`replacedNodes`（被同一天同类型的后一次定格顶替掉的）。
+- `app/src/core/research/Snapshot.ts`：
+  - `writeSnapshot`、`takeSnapshot` 能带节点信息，「和哪份比」由程序算好一起写进清单；新增 `takeNode`、`nodeTitle`、`currentBaseline`。
+  - 定格节点时如果正好有一份快照在拍（比如自动拍的），原来会直接拿那一份当结果，现在等它拍完再拍，免得节点信息丢掉。
+  - 活动记录里 `snapshot` 那一行，节点多记一个名字。
+- `app/src/core/research/StageSummary.ts`：做阶段小结时拍的那份改成定格一个「组会」节点；交给 AI 的对比起点改用节点记下的 `since`。去掉按日期范围挑快照的 `baselineSnapshot`。
+- `app/src/core/research/SinceLastToggle.tsx`：白板状态条上的开关改叫「自上次小结以来」，和上一个节点比，鼠标移上去写明是和哪个节点比；一次小结都没做过时和最早的那份快照比。相机拍的只是留底，不换基准，提示里写明了。
+- `app/src/core/research/ReportTools.ts`、`aiEngine/BuiltInToolRegistry.ts`、`ReportGuide.ts`：
+  - `list_snapshots` 的返回里，节点多带 `node`（类型、名字、`since`、原话、`replacedBy`），另给 `baseline`（现在的基准）。
+  - `compare_snapshots` 不填 `from` 时：`to` 是节点就用它当初比的那一份，不是节点用前一份；`to` 也不填就用上一个节点（原来是最近一份）。返回里的 `from`、`to` 是节点时带上名字。
+  - 给 AI 的说明里加两句：用户说「自上次小结以来」时 `from` 用 `baseline`；节点上的原话可以当材料用。
+- 文案：`research.snapshot.since`、`none`、`takeHint` 改了，`sinceHint` 拆成 `sinceNodeHint`、`sinceFirstHint`；新增 `research.stageNode.types.*`。
+- 测试：`Snapshot.test.ts` 加 4 条，`ReportTools.test.ts` 加 2 条；`StageSummary.test.ts` 去掉 `baselineSnapshot` 的 1 条、改 1 条。

@@ -51,16 +51,20 @@ vi.mock("./ResearchFolder", () => ({
   },
 }));
 
+import { baselineOf, isNode, localTime, nodeSince, replacedNodes, sinceOf } from "./ProjectRecord";
 import {
+  currentBaseline,
   joinBoard,
   latestSnapshot,
   listSnapshots,
+  nodeTitle,
   onSnapshotTaken,
   readSnapshotBoard,
   snapshotFiles,
   snapshotIfDue,
   splitBoard,
   startSnapshotSchedule,
+  takeNode,
   takeSnapshot,
   writeSnapshot,
   type SnapshotIO,
@@ -236,6 +240,81 @@ describe("taking a snapshot", () => {
   });
 });
 
+describe("nodes", () => {
+  const board = async (value: string) => [{ file: "a.prg", content: await prg([text("a", value)]) }];
+  const meeting = (title: string) => ({ type: "meeting" as const, title });
+
+  it("compares a node with the node before it, never with an automatic or manual snapshot in between", async () => {
+    const { io } = memory();
+    await writeSnapshot(io, "/research", "auto", await board("一"), { now: at(1) });
+    // 一个节点都没有：和最早的那份快照比
+    const first = (await writeSnapshot(io, "/research", "node", await board("二"), {
+      now: at(7),
+      node: meeting("2026-11-07 组会"),
+    }))!;
+    expect(first.manifest.node).toEqual({ type: "meeting", title: "2026-11-07 组会", since: "2026-11-01 1030" });
+    await writeSnapshot(io, "/research", "auto", await board("三"), { now: at(10) });
+    await writeSnapshot(io, "/research", "manual", await board("四"), { now: at(12) });
+    expect(baselineOf(await listSnapshots(io, "/research"))!.name).toBe(first.name);
+    const second = (await writeSnapshot(io, "/research", "node", await board("五"), {
+      now: at(14),
+      node: { ...meeting("2026-11-14 组会"), note: "  试了 B 方法  ", picked: ["a"], dropped: [] },
+    }))!;
+    // 原话去掉两头的空白；空的勾选不写
+    expect(second.manifest.node).toEqual({
+      type: "meeting",
+      title: "2026-11-14 组会",
+      since: first.name,
+      note: "试了 B 方法",
+      picked: ["a"],
+    });
+    expect(baselineOf(await listSnapshots(io, "/research"))!.name).toBe(second.name);
+  });
+
+  it("treats a second freeze on the same day with the same type as the same node and keeps its baseline", async () => {
+    const { io } = memory();
+    const start = (await writeSnapshot(io, "/research", "node", await board("一"), {
+      now: at(7),
+      node: meeting("2026-11-07 组会"),
+    }))!;
+    // 前面一份快照都没有：没有可以比的
+    expect(start.manifest.node).toEqual({ type: "meeting", title: "2026-11-07 组会" });
+    const freeze = async (value: string, hour: number, type: "meeting" | "review" = "meeting") =>
+      (await writeSnapshot(io, "/research", "node", await board(value), {
+        now: at(14, hour),
+        node: { type, title: "2026-11-14" },
+      }))!;
+    const morning = await freeze("二", 9);
+    const evening = await freeze("三", 18);
+    expect(morning.manifest.node!.since).toBe(start.name);
+    expect(evening.manifest.node!.since).toBe(start.name);
+    // 同一天换一种类型：是另一个节点，和上一个节点比
+    const review = await freeze("四", 20, "review");
+    expect(review.manifest.node!.since).toBe(evening.name);
+    const all = await listSnapshots(io, "/research");
+    expect([...replacedNodes(all)]).toEqual([[morning.name, evening.name]]);
+    // 第二天再定格：和前一天最后那个节点比
+    expect(nodeSince(all, "meeting", localTime(at(15)))).toBe(review.name);
+    // 当天第一次定格就没有可比的，再定格一次也一样
+    expect(nodeSince(all, "meeting", localTime(at(7, 20)))).toBeUndefined();
+  });
+
+  it("counts a summary snapshot taken before nodes existed as a node", async () => {
+    const { io } = memory();
+    await writeSnapshot(io, "/research", "manual", await board("一"), { now: at(1) });
+    const old = (await writeSnapshot(io, "/research", "summary", await board("二"), { now: at(7) }))!;
+    await writeSnapshot(io, "/research", "auto", await board("三"), { now: at(10) });
+    const all = await listSnapshots(io, "/research");
+    expect(old.manifest.node).toBeUndefined();
+    expect(all.map(isNode)).toEqual([false, true, false]);
+    expect(baselineOf(all)!.name).toBe(old.name);
+    expect(sinceOf(all, old)).toBe("2026-11-01 1030");
+    // 同一天再定格一次组会：接着用它的基准
+    expect(nodeSince(all, "meeting", localTime(at(7, 20)))).toBe("2026-11-01 1030");
+    expect(baselineOf([])).toBeUndefined();
+  });
+});
+
 describe("snapshots of the current project", () => {
   const boardFile = (path: string) => ({ kind: "workspace", absPath: path });
 
@@ -268,7 +347,32 @@ describe("snapshots of the current project", () => {
     mocks.root = "";
     await expect(takeSnapshot("manual")).rejects.toThrow("snapshot.noProject");
     expect(await latestSnapshot()).toBeUndefined();
+    expect(await currentBaseline()).toBeUndefined();
     expect(await snapshotIfDue()).toBeUndefined();
+  });
+
+  it("freezes a node, waiting for a snapshot already being taken instead of handing that one back", async () => {
+    mocks.files = [boardFile("/research/a.prg")];
+    mocks.disk.set("/research/a.prg", await prg([text("a", "一")]));
+    const title = nodeTitle("weekly", at(21));
+    expect(title).toBe("2026-11-21 stageNode.types.weekly");
+    const plain = takeSnapshot("auto");
+    const frozen = takeNode({ type: "weekly", title });
+    const first = (await plain)!;
+    const node = (await frozen)!;
+    expect(first.manifest.node).toBeUndefined();
+    expect(node.name).not.toBe(first.name);
+    expect(node.manifest).toMatchObject({ reason: "node", node: { type: "weekly", title, since: first.name } });
+    expect(mocks.noted).toHaveBeenLastCalledWith("/research", node.name, {
+      reason: "node",
+      boards: 1,
+      cards: 1,
+      node: title,
+    });
+    // 之后的对比和这个节点比；再拍一份留底的不换基准
+    expect((await currentBaseline())!.name).toBe(node.name);
+    await takeSnapshot("manual");
+    expect((await currentBaseline())!.name).toBe(node.name);
   });
 
   it("takes one automatically when none exists or the last is over seven days old, and only if a board changed", async () => {

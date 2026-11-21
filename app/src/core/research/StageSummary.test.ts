@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   noted: vi.fn(),
   flushed: vi.fn(async () => {}),
   taken: vi.fn(),
-  snapshots: [] as { name: string; manifest: { at: string } }[],
   opened: vi.fn(),
 }));
 vi.mock("@/core/service/Settings", () => ({
@@ -41,14 +40,12 @@ vi.mock("./ResearchFolder", () => ({
   },
 }));
 vi.mock("./Snapshot", () => ({
-  takeSnapshot: mocks.taken,
-  listSnapshots: async () => mocks.snapshots,
-  snapshotFiles: {},
+  takeNode: mocks.taken,
+  nodeTitle: (type: string) => `今天 ${type}`,
 }));
 
 import { localTime } from "./ProjectRecord";
 import {
-  baselineSnapshot,
   defaultProgressFolder,
   exportSlides,
   loadSummaryStart,
@@ -72,8 +69,6 @@ const at = (day: number, hour = 10) => localTime(new Date(2026, 10, day, hour));
 const now = new Date(2026, 10, 15, 12);
 const line = (time: string, kind: string, more?: object) =>
   JSON.stringify({ at: time, project: "课题", kind, where: {}, title: "", ...(more && { more }) });
-const snapshot = (name: string, time: string) => ({ name, manifest: { at: time } }) as never;
-
 const reply = [
   "好的，下面是这段时间的小结：",
   "",
@@ -94,7 +89,6 @@ beforeEach(() => {
   mocks.root = "/research/课题";
   mocks.setting = "";
   mocks.disk.clear();
-  mocks.snapshots = [];
   vi.clearAllMocks();
 });
 
@@ -128,16 +122,6 @@ describe("从哪天写起", () => {
   });
 });
 
-describe("和哪份快照比", () => {
-  const all = [snapshot("c", at(15)), snapshot("b", at(10)), snapshot("a", at(5))];
-  it("范围开头之前最近的一份；没有就用范围里最早的；刚拍的那份不算", () => {
-    expect(baselineSnapshot(all, at(12), "c")).toBe("b");
-    expect(baselineSnapshot(all, at(10), "c")).toBe("b");
-    expect(baselineSnapshot(all, at(2), "c")).toBe("a");
-    expect(baselineSnapshot([snapshot("c", at(15))], at(2), "c")).toBeUndefined();
-  });
-});
-
 describe("发给 AI 的话", () => {
   it("第一行带着记号和范围，读得回来", () => {
     const request = { since: at(8, 9), until: at(15, 12), from: "2026-11-08 0900", to: "2026-11-15 1200" };
@@ -159,14 +143,14 @@ describe("发给 AI 的话", () => {
     expect(parseSummaryRequest("这周我做了什么")).toBeUndefined();
   });
 
-  it("开始做小结：先写掉攒着的活动，拍一份快照，再把话交给 AI 面板", async () => {
-    mocks.taken.mockResolvedValue({ name: "2026-11-15 1200" });
-    mocks.snapshots = [snapshot("2026-11-15 1200", at(15, 12)), snapshot("2026-11-08 0900", at(8, 9))];
+  it("开始做小结：先写掉攒着的活动，定格一个节点，再把话交给 AI 面板", async () => {
+    // 和哪份比由节点说了算：上一个节点，不看范围从哪天开始
+    mocks.taken.mockResolvedValue({ name: "2026-11-15 1200", manifest: { node: { since: "2026-11-08 0900" } } });
     const sent: string[] = [];
     const stop = subscribeStageRequests((text) => sent.push(text));
     await startStageSummary({ since: at(9), until: at(15, 12) });
     expect(mocks.flushed).toHaveBeenCalled();
-    expect(mocks.taken).toHaveBeenCalledWith("summary");
+    expect(mocks.taken).toHaveBeenCalledWith({ type: "meeting", title: "今天 meeting" });
     expect(sent).toHaveLength(1);
     expect(parseSummaryRequest(sent[0])).toEqual({
       since: at(9),

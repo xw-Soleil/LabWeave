@@ -6,7 +6,8 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ResearchFolder } from "./ResearchFolder";
 import {
-  latestSnapshot,
+  currentBaseline,
+  isNode,
   onSnapshotTaken,
   readSnapshotBoard,
   snapshotFiles,
@@ -24,13 +25,13 @@ const shortTime = (name: string) => name.replace(/^\d{4}-(\d\d-\d\d) (\d\d)(\d\d
 
 /**
  * 白板状态条上的两个按钮：
- * 「自上次以来」开关——和最近一份快照比，新加的描边、改过的打点、删掉的留影，旁边写着各有几张；
- * 相机——现在拍一份快照。还没有快照时开关是灰的。
+ * 「自上次小结以来」开关——和上一个节点比，新加的描边、改过的打点、删掉的留影，旁边写着各有几张；
+ * 相机——现在拍一份快照留底，不改变和谁比。还没有快照时开关是灰的。
  */
 export function SinceLastToggle({ project }: { project: Project }) {
   const { t } = useTranslation("research");
   // undefined：还在查；null：一份都没有
-  const [latest, setLatest] = useState<Snapshot | null>();
+  const [base, setBase] = useState<Snapshot | null>();
   const [counts, setCounts] = useState<Counts>();
   const [busy, setBusy] = useState(false);
   const report = (error: unknown) => {
@@ -56,11 +57,15 @@ export function SinceLastToggle({ project }: { project: Project }) {
   useEffect(() => {
     let alive = true;
     setCounts(sinceLastCounts(project));
-    latestSnapshot().then((snapshot) => alive && setLatest(snapshot ?? null), report);
-    const off = onSnapshotTaken((snapshot) => {
-      setLatest(snapshot);
-      // 开着对比时拍了新的：改成和新的比
-      if (sinceLastCounts(project)) void compareWith(snapshot).catch(report);
+    currentBaseline().then((snapshot) => alive && setBase(snapshot ?? null), report);
+    const off = onSnapshotTaken(() => {
+      // 定格了新节点，基准就换成它；自动拍的、手动拍的不换（除非这是项目的第一份）
+      currentBaseline().then((snapshot) => {
+        if (!alive) return;
+        setBase(snapshot ?? null);
+        const shown = sinceLastCounts(project);
+        if (snapshot && shown && shown.name !== snapshot.name) void compareWith(snapshot).catch(report);
+      }, report);
     });
     // 画布那边随着编辑重新比，这里跟着读数字
     const timer = setInterval(() => {
@@ -91,7 +96,7 @@ export function SinceLastToggle({ project }: { project: Project }) {
       hideSinceLast(project);
       setCounts(undefined);
       project.loop();
-    } else if (latest) void compareWith(latest).catch(report);
+    } else if (base) void compareWith(base).catch(report);
   };
   const take = () => {
     setBusy(true);
@@ -110,13 +115,23 @@ export function SinceLastToggle({ project }: { project: Project }) {
       .finally(() => setBusy(false));
   };
 
+  // 和谁比：节点写它的名字；一次小结都没做过时，是和最早的那份快照比
+  const hint = !base
+    ? t("snapshot.none")
+    : isNode(base)
+      ? t("snapshot.sinceNodeHint", {
+          title: base.manifest.node?.title ?? `${shortTime(base.name)} ${t("stageSummary.title")}`,
+          interpolation: { escapeValue: false },
+        })
+      : t("snapshot.sinceFirstHint", { time: shortTime(base.name) });
+
   return (
     <div className="flex shrink-0 items-center">
       <button
         type="button"
         aria-pressed={!!counts}
-        disabled={!latest}
-        title={latest ? t("snapshot.sinceHint", { time: shortTime(latest.name) }) : t("snapshot.none")}
+        disabled={!base}
+        title={hint}
         className={cn(BUTTON, counts && "bg-accent text-foreground")}
         onClick={toggle}
       >
@@ -126,7 +141,7 @@ export function SinceLastToggle({ project }: { project: Project }) {
       <button
         type="button"
         aria-label={t("snapshot.take")}
-        title={latest ? t("snapshot.takeHint", { time: shortTime(latest.name) }) : t("snapshot.take")}
+        title={t("snapshot.takeHint")}
         disabled={busy}
         className={BUTTON}
         onClick={take}

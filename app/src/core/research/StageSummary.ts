@@ -4,10 +4,10 @@ import { store } from "@/state";
 import { exists, mkdir, readDir, readTextFile, writeFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { atom } from "jotai";
 import { flushActivityLog, noteSummary } from "./ActivityLog";
-import { ACTIVITY_LOG_FILE, localTime, under, type Snapshot } from "./ProjectRecord";
+import { ACTIVITY_LOG_FILE, localTime, under } from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 import { buildPptx, type Slide } from "./SlidesExport";
-import { listSnapshots, snapshotFiles, takeSnapshot } from "./Snapshot";
+import { nodeTitle, takeNode } from "./Snapshot";
 
 /*
  * 阶段小结：点一下，定个范围，拍一份快照，让 AI 照「怎么做汇报」的说明写一份报告，
@@ -65,16 +65,6 @@ export function summaryStart(
     ...(lastSummary && { lastSummary }),
     ...(startedAt && { startedAt }),
   };
-}
-
-/**
- * 和哪份快照比：范围开头之前最近的一份；没有就用范围里最早的一份。
- * snapshots 最新的在前；skip 是这次刚拍的那份。
- */
-export function baselineSnapshot(snapshots: readonly Snapshot[], since: string, skip?: string): string | undefined {
-  const others = snapshots.filter((snapshot) => snapshot.name !== skip);
-  const start = Date.parse(since);
-  return (others.find((snapshot) => Date.parse(snapshot.manifest.at) <= start) ?? others.at(-1))?.name;
 }
 
 /** 发给 AI 的话 */
@@ -251,14 +241,14 @@ export async function loadSummaryStart(now = new Date()) {
   return summaryStart((await exists(path)) ? await readTextFile(path) : undefined, now);
 }
 
-/** 开始做一次阶段小结：拍快照，让 AI 写。项目里没有白板时抛 snapshot.noBoard */
+/** 开始做一次阶段小结：定格一个节点，让 AI 写。项目里没有白板时抛 snapshot.noBoard */
 export async function startStageSummary(range: { since: string; until: string }): Promise<void> {
-  const root = ResearchFolder.getRoot();
-  if (!root) throw new Error("stageSummary.noProject");
+  if (!ResearchFolder.getRoot()) throw new Error("stageSummary.noProject");
   // AI 读的是盘上的活动记录，攒着没写的要先落盘
   await flushActivityLog();
-  const taken = await takeSnapshot("summary");
-  const from = baselineSnapshot(await listSnapshots(snapshotFiles, root), range.since, taken?.name);
+  // 白板的变化和上一个节点比；这一份定格下来以后，它就是下一次的基准
+  const taken = await takeNode({ type: "meeting", title: nodeTitle("meeting") });
+  const from = taken?.manifest.node?.since;
   askAi(summaryPrompt({ ...range, ...(from && { from }), ...(taken && { to: taken.name }) }));
 }
 

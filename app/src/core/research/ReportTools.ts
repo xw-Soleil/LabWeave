@@ -5,13 +5,17 @@ import { parseAnnotations, type PdfAnnotation } from "./PdfAnnotations";
 import {
   ACTIVITY_LOG_FILE,
   ACTIVITY_STATE_FILE,
+  baselineOf,
   clip,
   decodeJson,
   diffItems,
+  isNode,
   listSnapshots,
   localTime,
   readSnapshotBoard,
+  replacedNodes,
   sidecarItems,
+  sinceOf,
   under,
   type ActivityEntry,
   type ActivityItem,
@@ -205,23 +209,51 @@ const MAX_SNAPSHOTS = 30;
 const MAX_LISTED = 40;
 const MAX_DEPTH = 6;
 
+/** 节点信息：类型、名字、和哪份比的、用户的原话；被同一天的后一次定格顶替了的写明被谁顶替 */
+function nodeOut(all: readonly Snapshot[], snapshot: Snapshot, replacedBy?: string) {
+  const node = snapshot.manifest.node;
+  const since = sinceOf(all, snapshot);
+  return {
+    type: node?.type ?? "meeting",
+    ...(node?.title && { title: node.title }),
+    ...(since && { since }),
+    ...(node?.note && { note: node.note }),
+    ...(replacedBy && { replacedBy }),
+  };
+}
+
 export async function snapshotList({ root, reader }: ReportSource) {
   const snapshots = await listSnapshots(reader, root);
+  const replaced = replacedNodes(snapshots);
+  const baseline = baselineOf(snapshots);
   return {
     success: true as const,
     project: projectName(root),
     total: snapshots.length,
-    snapshots: snapshots.slice(0, MAX_SNAPSHOTS).map(({ name, manifest }) => ({
-      name,
-      at: manifest.at,
-      reason: manifest.reason,
-      boards: manifest.boards.map(({ file, cards, sections, edges }) => ({ board: file, cards, sections, edges })),
-    })),
+    // 「自上次小结以来」该和哪份比：上一个节点；一个节点都没有时是最早的那份
+    ...(baseline && { baseline: baseline.name }),
+    snapshots: snapshots.slice(0, MAX_SNAPSHOTS).map((snapshot) => {
+      const { name, manifest } = snapshot;
+      return {
+        name,
+        at: manifest.at,
+        reason: manifest.reason,
+        ...(isNode(snapshot) && { node: nodeOut(snapshots, snapshot, replaced.get(name)) }),
+        boards: manifest.boards.map(({ file, cards, sections, edges }) => ({ board: file, cards, sections, edges })),
+      };
+    }),
     ...(snapshots.length === 0 && {
-      note: "这个项目还没有快照。在白板底部状态栏点相机按钮可以拍一份；超过 7 天没拍，程序也会自动拍。",
+      note: "这个项目还没有快照。做一次阶段小结会定格一份；在白板底部状态栏点相机按钮可以拍一份留底；超过 7 天没拍，程序也会自动拍。",
     }),
   };
 }
+
+/** 对比结果里的一份快照；是节点的带上节点的名字 */
+const snapshotOut = ({ name, manifest }: Snapshot) => ({
+  name,
+  at: manifest.at,
+  ...(manifest.node && { node: manifest.node.title }),
+});
 
 /** 调用方手里开着的那块白板：用它当前的内容，不用盘上可能旧一点的文件 */
 export interface CurrentBoard {
@@ -305,8 +337,9 @@ function wasOf(before: ActivityItem, after: ActivityItem) {
 }
 
 /**
- * 比两份快照，或者一份快照和现在。
- * from 不填：to 填了就用 to 的前一份，to 也不填就用最近一份。to 不填是和现在比。
+ * 比两份快照，或者一份快照和现在。to 不填是和现在比。
+ * from 不填：to 是节点就用它当初比的那一份，不是节点用它的前一份；
+ * to 也不填就是「自上次小结以来」，用上一个节点（一个节点都没有时是最早的那份）。
  */
 export async function compareSnapshots(
   { root, reader }: ReportSource,
@@ -328,7 +361,14 @@ export async function compareSnapshots(
     );
   const to = query.to === undefined ? undefined : named(query.to);
   if (query.to !== undefined && !to) return unknown(query.to);
-  const from = query.from !== undefined ? named(query.from) : to ? all[all.indexOf(to) + 1] : all[0];
+  // 节点当初比的那份要是已经不在了（文件夹被删），退回它的前一份
+  const sinceOfTo = to && isNode(to) ? sinceOf(all, to) : undefined;
+  const from =
+    query.from !== undefined
+      ? named(query.from)
+      : to
+        ? ((sinceOfTo ? named(sinceOfTo) : undefined) ?? all[all.indexOf(to) + 1])
+        : baselineOf(all);
   if (!from) {
     return query.from !== undefined ? unknown(query.from) : fail(`「${to!.name}」是最早的一份快照，前面没有可以比的。`);
   }
@@ -436,8 +476,8 @@ export async function compareSnapshots(
   return {
     success: true as const,
     project: projectName(root),
-    from: { name: from.name, at: from.manifest.at },
-    to: to ? { name: to.name, at: to.manifest.at } : { now: localTime(now) },
+    from: snapshotOut(from),
+    to: to ? snapshotOut(to) : { now: localTime(now) },
     totals,
     unchanged,
     boards,

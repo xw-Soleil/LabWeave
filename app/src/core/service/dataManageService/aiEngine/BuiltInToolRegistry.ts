@@ -700,7 +700,7 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   defineTool({
     name: "list_snapshots",
     description:
-      "列出项目里的快照，最新的在前：名字（拍的日期和时间）、为什么拍（manual 手动、auto 自动、summary 做小结时）、当时有哪几块白板、各几张卡片。名字填给 compare_snapshots 用。只读。",
+      "列出项目里的快照，最新的在前：名字（拍的日期和时间）、为什么拍（manual 手动、auto 自动、node 或 summary 是做阶段小结时定格的节点）、当时有哪几块白板、各几张卡片。节点另带 node：类型（meeting 组会、weekly 周报、review 自己复盘）、名字、since（它当初和哪份比）、note（用户当时敲的原话）；replacedBy 表示同一天又定格了一次，以后一次为准。baseline 是「自上次小结以来」该和哪份比（上一个节点；一个节点都没有时是最早的那份）。名字填给 compare_snapshots 用。只读。",
     inputSchema: z.object({}),
     capabilities: ["project", "settings"],
     projectReferences: { reads: false, allocates: false },
@@ -711,7 +711,7 @@ const researchDefinitions: BuiltInToolDefinition[] = [
   defineTool({
     name: "compare_snapshots",
     description:
-      "比较两份快照，或者一份快照和白板现在的样子：每块白板新加、改过、删掉了哪些卡片（分组框也算），各带标题、内容开头和 link；改过的另给 was（原来的样子）；还有新连上和断开的连线。只挪位置、改颜色不算改。from、to 填 list_snapshots 里的名字：to 不填是和现在比；from 不填时，用 to 的前一份，to 也没填就用最近一份。totals 是整个项目的合计。只读。",
+      "比较两份快照，或者一份快照和白板现在的样子：每块白板新加、改过、删掉了哪些卡片（分组框也算），各带标题、内容开头和 link；改过的另给 was（原来的样子）；还有新连上和断开的连线。只挪位置、改颜色不算改。from、to 填 list_snapshots 里的名字：to 不填是和现在比；from 不填时，to 是节点就用它当初比的那一份（它的 since），不是节点用它的前一份，to 也没填就用上一个节点（list_snapshots 的 baseline），也就是「自上次小结以来」。totals 是整个项目的合计。只读。",
     inputSchema: z.object({
       from: z.string().min(1).optional().describe("较早的那份快照的名字，例如 2026-11-21 1030"),
       to: z.string().min(1).optional().describe("较晚的那份快照的名字；不填是和现在比"),

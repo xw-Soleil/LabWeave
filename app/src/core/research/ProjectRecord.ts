@@ -140,8 +140,26 @@ export const SNAPSHOT_DIR = ".workbench/快照";
 export const SNAPSHOT_IMAGE_DIR = "图片";
 export const SNAPSHOT_MANIFEST = "清单.json";
 
-/** manual：点「现在拍一份」；auto：超过 7 天自动拍的；summary：做阶段小结时拍的 */
-export type SnapshotReason = "manual" | "auto" | "summary";
+/** manual：点「现在拍一份」；auto：超过 7 天自动拍的；node：定格一个节点时拍的；summary：加节点信息之前做阶段小结时拍的 */
+export type SnapshotReason = "manual" | "auto" | "summary" | "node";
+
+/** 节点的类型：组会、周报、自己复盘 */
+export const NODE_TYPES = ["meeting", "weekly", "review"] as const;
+export type NodeType = (typeof NODE_TYPES)[number];
+
+/** 节点：一次阶段小结定格下来的那一刻。之后的对比都和它比，直到下一个节点 */
+export interface SnapshotNode {
+  type: NodeType;
+  /** 显示用的名字，例如「2026-11-21 组会」 */
+  title: string;
+  /** 这个节点是和哪份快照比的；它前面一份快照都没有时不写 */
+  since?: string;
+  /** 用户敲的原话 */
+  note?: string;
+  /** 要讲的和不讲的：卡片编号，或者论文、笔记相对项目文件夹的路径 */
+  picked?: string[];
+  dropped?: string[];
+}
 
 export interface SnapshotBoard {
   /** 白板文件，相对项目文件夹 */
@@ -158,6 +176,8 @@ export interface SnapshotManifest {
   at: string;
   reason: SnapshotReason;
   project: string;
+  /** 只有定格出来的快照有 */
+  node?: SnapshotNode;
   boards: SnapshotBoard[];
 }
 
@@ -207,6 +227,50 @@ export async function listSnapshots(
     if (manifest?.v === 1 && Array.isArray(manifest.boards)) snapshots.push({ name, manifest });
   }
   return snapshots;
+}
+
+/** 这份快照是不是一个节点。加节点信息之前做阶段小结时拍的也算 */
+export const isNode = ({ manifest }: Snapshot) => !!manifest.node || manifest.reason === "summary";
+
+/** 同一天、同一种类型定格的几份算同一个节点 */
+const nodeKey = ({ manifest }: Snapshot) => `${manifest.at.slice(0, 10)} ${manifest.node?.type ?? "meeting"}`;
+
+/**
+ * 现在该和哪份快照比（「自上次小结以来」的基准）：最近的节点；一个节点都没有时用最早的那份快照。
+ * snapshots 最新的在前，下面几个函数都一样。
+ */
+export function baselineOf(snapshots: readonly Snapshot[]): Snapshot | undefined {
+  return snapshots.find(isNode) ?? snapshots.at(-1);
+}
+
+/** 一个节点当初是和哪份快照比的。清单里没记的（加节点信息之前拍的）按它前面的快照现算 */
+export function sinceOf(snapshots: readonly Snapshot[], node: Snapshot): string | undefined {
+  if (node.manifest.node) return node.manifest.node.since;
+  const older = snapshots.slice(snapshots.findIndex((snapshot) => snapshot.name === node.name) + 1);
+  return baselineOf(older)?.name;
+}
+
+/**
+ * 在 at 这一刻定格一个节点，它该和哪份快照比。
+ * 同一天已经定格过同一种类型的：算同一个节点，照抄那一次的基准，重新定格不推基准；否则和 baselineOf 一样。
+ */
+export function nodeSince(snapshots: readonly Snapshot[], type: NodeType, at: string): string | undefined {
+  const key = `${at.slice(0, 10)} ${type}`;
+  const again = snapshots.find((snapshot) => isNode(snapshot) && nodeKey(snapshot) === key);
+  return again ? sinceOf(snapshots, again) : baselineOf(snapshots)?.name;
+}
+
+/** 被同一天同类型的后一次定格顶替掉的节点：它的名字 → 顶替它的那份的名字 */
+export function replacedNodes(snapshots: readonly Snapshot[]): Map<string, string> {
+  const latest = new Map<string, string>();
+  const replaced = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    if (!isNode(snapshot)) continue;
+    const newer = latest.get(nodeKey(snapshot));
+    if (newer) replaced.set(snapshot.name, newer);
+    else latest.set(nodeKey(snapshot), snapshot.name);
+  }
+  return replaced;
 }
 
 /** 某份快照里某块白板的文字版；那份快照里没有这块白板时给 undefined */

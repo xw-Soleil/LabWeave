@@ -238,13 +238,14 @@ const board = (cards: object[], edges: object[] = []): ResearchSidecar =>
     tags: [],
   }) as ResearchSidecar;
 
-/** 一份快照在盘上的几个文件 */
-function snapshot(name: string, boards: Record<string, ResearchSidecar>): Record<string, string> {
+/** 一份快照在盘上的几个文件。more 是清单里另外要写的：为什么拍、节点信息 */
+function snapshot(name: string, boards: Record<string, ResearchSidecar>, more: object = {}): Record<string, string> {
   const manifest = {
     v: 1,
     at: `${name.slice(0, 10)}T${name.slice(11, 13)}:${name.slice(13, 15)}:00+08:00`,
     reason: "manual",
     project: "课题",
+    ...more,
     boards: Object.entries(boards).map(([file, sidecar]) => ({
       file,
       cards: sidecar.cards.length,
@@ -295,6 +296,8 @@ describe("snapshotList", () => {
       success: true,
       project: "课题",
       total: 2,
+      // 一个节点都没有：基准是最早的那份
+      baseline: "2026-11-08 1030",
       snapshots: [
         {
           name: "2026-11-15 1000",
@@ -315,9 +318,61 @@ describe("snapshotList", () => {
   it("一份都没有时照实说", async () => {
     const result = await snapshotList(project());
     expect(result).toMatchObject({ success: true, total: 0, snapshots: [] });
+    expect(result).not.toHaveProperty("baseline");
     expect(result.note).toContain("还没有快照");
   });
+
+  it("节点带着类型、名字、和哪份比的、原话；基准是上一个节点", async () => {
+    const result = await snapshotList(project(nodes));
+    expect(result.baseline).toBe("2026-11-15 1800");
+    expect(result.snapshots.map(({ name, reason, node }) => ({ name, reason, node }))).toEqual([
+      {
+        name: "2026-11-15 1800",
+        reason: "node",
+        node: { type: "meeting", title: "2026-11-15 组会", since: "2026-11-08 1030" },
+      },
+      {
+        name: "2026-11-15 1000",
+        reason: "node",
+        // 同一天又定格了一次：以后一次为准
+        node: {
+          type: "meeting",
+          title: "2026-11-15 组会",
+          since: "2026-11-08 1030",
+          replacedBy: "2026-11-15 1800",
+        },
+      },
+      { name: "2026-11-12 0900", reason: "auto", node: undefined },
+      {
+        name: "2026-11-08 1030",
+        reason: "node",
+        node: { type: "meeting", title: "2026-11-08 组会", since: "2026-11-05 0900", note: "试了 B 方法" },
+      },
+      // 加节点信息之前做阶段小结时拍的：也算节点，和谁比按它前面的快照现算
+      { name: "2026-11-05 0900", reason: "summary", node: { type: "meeting", since: "2026-11-01 0900" } },
+      { name: "2026-11-01 0900", reason: "manual", node: undefined },
+    ]);
+  });
 });
+
+/** 几个节点，中间夹着自动拍的；11-15 那天定格了两次 */
+const nodes = (() => {
+  const upTo = (count: number) => ({
+    "白板.prg": board(["a", "b", "c", "d", "e"].slice(0, count).map((id) => card(id, id))),
+  });
+  const meeting = (day: string, since: string, note?: string) => ({
+    reason: "node",
+    node: { type: "meeting", title: `2026-11-${day} 组会`, since, ...(note && { note }) },
+  });
+  return {
+    ...snapshot("2026-11-01 0900", upTo(0)),
+    ...snapshot("2026-11-05 0900", upTo(1), { reason: "summary" }),
+    ...snapshot("2026-11-08 1030", upTo(2), meeting("08", "2026-11-05 0900", "试了 B 方法")),
+    ...snapshot("2026-11-12 0900", upTo(3), { reason: "auto" }),
+    ...snapshot("2026-11-15 1000", upTo(4), meeting("15", "2026-11-08 1030")),
+    ...snapshot("2026-11-15 1800", upTo(5), meeting("15", "2026-11-08 1030")),
+  };
+})();
 
 describe("compareSnapshots", () => {
   const earlier = snapshot("2026-11-08 1030", {
@@ -462,6 +517,31 @@ describe("compareSnapshots", () => {
         },
         { board: "白板.prg", edited: [{ card: "a", text: "新", was: { text: "旧" } }] },
       ],
+    });
+  });
+
+  it("from 不填：和现在比用上一个节点；to 是节点用它当初比的那份，不是节点用前一份", async () => {
+    const source = project(nodes);
+    expect(await compareSnapshots(source, {}, undefined, now)).toMatchObject({
+      success: true,
+      from: { name: "2026-11-15 1800", node: "2026-11-15 组会" },
+      to: { now: localTime(now) },
+    });
+    // 重新定格的那份和第一次定格比的是同一份，中间自动拍的、被顶替的都不当基准
+    expect(await compareSnapshots(source, { to: "2026-11-15 1800" })).toMatchObject({
+      from: { name: "2026-11-08 1030", node: "2026-11-08 组会" },
+      to: { name: "2026-11-15 1800", node: "2026-11-15 组会" },
+      totals: { added: 3, edited: 0, removed: 0 },
+    });
+    expect(await compareSnapshots(source, { to: "2026-11-12 0900" })).toMatchObject({
+      from: { name: "2026-11-08 1030" },
+      totals: { added: 1 },
+    });
+    // 节点当初比的那份已经被删掉：退回它的前一份
+    const { [".workbench/快照/2026-11-08 1030/清单.json"]: removed, ...rest } = nodes;
+    expect(removed).toBeDefined();
+    expect(await compareSnapshots(project(rest), { to: "2026-11-15 1800" })).toMatchObject({
+      from: { name: "2026-11-15 1000" },
     });
   });
 
