@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Vector } from "@graphif/data-structures";
 import { Line, Rectangle } from "@graphif/shapes";
 
-const clipboard = vi.hoisted(() => ({ text: "", writes: [] as string[] }));
+const clipboard = vi.hoisted(() => ({
+  text: "",
+  writes: [] as string[],
+  files: [] as string[],
+  image: null as { width: number; height: number; rgba: Uint8Array } | null,
+}));
 const systemPaste = vi.hoisted(() => ({ files: vi.fn(), text: vi.fn(), image: vi.fn() }));
 
 vi.mock("@/core/Project", () => ({
@@ -26,15 +31,38 @@ vi.mock("@/utils/font", () => ({
 vi.mock("@/utils/platform", () => ({ isMac: true, isWindows: false, isLinux: false }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), info: vi.fn(), error: vi.fn() }) }));
-vi.mock("@tauri-apps/api/image", () => ({ Image: { fromBytes: vi.fn() } }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => clipboard.files) }));
+vi.mock("@tauri-apps/api/image", () => ({
+  Image: {
+    fromBytes: vi.fn(async (bytes: ArrayBuffer) => ({
+      width: 2,
+      height: 1,
+      rgba: new Uint8Array(bytes),
+    })),
+  },
+}));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
   readText: vi.fn(async () => clipboard.text),
   writeText: vi.fn(async (text: string) => {
     clipboard.text = text;
+    clipboard.files = [];
+    clipboard.image = null;
     clipboard.writes.push(text);
   }),
-  writeImage: vi.fn(),
-  readImage: vi.fn(),
+  writeImage: vi.fn(async (image: { width: number; height: number; rgba: Uint8Array }) => {
+    clipboard.text = "";
+    clipboard.files = [];
+    clipboard.image = image;
+  }),
+  readImage: vi.fn(async () => {
+    if (!clipboard.image) throw new Error("no image");
+    const current = clipboard.image;
+    return {
+      size: async () => ({ width: current.width, height: current.height }),
+      rgba: async () => current.rgba,
+      close: vi.fn(async () => undefined),
+    };
+  }),
 }));
 vi.mock("@/core/research/FileCardFactory", () => ({
   rewriteSerializedFileCardPaths: vi.fn(),
@@ -61,6 +89,7 @@ import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { StageManager } from "@/core/stage/stageManager/StageManager";
 import type { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
+import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { CopyEngine } from "./copyEngine";
@@ -152,6 +181,8 @@ beforeEach(() => {
   VirtualClipboard.clear();
   clipboard.text = "";
   clipboard.writes = [];
+  clipboard.files = [];
+  clipboard.image = null;
   vi.mocked(nudgeEntitiesOutOfOverlap).mockClear();
   systemPaste.files.mockReset().mockResolvedValue(false);
   systemPaste.text.mockClear();
@@ -395,6 +426,82 @@ describe("paste", () => {
     expect(pasted[0].collisionBox.getRectangle().location.toArray()).toEqual([0, 0]);
     expect(nudgeEntitiesOutOfOverlap).not.toHaveBeenCalled();
     expect(project.historyManager.recordStep).toHaveBeenCalledTimes(1);
+  });
+
+  async function copyOneImage(project: FakeProject) {
+    const pixelsA = new Uint8Array([10, 20, 30, 255, 40, 50, 60, 255]);
+    const blobA = new Blob([pixelsA], { type: "image/png" });
+    project.attachments.set("att-a", blobA);
+    const original = new ImageNode(project as unknown as Project, {
+      attachmentId: "att-a",
+      collisionBox: new CollisionBox([new Rectangle(new Vector(0, 0), new Vector(100, 80))]),
+    });
+    project.stage.push(original);
+    original.isSelected = true;
+    await engineOf(project).copy();
+    return original;
+  }
+
+  it("pastes image B from the system clipboard after copying image A on the board and then copying image B elsewhere", async () => {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 100, height: 80, close: vi.fn() })),
+    );
+    try {
+      const project = fakeProject();
+      const otherBoard = fakeProject();
+      await copyOneImage(project);
+      const engine = engineOf(project);
+
+      // 没在别处复制新东西前，同一块白板连贴和贴到另一块白板都继续用虚拟剪贴板里的图 A
+      await engine.paste();
+      await engineOf(otherBoard).paste();
+      expect(project.stage.filter((it) => it instanceof ImageNode)).toHaveLength(2);
+      expect(otherBoard.stage.filter((it) => it instanceof ImageNode)).toHaveLength(1);
+      expect(systemPaste.image).not.toHaveBeenCalled();
+
+      // 在别的软件里复制了图 B（哪怕尺寸一样、只有像素不同），系统剪贴板文字仍是空，也应该改贴图 B
+      clipboard.image = {
+        width: 2,
+        height: 1,
+        rgba: new Uint8Array([99, 88, 77, 255, 66, 55, 44, 255]),
+      };
+      await engine.paste();
+      expect(VirtualClipboard.hasData()).toBe(false);
+      expect(systemPaste.image).toHaveBeenCalledOnce();
+      expect(project.stage.filter((it) => it instanceof ImageNode)).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("pastes external text after copying image A on the board", async () => {
+    const project = fakeProject();
+    await copyOneImage(project);
+    const engine = engineOf(project);
+
+    clipboard.image = null;
+    clipboard.text = "copied text after image";
+    await engine.paste();
+    expect(VirtualClipboard.hasData()).toBe(false);
+    expect(systemPaste.text).toHaveBeenCalledExactlyOnceWith("copied text after image");
+    expect(systemPaste.image).not.toHaveBeenCalled();
+  });
+
+  it("pastes external files after copying image A on the board", async () => {
+    const project = fakeProject();
+    await copyOneImage(project);
+    const engine = engineOf(project);
+
+    clipboard.image = null;
+    clipboard.text = "";
+    clipboard.files = ["C:\\papers\\figB.png"];
+    systemPaste.files.mockResolvedValueOnce(true);
+    await engine.paste();
+    expect(VirtualClipboard.hasData()).toBe(false);
+    expect(systemPaste.files).toHaveBeenCalledOnce();
+    expect(systemPaste.text).not.toHaveBeenCalled();
+    expect(systemPaste.image).not.toHaveBeenCalled();
   });
 });
 

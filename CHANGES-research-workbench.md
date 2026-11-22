@@ -1285,3 +1285,8 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 鼠标移进挂在 Portal 里的右键菜单、下拉菜单时，不再当成重新进入文件栏触发 3 秒自动刷新。
 - `app/src/core/research/SidePanels.ts`：左侧栏处于临时弹出状态时，面板里的右键菜单或下拉菜单开着（或者鼠标位置还在面板矩形内，哪怕模态菜单临时关掉了 `body` 的 `pointer-events`），不再在半秒后自动收回侧栏。
 - 测试：`FileManagerWindow.test.tsx` 加 1 条（展开多层文件夹后右键文件、右键子文件夹，移进菜单并触发刷新，文件夹保持展开、菜单不消失；全部收起和定位文件照常），`SidePanels.test.ts` 加 1 条。
+
+### 99. 白板里复制图片后再去别的软件复制新图片，粘贴时不再还贴旧图（2026-11-22）
+
+- `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`VirtualClipboard.tsx`：判断用户复制白板对象之后有没有在外部程序复制新内容时，不再只比对系统剪贴板里的纯文本，而是按粘贴时的同一顺序（文件列表 → 文字 → 图片像素摘要）给系统剪贴板算指纹并比对，读完图片立即释放句柄。白板内连续粘贴、跨白板粘贴、剪切后贴回、原位粘贴都不变；外部新复制了图片、文字或文件时都会自动清掉旧的虚拟剪贴板改贴新的。
+- 测试：`copyEngine.test.ts` 加 3 条（白板复制图 A → 连贴和跨板贴仍是图 A → 外部复制图 B → 贴出图 B；外部复制文字 → 贴出文字；外部复制文件 → 贴出文件）。
