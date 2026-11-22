@@ -30,6 +30,7 @@ export class AutoSaveBackupService {
 
   private lastSaveTime = 0;
   private isBackingUp = false;
+  private activeWork: Promise<void> | undefined;
   private saveAfterEditTimer: ReturnType<typeof setTimeout> | undefined;
   /** 上一次看到的保存状态：只有真正变成未保存时才安排保存，isSaving 来回切换发的 state-change 不算 */
   private lastProjectState: ProjectState;
@@ -53,6 +54,29 @@ export class AutoSaveBackupService {
     this.project.off("state-change", this.onProjectStateChange);
     clearTimeout(this.saveAfterEditTimer);
     this.saveAfterEditTimer = undefined;
+  }
+
+  /** 等正在进行的自动保存或自动备份跑完，关程序前避免文件写到一半 */
+  async waitForIdle(): Promise<void> {
+    while (this.activeWork) {
+      await this.activeWork;
+    }
+  }
+
+  private trackWork(task: Promise<void>): Promise<void> {
+    const wrapped = (this.activeWork ?? Promise.resolve()).then(
+      () => task,
+      () => task,
+    );
+    const tracked = wrapped.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.activeWork = tracked;
+    void tracked.finally(() => {
+      if (this.activeWork === tracked) this.activeWork = undefined;
+    });
+    return task;
   }
 
   /**
@@ -104,7 +128,11 @@ export class AutoSaveBackupService {
     }
   }
 
-  private async autoSave() {
+  private autoSave(): Promise<void> {
+    return this.trackWork(this.doAutoSave());
+  }
+
+  private async doAutoSave() {
     if (!this.project.uri || this.project.isDraft || this.project.isCollab || this.project.isSaving) {
       // 临时草稿先不备份
       return;
@@ -145,13 +173,17 @@ export class AutoSaveBackupService {
     return `research-autosave-failed:${this.project.uri.toString()}`;
   }
 
-  private async runAutoBackup() {
-    this.isBackingUp = true;
-    try {
-      await this.autoBackup();
-    } finally {
-      this.isBackingUp = false;
-    }
+  private runAutoBackup(): Promise<void> {
+    return this.trackWork(
+      (async () => {
+        this.isBackingUp = true;
+        try {
+          await this.autoBackup();
+        } finally {
+          this.isBackingUp = false;
+        }
+      })(),
+    );
   }
 
   /**

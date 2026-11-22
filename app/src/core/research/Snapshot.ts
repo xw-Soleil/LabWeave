@@ -291,6 +291,13 @@ export function onSnapshotTaken(listener: (snapshot: Snapshot) => void): () => v
 
 let taking: Promise<Snapshot | undefined> | undefined;
 
+/** 等正在拍的快照写完再退出，避免留下写到一半的快照文件夹 */
+export async function finishPendingSnapshots(): Promise<void> {
+  while (taking) {
+    await taking.catch(() => undefined);
+  }
+}
+
 /**
  * 给当前项目拍一份快照。同一时间只拍一份，正在拍时再调拿到的是同一份。
  * unlessUnchanged：和最近一份比没变化就不拍；项目里一张卡片都没有时也不拍第一份。

@@ -1,4 +1,10 @@
-import { RECORD_DIRECTORY, resolveRecordLinkPath, type NodeRecord, type RecordLink } from "./NodeRecord";
+import {
+  RECORD_DIRECTORY,
+  resolveRecordLinkPath,
+  trackRecordWrite,
+  type NodeRecord,
+  type RecordLink,
+} from "./NodeRecord";
 import { under } from "./ProjectRecord";
 
 /*
@@ -179,7 +185,7 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
 
 /** 把一张图存进「进展记录/附件」，给回从这份记录指过去的链接。同一张图存过就直接用存过的 */
-export async function storeRecordImage(
+export function storeRecordImage(
   root: string,
   record: NodeRecord,
   bytes: Uint8Array,
@@ -187,29 +193,33 @@ export async function storeRecordImage(
   io: MediaFiles = desktopMedia,
   signal?: AbortSignal,
 ): Promise<RecordLink> {
-  aborted(signal);
-  const { extension } = imageMetadata(bytes);
-  const path = `${ATTACHMENT_DIRECTORY}/${await contentName(bytes)}.${extension}`;
-  const file = under(root, path);
-  let existing: Uint8Array | undefined;
-  try {
-    existing = await io.read(file);
-  } catch (error) {
-    throw ours(error) ? error : failure("imageWriteFailed", error);
-  }
-  aborted(signal);
-  if (existing) {
-    // 名字是内容的指纹：名字一样内容却不一样，说明那个文件被人改过，不去盖它
-    if (!sameBytes(existing, bytes)) throw failure("imageWriteFailed");
-  } else {
-    try {
-      await io.write(file, bytes);
-    } catch (error) {
-      throw failure("imageWriteFailed", error);
-    }
-  }
-  aborted(signal);
-  return relativeLink(record, path, label);
+  return trackRecordWrite(
+    (async () => {
+      aborted(signal);
+      const { extension } = imageMetadata(bytes);
+      const path = `${ATTACHMENT_DIRECTORY}/${await contentName(bytes)}.${extension}`;
+      const file = under(root, path);
+      let existing: Uint8Array | undefined;
+      try {
+        existing = await io.read(file);
+      } catch (error) {
+        throw ours(error) ? error : failure("imageWriteFailed", error);
+      }
+      aborted(signal);
+      if (existing) {
+        // 名字是内容的指纹：名字一样内容却不一样，说明那个文件被人改过，不去盖它
+        if (!sameBytes(existing, bytes)) throw failure("imageWriteFailed");
+      } else {
+        try {
+          await io.write(file, bytes);
+        } catch (error) {
+          throw failure("imageWriteFailed", error);
+        }
+      }
+      aborted(signal);
+      return relativeLink(record, path, label);
+    })(),
+  );
 }
 
 /** 弹出选文件的窗口，给回选中的那些文件的完整路径。测试里换成假的 */

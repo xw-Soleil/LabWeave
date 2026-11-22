@@ -1181,6 +1181,22 @@ export async function flushSettingsLoadErrors() {
   pendingSettingsLoadErrorValues.clear();
 }
 
+let pendingSettingsWrites: Promise<unknown> = Promise.resolve();
+
+function queueSettingWrite(key: string, value: unknown) {
+  const write = pendingSettingsWrites.then(() => store.set(key, value));
+  pendingSettingsWrites = write.then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/** 退出前把还没落盘的设置（如上次打开的工作区会话）写进 settings.json */
+export async function flushSettings() {
+  await pendingSettingsWrites;
+  await store.save();
+}
+
 export const Settings = new Proxy<
   Settings & {
     watch: (key: keyof Settings, callback: (value: any) => void) => () => void;
@@ -1200,7 +1216,7 @@ export const Settings = new Proxy<
       if (!(key in target)) {
         throw new Error(`没有这个设置项: ${key}`);
       }
-      store.set(key, value);
+      queueSettingWrite(key, value);
       listeners[key]?.forEach((cb) => cb(value));
       return Reflect.set(target, key, value, receiver);
     },
@@ -1234,7 +1250,7 @@ export const Settings = new Proxy<
               value,
               (newValue: Settings[T]) => {
                 console.log(newValue);
-                store.set(key, newValue);
+                queueSettingWrite(key, newValue);
                 Reflect.set(target, key, newValue);
                 listeners[key]?.forEach((cb) => cb(newValue));
               },

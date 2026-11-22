@@ -227,4 +227,29 @@ describe("TabWorkspace opening resource tabs next to side panels", () => {
 
     expect(findTabGroupByTabId(store.get(tabGroupRootAtom), project.id)?.id).toBe("main-group");
   });
+
+  it("disposes all open and mid-close tabs in parallel with zero timer wait during shutdown", async () => {
+    vi.useFakeTimers();
+    const tabs = Array.from({ length: 6 }, () => TabWorkspace.open(new TestResourceTab({})));
+    const focusSpy = vi.spyOn(TabWorkspace, "focus");
+    const disposed: string[] = [];
+    for (const tab of tabs) {
+      vi.spyOn(tab, "dispose").mockImplementation(async () => {
+        disposed.push(tab.id);
+      });
+    }
+
+    // 第一个标签已经进到 450ms 关闭倒计时里，关程序时也要立刻把它冲刷干净，不用再等半秒
+    const midClose = TabWorkspace.close(tabs[0].id);
+    focusSpy.mockClear();
+
+    await TabWorkspace.disposeAllForShutdown();
+    await midClose;
+
+    expect(focusSpy).not.toHaveBeenCalled();
+    expect(store.get(tabsAtom)).toEqual([]);
+    expect(store.get(tabGroupRootAtom)).toBeNull();
+    expect(store.get(activeTabAtom)).toBeUndefined();
+    expect(new Set(disposed)).toEqual(new Set(tabs.map((tab) => tab.id)));
+  });
 });

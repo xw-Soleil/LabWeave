@@ -8,16 +8,11 @@ import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { displayWorkspaceName } from "@/components/ui/file-name";
 import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
-import { flushActivityLog, startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
+import { startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
+import { requestCloseResearchApp } from "@/core/research/AppShutdown";
 import { NodeRecordFloat } from "@/core/research/NodeRecordFloat";
 import { startSnapshotSchedule } from "@/core/research/Snapshot";
-import {
-  beginResearchSessionChange,
-  endResearchSessionChange,
-  persistResearchSession,
-  registerResearchSession,
-  setResearchSessionTracking,
-} from "@/core/research/ResearchSession";
+import { persistResearchSession, registerResearchSession } from "@/core/research/ResearchSession";
 import { isResourceTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { GlobalMenu } from "@/core/service/GlobalMenu";
@@ -318,84 +313,40 @@ export default function App() {
   }, [tabs, activeResourceTab]);
 
   useEffect(() => {
-    let unlisten1: () => void;
-    /**
-     * 关闭窗口时的事件监听
-     */
-    getCurrentWindow()
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void getCurrentWindow()
       .onCloseRequested(async (e) => {
         e.preventDefault();
-        if (!beginResearchSessionChange()) {
-          toast.error(tResearch("projectTree.switchBusy"));
-          return;
-        }
-        try {
-          // 已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
-          if (Settings.autoSaveWhenClose || Settings.autoSave) {
-            for (const tab of tabs) {
-              if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
-              if (tab.projectState !== ProjectState.Unsaved) continue;
-              try {
-                await tab.save();
-              } catch (error) {
-                toast.error(tResearch("shell.autoSaveFailed", { name: tab.title, message: String(error) }));
-              }
-            }
-          }
-
-          // 检查是否有未保存的项目
-          const unsavedTabs = tabs.filter(
-            (tab): tab is Project =>
-              tab instanceof Project &&
-              (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed),
-          );
-
-          if (unsavedTabs.length > 0) {
-            // 弹出警告对话框
-            const response = await Dialog.buttons(
-              "检测到未保存文件",
-              `当前有 ${unsavedTabs.length} 个未保存的文件。直接关闭可能有文件被清空的风险，建议先手动保存文件。`,
-              [
-                { id: "cancel", label: "取消", variant: "ghost" },
-                { id: "continue", label: "继续关闭", variant: "destructive" },
-              ],
-            );
-
-            if (response === "cancel") {
-              // 用户选择取消关闭，返回
-              return;
-            }
-            // 用户选择继续关闭，执行原有关闭流程
-          }
-
-          // 逐个关标签页时不能记会话，否则下次启动什么都恢复不了
-          setResearchSessionTracking(false);
-          try {
-            for (const tab of tabs) {
-              console.log("尝试关闭", tab);
-              await closeTab(tab);
-            }
-          } catch (error) {
+        const appWindow = getCurrentWindow();
+        await requestCloseResearchApp({
+          saveWindowState: () => saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED),
+          hideWindow: () => appWindow.hide(),
+          destroyWindow: () => appWindow.destroy(),
+          workspaceName: (project) => researchWorkspaceName(project, (n) => tResearch("tabs.untitled", { n })),
+          onAutoSaveError: (project, error) => {
+            toast.error(tResearch("shell.autoSaveFailed", { name: project.title, message: String(error) }));
+          },
+          onSaveError: reportResearchCloseError,
+          onCloseCancelled: () => {
             Telemetry.event("关闭应用提示是否保存文件选择了取消");
-            reportResearchCloseError(error);
-            setResearchSessionTracking(true);
-            persistResearchSession();
-            return;
-          }
-          Telemetry.event("关闭应用");
-          // 活动记录里还攒着没写的，窗口销毁前写掉
-          await flushActivityLog();
-          // 保存窗口位置
-          await saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED);
-          await getCurrentWindow().destroy();
-        } finally {
-          endResearchSessionChange();
-        }
+          },
+          onCloseConfirmed: () => {
+            Telemetry.event("关闭应用");
+          },
+        });
       })
-      .then((it) => {
-        unlisten1 = it;
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
       });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [tResearch]);
 
+  useEffect(() => {
     const onStateChange = () => {
       // 强制重新渲染一次
       setTabs([...tabs]);
@@ -416,14 +367,13 @@ export default function App() {
     }
 
     return () => {
-      unlisten1?.();
       // 只摘自己挂的监听：自动保存也监听 state-change，不能一起删掉
       for (const tab of tabs) {
         tab.off("state-change", onStateChange);
         tab.off("contextmenu", onContextMenu);
       }
     };
-  }, [tabs.length]);
+  }, [tabs]);
 
   const closeTab = async (tab: Tab) => {
     if (tab instanceof Project) {

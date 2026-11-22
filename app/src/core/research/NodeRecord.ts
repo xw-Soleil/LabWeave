@@ -57,6 +57,25 @@ export const NODE_RECORD_CHANGED_EVENT = "research:node-record-changed";
 export const RECORD_DIRECTORY = "进展记录";
 /** 上个节点以后记的那一份 */
 export const CURRENT_RECORD = "进行中";
+
+const pendingRecordWrites = new Set<Promise<unknown>>();
+
+export function trackRecordWrite<T>(task: Promise<T>): Promise<T> {
+  const settled = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  pendingRecordWrites.add(settled);
+  void settled.then(() => pendingRecordWrites.delete(settled));
+  return task;
+}
+
+/** 等便签、记录面板和封存正在写的文件全部落盘 */
+export async function flushNodeRecordWrites(): Promise<void> {
+  while (pendingRecordWrites.size > 0) {
+    await Promise.allSettled([...pendingRecordWrites]);
+  }
+}
 const titles: Record<RecordSection, string> = {
   done: "进展",
   todo: "待办",
@@ -575,26 +594,30 @@ export async function ensureNodeRecord(
  * 把改好的 Markdown 存回去。record 是改之前读到的那一份：存之前再读一遍文件，
  * 内容和当时不一样了（别处改过、在 Obsidian 里改过）就抛 nodeRecord.conflict，不覆盖。
  */
-export async function saveRecordMarkdown(
+export function saveRecordMarkdown(
   root: string,
   record: NodeRecord,
   markdown: string,
   io: RecordFiles = desktopFiles,
 ): Promise<NodeRecord> {
-  if (record.path !== recordPath(record.name)) throw new Error("nodeRecord.invalidPath");
-  const path = under(root, record.path);
-  const write = async () => {
-    const current = await io.read(path);
-    if ((current === undefined ? "" : fingerprint(current)) !== record.revision) {
-      throw new Error("nodeRecord.conflict");
-    }
-    await io.write(path, markdown);
-  };
-  await (io.guard ? io.guard(path, write) : write());
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(NODE_RECORD_CHANGED_EVENT, { detail: { root, name: record.name } }));
-  }
-  return parseNodeRecord(stored(record.name, markdown));
+  return trackRecordWrite(
+    (async () => {
+      if (record.path !== recordPath(record.name)) throw new Error("nodeRecord.invalidPath");
+      const path = under(root, record.path);
+      const write = async () => {
+        const current = await io.read(path);
+        if ((current === undefined ? "" : fingerprint(current)) !== record.revision) {
+          throw new Error("nodeRecord.conflict");
+        }
+        await io.write(path, markdown);
+      };
+      await (io.guard ? io.guard(path, write) : write());
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(NODE_RECORD_CHANGED_EVENT, { detail: { root, name: record.name } }));
+      }
+      return parseNodeRecord(stored(record.name, markdown));
+    })(),
+  );
 }
 
 export function appendRecordMarkdown(
@@ -1078,23 +1101,27 @@ export function previewSealed(
  * 「进行中」里一条事项都没有时什么都不做。返回封存的那份；没封存给 undefined。
  * 先写封存的、再换「进行中」：第二步没成的话东西都还在，下次定格会接着补，不会丢。
  */
-export async function sealNodeRecord(
+export function sealNodeRecord(
   root: string,
   title: string,
   io: RecordFiles = desktopFiles,
 ): Promise<NodeRecord | undefined> {
-  const current = await loadNodeRecord(root, CURRENT_RECORD, io);
-  if (!current || current.items.length === 0) return undefined;
-  const before = await loadNodeRecord(root, title, io);
-  const { sealed, next } = sealMarkdown(current.markdown, before?.markdown, title);
-  const saved = await saveRecordMarkdown(
-    root,
-    before ?? { ...stored(title, "", ""), items: [], links: [] },
-    sealed,
-    io,
+  return trackRecordWrite(
+    (async () => {
+      const current = await loadNodeRecord(root, CURRENT_RECORD, io);
+      if (!current || current.items.length === 0) return undefined;
+      const before = await loadNodeRecord(root, title, io);
+      const { sealed, next } = sealMarkdown(current.markdown, before?.markdown, title);
+      const saved = await saveRecordMarkdown(
+        root,
+        before ?? { ...stored(title, "", ""), items: [], links: [] },
+        sealed,
+        io,
+      );
+      await saveRecordMarkdown(root, current, next, io);
+      return saved;
+    })(),
   );
-  await saveRecordMarkdown(root, current, next, io);
-  return saved;
 }
 
 /** Resolve only an exact, note-relative path; never scan the project for similarly named files. */
