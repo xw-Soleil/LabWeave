@@ -194,14 +194,34 @@ function scheduleHide(edge: FixedSideEdge, delay: number) {
   }, delay);
 }
 
-/** 正在面板里打字，或者鼠标停在面板、触发区、面板弹出的菜单上时，不收回 */
-function isPeekHeld(edge: FixedSideEdge): boolean {
+/** 正在面板里打字、面板里的菜单开着，或者鼠标停在面板、触发区、面板弹出的菜单上时，不收回 */
+export function isPeekHeld(edge: FixedSideEdge): boolean {
   const panel = document.querySelector(`[data-pg-side-panel="${edge}"]`);
   const focused = document.activeElement;
   if (panel && focused && panel.contains(focused) && focused.matches("input, textarea, [contenteditable='true']")) {
     return true;
   }
+  // 模态右键菜单或下拉菜单打开时会关掉 body 的 pointer-events，elementFromPoint 认不出底下的面板
+  if (
+    panel?.querySelector(
+      '[data-slot="context-menu-trigger"][data-state="open"], [aria-expanded="true"][data-state="open"]',
+    )
+  ) {
+    return true;
+  }
   if (!pointer) return false;
+  if (panel) {
+    const rect = panel.getBoundingClientRect();
+    if (
+      rect.width > 0 &&
+      pointer.x >= rect.left &&
+      pointer.x <= rect.right &&
+      pointer.y >= rect.top &&
+      pointer.y <= rect.bottom
+    ) {
+      return true;
+    }
+  }
   return !!document.elementFromPoint(pointer.x, pointer.y)?.closest(holdSelector(edge));
 }
 

@@ -76,6 +76,7 @@ vi.mock("react-i18next", () => ({
 }));
 import { store, tabsAtom } from "@/state";
 import { DocumentTab } from "@/core/research/DocumentTab";
+import { createSubWindow } from "@/core/subWindowOpen";
 import FileManagerWindow from "./FileManagerWindow";
 
 let root: Root;
@@ -372,5 +373,94 @@ describe("workspace file tree", () => {
     });
     expect(container.textContent).toContain("match.md");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it("keeps expanded folders and the context menu open on right-click and refresh, while collapse-all and reveal still work", async () => {
+    mocks.read.mockImplementation(async (_root: string, path: string) => {
+      if (path === "/other") {
+        return [
+          { absPath: "/other/sub", relPath: "sub", name: "sub", directory: true, kind: "other" },
+          { absPath: "/other/a.md", relPath: "a.md", name: "a.md", directory: false, kind: "markdown" },
+        ];
+      }
+      if (path === "/other/sub") {
+        return [
+          {
+            absPath: "/other/sub/nested.md",
+            relPath: "sub/nested.md",
+            name: "nested.md",
+            directory: false,
+            kind: "markdown",
+          },
+        ];
+      }
+      return [];
+    });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="files.clearSearch"]')?.click(),
+    );
+
+    await expandOther();
+    await act(async () => button("projectTree.expand:sub").click());
+    expect(row("sub/nested.md")).toBeDefined();
+    expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+
+    const later = Date.now() + 5000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await act(async () => {
+        row("sub/nested.md").dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, button: 2, clientX: 30, clientY: 30 }),
+        );
+      });
+      const fileMenu = document.querySelector<HTMLElement>('[role="menu"]');
+      expect(fileMenu).not.toBeNull();
+
+      // 鼠标移进挂在 Portal 里的菜单，或者窗口重新拿到焦点触发刷新，子文件夹和菜单都不能丢
+      await act(async () => {
+        fileMenu!.dispatchEvent(
+          new MouseEvent("pointerover", { bubbles: true, relatedTarget: document.documentElement }),
+        );
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+      expect(row("sub/nested.md")).toBeDefined();
+      expect(document.querySelector('[role="menu"]')).toBe(fileMenu);
+
+      await press(fileMenu!, "Escape");
+
+      const folderTrigger = container.querySelector<HTMLElement>('[data-file-key="/other/sub"]')!;
+      await act(async () => {
+        folderTrigger.dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, button: 2, clientX: 30, clientY: 30 }),
+        );
+      });
+      const folderMenu = document.querySelector<HTMLElement>('[role="menu"]');
+      expect(folderMenu).not.toBeNull();
+      await act(async () => {
+        folderMenu!.dispatchEvent(
+          new MouseEvent("pointerover", { bubbles: true, relatedTarget: document.documentElement }),
+        );
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+      expect(row("sub/nested.md")).toBeDefined();
+      expect(document.querySelector('[role="menu"]')).toBe(folderMenu);
+
+      await press(folderMenu!, "Escape");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    await act(async () => button("files.collapseAll").click());
+    expect(button("projectTree.expand:other").getAttribute("aria-expanded")).toBe("false");
+    expect(row("sub/nested.md")).toBeUndefined();
+
+    vi.mocked(createSubWindow).mockReturnValueOnce({ id: "files-tab" } as never);
+    await act(async () => FileManagerWindow.reveal("/other/sub/nested.md"));
+    await vi.waitFor(() => expect(row("sub/nested.md")).toBeDefined());
+    expect(button("projectTree.expand:other").getAttribute("aria-expanded")).toBe("true");
+    expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
   });
 });

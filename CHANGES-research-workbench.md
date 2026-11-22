@@ -1277,3 +1277,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 做完的待办挪到「进展」一格以后不再划掉，和别的进展一个样子；只有勾掉的问题划掉。
 - `app/src/core/research/NodeRecordFloat.tsx`：便签里同样只划掉勾掉的问题。
 - 测试：`NodeRecord.test.ts` 加 1 条，`NodeRecordPanel.test.tsx` 补 2 处。
+
+### 98. 文件侧栏里右键不再收起已展开的文件夹、不再弄丢右键菜单（2026-11-22）
+
+- `app/src/sub/FileManagerWindow.tsx`：
+  - 文件夹刷新（`version` 增加）时保留已读出来的条目，等新列表回来再替换，不再先清空成未加载状态——原来一清空就会把里面的子文件夹和文件行整批卸载重建，子文件夹的展开状态和刚弹出来的右键菜单宿主一起没了。
+  - 鼠标移进挂在 Portal 里的右键菜单、下拉菜单时，不再当成重新进入文件栏触发 3 秒自动刷新。
+- `app/src/core/research/SidePanels.ts`：左侧栏处于临时弹出状态时，面板里的右键菜单或下拉菜单开着（或者鼠标位置还在面板矩形内，哪怕模态菜单临时关掉了 `body` 的 `pointer-events`），不再在半秒后自动收回侧栏。
+- 测试：`FileManagerWindow.test.tsx` 加 1 条（展开多层文件夹后右键文件、右键子文件夹，移进菜单并触发刷新，文件夹保持展开、菜单不消失；全部收起和定位文件照常），`SidePanels.test.ts` 加 1 条。
