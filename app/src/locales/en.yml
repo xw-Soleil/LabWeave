@@ -1481,6 +1481,12 @@ contextMenu:
   switchMTUEdgeRenderType: Switch Render Type
   convertToDirectedEdge: Convert to Directed Edge
   editUrlNodeLink: Edit URL Node Link
+  textAlignLeft: Align Left
+  textAlignCenter: Align Center
+  textAlignRight: Align Right
+  increaseFontSize: Larger Font Size
+  decreaseFontSize: Smaller Font Size
+  toggleBold: Bold
   confirm: OK
   cancel: Cancel
 

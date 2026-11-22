@@ -10,7 +10,7 @@ import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { ReferenceBlockNode } from "@/core/stage/stageObject/entity/ReferenceBlockNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
-import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
+import { TextNode, type TextNodeAlign } from "@/core/stage/stageObject/entity/TextNode";
 import { DetailsManager } from "@/core/stage/stageObject/tools/entityDetailsManager";
 import { PathString } from "@/utils/pathString";
 import { averageColors, Color, Vector } from "@graphif/data-structures";
@@ -28,6 +28,39 @@ export namespace TextNodeSmartTools {
     if (incomingEdges.length === 0) return new Vector(0.5, 0.5);
     if (incomingEdges.length === 1) return incomingEdges[0].targetRectangleRate.clone();
     return new Vector(0.5, 0.5);
+  }
+
+  export function setSelectedTextNodesAlign(project: Project, align: TextNodeAlign): void {
+    const textNodes = project.stageManager.getSelectedEntities().filter((node) => node instanceof TextNode);
+    if (textNodes.length === 0 || textNodes.every((node) => node.textAlign === align)) return;
+    for (const node of textNodes) {
+      node.setTextAlign(align);
+    }
+    project.historyManager.recordStep();
+  }
+
+  export function stepSelectedTextNodesFontSize(project: Project, direction: "increase" | "decrease"): void {
+    const textNodes = project.stageManager.getSelectedEntities().filter((node) => node instanceof TextNode);
+    if (textNodes.length === 0) return;
+    for (const node of textNodes) {
+      const anchor = getAnchorRateForTextNode(project, node);
+      if (direction === "increase") {
+        node.increaseFontSize(anchor);
+      } else {
+        node.decreaseFontSize(anchor);
+      }
+    }
+    project.historyManager.recordStep();
+  }
+
+  export function toggleSelectedTextNodesBold(project: Project): void {
+    const textNodes = project.stageManager.getSelectedEntities().filter((node) => node instanceof TextNode);
+    if (textNodes.length === 0) return;
+    const nextBold = !textNodes.every((node) => node.isBold());
+    for (const node of textNodes) {
+      node.setBold(nextBold);
+    }
+    project.historyManager.recordStep();
   }
 
   /**

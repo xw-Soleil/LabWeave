@@ -159,6 +159,12 @@ contextMenu:
   switchMTUEdgeRenderType: 切換渲染形態
   convertToDirectedEdge: 轉換為有向邊
   editUrlNodeLink: 編輯URL節點的鏈接
+  textAlignLeft: 靠左對齊
+  textAlignCenter: 居中對齊
+  textAlignRight: 靠右對齊
+  increaseFontSize: 字號大一檔
+  decreaseFontSize: 字號小一檔
+  toggleBold: 加粗
   confirm: 確定
   cancel: 取消
 

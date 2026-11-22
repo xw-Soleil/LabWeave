@@ -158,6 +158,9 @@ export class ControllerUtils {
           height: `${rectClient.height.toFixed(2)}px`,
           padding: `${clickedNode.getPadding() * this.project.camera.currentScale * clientScale.x}px`,
           fontSize: `${clickedNode.getFontSize() * this.project.camera.currentScale * clientScale.x}px`,
+          fontWeight: clickedNode.fontWeight || "normal",
+          ...(clickedNode.fontFamily ? { fontFamily: clickedNode.fontFamily } : {}),
+          textAlign: clickedNode.textAlign,
           backgroundColor: "transparent",
           color: (clickedNode.color.a === 1
             ? colorInvert(clickedNode.color)

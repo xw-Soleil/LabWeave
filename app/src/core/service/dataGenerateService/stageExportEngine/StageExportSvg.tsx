@@ -47,9 +47,8 @@ export class StageExportSvg {
       return <></>;
     }
 
-    // 根据 sizeAdjust 模式确定宽度限制
-    // manual 模式下需要根据容器宽度自动换行
-    const limitWidth = node.sizeAdjust === "manual" ? node.rectangle.size.x - Renderer.NODE_PADDING * 2 : Infinity;
+    const padding = node.getPadding();
+    const limitWidth = node.sizeAdjust === "manual" ? node.rectangle.size.x - padding * 2 : Infinity;
 
     // 获取节点的实际字体大小（考虑 fontScaleLevel）
     const fontSize = node.getFontSize();
@@ -71,7 +70,7 @@ export class StageExportSvg {
           node.rectangle.leftTop.add(
             // 2025年1月23日 晚上，对这个地方进行了微调，但还没弄懂原理，只是看上去像是加了点偏移
             // 着急发布节点多行文本的功能，所以先这样吧
-            new Vector(0, Renderer.NODE_PADDING + fontSize / 4),
+            new Vector(0, padding + fontSize / 4),
           ),
           fontSize,
           node.color.a === 1
@@ -79,6 +78,13 @@ export class StageExportSvg {
             : colorInvert(this.project.stageStyleManager.currentStyle.Background),
           limitWidth,
           1.5,
+          {
+            textAlign: node.textAlign,
+            boxWidth: node.rectangle.size.x,
+            padding,
+            fontFamily: node.fontFamily || undefined,
+            fontWeight: node.fontWeight || undefined,
+          },
         )}
         {this.dumpEntityDetails(node)}
       </g>

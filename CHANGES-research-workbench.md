@@ -1321,3 +1321,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 普通框的端点拖动时投影到四条边上行走，靠近四条边中点时吸附过去；拖回框中间区域或双击把手会恢复成 `(0.5, 0.5)` 自动位置并记录撤销步骤，双击把手时文字框编辑、打开文件、连线改字和分组改名都会让开。
   - 修掉 `Edge.bodyLine` 对已落在框边上的比例仍走 `getLineIntersectionPoint` 导致上下排布时右侧端点被拉回底边的问题，补全 `Edge.getNormalVectorByRate` 对 `0` / `1` 边界比例的法向量以及直线 SVG 导出的箭头方向；并把选中连线的把手移到节点 `evenodd` 裁剪区外绘制，避免文字框边上的圆点把手被裁掉一半。
 - 测试：`ImageEdgeEndpoints.test.ts` 补充文字框、文件卡片、分组框及不画把手各情形，以及沿边拖动、四边中点吸附、拖回中间重置和双击重置测试；`Edge.test.ts` 补充上下文字框显式定在侧边时的端点保持测试。
+
+### 104. 文字框支持靠左 / 居中 / 靠右水平对齐，右键菜单补齐字号调整与加粗（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/TextNode.tsx`、`app/src/core/service/dataManageService/textNodeSmartTools.tsx`、`app/src/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister.tsx`、`app/src/core/render/canvas2d/basicRenderer/textRenderer.tsx`、`app/src/core/render/canvas2d/entityRenderer/textNode/TextNodeRenderer.tsx`、`app/src/core/research/InlineMathService.ts`、`app/src/core/service/controlService/controller/concrete/utilsControl.tsx`、`app/src/core/render/svg/SvgUtils.tsx`、`app/src/core/service/dataGenerateService/stageExportEngine/StageExportSvg.tsx`、`app/src/components/context-menu-content.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - `TextNode` 新增可序列化字段 `textAlign: "left" | "center" | "right" = "left"`，缺省与原有左对齐排版一致，旧白板文件打开不变。
+  - 画布文字渲染、行内公式混排渲染（独立 `$$...$$` 块级公式保留数学居中惯例）、双击编辑时的 `<textarea>` 输入框、以及 SVG / PNG 导出统一按 `textAlign` 对齐，编辑框与 SVG 导出同时同步 `fontWeight`。
+  - 选中一个或多个 `TextNode` 时，右键菜单新增文字样式组：靠左对齐、居中对齐、靠右对齐（当前项打勾）、字号大一档、字号小一档、加粗（全选加粗时打勾），支持多选批量生效与撤销；顺手修掉原字号快捷键先 `recordStep` 后改节点导致撤销错位的问题。
+- 测试：新增 `TextNode.test.tsx`（3 条：旧文件默认靠左与序列化往返；画布、DOM 编辑框、SVG 导出三处对齐与加粗一致；多选改对齐 / 字号 / 加粗及逐步撤销恢复）。

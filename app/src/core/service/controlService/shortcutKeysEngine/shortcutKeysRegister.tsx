@@ -3249,13 +3249,7 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenKeyboardOnlyOpenWithSelectedTextNodes,
     onPress: (project) => {
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
-      const selectedNodes = project!.stageManager.getSelectedEntities();
-      const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      if (textNodes.length === 0) return;
-      project!.historyManager.recordStep();
-      for (const node of textNodes) {
-        node.decreaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
+      TextNodeSmartTools.stepSelectedTextNodesFontSize(project!, "decrease");
     },
   },
   {
@@ -3265,13 +3259,7 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenKeyboardOnlyOpenWithSelectedTextNodes,
     onPress: (project) => {
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
-      const selectedNodes = project!.stageManager.getSelectedEntities();
-      const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      if (textNodes.length === 0) return;
-      project!.historyManager.recordStep();
-      for (const node of textNodes) {
-        node.increaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
+      TextNodeSmartTools.stepSelectedTextNodesFontSize(project!, "increase");
     },
   },
 
