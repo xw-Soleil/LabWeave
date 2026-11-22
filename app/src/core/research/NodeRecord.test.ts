@@ -3,6 +3,7 @@ import {
   appendRecordItem,
   appendRecordMarkdown,
   CURRENT_RECORD,
+  displayRecordItem,
   displayRecordLink,
   ensureNodeRecord,
   hasOwnTitle,
@@ -770,5 +771,38 @@ describe("editing one item: title, details, links and pictures", () => {
       ).rejects.toThrow("nodeRecord.unsafeLink");
     }
     expect(disk.get(currentFile)).toBe(TEMPLATE);
+  });
+
+  it("shows an item as a title and the rest, without saying the same thing twice", () => {
+    const parsed = record(
+      [
+        "## 待办",
+        "- [ ] 写一下这周的实验小结",
+        "- [ ] 换成 Huber 损失再跑一遍",
+        "  先看梯度",
+        "- [ ] 把会炸的情形复现出来了 [那张卡片](../白板.prg#node=c1)",
+        "- [ ] **对比两种取法** — 取 A 和取 B 各跑一遍",
+        "  详见 [实验笔记](../笔记/实验.md) 第二节",
+        "  [想法笔记](<../笔记/想法.md>)",
+        "- [ ] **标题和内容一样** — 标题和内容一样",
+        "- [ ] [只有一个链接](../笔记/a.md)",
+        "## 进展",
+        "![只有一张图](../图.png)",
+        "",
+      ].join("\n"),
+    );
+    expect(parsed.items).toHaveLength(7);
+    const shown = parsed.items.map((item) => displayRecordItem(parsed, item));
+    // 没写标题的：第一行就是标题（不是提炼出来的「写这周的实验小结」），下面不再重复
+    expect(shown[0]).toEqual({ title: "写一下这周的实验小结", detail: "" });
+    expect(shown[1]).toEqual({ title: "换成 Huber 损失再跑一遍", detail: "先看梯度" });
+    // 行尾挂着的链接名不算内容，链接另外列
+    expect(shown[2]).toEqual({ title: "把会炸的情形复现出来了", detail: "" });
+    // 自己写了标题的：内容全显示；句子里的链接名留着，整行只有链接名的那一行不显示
+    expect(shown[3]).toEqual({ title: "对比两种取法", detail: "取 A 和取 B 各跑一遍\n详见 实验笔记 第二节" });
+    expect(shown[4]).toEqual({ title: "标题和内容一样", detail: "" });
+    // 只有链接、只有图片的：用它原来就有的标题
+    expect(shown[5]).toEqual({ title: parsed.items[5].summary, detail: "" });
+    expect(shown[6]).toEqual({ title: "只有一张图", detail: "" });
   });
 });

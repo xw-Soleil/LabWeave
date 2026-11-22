@@ -491,6 +491,42 @@ export function hasOwnTitle(record: NodeRecord, itemId: string): boolean {
   return titledDetail.test(itemLine.exec(line)?.[3] ?? line);
 }
 
+/**
+ * 记录面板里一条事项怎么显示：标题一行，下面是其余的内容。
+ * 自己写了标题的：标题就是它，内容全显示。没写标题的：第一行当标题，其余几行是内容——
+ * 不用提炼出来的短标题，免得下面把同一句话再显示一遍。
+ * 只是用来挂链接的字不算内容（第一行行尾的链接名、整行只有链接名的行），链接由界面另外列在下面。
+ */
+export function displayRecordItem(record: NodeRecord, item: RecordItem): { title: string; detail: string } {
+  const labels = item.links
+    .map((link) => link.label.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const onlyLabels = (line: string) => {
+    if (!line.trim() || !labels.length) return false;
+    let rest = line;
+    for (const label of labels) rest = rest.split(label).join("");
+    return !rest.trim();
+  };
+  const lines = withoutTrailingLinks(item)
+    .split("\n")
+    .filter((line) => !onlyLabels(line));
+  const summary = item.summary ?? "";
+  if (hasOwnTitle(record, item.id)) {
+    const detail = lines.join("\n").trim();
+    return { title: summary, detail: detail === summary ? "" : detail };
+  }
+  const first = lines.findIndex((line) => line.trim());
+  if (first < 0) return { title: summary, detail: "" };
+  return {
+    title: lines[first].trim(),
+    detail: lines
+      .slice(first + 1)
+      .join("\n")
+      .trim(),
+  };
+}
+
 /** Unknown sections and prose remain in the original Markdown; the panel is only a concise view. */
 export function parseNodeRecord(record: StoredRecord): NodeRecord {
   return parseRecordSource(record).record;

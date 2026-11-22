@@ -1265,3 +1265,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 测试：`NodeRecordPanel.test.tsx`（新，15 条）、`NodeRecordMedia.test.ts`（新，10 条）；`NodeRecord.test.ts` 加 25 条，其中 23 条是照着同伴给 `WeeklyProgress.ts` 写的「改一条、加减链接和图片」那一组搬的。
 - 竖栏没有另加按钮：面板从便签上的「查看全部」进。
 - 界面没有在开发版里看过；剪贴板贴图、选图片的系统窗口、缩略图只在真程序里才走得到，单元测试里是假的。
+
+### 97. 在开发版里验记录面板时看出来的三处（2026-11-22）
+
+用隔离的程序数据启动开发版，临时代码（已删）点便签上的「查看全部」，在面板的表单里填字、点按钮、点铅笔、点勾选框、切下拉框，每步截窗口的图。功能都对；下面三处是看截图看出来的。
+
+- `app/src/core/research/NodeRecord.ts`：加 `displayRecordItem`，定面板里一条事项怎么显示。原来标题用提炼出来的短标题、下面再把全部内容列一遍，没自己写标题的事项等于同一句话显示两遍，行尾链接的名字还会在内容里和链接上各出现一次。现在：没写标题的，第一行当标题，其余几行是内容；只是用来挂链接的字（第一行行尾的链接名、整行只有链接名的行）不算内容。
+- `app/src/core/research/NodeRecordPanel.tsx`：
+  - 用上面这个显示规则。
+  - 打开时焦点落在面板自己身上，不再落在「看哪一段」的下拉框上（落在下拉框上，一按方向键就换了节点）；面板去掉外框线（原来焦点落到面板上时，整个窗口会出一圈蓝框）。
+  - 做完的待办挪到「进展」一格以后不再划掉，和别的进展一个样子；只有勾掉的问题划掉。
+- `app/src/core/research/NodeRecordFloat.tsx`：便签里同样只划掉勾掉的问题。
+- 测试：`NodeRecord.test.ts` 加 1 条，`NodeRecordPanel.test.tsx` 补 2 处。

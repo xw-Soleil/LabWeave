@@ -28,6 +28,7 @@ import {
   appendRecordItem,
   currentContextLink,
   CURRENT_RECORD,
+  displayRecordItem,
   displayRecordLink,
   ensureNodeRecord,
   hasOwnTitle,
@@ -223,12 +224,14 @@ function ItemRow({
   focused?: boolean;
   t: Translate;
 }) {
-  const title = item.summary || summarizeRecordItem(item.text, item.section) || t("untitled");
+  const shown = displayRecordItem(record, item);
+  const title = shown.title || t("untitled");
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focused) row.current?.scrollIntoView?.({ block: "center" });
   }, [focused]);
-  const finished = item.done && item.section !== "done";
+  // 只有勾掉的问题划掉；做完的待办已经挪到「进展」那一格里，和别的进展一个样子
+  const resolved = item.done && item.section === "notes";
   return (
     <div
       ref={row}
@@ -257,7 +260,7 @@ function ItemRow({
           <p
             className={cn(
               "min-w-0 flex-1 text-sm leading-relaxed font-medium break-words",
-              finished && "text-muted-foreground line-through",
+              resolved && "text-muted-foreground line-through",
             )}
           >
             {title}
@@ -277,9 +280,9 @@ function ItemRow({
             </Button>
           )}
         </div>
-        {item.text && item.text !== title && (
+        {shown.detail && (
           <p className="text-muted-foreground mt-1 text-xs leading-relaxed break-words whitespace-pre-wrap">
-            {item.text}
+            {shown.detail}
           </p>
         )}
         {item.links.length > 0 && (
@@ -412,6 +415,7 @@ export function NodeRecordPanel({
   const [editing, setEditing] = useState<Edit | null>(null);
   const editSequence = useRef(0);
   const form = useRef<HTMLFormElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   /** 点「改」之前表单里正填着的新事项，取消修改时放回去 */
   const parked = useRef<Draft | undefined>(undefined);
   const attachmentRequest = useRef<AbortController | undefined>(undefined);
@@ -692,7 +696,14 @@ export function NodeRecordPanel({
       }}
     >
       <DialogContent
-        className="flex max-h-[min(84vh,54rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[min(52rem,calc(100%-2rem))]"
+        ref={content}
+        tabIndex={-1}
+        className="flex max-h-[min(84vh,54rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 outline-hidden sm:max-w-[min(52rem,calc(100%-2rem))]"
+        // 打开时焦点落在面板自己身上，不落在「看哪一段」的下拉框上（不然一按方向键就换了节点）
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          content.current?.focus();
+        }}
         // 在面板里按键不能漏到下面的画布上去（Esc 关面板是 Dialog 自己在最外层听的，不受影响）
         onKeyDown={(event) => event.stopPropagation()}
         onKeyUp={(event) => event.stopPropagation()}

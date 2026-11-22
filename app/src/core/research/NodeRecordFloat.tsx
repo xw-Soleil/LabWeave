@@ -574,7 +574,8 @@ function Row({
           type="button"
           className={cn(
             "hover:text-primary block w-full cursor-pointer text-left text-xs leading-relaxed break-words",
-            item.done && item.section !== "done" && "text-muted-foreground line-through",
+            // 只有勾掉的问题划掉；做完的待办已经挪到「进展」里，和别的进展一个样子
+            item.done && item.section === "notes" && "text-muted-foreground line-through",
           )}
           title={item.text}
           aria-label={t("inspect", { text: title })}

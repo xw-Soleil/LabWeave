@@ -193,6 +193,9 @@ describe("the record panel", () => {
     expect(sectionText("todo")).toContain("换损失函数再跑一遍");
     expect(sectionText("todo")).toContain("对比两种取法");
     expect(sectionText("todo")).toContain("取 A 和取 B 各跑一遍");
+    // 没写标题的事项只显示一遍，不在下面把同一句话再列成内容；行尾链接的名字只出现在能点的链接上
+    expect(sectionText("todo").split("换损失函数再跑一遍")).toHaveLength(2);
+    expect(sectionText("todo").split("实验笔记")).toHaveLength(2);
     expect(sectionText("notes")).toContain("边界条件会炸");
     expect(sectionText("next")).toContain("试试 C 方法");
     const picker = labelled<HTMLSelectElement>(k("panel.choose"));
