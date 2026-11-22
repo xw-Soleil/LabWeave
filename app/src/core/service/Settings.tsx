@@ -1181,19 +1181,21 @@ export async function flushSettingsLoadErrors() {
   pendingSettingsLoadErrorValues.clear();
 }
 
-let pendingSettingsWrites: Promise<unknown> = Promise.resolve();
+const inFlightSettingWrites = new Set<Promise<unknown>>();
 
 function queueSettingWrite(key: string, value: unknown) {
-  const write = pendingSettingsWrites.then(() => store.set(key, value));
-  pendingSettingsWrites = write.then(
+  const write = store.set(key, value);
+  const settled = write.then(
     () => undefined,
     () => undefined,
   );
+  inFlightSettingWrites.add(settled);
+  void settled.finally(() => inFlightSettingWrites.delete(settled));
 }
 
 /** 退出前把还没落盘的设置（如上次打开的工作区会话）写进 settings.json */
 export async function flushSettings() {
-  await pendingSettingsWrites;
+  await Promise.all([...inFlightSettingWrites]);
   await store.save();
 }
 

@@ -1343,3 +1343,8 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 文献库每行附件操作栏、右键菜单与右侧详情栏均新增「放到白板」入口；没有本地 PDF 的条目显示为置灰禁用，鼠标悬停说明原因。
   - 点击后复用 `BoardPicker` / `BoardMenu` 列出当前项目的已打开和未打开白板；选定后先登记活动记录监控，切到目标白板，再调 `createFileCards` 在白板当前视野中心（重叠时自动避开已有卡片）生成与文件面板拖放完全一致的 `FileCardNode`（双击打开论文、丢失提示与活动记录完全一致）。
 - 测试：`LibraryView.test.tsx` 加 1 条（无 PDF 置灰与悬停说明、有 PDF 选白板发送），新增 `LibraryToBoard.test.ts`（1 条：先挂活动记录监控、切换白板、在视野中心避让后调 `createFileCards` 生成卡片）。
+
+### 107. 修补设置写入追踪：立即调 `store.set` 并在退出时等全部写入完成（2026-11-22）
+
+- `app/src/core/service/Settings.tsx`：第 101 节加退出收尾时把 `store.set(key, value)` 放进了微任务队列，导致修改 `Settings` 属性后紧接着同步检查底层存储的调用方还没拿到本次 `store.set`。改成同步发起 `store.set(key, value)`，再用集合记下所有尚未结束的写入 Promise 供 `flushSettings()` 等待并调 `store.save()`。
+- 测试：`AppShutdown.test.ts`、`ReadingTheme.test.ts`、`LocalAgentTransport.test.ts` 全部通过。
