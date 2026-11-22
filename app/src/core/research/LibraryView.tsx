@@ -28,6 +28,7 @@ import {
   GraduationCap,
   Inbox,
   Languages,
+  LayoutDashboard,
   Library,
   MoreHorizontal,
   NotebookPen,
@@ -48,6 +49,8 @@ import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { BoardMenu, BoardSubMenu } from "./BoardMenu";
+import type { BoardChoice } from "./BoardPicker";
 import { documentError, openDocumentFile } from "./DocumentTab";
 import {
   addCollection,
@@ -69,6 +72,9 @@ import type { CreateLibraryItemFields, LibraryItemPatch } from "./LibraryFormat"
 import { downloadArxivPdf, findPaperId, lookupChanges, lookupItem, lookupPaper, recognizePdf } from "./LibraryLookup";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import ZoteroSyncDialog from "./ZoteroSyncDialog";
+
+const sendPdfToBoard = (pdfPath: string, board: BoardChoice) =>
+  import("./LibraryToBoard").then((module) => module.sendLibraryPdfToBoard(pdfPath, board));
 
 type Scope = { kind: "all" } | { kind: "collection"; path: string } | { kind: "unfiled" } | { kind: "trash" };
 type SortKey = "title" | "authors" | "year" | "status" | "added";
@@ -881,7 +887,7 @@ function ItemTable({
 }) {
   const t = useLibraryText();
   const body = useRef<HTMLDivElement>(null);
-  const grid = "grid grid-cols-[minmax(0,1fr)_minmax(0,12rem)_3.5rem_4.5rem_4.5rem] items-center gap-3";
+  const grid = "grid grid-cols-[minmax(0,1fr)_minmax(0,12rem)_3.5rem_4.5rem_5.5rem] items-center gap-3";
   // 打开文献库时不等几百行全画完：先画第一屏，画出来后马上补上其余的
   const [whole, setWhole] = useState(items.length <= FIRST_SCREEN);
   useEffect(() => {
@@ -1009,6 +1015,7 @@ function ItemTable({
                     className="text-orange-500/85"
                     path={item.notePath}
                   />
+                  <SendToBoardIcon pdfPath={item.pdfPath} t={t} />
                 </span>
               </div>
               {open && (
@@ -1087,6 +1094,64 @@ function AttachmentIcon({
     >
       <Icon className="size-4" strokeWidth={1.75} />
     </button>
+  );
+}
+
+function SendToBoardIcon({ pdfPath, t }: { pdfPath?: string; t: ReturnType<typeof useLibraryText> }) {
+  const [armed, setArmed] = useState(false);
+  const [open, setOpen] = useState(false);
+  if (!pdfPath) {
+    const reason = t("library.noPdfToBoard");
+    return (
+      <span
+        role="button"
+        aria-disabled="true"
+        aria-label={reason}
+        title={reason}
+        className="inline-flex cursor-not-allowed"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <LayoutDashboard className="text-muted-foreground/20 size-4" strokeWidth={1.75} aria-hidden />
+      </span>
+    );
+  }
+  const arm = () => {
+    setArmed(true);
+    setOpen(true);
+  };
+  const label = t("library.sendToBoard");
+  const trigger = (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-haspopup="menu"
+      className="rounded-sm text-emerald-600/85 hover:opacity-70"
+      onPointerDown={(event) => !armed && event.button === 0 && arm()}
+      onClick={() => !armed && arm()}
+    >
+      <LayoutDashboard className="size-4" strokeWidth={1.75} />
+    </button>
+  );
+  return (
+    <span
+      className="inline-flex"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      {armed ? (
+        <BoardMenu
+          open={open}
+          onOpenChange={setOpen}
+          onPick={(board) => void sendPdfToBoard(pdfPath, board).catch(reportError)}
+        >
+          {trigger}
+        </BoardMenu>
+      ) : (
+        trigger
+      )}
+    </span>
   );
 }
 
@@ -1178,6 +1243,22 @@ function ItemMenu({
               <FileText />
               {t("library.openPdf")}
             </DropdownMenuItem>
+          )}
+          {item.pdfPath ? (
+            <BoardSubMenu
+              label={t("library.sendToBoard")}
+              onPick={(board) => {
+                onClose();
+                void sendPdfToBoard(item.pdfPath!, board).catch(reportError);
+              }}
+            />
+          ) : (
+            <span title={t("library.noPdfToBoard")} className="block">
+              <DropdownMenuItem disabled>
+                <LayoutDashboard />
+                {t("library.sendToBoard")}
+              </DropdownMenuItem>
+            </span>
           )}
           <DropdownMenuItem onSelect={() => void openDocumentFile(item.notePath).catch(reportError)}>
             <NotebookPen />
@@ -1384,6 +1465,19 @@ function InfoPane({
           <NotebookPen data-icon="inline-start" />
           {t("library.openNote")}
         </Button>
+        {item.pdfPath ? (
+          <BoardMenu onPick={(board) => void sendPdfToBoard(item.pdfPath!, board).catch(reportError)}>
+            <Button size="sm" variant="outline" aria-label={t("library.sendToBoard")} title={t("library.sendToBoard")}>
+              <LayoutDashboard />
+            </Button>
+          </BoardMenu>
+        ) : (
+          <span title={t("library.noPdfToBoard")} className="inline-flex">
+            <Button size="sm" variant="outline" disabled aria-label={t("library.noPdfToBoard")}>
+              <LayoutDashboard />
+            </Button>
+          </span>
+        )}
         {!item.trashed && (
           <Button
             size="sm"

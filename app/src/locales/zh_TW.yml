@@ -3418,6 +3418,8 @@ research:
     pickItem: 選擇一篇文獻查看詳情
     toggleAttachments: 展開或收起附件
     openPdf: 打開 PDF
+    sendToBoard: 放到白板
+    noPdfToBoard: 這篇條目還沒有本地 PDF，暫時不能放到白板
     openTranslation: 打開譯文
     openNote: 打開筆記
     markAs: "標成{{status}}"

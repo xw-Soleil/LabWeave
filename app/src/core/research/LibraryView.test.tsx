@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   trash: vi.fn(),
   open: vi.fn(),
+  sendToBoard: vi.fn(),
+  boards: [
+    { key: "board-1", name: "主画布", folder: "", open: true },
+    { key: "/r/notes/sub.prg", name: "实验推导", folder: "notes", open: false },
+  ],
 }));
 vi.mock("@/core/service/Settings", () => ({
   Settings: { use: () => ["/lib", vi.fn()], literatureLibraryPath: "/lib" },
@@ -19,7 +24,13 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), loading: vi.fn() }) }));
-vi.mock("./DocumentTab", () => ({ documentError: String, openDocumentFile: mocks.open }));
+vi.mock("./DocumentTab", () => ({
+  documentError: String,
+  documentText: (key: string) => key,
+  openDocumentFile: mocks.open,
+}));
+vi.mock("./BoardPicker", () => ({ listBoards: async () => mocks.boards }));
+vi.mock("./LibraryToBoard", () => ({ sendLibraryPdfToBoard: mocks.sendToBoard }));
 vi.mock("./LibraryLookup", () => ({}));
 vi.mock("./ZoteroSyncDialog", () => ({ default: () => null }));
 vi.mock("./Library", () => ({
@@ -82,7 +93,7 @@ async function show(count: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  for (const action of [mocks.update, mocks.trash, mocks.open]) action.mockResolvedValue(undefined);
+  for (const action of [mocks.update, mocks.trash, mocks.open, mocks.sendToBoard]) action.mockResolvedValue(undefined);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -162,5 +173,43 @@ describe("the literature list", () => {
         .click(),
     );
     expect(mocks.open).toHaveBeenCalledWith("/lib/条目/Paper1/Paper1.md");
+  });
+
+  it("disables Put on board with a hover reason when PDF is missing, and sends local PDFs to the chosen board", async () => {
+    const withPdf = { ...paper(1), pdfPath: "/lib/条目/Paper1/paper1.pdf" };
+    const withoutPdf = paper(2);
+    mocks.snapshot = { root: "/lib", collections: [], items: [withPdf, withoutPdf], errors: [] };
+    await act(async () => root.render(<LibraryView />));
+
+    // 没有本地 PDF 的条目：行内按钮是灰的，title 写明原因
+    const disabledIcon = rows()[1].querySelector<HTMLElement>('[aria-label="library.noPdfToBoard"]')!;
+    expect(disabledIcon.getAttribute("aria-disabled")).toBe("true");
+    expect(disabledIcon.getAttribute("title")).toBe("library.noPdfToBoard");
+
+    // 右键菜单里也是灰的并带原因提示
+    await act(async () =>
+      rows()[1].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, button: 2, clientX: 20, clientY: 30 })),
+    );
+    const disabledMenuItem = menuItems().find((item) => item.textContent === "library.sendToBoard")!;
+    expect(disabledMenuItem.hasAttribute("data-disabled")).toBe(true);
+    expect(disabledMenuItem.parentElement?.getAttribute("title")).toBe("library.noPdfToBoard");
+
+    // 有本地 PDF 的条目：点「放到白板」弹出白板列表，选一块就发过去
+    const trigger = rows()[0].querySelector<HTMLElement>('[aria-label="library.sendToBoard"]')!;
+    await act(async () => trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })));
+    const targetItem = await vi.waitFor(() => {
+      const found = menuItems().find((item) => item.textContent?.includes("实验推导"));
+      expect(found).toBeDefined();
+      return found!;
+    });
+    await act(async () => targetItem.click());
+    await vi.waitFor(() =>
+      expect(mocks.sendToBoard).toHaveBeenCalledWith("/lib/条目/Paper1/paper1.pdf", {
+        key: "/r/notes/sub.prg",
+        name: "实验推导",
+        folder: "notes",
+        open: false,
+      }),
+    );
   });
 });

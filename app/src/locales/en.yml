@@ -3299,6 +3299,8 @@ research:
     pickItem: Select a paper to see its details
     toggleAttachments: Show or hide attachments
     openPdf: Open PDF
+    sendToBoard: Put on board
+    noPdfToBoard: This item has no local PDF yet
     openTranslation: Open translation
     openNote: Open note
     markAs: "Mark as {{status}}"

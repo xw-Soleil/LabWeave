@@ -1336,3 +1336,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 选中一个或多个 `ImageNode` 时，右键菜单新增「向右转 90°」「向左转 90°」。旋转直接按整数像素转置生成新图像附件写进 `project.attachments` 并切换当前卡片的 `attachmentId`，不新增角度字段；共用原附件的其他卡片不受影响。
   - 旋转时保持图片中心坐标与 `scale` 不变、宽高互换，并同步旋转连到这张图上的 `Edge` 起点 / 终点比例（`(x, y)` 向右转成 `(1 - y, x)`、向左转成 `(y, 1 - x)`，中心 `(0.5, 0.5)` 不动）；PNG 仍存为无损 `image/png`，JPEG / WebP 按 `0.92` 质量重编码。多张图片一起旋转合为一步撤销，`project.attachments` 在会话内保留原附件，撤销后图片与连线端点一并恢复。
 - 测试：`ImageNode.test.tsx` 加 2 条（RGBA 像素与端点比例正反旋转及转 4 次逐字节还原；共用附件隔离、中心与缩放保持、连线端点联动、存盘重开保持及撤销恢复原附件与连线）。
+
+### 106. 文献库列表支持直接把论文 PDF 放到白板上（2026-11-22）
+
+- 新增 `app/src/core/research/LibraryToBoard.ts`，改动 `app/src/core/research/LibraryView.tsx`、`app/src/core/research/BoardMenu.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - 文献库每行附件操作栏、右键菜单与右侧详情栏均新增「放到白板」入口；没有本地 PDF 的条目显示为置灰禁用，鼠标悬停说明原因。
+  - 点击后复用 `BoardPicker` / `BoardMenu` 列出当前项目的已打开和未打开白板；选定后先登记活动记录监控，切到目标白板，再调 `createFileCards` 在白板当前视野中心（重叠时自动避开已有卡片）生成与文件面板拖放完全一致的 `FileCardNode`（双击打开论文、丢失提示与活动记录完全一致）。
+- 测试：`LibraryView.test.tsx` 加 1 条（无 PDF 置灰与悬停说明、有 PDF 选白板发送），新增 `LibraryToBoard.test.ts`（1 条：先挂活动记录监控、切换白板、在视野中心避让后调 `createFileCards` 生成卡片）。
