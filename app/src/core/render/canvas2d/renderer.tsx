@@ -771,6 +771,9 @@ export class Renderer {
       } finally {
         ctx.restore();
       }
+      if (association instanceof LineEdge && association.isSelected) {
+        this.project.edgeRenderer.renderSelectedLineEdgeOverlay(association);
+      }
       this.renderedEdges++;
     }
   }

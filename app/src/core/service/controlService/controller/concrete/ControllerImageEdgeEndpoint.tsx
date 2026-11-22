@@ -1,11 +1,18 @@
-import { dragEndpointTo, findEndpointHandle, rateOf, type EndpointHandle } from "@/core/research/ImageEdgeEndpoints";
+import {
+  dragEndpointTo,
+  findEndpointHandle,
+  rateOf,
+  resetEndpoint,
+  type EndpointHandle,
+} from "@/core/research/ImageEdgeEndpoints";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { Settings } from "@/core/service/Settings";
 import { CursorNameEnum } from "@/types/cursors";
 import { Vector } from "@graphif/data-structures";
 
 /**
- * 拖动选中连线连在图片上的那一头。选中/移动卡片、框选、拖连线在按下圆点时都会让开（见 findEndpointHandle 的调用处）。
+ * 拖动选中连线两头的端点把手（图片内部或框的四条边），双击把手恢复自动位置。
+ * 选中/移动卡片、框选、拖连线、双击编辑在点中圆点时都会让开（见 findEndpointHandle 的调用处）。
  */
 export class ControllerImageEdgeEndpointClass extends ControllerClass {
   private dragging: (EndpointHandle & { rateBefore: Vector }) | null = null;
@@ -45,6 +52,16 @@ export class ControllerImageEdgeEndpointClass extends ControllerClass {
     if (!this.dragging) return;
     this.finishDrag();
     this.project.controller.setCursorName(CursorNameEnum.Default);
+  };
+
+  public mouseDoubleClick = (event: MouseEvent) => {
+    if (event.button !== 0 || Settings.mouseLeftMode !== "selectAndMove") return;
+    if (this.project.controller.camera.isPreGrabbingWhenSpace) return;
+    const handle = findEndpointHandle(this.project, this.worldLocation(event));
+    if (!handle) return;
+    if (resetEndpoint(handle)) {
+      this.project.historyManager.recordStep();
+    }
   };
 
   public mouseMoveOutWindowForcedShutdown(outsideLocation: Vector) {

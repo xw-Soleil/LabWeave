@@ -14,6 +14,7 @@ import { Renderer } from "@/core/render/canvas2d/renderer";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { cardText } from "@/core/research/FileCardContent";
 import { refreshFileCardMissing, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { openDocumentFile } from "@/core/research/DocumentTab";
 import { toast } from "sonner";
 /**
@@ -51,6 +52,9 @@ export class ControllerNodeEditClass extends ControllerClass {
     }
 
     const pressLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    if (findEndpointHandle(this.project, pressLocation)) {
+      return;
+    }
     const clickedEntity = this.project.stageManager.findEntityByLocation(pressLocation);
 
     if (clickedEntity === null) {

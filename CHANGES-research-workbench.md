@@ -1313,3 +1313,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - `FileCardRenderer` 在选中可调大小的带图摘录卡片时，照 `ImageNode` 的样式画出右下角缩放把手与斜向双箭头。
   - `ControllerEntityResize` 与 `isClickedResizeRect` 统一通过 `isResizableEntity` 识别可调大小实体，并在松开鼠标且尺寸真有改动时调用 `historyManager.recordStep()`，让拖把手调大小可以撤销，也会触发自动保存把新尺寸写进 `.prg`；`ProjectRecord` 的卡片指纹本来就不含 `rect`，调大小不会算成内容改动。
 - 测试：`FileCardNode.test.ts` 加 2 条（带图摘录等比缩放与最小尺寸限制、其余文件卡片不可调；经 `ControllerEntityResize` 拖动后存盘保持、指纹不变、撤销恢复原尺寸），`FileCardRenderer.test.ts` 加 1 条（只有选中的带图摘录卡片画缩放把手）。
+
+### 103. 选中连线时支持拖动两头把手沿框边换边、四边中点吸附与重置回自动位置（2026-11-22）
+
+- `app/src/core/research/ImageEdgeEndpoints.ts`、`app/src/core/service/controlService/controller/concrete/ControllerImageEdgeEndpoint.tsx`、`ControllerNodeEdit.tsx`、`ControllerEdgeEdit.tsx`、`ControllerSectionEdit.tsx`、`app/src/core/stage/stageObject/association/Edge.tsx`、`app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`、`StraightEdgeRenderer.tsx`、`app/src/core/render/canvas2d/renderer.tsx`：
+  - 将选中 `LineEdge` 时的可拖动端点把手从图片放宽到文字框、文件卡片、分组框等所有矩形实体（连接点、背景图、自环、同组多条边散开、直角折线、折叠隐藏和只读模式保持不画把手）；图片端原有的框内瞄准逻辑保持不变。
+  - 普通框的端点拖动时投影到四条边上行走，靠近四条边中点时吸附过去；拖回框中间区域或双击把手会恢复成 `(0.5, 0.5)` 自动位置并记录撤销步骤，双击把手时文字框编辑、打开文件、连线改字和分组改名都会让开。
+  - 修掉 `Edge.bodyLine` 对已落在框边上的比例仍走 `getLineIntersectionPoint` 导致上下排布时右侧端点被拉回底边的问题，补全 `Edge.getNormalVectorByRate` 对 `0` / `1` 边界比例的法向量以及直线 SVG 导出的箭头方向；并把选中连线的把手移到节点 `evenodd` 裁剪区外绘制，避免文字框边上的圆点把手被裁掉一半。
+- 测试：`ImageEdgeEndpoints.test.ts` 补充文字框、文件卡片、分组框及不画把手各情形，以及沿边拖动、四边中点吸附、拖回中间重置和双击重置测试；`Edge.test.ts` 补充上下文字框显式定在侧边时的端点保持测试。

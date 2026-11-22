@@ -79,13 +79,16 @@ export abstract class Edge extends ConnectableAssociation {
     let endPoint: Vector;
 
     const isCenterRate = (rate: Vector): boolean => rate.x === 0.5 && rate.y === 0.5;
+    const isBorderRate = (rate: Vector): boolean => rate.x === 0 || rate.x === 1 || rate.y === 0 || rate.y === 1;
 
     if (this.source instanceof ConnectPoint) {
       startPoint = this.source.geometryCenter;
     } else if (!isCenterRate(this.sourceRectangleRate)) {
       startPoint =
         Edge.getExactEdgePositionByRate(sourceRectangle, this.sourceRectangleRate) ??
-        (this.source.clipConnectionToBoundary ? sourceRectangle.getLineIntersectionPoint(edgeCenterLine) : sourceInner);
+        (this.source.clipConnectionToBoundary && !isBorderRate(this.sourceRectangleRate)
+          ? sourceRectangle.getLineIntersectionPoint(edgeCenterLine)
+          : sourceInner);
     } else {
       // Center rate: clip to the bounding rectangle edge along the connection direction
       startPoint = sourceRectangle.getLineIntersectionPoint(edgeCenterLine);
@@ -95,7 +98,9 @@ export abstract class Edge extends ConnectableAssociation {
     } else if (!isCenterRate(this.targetRectangleRate)) {
       endPoint =
         Edge.getExactEdgePositionByRate(targetRectangle, this.targetRectangleRate) ??
-        (this.target.clipConnectionToBoundary ? targetRectangle.getLineIntersectionPoint(edgeCenterLine) : targetInner);
+        (this.target.clipConnectionToBoundary && !isBorderRate(this.targetRectangleRate)
+          ? targetRectangle.getLineIntersectionPoint(edgeCenterLine)
+          : targetInner);
     } else {
       // Center rate: clip to the bounding rectangle edge along the connection direction
       endPoint = targetRectangle.getLineIntersectionPoint(edgeCenterLine);
@@ -158,10 +163,10 @@ export abstract class Edge extends ConnectableAssociation {
    * - 其他（中心或图片内部精确位置）→ null，由调用方回退到其他逻辑
    */
   static getNormalVectorByRate(rate: Vector): Vector | null {
-    if (rate.x === 0.01) return new Vector(-1, 0);
-    if (rate.x === 0.99) return new Vector(1, 0);
-    if (rate.y === 0.01) return new Vector(0, -1);
-    if (rate.y === 0.99) return new Vector(0, 1);
+    if (rate.x === 0 || rate.x === 0.01) return new Vector(-1, 0);
+    if (rate.x === 1 || rate.x === 0.99) return new Vector(1, 0);
+    if (rate.y === 0 || rate.y === 0.01) return new Vector(0, -1);
+    if (rate.y === 1 || rate.y === 0.99) return new Vector(0, 1);
     return null;
   }
 

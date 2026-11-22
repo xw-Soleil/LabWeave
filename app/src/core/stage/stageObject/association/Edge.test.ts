@@ -57,12 +57,28 @@ describe("edge geometry cache", () => {
     expect(edge.collisionBox).not.toBe(before);
     expect(other.collisionBox).toBe(otherBefore);
   });
-  it("clips non-center text anchors to node boundaries", () => {
+  it("clips non-center text anchors to node boundaries while keeping explicit border anchors on the chosen side", () => {
     const { edge } = setup();
     edge.sourceRectangleRate = new Vector(0.25, 0.25);
     edge.targetRectangleRate = new Vector(0.75, 0.25);
     expect(edge.bodyLine.start).toEqual(new Vector(100, 20));
     expect(edge.bodyLine.end).toEqual(new Vector(300, 20));
+
+    // 上下排列的两个文字框：把上框起点放到右侧边上，不应被 clipConnectionToBoundary 重新拉回底边
+    const top = node(0);
+    const bottom = Object.assign(Object.create(TextNode.prototype), {
+      uuid: crypto.randomUUID(),
+      collisionBox: new CollisionBox([new Rectangle(new Vector(0, 200), new Vector(100, 80))]),
+      getBorderWidth: () => 2,
+      clipConnectionToBoundary: true,
+    }) as TextNode;
+    const stacked = new LineEdge({} as never, {
+      associationList: [top, bottom],
+      sourceRectangleRate: new Vector(1, 0.25),
+      targetRectangleRate: new Vector(0, 0.5),
+    });
+    expect(stacked.bodyLine.start).toEqual(new Vector(100, 20));
+    expect(stacked.bodyLine.end).toEqual(new Vector(0, 240));
   });
   it("reuses world geometry while endpoints and connection rates are unchanged", () => {
     const { edge } = setup();
