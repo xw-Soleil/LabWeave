@@ -1220,3 +1220,19 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：新增 `research.nodeRecord.*`。
 - 测试：新增 `NodeRecord.test.ts` 17 条；`StageReview.test.ts` 加 1 条、改 2 条；`StageReport.test.ts` 改 1 条。他那 630 行测试里改条目、改链接和图片的部分这一步没搬，留到记录面板（⑧c）用到这些功能时再搬。
 - 便签的界面没有在开发版里看过。
+
+### 94. 写汇报时手填的记录和自动记的两份都用，对不上的地方单独列出来（2026-11-21）
+
+主线第 ⑧d 步。
+
+- `app/src/core/research/StageReview.ts`、`StageReviewTray.tsx`：整理时素材卡片多一组「你记的」，列出这个节点定格以后会封存进去的手记（「进行中」里的，加上今天同一个节点已经封存过的），默认全勾，能去掉；去掉的和卡片一样记进节点，下次进来还认得（编号照内容算）。整理着的时候在便签里又记了一条，这一组跟着变。
+- `app/src/core/research/NodeRecord.ts`：加 `previewSealed`（不写文件，只算出这个节点封存以后会有哪些事项）；认「同一条」的办法对外可用。
+- `app/src/core/research/StageReport.ts`：勾着的手记编进材料，排在用户的原话后面，标签以【手记·进展】【手记·待办】这样开头，内容里写明勾没勾；出处指回封存的那份记录。取材料时程序自己查一样：手记里关联的卡片已经不在这块白板上、关联的文件找不到了，记成一处「对不上」。
+- `app/src/core/research/ResearchReport.ts`：
+  - 草稿格式加一栏 `conflicts`（哪里对不上、有关的材料编号）。给 AI 的话里写明：手记和别的材料对不上时不要自己挑一边写，放进这一栏；没有手记时这一栏给空。
+  - 新加 `settleConflicts` 核对这一栏：同时指到一条手记和一条别的材料的才算数，写进报告；只指到手记的、只指到别的材料的，不进正文，换成一句话放进待核对项；不存在的编号先去掉。这一栏写坏了不让整份草稿作废。
+  - `来源.json` 里多记一项 `conflicts`；只在「对不上」里用到的材料也算用上了。
+- `app/src/core/research/ResearchReportExport.ts`：报告在正文和「材料来源」之间多一节「两边对不上的地方」，每条后面跟着能点的出处；PPT 多一页。没有对不上的就没有这一节、这一页。
+- 文案：`research.stageReview.records`、`recordDone`。
+- 测试：`ResearchReport.test.ts` 加 3 条，`ResearchReportExport.test.ts` 加 2 条，`StageReport.test.ts` 加 2 条，`StageReview.test.ts` 加 1 条。
+- AI 找「对不上」找得准不准，没有用真模型试过。

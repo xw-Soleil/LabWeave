@@ -1,10 +1,11 @@
 import type { Project } from "@/core/Project";
 import { store } from "@/state";
 import { serialize } from "@graphif/serializer";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { flushActivityLog, noteSummary, type ActivityMark } from "./ActivityLog";
 import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
+import { recordPath, resolveRecordLinkPath, type RecordSection } from "./NodeRecord";
 import { localTime, under } from "./ProjectRecord";
 import { readAnnotations, recordLink } from "./ReportTools";
 import { reportBusy, startReportTask } from "./ReportTask";
@@ -56,7 +57,7 @@ export interface StageReportInput {
   sidecar: ResearchSidecar;
   /** 节点的名字 */
   title: string;
-  /** 勾着要讲的条目：这块白板的卡片，加上别的白板、论文、笔记 */
+  /** 勾着要讲的条目：这块白板的卡片，加上手填的记录、别的白板、论文、笔记 */
   picked: readonly ReviewItem[];
   /** 用户敲的原话 */
   note: string;
@@ -75,7 +76,12 @@ export interface StageReportIO {
   cardImage(id: string): Promise<Uint8Array | undefined>;
   /** 给一个分组截一张图 */
   sectionImage(id: string): Promise<Uint8Array | undefined>;
+  /** 项目里的一个文件还在不在，path 相对项目文件夹 */
+  exists(path: string): Promise<boolean>;
 }
+
+const RECORD_LABEL: Record<RecordSection, string> = { done: "进展", todo: "待办", notes: "问题与决定", next: "下一步" };
+const pathKey = (path: string) => path.replace(/\\/g, "/").normalize("NFC").toLowerCase();
 
 // 相对链接要放进 Markdown 的 [文字](链接) 里：空格、括号这些会把它截断。中文不转，报告的源文件还看得懂
 const linkPath = (path: string) =>
@@ -87,7 +93,8 @@ const withoutFrontmatter = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\
 
 /**
  * 把勾选的条目编成材料。顺序就是编号的顺序，也是超过上限时谁先占额度的顺序：
- * 原话 → 这块白板的卡片（标记过的在前）→ 卡片之间的连线 → 图 → 别的白板 → 论文的批注 → 笔记。
+ * 原话 → 手填的记录 → 这块白板的卡片（标记过的在前）→ 卡片之间的连线 → 图 → 别的白板 → 论文的批注 → 笔记。
+ * 取的时候顺带查一样：手记里关联的卡片、文件还在不在，不在的记成「对不上的地方」。
  */
 export async function collectStageMaterials(
   input: StageReportInput,
@@ -101,6 +108,43 @@ export async function collectStageMaterials(
 
   const cardsById = new Map(sidecar.cards.map((card) => [card.id, card]));
   const sectionsById = new Map(sidecar.sections.map((section) => [section.id, section]));
+
+  // 手填的记录紧跟在原话后面：都是用户自己说的，先占额度。定格以后它们封存在这个节点的那份记录里
+  const sealed = recordPath(input.title);
+  for (const item of picked.filter((candidate) => candidate.kind === "record")) {
+    const { section, done, links } = item.record!;
+    const state =
+      section === "done" ? "" : done ? "（已经勾成做完）" : section === "notes" ? "（还没解决）" : "（还没做）";
+    const title = item.title || "（没有标题）";
+    const id = materials.add({
+      path: sealed,
+      label: `【手记·${RECORD_LABEL[section]}】${title}`,
+      text: [
+        `${item.text || title}${state}`,
+        links.length > 0 && `关联：${links.map((link) => link.label || link.href).join("、")}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      link: `../../${linkPath(sealed)}`,
+      byHand: true,
+    });
+    if (!id) continue;
+    // 程序自己能查的一样：手记里关联的卡片、文件还在不在
+    for (const link of links) {
+      signal?.throwIfAborted();
+      const target = resolveRecordLinkPath(sealed, link.href);
+      if (!target) continue;
+      const card = target.fragment?.startsWith("node=") ? target.fragment.slice("node=".length) : undefined;
+      const name = link.label || target.path;
+      if (card && pathKey(target.path) === pathKey(board)) {
+        if (!cardsById.has(card) && !sectionsById.has(card)) {
+          materials.conflict(`手记「${title}」关联的卡片「${name}」已经不在白板上了`, [id]);
+        }
+      } else if (!(await io.exists(target.path))) {
+        materials.conflict(`手记「${title}」关联的文件找不到了：${target.path}`, [id]);
+      }
+    }
+  }
   const titleOf = (id: string) => cardsById.get(id)?.title || sectionsById.get(id)?.title || "（没有标题）";
   /** 卡片编号 → 它那条材料的编号 */
   const sources = new Map<string, string>();
@@ -326,7 +370,7 @@ export async function freezeAndReport(cards: readonly ReviewItem[]): Promise<voi
   if (reportBusy()) throw new Error("researchReport.busy");
   await assertReportAiConfigured();
   const { project, root, board, base } = state;
-  const all = [...cards, ...state.others];
+  const all = [...cards, ...state.records, ...state.others];
   const picked = all.filter((item) => !state.dropped.has(item.id));
   if (picked.length === 0 && !state.note.trim()) throw new Error("researchReport.nothingPicked");
   const skip = all.filter((item) => state.dropped.has(item.id)).map((item) => item.title);
@@ -375,6 +419,7 @@ export async function freezeAndReport(cards: readonly ReviewItem[]): Promise<voi
       return blob && new Uint8Array(await blob.arrayBuffer());
     },
     sectionImage: (id) => regionImage(project, id),
+    exists: (path) => exists(under(root, path)),
   };
   startReportTask({
     root,

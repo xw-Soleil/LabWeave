@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
+  citedEvidence,
   createReportMarkdown,
   createReportPptx,
+  type ReportConflict,
   type ReportDocument,
   type ReportDraft,
   type ReportEvidence,
@@ -167,7 +169,38 @@ const draftSchema = z.object({
     )
     .min(1)
     .max(16),
+  // 这一栏写坏了不值得让整份草稿作废：当作没写
+  conflicts: z
+    .array(z.object({ text: z.string().trim().min(1).max(600), sourceIds: z.array(z.string()).max(10) }))
+    .max(12)
+    .optional()
+    .catch(undefined),
 });
+
+const MAX_CONFLICTS = 12;
+
+/**
+ * 核对 AI 列的「对不上的地方」：每一条要同时指到一条手填的记录和一条别的材料，才算两边对不上，写进正文。
+ * 只指到手记的，是「手记里有、别处没找到对应的」；只指到别的材料的，说不清是和哪条手记对不上。
+ * 这两种都不进正文，换成一句话放进待核对项。编号不存在的先去掉再看。
+ */
+export function settleConflicts(
+  draft: ReportDraft,
+  evidence: readonly ReportEvidence[],
+): { conflicts: ReportConflict[]; warnings: string[] } {
+  const byId = new Map(evidence.map((item) => [item.id, item]));
+  const conflicts: ReportConflict[] = [];
+  const warnings: string[] = [];
+  for (const { text, sourceIds } of draft.conflicts ?? []) {
+    const known = [...new Set(sourceIds)].filter((id) => byId.has(id));
+    const byHand = known.some((id) => byId.get(id)!.byHand);
+    const other = known.some((id) => !byId.get(id)!.byHand);
+    if (byHand && other) conflicts.push({ text, sourceIds: known });
+    else if (byHand) warnings.push(`手记里提到、别的材料里没找到对应的（${known.join("、")}）：${text}`);
+    else warnings.push(`AI 觉得有一处对不上，但没有指明是和哪条手记：${text}`);
+  }
+  return { conflicts: conflicts.slice(0, MAX_CONFLICTS), warnings };
+}
 
 export function parseReportDraft(
   text: string,
@@ -259,6 +292,8 @@ export interface ReportMaterials {
   images: ReportImage[];
   /** 没放进来的、截短了的、要用户核对的：原样写进报告末尾的「待核对项」 */
   warnings: string[];
+  /** 取材料时程序自己查出来的对不上的地方（手记里关联的东西已经不在了）：直接写进报告的那一节 */
+  conflicts: ReportConflict[];
 }
 
 /**
@@ -269,6 +304,7 @@ export function collectReportMaterials(signal?: AbortSignal) {
   const evidence: ReportEvidence[] = [];
   const images: ReportImage[] = [];
   const warnings: string[] = [];
+  const conflicts: ReportConflict[] = [];
   let remaining = MAX_TEXT;
   let imageBytes = 0;
   return {
@@ -319,6 +355,10 @@ export function collectReportMaterials(signal?: AbortSignal) {
     warn(text: string) {
       warnings.push(text);
     },
+    /** 程序查出来的一处对不上：sourceIds 是有关的材料编号 */
+    conflict(text: string, sourceIds: string[]) {
+      conflicts.push({ text, sourceIds });
+    },
     /** 一条文字材料都没有时抛 researchReport.noMaterials */
     done(): ReportMaterials {
       if (!evidence.length) throw failure("noMaterials");
@@ -326,6 +366,7 @@ export function collectReportMaterials(signal?: AbortSignal) {
       return {
         evidence,
         images,
+        conflicts,
         warnings:
           unique.length > MAX_WARNINGS
             ? [
@@ -358,10 +399,18 @@ export function reportPrompt(materials: ReportMaterials, request: Pick<ReportReq
     : `到 ${meta.until.slice(0, 10)}`;
   return [
     `根据下面的材料写一份中文的${meta.type}汇报，项目是「${meta.project}」，范围是${range}。材料是用户自己在白板上挑出来要讲的；内容紧凑，优先用户自己的记录和思考。`,
-    "输出 JSON：{title:string,summary:string,sections:[{heading:string,paragraphs:string[],sourceIds:string[],imageIds:string[]}]}",
+    "输出 JSON：{title:string,summary:string,sections:[{heading:string,paragraphs:string[],sourceIds:string[],imageIds:string[]}],conflicts:[{text:string,sourceIds:string[]}]}",
     "每节至少引用一条有效来源。图片可选；仅根据图片的关联文字使用图片，不能编造视觉观察。建议 3—8 节，按「做了什么 / 发现了什么问题 / 下一步」的顺序组织，材料少就写短。",
     "材料标签里带【进展】的进「做了什么」，带【问题】的进「发现了什么问题」，带【想法】的进「下一步」。标签是「这次想讲的」的那一条是用户的原话：照它定重点，可以引用。",
     "只写材料里有的：材料里没有、用户的原话里也没提的事不编；下一步的打算、还没做完的事不能写成已经完成。把卡片挪了位置、改了排版不算成果。",
+    ...(materials.evidence.some((item) => item.byHand)
+      ? [
+          "标签以【手记】开头的是用户自己手填的记录，别的是程序自动记下的（白板、批注、笔记）。两份都要用。" +
+            "两边对不上的地方不要自己挑一边写进正文，放进 conflicts：text 用一两句话说清哪里对不上，sourceIds 里同时给出那条手记和对不上的那条材料的编号。" +
+            "常见的几种：手记和卡片上写的结论、数字不一样；手记里还是待办，白板上已经有了结果；手记说做完了，别的材料却说没成。" +
+            "手记说做完了、别的材料里完全找不到对应的，也放进来，sourceIds 只给那条手记。没有对不上的就给空数组，不要为了凑数硬找。",
+        ]
+      : ["这次没有手填的记录，conflicts 给空数组。"]),
     ...(skip.length > 0
       ? [
           `用户整理时去掉了这些，不要写进汇报：${skip.slice(0, MAX_SKIPPED).join("、")}${skip.length > MAX_SKIPPED ? " 等" : ""}`,
@@ -457,7 +506,7 @@ async function exportReport(
   await io.write(markdownPath, encoder.encode(createReportMarkdown(document, files.assets)));
   aborted(signal);
   await io.write(pptxPath, pptx);
-  const cited = new Set(document.draft.sections.flatMap((section) => section.sourceIds));
+  const cited = new Set(citedEvidence(document).map(({ id }) => id));
   await io.write(
     `${directory}/${files.sources}`,
     encoder.encode(
@@ -468,6 +517,7 @@ async function exportReport(
           unused: document.evidence
             .filter(({ id }) => !cited.has(id))
             .map(({ id, path, label }) => ({ id, path, label })),
+          conflicts: document.conflicts ?? [],
           warnings: document.warnings,
         },
         null,
@@ -511,7 +561,15 @@ export async function generateResearchReport(
     );
   }
   aborted(signal);
-  const document: ReportDocument = { ...materials, draft, meta: request.meta };
+  // 程序查出来的在前，AI 列的、两头都核对过的在后；只指了一头的换成一句话进待核对项
+  const settled = settleConflicts(draft, materials.evidence);
+  const document: ReportDocument = {
+    ...materials,
+    draft,
+    meta: request.meta,
+    conflicts: [...materials.conflicts, ...settled.conflicts],
+    warnings: [...materials.warnings, ...settled.warnings],
+  };
   const jobId = crypto.randomUUID();
   await persistDraft(root, document, jobId, io, signal);
   request.onProgress?.({ stage: "exporting" });

@@ -3935,6 +3935,8 @@ research:
     untitled: （沒有標題）
     removed: "另有 {{count}} 張刪掉的，畫布上留著淡影"
     elsewhere: 別的白板、論文和筆記
+    records: 你記的
+    recordDone: 已勾完成
     boardCounts: "白板：新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
     paperCounts: "論文：{{annotations}} 條批註 · {{excerpts}} 段摘錄"
     noteSaved: 筆記：改過

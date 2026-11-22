@@ -7,6 +7,7 @@ import { ACTIVITY_MARKS, flushActivityLog, type ActivityMark } from "./ActivityL
 import { buildAiSidecar } from "./AiSidecarBuilder";
 import {
   baselineOf,
+  fingerprint,
   listSnapshots,
   localTime,
   nodeOnDay,
@@ -18,7 +19,17 @@ import {
   type RecordReader,
   type Snapshot,
 } from "./ProjectRecord";
-import { sealNodeRecord } from "./NodeRecord";
+import {
+  CURRENT_RECORD,
+  loadNodeRecord,
+  previewSealed,
+  recordItemKey,
+  recordPath,
+  sealNodeRecord,
+  type NodeRecord,
+  type RecordLink,
+  type RecordSection,
+} from "./NodeRecord";
 import { compareSnapshots, readActivityLog, recordLink, type ReportSource } from "./ReportTools";
 import { ResearchFolder } from "./ResearchFolder";
 import { nodeTitle, snapshotFiles, takeNode, type NodeInput } from "./Snapshot";
@@ -38,7 +49,7 @@ export interface ReviewItem {
    * 文献库里的论文前面加 library:
    */
   id: string;
-  kind: "card" | "board" | "paper" | "note";
+  kind: "card" | "board" | "paper" | "note" | "record";
   title: string;
   /** 卡片：内容开头 */
   text?: string;
@@ -50,6 +61,29 @@ export interface ReviewItem {
   counts?: Record<string, number>;
   /** 点了跳到哪 */
   link?: string;
+  /** 手填的记录：在哪一节、勾没勾、关联了什么 */
+  record?: { section: RecordSection; done: boolean; links: readonly RecordLink[] };
+}
+
+/**
+ * 手填的记录里的事项（进展记录）。编号是照内容算的：同一条再进整理时还是同一个编号，
+ * 上次去掉不讲的才认得回来。内容一模一样的两条只列一次。
+ */
+export function recordItems(root: string, record: NodeRecord | undefined, file: string): ReviewItem[] {
+  const listed = new Map<string, ReviewItem>();
+  for (const item of record?.items ?? []) {
+    const id = `record:${fingerprint(recordItemKey(item))}`;
+    if (listed.has(id)) continue;
+    listed.set(id, {
+      id,
+      kind: "record",
+      title: item.summary || item.text.split("\n")[0],
+      ...(item.text && { text: item.text }),
+      link: recordLink(root, { file }),
+      record: { section: item.section, done: item.done, links: item.links },
+    });
+  }
+  return [...listed.values()];
 }
 
 const baseName = (path: string) => path.replace(/\\/g, "/").split("/").pop() ?? path;
@@ -228,6 +262,8 @@ export interface StageReviewState {
   dropped: ReadonlySet<string>;
   /** 别的白板、论文、笔记：进来时算一次 */
   others: readonly ReviewItem[];
+  /** 你自己手填的记录里的事项：这个节点定格以后会封存进去的那些。便签里记了新的会跟着变 */
+  records: readonly ReviewItem[];
   /** 别的白板和基准比出来的细节，写汇报时当材料 */
   boards: readonly ComparedBoard[];
   marks: Readonly<Record<string, ActivityMark>>;
@@ -298,6 +334,7 @@ export async function enterStageReview(project: Project, type: NodeType = "meeti
     compared = result.boards as unknown as ComparedBoard[];
   }
   const boards = boardItems(root, board, compared);
+  const records = await reviewRecords(root, type);
   const dropped = new Set(again?.manifest.node?.dropped ?? []);
   showSinceLast(
     project,
@@ -314,11 +351,29 @@ export async function enterStageReview(project: Project, type: NodeType = "meeti
     note: note ?? again?.manifest.node?.note ?? "",
     dropped,
     others: [...boards, ...papers, ...notes],
+    records,
     boards: compared,
     marks,
   });
   // 白板可能暂停着渲染，让它马上重画
   project.loop();
+}
+
+/** 这个节点现在定格的话会封存进去的手记：「进行中」里的，加上今天同一个节点已经封存过的 */
+async function reviewRecords(root: string, type: NodeType): Promise<ReviewItem[]> {
+  const title = nodeTitle(type);
+  const [current, before] = await Promise.all([loadNodeRecord(root), loadNodeRecord(root, title)]);
+  // 点了打开的是东西主要在的那一份：今天封存过就是封存的那份，没有就是「进行中」
+  return recordItems(root, previewSealed(current, before, title), recordPath(before ? title : CURRENT_RECORD));
+}
+
+/** 便签里记了新的、勾了一条：整理着的话把「你记的」那一组重新读一遍。没在整理时什么都不做 */
+export async function refreshReviewRecords(): Promise<void> {
+  const state = store.get(stageReviewAtom);
+  if (!state) return;
+  const records = await reviewRecords(state.root, state.type);
+  // 读的这会儿可能已经退出、或者换了一次整理
+  if (store.get(stageReviewAtom) === state) store.set(stageReviewAtom, { ...state, records });
 }
 
 /** 退出整理，画布恢复原样。没在整理时什么都不做 */
@@ -345,7 +400,7 @@ export function setReviewDropped(dropped: ReadonlySet<string>) {
 
 /** 这次整理要写进节点的内容。cards 是这块白板上列出来的卡片（跟着白板的修改现算，所以由界面给） */
 export function reviewNode(state: StageReviewState, cards: readonly ReviewItem[]): NodeInput {
-  const ids = [...cards, ...state.others].map((item) => item.id);
+  const ids = [...cards, ...state.records, ...state.others].map((item) => item.id);
   return {
     type: state.type,
     title: nodeTitle(state.type),

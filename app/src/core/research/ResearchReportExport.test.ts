@@ -73,9 +73,40 @@ describe("the report as Markdown", () => {
     expect(tail).not.toContain("没用上的卡片");
     expect(tail).toContain("## 材料范围与待核对项\n\n- 论文的批注比较多，只放了前 40 条：main.pdf");
   });
+
+  it("has a section for mismatches only when there are some, and counts their sources as used", () => {
+    expect(report).not.toContain("两边对不上的地方");
+    const conflicted = createReportMarkdown({
+      ...document,
+      conflicts: [{ text: "原话说下周换损失函数，这张卡片上写的是已经换过了", sourceIds: ["S1", "S4"] }],
+    });
+    expect(conflicted).toContain(
+      "## 两边对不上的地方\n\n- 原话说下周换损失函数，这张卡片上写的是已经换过了 S1 这次想讲的 · [S4 没用上的卡片](rwb://open?path=x)\n\n## 材料来源",
+    );
+    // S4 正文里没用，只在这一节里用了：也列进材料来源
+    expect(conflicted.slice(conflicted.indexOf("## 材料来源"))).toContain("- [S4 没用上的卡片](rwb://open?path=x)");
+  });
 });
 
 describe("the report as slides", () => {
+  it("adds one slide for the mismatches, before the list of sources", async () => {
+    const pptx = await createReportPptx({
+      ...document,
+      conflicts: [{ text: "原话说下周换损失函数，这张卡片上写的是已经换过了", sourceIds: ["S1", "S4"] }],
+    });
+    const reader = new ZipReader(new Uint8ArrayReader(pptx));
+    const entries = await reader.getEntries();
+    const slides = entries.filter((entry) => /^ppt\/slides\/slide\d+\.xml$/.test(entry.filename));
+    // 比没有对不上的时候多一页
+    expect(slides).toHaveLength(7);
+    const fifth = entries.find((entry) => entry.filename === "ppt/slides/slide5.xml")!;
+    if (fifth.directory) throw new Error("不该是文件夹");
+    const xml = await fifth.getData(new TextWriter());
+    expect(xml).toContain("两边对不上的地方");
+    expect(xml).toContain("[S1][S4]");
+    await reader.close();
+  });
+
   it("builds a .pptx that unzips, with one slide per page of text and one per picture", async () => {
     const reader = new ZipReader(new Uint8ArrayReader(await createReportPptx(document)));
     const entries = await reader.getEntries();

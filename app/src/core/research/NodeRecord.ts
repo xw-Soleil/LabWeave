@@ -923,7 +923,7 @@ export function sectionItems(record: NodeRecord | null, section: RecordSection):
 // —— 定格时封存 ——
 
 // 认「同一条」看内容；自动提炼出来的标题会跟着它在哪一节变，不能拿来认。只有标题、没有内容的才看标题
-const itemKey = (item: RecordItem) => {
+export const recordItemKey = (item: RecordItem) => {
   const text = item.text.replace(/\s+/g, " ").trim();
   return text || `标题：${(item.summary ?? "").trim()}`;
 };
@@ -962,7 +962,7 @@ export function sealMarkdown(
     sealed = before;
     for (const item of items) {
       const known = parseNodeRecord(stored(title, sealed));
-      const same = known.items.find((candidate) => itemKey(candidate) === itemKey(item));
+      const same = known.items.find((candidate) => recordItemKey(candidate) === recordItemKey(item));
       if (!same) sealed = insertIntoSection(sealed, `## ${titles[item.section]}`, blockOf(item));
       else if (same.done !== item.done) sealed = toggleRecordMarkdown(known, same.id, item.done);
     }
@@ -996,6 +996,19 @@ export function sealMarkdown(
         : insertIntoSection(next, `## ${titles[item.section]}`, block);
   }
   return { sealed, next };
+}
+
+/**
+ * 这个节点现在定格的话，封存的那份里会有哪些事项。只算、不写文件，整理时列清单用。
+ * current 是「进行中」，before 是这个节点今天已经封存过的那一份；两份都没有东西给 undefined。
+ */
+export function previewSealed(
+  current: NodeRecord | null,
+  before: NodeRecord | null,
+  title: string,
+): NodeRecord | undefined {
+  if (!current || current.items.length === 0) return before ?? undefined;
+  return parseNodeRecord(stored(title, sealMarkdown(current.markdown, before?.markdown, title).sealed));
 }
 
 /**

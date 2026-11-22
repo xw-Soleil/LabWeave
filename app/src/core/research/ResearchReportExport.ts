@@ -15,6 +15,14 @@ export interface ReportEvidence {
   text: string;
   /** 点了回到原处：卡片、批注是 rwb://，笔记是相对报告的路径。没有地方可回的不给 */
   link?: string;
+  /** 用户自己手填的记录（进展记录里的事项）；别的是程序自动记下的 */
+  byHand?: boolean;
+}
+
+/** 两边对不上的一处：手填的记录和别的材料说法不一样，或者手记里关联的东西已经不在了 */
+export interface ReportConflict {
+  text: string;
+  sourceIds: string[];
 }
 
 export interface ReportImage {
@@ -35,6 +43,8 @@ export interface ReportDraft {
     sourceIds: string[];
     imageIds: string[];
   }[];
+  /** AI 列出来的对不上的地方，还没核对两头；核对过的在 ReportDocument.conflicts */
+  conflicts?: ReportConflict[];
 }
 
 /** 这份汇报是哪个节点的 */
@@ -57,8 +67,11 @@ export interface ReportDocument {
   images: ReportImage[];
   meta: ReportMeta;
   warnings: string[];
+  /** 核对过的对不上的地方：单独一节写在报告里。没有就不写这一节 */
+  conflicts?: ReportConflict[];
 }
 
+const CONFLICTS_TITLE = "两边对不上的地方";
 const day = (time: string) => time.slice(0, 10);
 const rangeOf = ({ since, until }: ReportMeta) => (since ? `${day(since)} ~ ${day(until)}` : `到 ${day(until)}`);
 
@@ -128,8 +141,12 @@ interface Slide {
   image?: ReportImage;
 }
 
-function citedEvidence(document: ReportDocument): ReportEvidence[] {
-  const ids = new Set(document.draft.sections.flatMap((section) => section.sourceIds));
+/** 正文和「对不上的地方」里用到的材料 */
+export function citedEvidence(document: ReportDocument): ReportEvidence[] {
+  const ids = new Set([
+    ...document.draft.sections.flatMap((section) => section.sourceIds),
+    ...(document.conflicts ?? []).flatMap((conflict) => conflict.sourceIds),
+  ]);
   return document.evidence.filter((source) => ids.has(source.id));
 }
 
@@ -161,6 +178,14 @@ function slidesOf(document: ReportDocument): Slide[] {
       if (image) slides.push({ title: section.heading, lines: [], source, image });
     }
   }
+  if (document.conflicts?.length)
+    paginate(
+      CONFLICTS_TITLE,
+      document.conflicts.flatMap((conflict) =>
+        wrapReportText(`${conflict.text}（${conflict.sourceIds.map((id) => `[${id}]`).join("")}）`),
+      ),
+      "手填的记录和别的材料不一致，或者手记里关联的东西找不到了；请核对后再讲",
+    );
   const references = citedEvidence(document)
     .map((item) => `[${item.id}] ${item.label}`)
     .flatMap((line) => wrapReportText(line));
@@ -327,6 +352,16 @@ export function createReportMarkdown(document: ReportDocument, assets = "素材"
       .map((id) => document.evidence.find((item) => item.id === id))
       .filter((item): item is ReportEvidence => !!item);
     lines.push(`出处：${sources.map((source) => sourceLink(source, 24)).join(" · ")}`, "");
+  }
+  if (document.conflicts?.length) {
+    lines.push(`## ${CONFLICTS_TITLE}`, "");
+    for (const conflict of document.conflicts) {
+      const sources = conflict.sourceIds
+        .map((id) => document.evidence.find((item) => item.id === id))
+        .filter((item): item is ReportEvidence => !!item);
+      lines.push(`- ${conflict.text} ${sources.map((source) => sourceLink(source, 24)).join(" · ")}`.trimEnd());
+    }
+    lines.push("");
   }
   lines.push("## 材料来源", "");
   for (const source of citedEvidence(document)) lines.push(`- ${sourceLink(source, 80)}`);

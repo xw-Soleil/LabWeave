@@ -3816,6 +3816,8 @@ research:
     untitled: (untitled)
     removed: "{{count}} more were removed; the canvas keeps a faint shadow of each"
     elsewhere: Other boards, papers and notes
+    records: What you noted
+    recordDone: ticked as done
     boardCounts: "Board: new {{added}} · edited {{edited}} · removed {{removed}}"
     paperCounts: "Paper: {{annotations}} annotations · {{excerpts}} excerpts"
     noteSaved: "Note: edited"

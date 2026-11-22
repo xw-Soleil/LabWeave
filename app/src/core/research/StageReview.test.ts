@@ -43,7 +43,19 @@ vi.mock("./ResearchFolder", () => ({
     toRelative: (path: string, root: string) => path.slice(root.length + 1),
   },
 }));
-vi.mock("./NodeRecord", () => ({ sealNodeRecord: mocks.sealed }));
+// 手填的记录：解析和预览用真的；读文件从上面的假磁盘读，封存（要写文件）换成假的
+vi.mock("./NodeRecord", async (original) => {
+  const actual = await original<typeof import("./NodeRecord")>();
+  return {
+    ...actual,
+    sealNodeRecord: mocks.sealed,
+    loadNodeRecord: async (root: string, name: string = actual.CURRENT_RECORD) => {
+      const path = actual.recordPath(name);
+      const markdown = mocks.disk.get(`${root}/${path}`);
+      return typeof markdown === "string" ? actual.parseNodeRecord({ name, path, markdown, revision: "" }) : null;
+    },
+  };
+});
 vi.mock("./Snapshot", () => ({
   snapshotFiles: { read: mocks.read, folders: mocks.folders, exists: mocks.exists, write: async () => {} },
   takeNode: mocks.taken,
@@ -67,6 +79,8 @@ import {
   leaveStageReview,
   logItems,
   onlySelected,
+  recordItems,
+  refreshReviewRecords,
   setReviewDropped,
   setReviewNote,
   stageReviewAtom,
@@ -344,6 +358,48 @@ describe("reviewing a board", () => {
     const other = store.get(stageReviewAtom)!.boards.find(({ board }) => board === "另一块.prg")!;
     expect(other.counts).toMatchObject({ added: 1, edited: 0, removed: 0 });
     expect(other.added!.map(({ text }) => text)).toEqual(["另一块白板上新加的"]);
+  });
+
+  it("lists what the user noted by hand: the open record plus what today's node has already sealed", async () => {
+    await oneWeekOfWork();
+    const sealedThisMorning =
+      "# 进展记录 · 今天 meeting\n\n## 进展\n\n- [x] 跑通了 B 方法\n\n## 待办\n\n- [ ] 换损失函数再跑一遍\n";
+    const sinceThen =
+      "# 进展记录 · 进行中\n\n## 进展\n\n- [x] 下午又跑了一组对照\n\n## 待办\n\n- [ ] 换损失函数再跑一遍\n- [ ] 换损失函数再跑一遍\n";
+    mocks.disk.set(`${root}/进展记录/今天 meeting.md`, sealedThisMorning);
+    mocks.disk.set(`${root}/进展记录/进行中.md`, sinceThen);
+    await enterStageReview(fakeBoard(now) as never);
+    const { records } = store.get(stageReviewAtom)!;
+    // 就是这次定格以后封存的那份里会有的：上午封存的，加上下午新记的；带过来的那条不重复
+    expect(
+      records.map(({ kind, title, record }) => `${kind} ${record!.section} ${record!.done ? "✓" : "·"} ${title}`),
+    ).toEqual(["record done ✓ 跑通了 B 方法", "record done ✓ 下午又跑了一组对照", "record todo · 换损失函数再跑一遍"]);
+    expect(records.every(({ id, link }) => id.startsWith("record:") && link?.includes("进展记录/今天"))).toBe(true);
+
+    // 去掉一条不讲：和卡片一样记进节点，下次进来还认得
+    setReviewDropped(new Set([records[0].id]));
+    mocks.taken.mockResolvedValue({ name: "2026-11-21 1000", manifest: { node: { title: "今天 meeting" } } });
+    await freezeStageReview([]);
+    const node = mocks.taken.mock.calls[0][0];
+    expect(node.dropped).toEqual([records[0].id]);
+    expect(node.picked.slice(0, 2)).toEqual([records[1].id, records[2].id]);
+
+    // 整理着的时候便签里又记了一条：那一组跟着变；没在整理时什么都不做
+    await refreshReviewRecords();
+    await enterStageReview(fakeBoard(now) as never);
+    mocks.disk.set(`${root}/进展记录/进行中.md`, sinceThen.replace("## 待办\n", "## 待办\n\n- [ ] 刚记的一条\n"));
+    await refreshReviewRecords();
+    expect(store.get(stageReviewAtom)!.records.map(({ title }) => title)).toContain("刚记的一条");
+    // 同一条的编号不变
+    expect(store.get(stageReviewAtom)!.records[0].id).toBe(records[0].id);
+    leaveStageReview();
+
+    // 没记过东西的项目：这一组是空的
+    mocks.disk.delete(`${root}/进展记录/今天 meeting.md`);
+    mocks.disk.delete(`${root}/进展记录/进行中.md`);
+    expect(recordItems(root, undefined, "进展记录/进行中.md")).toEqual([]);
+    await enterStageReview(fakeBoard(now) as never);
+    expect(store.get(stageReviewAtom)!.records).toEqual([]);
   });
 
   it("picks up today's node again: same baseline, with what was dropped and written last time", async () => {

@@ -7,6 +7,7 @@ import {
   reportImageDimensions,
   reportPrompt,
   retryResearchReportExport,
+  settleConflicts,
   type ReportOutputDependencies,
   type ReportRequest,
 } from "./ResearchReport";
@@ -153,6 +154,36 @@ describe("checking what the AI wrote", () => {
       "researchReport.invalidResponse",
     );
   });
+
+  it("only counts a mismatch that points at both a hand-written note and something else", () => {
+    const mixed = [
+      { id: "S1", path: "进展记录/x.md", label: "【手记·进展】跑通了", text: "跑通了", byHand: true },
+      { id: "S2", path: "进展记录/x.md", label: "【手记·待办】换损失函数", text: "换损失函数（还没做）", byHand: true },
+      { id: "S3", path: "白板.prg#c1", label: "B 方法的结果", text: "边界条件会炸" },
+    ];
+    const withConflicts = (conflicts: unknown) =>
+      parseReportDraft(JSON.stringify({ ...JSON.parse(draft([{ sourceIds: ["S3"] }])), conflicts }), mixed, []);
+    const settled = settleConflicts(
+      withConflicts([
+        { text: "手记说跑通了，卡片上写的是会炸", sourceIds: ["S1", "S3", "S3", "S99"] },
+        { text: "手记说做完了一组对照，别处没看到", sourceIds: ["S1"] },
+        { text: "两张卡片的数字不一样", sourceIds: ["S3"] },
+        { text: "编号全是编的", sourceIds: ["S77"] },
+      ]),
+      mixed,
+    );
+    // 两头都指到的才进正文；编出来的编号先去掉
+    expect(settled.conflicts).toEqual([{ text: "手记说跑通了，卡片上写的是会炸", sourceIds: ["S1", "S3"] }]);
+    expect(settled.warnings).toEqual([
+      "手记里提到、别的材料里没找到对应的（S1）：手记说做完了一组对照，别处没看到",
+      "AI 觉得有一处对不上，但没有指明是和哪条手记：两张卡片的数字不一样",
+      "AI 觉得有一处对不上，但没有指明是和哪条手记：编号全是编的",
+    ]);
+    // 没写这一栏、写坏了，都当作没有，不让整份草稿作废
+    expect(settleConflicts(withConflicts(undefined), mixed)).toEqual({ conflicts: [], warnings: [] });
+    expect(withConflicts("没有对不上的").conflicts).toBeUndefined();
+    expect(withConflicts([{ text: "", sourceIds: "S1" }]).conflicts).toBeUndefined();
+  });
 });
 
 describe("what the AI is told", () => {
@@ -166,6 +197,19 @@ describe("what the AI is told", () => {
     expect(prompt).toContain("不能写成已经完成");
     expect(prompt).not.toContain("rwb://");
     expect(prompt).not.toContain("白板.prg#c1");
+    // 这次没有手填的记录：不让它去找「对不上」
+    expect(prompt).toContain("这次没有手填的记录");
+  });
+
+  it("asks for mismatches to be listed apart when the user's hand-written notes are among the materials", () => {
+    const materials = collectReportMaterials();
+    materials.add({ path: "进展记录/x.md", label: "【手记·进展】跑通了", text: "跑通了", byHand: true });
+    materials.add({ path: "白板.prg#c1", label: "B 方法的结果", text: "边界条件会炸" });
+    const prompt = reportPrompt(materials.done(), { meta });
+    expect(prompt).toContain("conflicts:[{text:string,sourceIds:string[]}]");
+    expect(prompt).toContain("两份都要用");
+    expect(prompt).toContain("不要自己挑一边写进正文");
+    expect(prompt).not.toContain("这次没有手填的记录");
   });
 });
 
@@ -205,6 +249,50 @@ describe("generating a report", () => {
       unused: [{ id: "S1", path: "节点：2026-11-21 组会", label: "这次想讲的" }],
     });
     expect(files.get(`${folder}/汇报.pptx`)!.slice(0, 2)).toEqual(new Uint8Array([80, 75]));
+  });
+
+  it("writes mismatches into their own section: what the program found, then what the AI found and could back up", async () => {
+    const materials = collectReportMaterials();
+    const note = materials.add({
+      path: "进展记录/2026-11-21 组会.md",
+      label: "【手记·进展】跑通了 B 方法",
+      text: "跑通了",
+      link: "../../进展记录/2026-11-21%20组会.md",
+      byHand: true,
+    })!;
+    materials.add({ path: "白板.prg#c1", label: "B 方法的结果", text: "边界条件会炸", link: "rwb://c1" });
+    materials.conflict("手记「跑通了 B 方法」关联的卡片「结果」已经不在白板上了", [note]);
+    const reply = JSON.stringify({
+      ...JSON.parse(draft([{ sourceIds: ["S2"] }])),
+      conflicts: [
+        { text: "手记说跑通了，卡片上写的是边界条件会炸", sourceIds: ["S1", "S2"] },
+        { text: "手记提到的对照实验别处没看到", sourceIds: ["S1"] },
+      ],
+    });
+    const { io, text } = fakeIo([reply]);
+    const result = await generateResearchReport(request, materials.done(), io);
+    const report = text(`${folder}/报告.md`);
+    expect(report).toContain(
+      [
+        "## 两边对不上的地方",
+        "",
+        "- 手记「跑通了 B 方法」关联的卡片「结果」已经不在白板上了 [S1 【手记·进展】跑通了 B 方法](../../进展记录/2026-11-21%20组会.md)",
+        "- 手记说跑通了，卡片上写的是边界条件会炸 [S1 【手记·进展】跑通了 B 方法](../../进展记录/2026-11-21%20组会.md) · [S2 B 方法的结果](rwb://c1)",
+        "",
+        "## 材料来源",
+      ].join("\n"),
+    );
+    // 只指了一头的不进正文，在待核对项里说一句
+    expect(result.warnings).toEqual(["手记里提到、别的材料里没找到对应的（S1）：手记提到的对照实验别处没看到"]);
+    expect(report).toContain("- 手记里提到、别的材料里没找到对应的（S1）：手记提到的对照实验别处没看到");
+    // 只在「对不上」里用到的材料也算用上了
+    const sources = JSON.parse(text(`${folder}/来源.json`));
+    expect(sources.used.map(({ id }: { id: string }) => id)).toEqual(["S1", "S2"]);
+    expect(sources.conflicts).toHaveLength(2);
+
+    // 导出失败以后重新导出：这一节还在
+    const again = await retryResearchReportExport(root, result.jobId, undefined, io);
+    expect(text(again.markdownPath)).toContain("## 两边对不上的地方");
   });
 
   it("puts a second report for the same node next to the first one instead of overwriting it", async () => {

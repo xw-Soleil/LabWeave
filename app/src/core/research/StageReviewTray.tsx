@@ -9,6 +9,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { NODE_RECORD_CHANGED_EVENT } from "./NodeRecord";
 import { recordErrorText } from "./NodeRecordFloat";
 import { NODE_TYPES, isNode, type NodeType } from "./ProjectRecord";
 import { followReportLink } from "./ReportLinks";
@@ -22,6 +23,7 @@ import {
   freezeStageReview,
   leaveStageReview,
   onlySelected,
+  refreshReviewRecords,
   setReviewDropped,
   setReviewNote,
   stageReviewAtom,
@@ -73,7 +75,7 @@ export function StageReviewTray({ project, right }: { project: Project; right: s
 
 function Tray({ state, right }: { state: StageReviewState; right: string }) {
   const { t } = useTranslation("research");
-  const { project, root, board, base, marks, dropped, others } = state;
+  const { project, root, board, base, marks, dropped, others, records } = state;
   const [busy, setBusy] = useState<"freeze" | "summarize" | "type">();
   // 同一时间只生成一份汇报：上一份还在跑的时候只能先「只定格」
   const reporting = useAtomValue(reportTaskAtom)?.state === "running";
@@ -97,6 +99,12 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
     // cardsNow 每次渲染都是新的函数，不能放进依赖里；它用到的就是下面这几样
   }, [project, root, board, marks]);
   const { cards, removed } = listed;
+  // 整理着的时候在便签里又记了一条、勾了一条：「你记的」那一组跟着变
+  useEffect(() => {
+    const changed = () => void refreshReviewRecords().catch(stageReviewFailed);
+    window.addEventListener(NODE_RECORD_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(NODE_RECORD_CHANGED_EVENT, changed);
+  }, []);
 
   const run = (kind: NonNullable<typeof busy>, task: () => Promise<unknown>) => {
     setBusy(kind);
@@ -121,8 +129,8 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
     setReviewDropped(change(cards, selected, dropped));
   };
 
-  const total = cards.length + others.length;
-  const picked = [...cards, ...others].filter((item) => !dropped.has(item.id)).length;
+  const total = cards.length + records.length + others.length;
+  const picked = [...cards, ...records, ...others].filter((item) => !dropped.has(item.id)).length;
   const since = !base
     ? t("stageReview.sinceNothing")
     : isNode(base)
@@ -159,7 +167,13 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
         </span>
         {item.kind !== "card" && (
           <span className="text-muted-foreground block text-[11px]">
-            {item.kind === "note" ? t("stageReview.noteSaved") : t(`stageReview.${item.kind}Counts`, item.counts)}
+            {item.kind === "record"
+              ? `${t(`nodeRecord.section.${item.record!.section}`)}${
+                  item.record!.section !== "done" && item.record!.done ? ` · ${t("stageReview.recordDone")}` : ""
+                }`
+              : item.kind === "note"
+                ? t("stageReview.noteSaved")
+                : t(`stageReview.${item.kind}Counts`, item.counts)}
           </span>
         )}
       </button>
@@ -216,6 +230,12 @@ function Tray({ state, right }: { state: StageReviewState; right: string }) {
         )}
         {removed > 0 && (
           <div className="text-muted-foreground py-1 text-[11px]">{t("stageReview.removed", { count: removed })}</div>
+        )}
+        {records.length > 0 && (
+          <>
+            <div className="text-muted-foreground pt-2 text-[11px] font-medium">{t("stageReview.records")}</div>
+            <ul>{records.map(row)}</ul>
+          </>
         )}
         {others.length > 0 && (
           <>

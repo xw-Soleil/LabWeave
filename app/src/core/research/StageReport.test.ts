@@ -121,6 +121,7 @@ function fakeIo(more: Partial<StageReportIO> = {}) {
       shots.push(id);
       return png();
     },
+    exists: async (path) => path !== "论文/已经删掉.pdf",
     ...more,
   };
   return { io, shots };
@@ -245,6 +246,87 @@ describe("turning what was ticked into numbered materials", () => {
     expect(evidence[0].link).toBe("../../笔记/第%201%20周%20%28草稿%29.md");
   });
 
+  it("puts what the user noted by hand right after their own words, marked as theirs", async () => {
+    const { io } = fakeIo();
+    const noted = (
+      id: string,
+      title: string,
+      section: "done" | "todo" | "notes" | "next",
+      more: Partial<NonNullable<ReviewItem["record"]>> & { text?: string } = {},
+    ): ReviewItem => ({
+      id: `record:${id}`,
+      kind: "record",
+      title,
+      text: more.text ?? title,
+      record: { section, done: more.done ?? section === "done", links: more.links ?? [] },
+    });
+    const { evidence, conflicts } = await collectStageMaterials(
+      input([
+        card("c1"),
+        noted("1", "跑通了 B 方法", "done", { text: "在小数据上跑通了\n用的是新的损失" }),
+        noted("2", "换损失函数再跑一遍", "todo"),
+        noted("3", "读完那篇综述", "todo", { done: true }),
+        noted("4", "边界条件会炸", "notes"),
+      ]),
+      io,
+    );
+    expect(evidence.map(({ id, label, byHand }) => [id, label, !!byHand])).toEqual([
+      ["S1", "这次想讲的", false],
+      ["S2", "【手记·进展】跑通了 B 方法", true],
+      ["S3", "【手记·待办】换损失函数再跑一遍", true],
+      ["S4", "【手记·待办】读完那篇综述", true],
+      ["S5", "【手记·问题与决定】边界条件会炸", true],
+      ["S6", "B 方法的结果", false],
+    ]);
+    expect(evidence[1]).toMatchObject({
+      path: "进展记录/2026-11-21 组会.md",
+      text: "在小数据上跑通了\n用的是新的损失",
+      // 报告在 汇报/节点名/ 里，点了回到封存的那份记录
+      link: "../../进展记录/2026-11-21%20组会.md",
+    });
+    // 勾没勾写给 AI 看：没做完的不能写成做完了
+    expect(evidence[2].text).toBe("换损失函数再跑一遍（还没做）");
+    expect(evidence[3].text).toBe("读完那篇综述（已经勾成做完）");
+    expect(evidence[4].text).toBe("边界条件会炸（还没解决）");
+    expect(conflicts).toEqual([]);
+  });
+
+  it("finds by itself the notes whose linked card or file is gone", async () => {
+    const { io } = fakeIo();
+    const { evidence, conflicts } = await collectStageMaterials(
+      input(
+        [
+          {
+            id: "record:1",
+            kind: "record",
+            title: "对比了两种方法",
+            record: {
+              section: "done",
+              done: true,
+              links: [
+                { label: "结果卡片", href: "../白板.prg#node=c1" },
+                { label: "删掉的卡片", href: "../白板.prg#node=gone" },
+                { label: "综述", href: "../论文/main.pdf#page=3" },
+                { label: "旧论文", href: "../论文/已经删掉.pdf" },
+                { label: "别的白板上的卡片", href: "../另一块.prg#node=x" },
+                { label: "外面的网页", href: "https://example.com" },
+              ],
+            },
+          },
+        ],
+        { note: "" },
+      ),
+      io,
+    );
+    expect(evidence[0].text).toBe(
+      "对比了两种方法\n关联：结果卡片、删掉的卡片、综述、旧论文、别的白板上的卡片、外面的网页",
+    );
+    expect(conflicts).toEqual([
+      { text: "手记「对比了两种方法」关联的卡片「删掉的卡片」已经不在白板上了", sourceIds: ["S1"] },
+      { text: "手记「对比了两种方法」关联的文件找不到了：论文/已经删掉.pdf", sourceIds: ["S1"] },
+    ]);
+  });
+
   it("has nothing to write about when nothing ticked has any text", async () => {
     const { io } = fakeIo();
     await expect(collectStageMaterials(input([], { note: "  " }), io)).rejects.toThrow("researchReport.noMaterials");
@@ -271,6 +353,7 @@ describe("freezing and starting the report", () => {
         note: "这周主要试了 B 方法",
         dropped: new Set(["junk"]),
         others: [],
+        records: [],
         boards: [],
         marks: {},
         ...more,
