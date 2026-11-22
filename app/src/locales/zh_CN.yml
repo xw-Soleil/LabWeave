@@ -3914,6 +3914,60 @@ research:
     reloaded: 记录在别处改过，已经重新读了一遍，请再点一次
     failed: "没记成：{{error}}"
     sealFailed: "节点已经定格了，但手填的记录没封存进去：{{error}}。处理好以后再定格一次，会补上。"
+    showAll: 查看全部：看全、改、贴图，也能看以前的节点
+    inspect: "在记录面板里看「{{text}}」"
+    imageCount: "{{count}} 张图"
+    panel:
+      title: 进展记录
+      subtitle: 上个节点以后记的在「进行中」，定格时封存成一份，没做完的带到下一段
+      choose: 看哪一段
+      current: 进行中
+      sealed: 封存的，只能看
+      sealedHint: "这是「{{name}}」定格时封存的一份，只能看。要改，点下面的「打开原文件」。"
+      missing: "「{{name}}」这份记录的文件找不到了。"
+      refresh: 刷新
+      loading: 正在读记录
+      emptyCurrent: 这一段还没记过东西。在下面填一条，或者用便签随手记。
+      emptySection:
+        done: 还没有进展
+        todo: 没有待办
+        notes: 没有问题和决定
+        next: 还没写下一步
+      addItem: 加一条
+      editItem: 改这一条
+      editItemNamed: "改「{{title}}」"
+      editHint: 只改这一条在文件里占的那几行，别的内容不动。它在哪一节不在这里改。
+      editConflict: 这份记录在别处改过了，这次的修改存不进去。把要留的内容复制出来，点「取消修改」后重新改。
+      itemSection: 记到哪一节
+      itemTitle: 标题
+      titlePlaceholder: 标题（不填就从内容里提炼）
+      itemDetails: 详细内容
+      detailsPlaceholder: 详细内容，可以写多行
+      attachCurrent: 关联当前内容
+      addLink: 加链接
+      linkLabel: 链接的名字
+      linkTarget: 链接指到哪
+      linkPlaceholder: 从这份记录出发的相对路径，比如 ../笔记/实验.md
+      linkRequired: 链接指到哪还没填
+      confirmLink: 确定
+      cancelLink: 取消
+      editLink: 改这个链接
+      editNamedLink: "改链接「{{name}}」"
+      removeNamedLink: "去掉链接「{{name}}」"
+      source: 来源
+      addImage: 添加图片
+      pasteImage: 粘贴图片
+      noClipboardImage: 剪贴板里没有图片
+      viewImage: "看图片「{{name}}」"
+      removeImage: "去掉图片「{{name}}」"
+      imageRecord: 图片记录
+      linkedRecord: 关联记录
+      cancelEdit: 取消修改
+      save: 记下
+      saveChanges: 保存修改
+      otherLinks: 文件里别处的链接
+      openFile: 打开原文件
+      showFloat: 显示便签
     errors:
       conflict: 记录文件在别处改过了
       documentBusy: 记录文件正开着，里面有还没保存的改动，先把它保存了
@@ -3921,6 +3975,12 @@ research:
       fileNotFound: 关联的文件找不到了
       emptyItem: 内容是空的
       invalidPath: 记录文件的位置不对
+      imageTooLarge: 图片太大了（单张不超过 8 MB、2500 万像素）
+      imageUnsupported: 只收 PNG、JPEG、WebP 图片
+      imageReadFailed: 图片读不出来
+      imageWriteFailed: 图片没存进去
+      tooManyImages: 一次最多选 12 张图片
+      clipboardImageFailed: 剪贴板里的图片读不出来
   stageReview:
     title: 阶段小结 · 整理
     sinceNode: "和「{{title}}」定格时比"

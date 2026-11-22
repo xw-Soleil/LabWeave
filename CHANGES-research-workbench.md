@@ -1247,3 +1247,21 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 事项没写标题时，自动提炼标题不把挂在行尾的链接名字算进去（原来会变成「对比了两种取法 演示白板.prg」）。
   - 定格带到下一段时，同一句话记了两遍的只带一条。
 - 测试：`NodeRecord.test.ts` 加 1 条、补 1 处。
+
+### 96. 记录面板：看全、改一条、贴图、看以前的节点（2026-11-21）
+
+主线第 ⑧c 步。界面、改一条的做法、认图片格式和贴图的部分出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号）里的 `WeeklyProgressPanel.tsx`（`WeeklyProgressDialog`）和 `WeeklyProgressMedia.ts`。
+
+- 新增 `app/src/core/research/NodeRecordPanel.tsx`：居中的窗口，分四节列出一段手填记录的全部事项。「进行中」那一段能加一条、改一条（标题、详细内容、关联的链接、图片）、勾完成；顶上切到以前的节点，看定格时封存的那一份，只能看。和同伴那一版不同的地方：
+  - 选哪一周换成选哪个节点；封存的不能在这里改（没有表单、没有勾选框、没有「改」）。
+  - 没有「AI 提炼标题」，没有从这里出汇报的按钮（汇报从「阶段小结」出）。
+  - 没自己写标题的事项，不往文件里写一个和内容一样的标题：加一条时标题和提炼出来的一样就不写；改内容时原来的标题是提炼的，就让它跟着新内容重新提炼。
+  - 文件在别处改过时：加一条会重读再加；勾一条会重读、提示再点一次；改一条存不进去，填的东西留着、提示复制出来重改。
+  - 同一段重读时先留着旧的，不闪；标题框和链接框里输入法选字的那一下回车不提交。
+- 新增 `app/src/core/research/NodeRecordMedia.ts`：事项里的图片。从电脑里选（一次最多 12 张，先把选中的都验过再开始存）、从剪贴板贴、出缩略图。图片存到 `进展记录/附件/<内容的指纹>.<后缀>`，同一张只存一份；本来就在项目文件夹里的不另存，直接链过去。只收 PNG、JPEG、WebP，单张不超过 8 MB、2500 万像素。同伴那边存图、读图走 Rust 命令，这里改成前端直接读写，没有新增 Rust 命令。
+- `app/src/core/research/NodeRecord.ts`：加 `hasOwnTitle`（这一条是不是自己写了标题）。
+- `app/src/core/research/NodeRecordFloat.tsx`：便签顶上加「查看全部」；点一条事项的字、点「N 张图」，在面板里打开并滚到那一条。面板的代码用到时才加载。
+- 文案：`research.nodeRecord.showAll`、`inspect`、`imageCount`、`panel.*`，`errors` 里加图片的六条。
+- 测试：`NodeRecordPanel.test.tsx`（新，15 条）、`NodeRecordMedia.test.ts`（新，10 条）；`NodeRecord.test.ts` 加 25 条，其中 23 条是照着同伴给 `WeeklyProgress.ts` 写的「改一条、加减链接和图片」那一组搬的。
+- 竖栏没有另加按钮：面板从便签上的「查看全部」进。
+- 界面没有在开发版里看过；剪贴板贴图、选图片的系统窗口、缩略图只在真程序里才走得到，单元测试里是假的。

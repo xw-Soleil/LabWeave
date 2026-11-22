@@ -485,6 +485,12 @@ function parseRecordSource(record: StoredRecord): { record: NodeRecord; sourceRo
   return { record: { ...record, items, links: uniqueLinks(links) }, sourceRows };
 }
 
+/** 这一条是不是自己写了标题（「**标题** — 内容」）。不是的话，显示的标题是从内容里提炼出来的，文件里并没有 */
+export function hasOwnTitle(record: NodeRecord, itemId: string): boolean {
+  const line = markdownLines(record.markdown).lines[Number(itemId.slice("line:".length))] ?? "";
+  return titledDetail.test(itemLine.exec(line)?.[3] ?? line);
+}
+
 /** Unknown sections and prose remain in the original Markdown; the panel is only a concise view. */
 export function parseNodeRecord(record: StoredRecord): NodeRecord {
   return parseRecordSource(record).record;

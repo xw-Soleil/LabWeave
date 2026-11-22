@@ -3795,6 +3795,60 @@ research:
     reloaded: The record was changed elsewhere and has been read again. Please click once more
     failed: "Could not note that: {{error}}"
     sealFailed: "The node is frozen, but the hand-written record was not sealed into it: {{error}}. Fix that and freeze again to fill it in."
+    showAll: "Show all: read, edit, add pictures, and look at earlier nodes"
+    inspect: "Show “{{text}}” in the record panel"
+    imageCount: "{{count}} pictures"
+    panel:
+      title: Progress record
+      subtitle: Notes since the last node are under “In progress”. Freezing seals them, and carries what is still open into the next stretch
+      choose: Which stretch to show
+      current: In progress
+      sealed: Sealed, read-only
+      sealedHint: "This was sealed when “{{name}}” was frozen and is read-only. To change it, use “Open the file” below."
+      missing: "The file for “{{name}}” can't be found."
+      refresh: Refresh
+      loading: Reading the record
+      emptyCurrent: Nothing noted in this stretch yet. Add an item below, or jot things down with the sticky note.
+      emptySection:
+        done: No progress yet
+        todo: No to-dos
+        notes: No issues or decisions
+        next: No next steps yet
+      addItem: Add an item
+      editItem: Edit this item
+      editItemNamed: "Edit “{{title}}”"
+      editHint: Only the lines this item takes up in the file are changed. Its section is not changed here.
+      editConflict: The record was changed elsewhere, so this edit can't be saved. Copy what you want to keep, cancel, and edit again.
+      itemSection: Section
+      itemTitle: Title
+      titlePlaceholder: Title (taken from the details if left empty)
+      itemDetails: Details
+      detailsPlaceholder: Details, as many lines as you like
+      attachCurrent: Link what's open
+      addLink: Add a link
+      linkLabel: Link name
+      linkTarget: Link target
+      linkPlaceholder: "A path relative to this record, e.g. ../notes/experiment.md"
+      linkRequired: The link target is missing
+      confirmLink: OK
+      cancelLink: Cancel
+      editLink: Edit this link
+      editNamedLink: "Edit link “{{name}}”"
+      removeNamedLink: "Remove link “{{name}}”"
+      source: Source
+      addImage: Add pictures
+      pasteImage: Paste a picture
+      noClipboardImage: There is no picture on the clipboard
+      viewImage: "Open picture “{{name}}”"
+      removeImage: "Remove picture “{{name}}”"
+      imageRecord: Picture note
+      linkedRecord: Linked note
+      cancelEdit: Cancel edit
+      save: Add
+      saveChanges: Save changes
+      otherLinks: Other links in the file
+      openFile: Open the file
+      showFloat: Show the sticky note
     errors:
       conflict: The record file was changed elsewhere
       documentBusy: The record file is open with unsaved changes. Save it first
@@ -3802,6 +3856,12 @@ research:
       fileNotFound: The linked file can't be found
       emptyItem: The item is empty
       invalidPath: The record file is not where it should be
+      imageTooLarge: The picture is too large (at most 8 MB and 25 megapixels each)
+      imageUnsupported: Only PNG, JPEG and WebP pictures are accepted
+      imageReadFailed: The picture can't be read
+      imageWriteFailed: The picture could not be saved
+      tooManyImages: Choose at most 12 pictures at a time
+      clipboardImageFailed: The picture on the clipboard can't be read
   stageReview:
     title: Stage summary · Review
     sinceNode: "Compared with “{{title}}”"

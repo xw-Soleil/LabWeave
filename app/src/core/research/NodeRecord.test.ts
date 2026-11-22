@@ -3,7 +3,9 @@ import {
   appendRecordItem,
   appendRecordMarkdown,
   CURRENT_RECORD,
+  displayRecordLink,
   ensureNodeRecord,
+  hasOwnTitle,
   listSealedRecords,
   loadNodeRecord,
   parseNodeRecord,
@@ -17,8 +19,12 @@ import {
   setRecordItemDone,
   summarizeRecordItem,
   toggleRecordMarkdown,
+  updateRecordItem,
+  updateRecordItemSummary,
   updateRecordMarkdownItem,
+  updateRecordMarkdownSummary,
   type RecordFiles,
+  type RecordItemUpdate,
 } from "./NodeRecord";
 
 const root = "/research/课题";
@@ -418,5 +424,351 @@ describe("freezing a node", () => {
     expect((await listSealedRecords(root, io)).length).toBe(1);
     expect(disk.get(`${root}/进展记录/2026-11-21 组会.md`)).toContain("- [x] 试试 C 方法");
     expect(disk.get(currentFile)).not.toContain("试试 C 方法");
+  });
+});
+
+// 记录面板里改一条用到的：标题、详细内容、关联的链接和图片。
+// 这一组照着同伴 cleverfool-rnh 给 WeeklyProgress.ts 写的测试搬过来，路径少一层（记录文件在「进展记录/」下面）。
+describe("editing one item: title, details, links and pictures", () => {
+  const editPayload = (base: ReturnType<typeof record>, index = 0): RecordItemUpdate => {
+    const item = base.items[index];
+    return { summary: item.summary ?? "", text: item.text, links: [...item.links], images: [...(item.images ?? [])] };
+  };
+
+  it("writes multiline details under a title, with the pictures grouped below", () => {
+    const detail = "保留第一行原文\n第二行详细解释\n\n  原有缩进与 **强调**";
+    const saved = appendRecordMarkdown(TEMPLATE.replace(/\n/g, "\r\n"), "todo", detail, undefined, {
+      summary: "复核实验结果",
+      images: [{ label: "结果曲线", href: "../图片/结果曲线.png" }],
+    });
+    expect(saved).toContain(
+      "- [ ] **复核实验结果** — 保留第一行原文\r\n  第二行详细解释\r\n  \r\n    原有缩进与 **强调**\r\n  ![结果曲线](<../图片/结果曲线.png>)",
+    );
+    const parsed = record(saved);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0].text).toBe(detail);
+    expect(parsed.items[0].summary).toBe("复核实验结果");
+    expect(parsed.items[0].images).toEqual([{ label: "结果曲线", href: "../图片/结果曲线.png" }]);
+    expect(parsed.items[0].links).toEqual([]);
+    expect(parsed.links).toContainEqual({ label: "结果曲线", href: "../图片/结果曲线.png" });
+  });
+
+  it("groups inline, indented and standalone pictures under the right item", () => {
+    const parsed = record(
+      "## 进展\n- [x] **实验观察** — 已获得结果 ![图一](../图片/1.png)\n  - ![图二](../图片/2.png)\n\n![图三](../图片/3.png)\n- [x] **新图记录** — ![图四](../图片/4.png)\n  ![[../图片/5.png|图五]]\n",
+    );
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items[0].images?.map((link) => link.label)).toEqual(["图一", "图二", "图三"]);
+    expect(parsed.items[0].text).toBe("已获得结果");
+    expect(parsed.items[1].summary).toBe("新图记录");
+    expect(parsed.items[1].images).toHaveLength(2);
+    expect(parsed.links).toHaveLength(5);
+    const imageOnly = record(
+      appendRecordMarkdown(TEMPLATE, "done", "", undefined, {
+        summary: "图片记录",
+        images: [{ label: "图", href: "../图.png" }],
+      }),
+    );
+    expect(imageOnly.items[0].text).toBe("");
+    expect(imageOnly.items[0].summary).toBe("图片记录");
+    expect(imageOnly.items[0].images).toHaveLength(1);
+  });
+
+  it("tells a title the user wrote from one that is only derived from the details", () => {
+    const parsed = record("## 待办\n- [ ] **自己写的标题** — 详细内容\n- [ ] 只有内容，没有标题\n* 另一种列表符号\n");
+    expect(parsed.items.map((item) => hasOwnTitle(parsed, item.id))).toEqual([true, false, false]);
+    // 没写标题的也有标题可以显示，是从内容里提炼的（到第一个逗号为止），文件里并没有
+    expect(parsed.items[1].summary).toBe("只有内容");
+    expect(hasOwnTitle(parsed, "line:999")).toBe(false);
+  });
+
+  it("edits only the title, keeping the checkbox, details, links and pictures", async () => {
+    const original =
+      "## 待办\r\n- [x] **旧标题** — 不能删除的原句 [依据](../证据.md#结果)\r\n  第二行\r\n  ![图](../图.png)\r\n\r\n## 我的补充\r\n原样保留\r\n";
+    const parsed = record(original);
+    const edited = updateRecordMarkdownSummary(parsed, parsed.items[0].id, "新 *事项* 标题");
+    expect(edited).toBe(original.replace("**旧标题**", "**新 \\*事项\\* 标题**"));
+    expect(record(edited).items[0].summary).toBe("新 *事项* 标题");
+    expect(record(edited).items[0].text).toBe(parsed.items[0].text);
+    expect(record(edited).items[0].done).toBe(true);
+    const spaced = record(original.replace("**旧标题** — ", "**旧标题**   –  "));
+    expect(updateRecordMarkdownSummary(spaced, spaced.items[0].id, "标题")).toBe(
+      spaced.markdown.replace("**旧标题**", "**标题**"),
+    );
+    expect(() => updateRecordMarkdownSummary(parsed, "line:999", "new")).toThrow("nodeRecord.conflict");
+
+    const { disk, io } = memoryFiles({ [currentFile]: original });
+    const loaded = (await loadNodeRecord(root, undefined, io))!;
+    await updateRecordItemSummary(root, loaded, loaded.items[0].id, "新 *事项* 标题", io);
+    expect(disk.get(currentFile)).toBe(edited);
+  });
+
+  it("shows a readable path for a link while keeping the exact target", () => {
+    const path = recordPath(CURRENT_RECORD);
+    const href = "../%E6%96%87%E7%8C%AE/%E9%98%85%E8%AF%BB.pdf#page%3D8";
+    expect(displayRecordLink(path, href)).toBe("文献/阅读.pdf · 第 8 页");
+    expect(displayRecordLink(path, "../%E7%AC%94%E8%AE%B0/a.md#%E7%BB%93%E8%AE%BA")).toBe("笔记/a.md · #结论");
+    expect(displayRecordLink(path, "../画布.prg#node=abc")).toBe("画布.prg · 节点 abc");
+    expect(displayRecordLink(path, "../bad%")).toBe("../bad%");
+  });
+
+  it("adds links and pictures without rewriting the item's existing lines or its neighbours", () => {
+    const original =
+      "---\r\nowner: me\r\n---\n## 待办\r\n<!-- 保留前言 -->\n- [x] **原标题**   – 原文 **格式** [原依据](../旧.md#结果)\r\n  第二段 `![内联示例](../code.png)`\n  ```md\r\n  ![围栏示例](../example.png)\r\n  ```\n<!-- 独立注释原位保留 -->\r\n  ![[../旧图.png]]\r\n\r\n- [ ] 其他事项 [同一依据](../旧.md#结果)\n\n## 自定义章节\r\n此段保留。\r\n";
+    const base = record(original);
+    const payload = editPayload(base);
+    payload.links.push(
+      { label: "新依据", href: "../文件夹/新记录.md#结论" },
+      { label: "页码", href: "../文献/论文.pdf#page=4" },
+    );
+    payload.images.push({ label: "新图一", href: "../图片/图 1.png" }, { label: "新图二", href: "../图片/图2.jpg" });
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    const added =
+      "  [新依据](<../文件夹/新记录.md#结论>)\r\n  [页码](<../文献/论文.pdf#page=4>)\r\n  ![新图一](<../图片/图 1.png>)\r\n  ![新图二](<../图片/图2.jpg>)\r\n";
+    expect(updated).toBe(original.replace("  ![[../旧图.png]]\r\n", `  ![[../旧图.png]]\r\n${added}`));
+    const parsed = record(updated);
+    expect(parsed.items[0].done).toBe(true);
+    expect(parsed.items[0].section).toBe("todo");
+    expect(parsed.items[0].images).toHaveLength(3);
+    expect(parsed.items[0].links).toHaveLength(3);
+    expect(parsed.items[1]).toMatchObject({
+      text: base.items[1].text,
+      done: false,
+      section: "todo",
+      links: base.items[1].links,
+    });
+    expect(parsed.links.map((link) => link.href)).not.toContain("../example.png");
+    expect(parsed.links.map((link) => link.href)).not.toContain("../code.png");
+  });
+
+  it("removes only the chosen link and picture, leaving the sentence and other items' pictures", () => {
+    const original =
+      "## 待办\r\n- [ ] **事项** — 原句 [依据甲](../a.md) 与 [依据乙](../b.md)。\r\n  ![图甲](../a.png)\r\n  ![图乙](../b.png)\r\n\r\n- [ ] 另一个事项\r\n  ![共享图甲](../a.png)\r\n";
+    const base = record(original);
+    const payload = editPayload(base);
+    payload.links = [payload.links[1]];
+    payload.images = [payload.images[1]];
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    expect(updated).toBe(original.replace("[依据甲](../a.md)", "依据甲").replace("![图甲](../a.png)", ""));
+    const parsed = record(updated);
+    expect(parsed.items[0].done).toBe(false);
+    expect(parsed.items[0].links).toEqual([{ label: "依据乙", href: "../b.md" }]);
+    expect(parsed.items[0].images).toEqual([{ label: "图乙", href: "../b.png" }]);
+    expect(parsed.items[1].images).toEqual([{ label: "共享图甲", href: "../a.png" }]);
+  });
+
+  it("leaves same-target aliases, empty labels and wiki pictures alone when only a picture is added", () => {
+    const original =
+      "## 待办\r\n- [ ] 比较 [方案A](../same.md) 与 [方案B](../same.md)，保留 [](<../empty.md>)\r\n  ![视角A](../same.png) ![视角B](../same.png)\r\n  ![[../wiki.png]]\r\n";
+    const base = record(original);
+    const payload = editPayload(base);
+    payload.images.push({ label: "新增", href: "../new.png" });
+    expect(updateRecordMarkdownItem(base, base.items[0].id, payload)).toBe(original + "  ![新增](<../new.png>)\r\n");
+    expect(base.items[0].links.map((link) => link.label)).toEqual(["方案A", "方案B", ""]);
+    expect(base.items[0].images?.map((image) => image.label)).toEqual(["视角A", "视角B", "wiki.png"]);
+  });
+
+  const ALIASES =
+    "## 待办\n- [ ] **事项** — [A](../same.md) 与 [B](../same.md)\n  ![A](../same.png) ![B](../same.png)\n";
+
+  it.each(["links", "images"] as const)("removes only alias B of two same-target %s", (kind) => {
+    const base = record(ALIASES);
+    const payload = editPayload(base);
+    payload[kind] = payload[kind].filter((link) => link.label !== "B");
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    const before = kind === "links" ? "[B](../same.md)" : "![B](../same.png)";
+    expect(updated).toBe(ALIASES.replace(before, kind === "links" ? "B" : ""));
+    expect(record(updated).items[0][kind]?.map((link) => link.label)).toEqual(["A"]);
+    expect(record(updated).items[0].done).toBe(false);
+  });
+
+  it.each(["links", "images"] as const)("renames only alias B of two same-target %s", (kind) => {
+    const base = record(ALIASES);
+    const payload = editPayload(base);
+    payload[kind] = payload[kind].map((link) => (link.label === "B" ? { ...link, label: "C" } : link));
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    const before = kind === "links" ? "[B](../same.md)" : "![B](../same.png)";
+    const after = kind === "links" ? "[C](<../same.md>)" : "![C](<../same.png>)";
+    expect(updated).toBe(ALIASES.replace(before, after));
+    expect(record(updated).items[0][kind]?.map((link) => link.label)).toEqual(["A", "C"]);
+  });
+
+  it.each(["links", "images"] as const)("adds a third alias to two same-target %s", (kind) => {
+    const base = record(ALIASES);
+    const payload = editPayload(base);
+    payload[kind].push({ label: "C", href: kind === "links" ? "../same.md" : "../same.png" });
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    expect(updated).toBe(ALIASES + (kind === "links" ? "  [C](<../same.md>)\n" : "  ![C](<../same.png>)\n"));
+    expect(record(updated).items[0][kind]?.map((link) => link.label)).toEqual(["A", "B", "C"]);
+  });
+
+  it("keeps links and pictures written as inline code literal when the details are edited", () => {
+    const detail = "执行 `[示例](../code.md)`，保留 `![图](../code.png)` 和 ``包含 ` 的 [第二例](../other.md)`` 后继续";
+    const base = record(`## 待办\n- [ ] **标题** — ${detail}\n`);
+    expect(base.items[0].text).toBe(detail);
+    expect(base.items[0].links).toEqual([]);
+    expect(base.items[0].images).toEqual([]);
+    const payload = { ...editPayload(base), text: detail + "补充一句" };
+    const updated = record(updateRecordMarkdownItem(base, base.items[0].id, payload));
+    expect(updated.items[0].text).toBe(payload.text);
+    expect(updated.markdown).toContain("`[示例](../code.md)`");
+    expect(updated.markdown).toContain("``包含 ` 的 [第二例](../other.md)``");
+    expect(updated.links).toEqual([]);
+    const shallowIndent = record("## 待办\n- [ ] 任务\n 单空格缩进的原文\n");
+    expect(shallowIndent.items[0].text).toBe("任务\n单空格缩进的原文");
+    const shallowUpdate = updateRecordMarkdownItem(shallowIndent, shallowIndent.items[0].id, {
+      ...editPayload(shallowIndent),
+      text: shallowIndent.items[0].text + "补充",
+    });
+    expect(shallowUpdate).toContain("单空格缩进的原文补充");
+  });
+
+  it("rewrites edited details with the kept links and pictures, leaving comments and other items alone", () => {
+    const original =
+      "## 待办\r\n- [x] **旧标题** — 旧第一行 [来源](../a.md)\r\n  旧第二行\r\n<!-- 不属于事项正文的注释 -->\n  ![旧图](../old.png)\r\n\r\n- [ ] 下一个事项原文\n## 其他章节\r\n不改此段。\r\n";
+    const base = record(original);
+    const payload = editPayload(base);
+    payload.summary = "新标题";
+    payload.text = "修改后的第一段\n第二段 **保留格式**\n\n```md\n![示例不是附件](../sample.png)\n```";
+    payload.links.push({ label: "新增节点", href: "../画布.prg#node=abc" });
+    payload.images.push({ label: "新图", href: "../new.webp" });
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    expect(updated).toContain("<!-- 不属于事项正文的注释 -->\n");
+    expect(updated.endsWith("\r\n- [ ] 下一个事项原文\n## 其他章节\r\n不改此段。\r\n")).toBe(true);
+    expect(updated).not.toContain("旧第二行");
+    const parsed = record(updated);
+    expect(parsed.items[0].summary).toBe("新标题");
+    expect(parsed.items[0].done).toBe(true);
+    expect(parsed.items[0].section).toBe("todo");
+    expect(parsed.items[0].text).toContain(payload.text);
+    expect(parsed.items[0].links).toEqual(payload.links);
+    expect(parsed.items[0].images).toEqual(payload.images);
+    expect(parsed.links.map((link) => link.href)).not.toContain("../sample.png");
+  });
+
+  it("drops no title into the file when the details change and the title was only derived", () => {
+    const base = record("## 待办\n- [ ] 换损失函数再跑一遍\n");
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, {
+      ...editPayload(base),
+      summary: "",
+      text: "换成 Huber 损失再跑一遍\n先看梯度",
+    });
+    expect(updated).toBe("## 待办\n- [ ] 换成 Huber 损失再跑一遍\n  先看梯度\n");
+  });
+
+  it("adds and removes pictures on an item that is only a picture", () => {
+    const base = record("## 待办\n![原图](../old.png)\n");
+    const payload = editPayload(base);
+    payload.images.push({ label: "第二张", href: "../second.png" });
+    const updated = record(updateRecordMarkdownItem(base, base.items[0].id, payload));
+    expect(updated.items).toHaveLength(1);
+    expect(updated.items[0].text).toBe("");
+    expect(updated.items[0].done).toBe(false);
+    expect(updated.items[0].images).toEqual(payload.images);
+    const removed = record(
+      updateRecordMarkdownItem(updated, updated.items[0].id, { ...editPayload(updated), images: [] }),
+    );
+    expect(removed.items).toHaveLength(1);
+    expect(removed.items[0].summary).toBe("原图");
+    expect(removed.items[0].images).toEqual([]);
+    expect(removed.items[0].done).toBe(false);
+  });
+
+  it("keeps links and pictures typed into the details, and checks they stay inside the project", () => {
+    const base = record("## 待办\n- [ ] **事项** — 原文\n");
+    const payload = { ...editPayload(base), text: "新增 [证据](../notes.md#结果)\n![新图](../typed.png)" };
+    const updated = record(updateRecordMarkdownItem(base, base.items[0].id, payload));
+    expect(updated.markdown).toContain("[证据](../notes.md#结果)");
+    expect(updated.markdown).toContain("![新图](../typed.png)");
+    expect(updated.items[0].links).toEqual([{ label: "证据", href: "../notes.md#结果" }]);
+    expect(updated.items[0].images).toEqual([{ label: "新图", href: "../typed.png" }]);
+    const alsoAttached = updateRecordMarkdownItem(base, base.items[0].id, {
+      ...payload,
+      images: [{ label: "新图", href: "../typed.png" }],
+    });
+    expect(alsoAttached.match(/!\[新图\]/g)).toHaveLength(1);
+    expect(() =>
+      updateRecordMarkdownItem(base, base.items[0].id, { ...payload, text: "![越界](../../outside.png)" }),
+    ).toThrow("nodeRecord.unsafeLink");
+    expect(() =>
+      updateRecordMarkdownItem(base, base.items[0].id, { ...payload, text: "[远程](https://example.com)" }),
+    ).toThrow("nodeRecord.unsafeLink");
+  });
+
+  it("does not touch the file when nothing changed", async () => {
+    const markdown = "## 待办\r\n- [ ] 未完成 [原链接](../a.md)\n  ```md\r\n  ![示例](../example.png)\n  ```\r\n";
+    const { disk, io } = memoryFiles({ [currentFile]: markdown });
+    const write = vi.spyOn(io, "write");
+    const base = (await loadNodeRecord(root, undefined, io))!;
+    expect(updateRecordMarkdownItem(base, base.items[0].id, editPayload(base))).toBe(base.markdown);
+    expect(await updateRecordItem(root, base, base.items[0].id, editPayload(base), io)).toBe(base);
+    expect(write).not.toHaveBeenCalled();
+    expect(disk.get(currentFile)).toBe(markdown);
+  });
+
+  it("puts a new picture where it shows when the details end in an unfinished code block", () => {
+    const base = record("## 待办\n- [ ] **事项** — 原始正文\n  ```md\n  尚未写完的示例\n");
+    const payload = { ...editPayload(base), images: [{ label: "新增图", href: "../new.png" }] };
+    const updated = updateRecordMarkdownItem(base, base.items[0].id, payload);
+    expect(updated).toBe(base.markdown.replace("原始正文\n", "原始正文\n  ![新增图](<../new.png>)\n"));
+    expect(record(updated).items[0].images).toEqual(payload.images);
+  });
+
+  it("refuses an edit when the file is no longer what the edit started from", async () => {
+    const markdown = "## 待办\n- [ ] 原任务\n";
+    const { disk, io } = memoryFiles({ [currentFile]: markdown });
+    const base = (await loadNodeRecord(root, undefined, io))!;
+    const payload = { ...editPayload(base), images: [{ label: "新图", href: "../new.png" }] };
+    // 手里这份的内容和它的事项对不上（行号挪了）：不照着旧行号改
+    expect(() => updateRecordMarkdownItem({ ...base, markdown: "\n" + markdown }, base.items[0].id, payload)).toThrow(
+      "nodeRecord.conflict",
+    );
+    // 开始改以后文件在别处变了：不覆盖
+    disk.set(currentFile, markdown + "- [ ] 别处加的一条\n");
+    await expect(updateRecordItem(root, base, base.items[0].id, payload, io)).rejects.toThrow("nodeRecord.conflict");
+    expect(disk.get(currentFile)).toBe(markdown + "- [ ] 别处加的一条\n");
+  });
+
+  it("keeps an old unusual picture but refuses new targets outside the project", () => {
+    const base = record("## 待办\n- [ ] **旧标题** — 原文\n  ![旧图片](https://example.com/old.tiff)\n");
+    expect(updateRecordMarkdownItem(base, base.items[0].id, { ...editPayload(base), summary: "新标题" })).toBe(
+      base.markdown.replace("**旧标题**", "**新标题**"),
+    );
+    for (const href of ["../../outside.png", "https://example.com/new.png", "../program.exe"]) {
+      expect(() =>
+        updateRecordMarkdownItem(base, base.items[0].id, { ...editPayload(base), images: [{ label: "new", href }] }),
+      ).toThrow("nodeRecord.unsafeLink");
+    }
+    expect(() =>
+      updateRecordMarkdownItem(base, base.items[0].id, {
+        ...editPayload(base),
+        links: [{ label: "unsafe", href: "file:///outside.md" }],
+      }),
+    ).toThrow("nodeRecord.unsafeLink");
+    expect(() =>
+      updateRecordMarkdownItem(base, base.items[0].id, {
+        ...editPayload(base),
+        summary: "[越界](../../outside.md)",
+      }),
+    ).toThrow("nodeRecord.unsafeLink");
+  });
+
+  it("takes several links for a new item, counting the single one once", () => {
+    const first = { label: "来源一", href: "../one.md" };
+    const second = { label: "来源二", href: "../two.md" };
+    const parsed = record(appendRecordMarkdown(TEMPLATE, "todo", "新事项", first, { links: [first, second] }));
+    expect(parsed.items[0].links).toEqual([first, second]);
+    expect(parsed.markdown.match(/\[来源一\]/g)).toHaveLength(1);
+  });
+
+  it("refuses pictures outside the project, or that are not pictures, before saving", async () => {
+    const { disk, io } = memoryFiles({ [currentFile]: TEMPLATE });
+    const base = (await loadNodeRecord(root, undefined, io))!;
+    for (const href of ["../../private.png", "https://example.com/image.png", "../program.exe"]) {
+      await expect(
+        appendRecordItem(root, base, "done", "", undefined, { images: [{ label: "image", href }] }, io),
+      ).rejects.toThrow("nodeRecord.unsafeLink");
+    }
+    expect(disk.get(currentFile)).toBe(TEMPLATE);
   });
 });

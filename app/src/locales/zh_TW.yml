@@ -3914,6 +3914,60 @@ research:
     reloaded: 記錄在別處改過，已經重新讀了一遍，請再點一次
     failed: "沒記成：{{error}}"
     sealFailed: "節點已經定格了，但手填的記錄沒封存進去：{{error}}。處理好以後再定格一次，會補上。"
+    showAll: 查看全部：看全、改、貼圖，也能看以前的節點
+    inspect: "在記錄面板裡看「{{text}}」"
+    imageCount: "{{count}} 張圖"
+    panel:
+      title: 進展記錄
+      subtitle: 上個節點以後記的在「進行中」，定格時封存成一份，沒做完的帶到下一段
+      choose: 看哪一段
+      current: 進行中
+      sealed: 封存的，只能看
+      sealedHint: "這是「{{name}}」定格時封存的一份，只能看。要改，點下面的「打開原文件」。"
+      missing: "「{{name}}」這份記錄的文件找不到了。"
+      refresh: 刷新
+      loading: 正在讀記錄
+      emptyCurrent: 這一段還沒記過東西。在下面填一條，或者用便籤隨手記。
+      emptySection:
+        done: 還沒有進展
+        todo: 沒有待辦
+        notes: 沒有問題和決定
+        next: 還沒寫下一步
+      addItem: 加一條
+      editItem: 改這一條
+      editItemNamed: "改「{{title}}」"
+      editHint: 只改這一條在文件裡佔的那幾行，別的內容不動。它在哪一節不在這裡改。
+      editConflict: 這份記錄在別處改過了，這次的修改存不進去。把要留的內容複製出來，點「取消修改」後重新改。
+      itemSection: 記到哪一節
+      itemTitle: 標題
+      titlePlaceholder: 標題（不填就從內容裡提煉）
+      itemDetails: 詳細內容
+      detailsPlaceholder: 詳細內容，可以寫多行
+      attachCurrent: 關聯當前內容
+      addLink: 加鏈接
+      linkLabel: 鏈接的名字
+      linkTarget: 鏈接指到哪
+      linkPlaceholder: 從這份記錄出發的相對路徑，比如 ../筆記/實驗.md
+      linkRequired: 鏈接指到哪還沒填
+      confirmLink: 確定
+      cancelLink: 取消
+      editLink: 改這個鏈接
+      editNamedLink: "改鏈接「{{name}}」"
+      removeNamedLink: "去掉鏈接「{{name}}」"
+      source: 來源
+      addImage: 添加圖片
+      pasteImage: 粘貼圖片
+      noClipboardImage: 剪貼板裡沒有圖片
+      viewImage: "看圖片「{{name}}」"
+      removeImage: "去掉圖片「{{name}}」"
+      imageRecord: 圖片記錄
+      linkedRecord: 關聯記錄
+      cancelEdit: 取消修改
+      save: 記下
+      saveChanges: 保存修改
+      otherLinks: 文件裡別處的鏈接
+      openFile: 打開原文件
+      showFloat: 顯示便籤
     errors:
       conflict: 記錄文件在別處改過了
       documentBusy: 記錄文件正開著，裡面有還沒保存的改動，先把它保存了
@@ -3921,6 +3975,12 @@ research:
       fileNotFound: 關聯的文件找不到了
       emptyItem: 內容是空的
       invalidPath: 記錄文件的位置不對
+      imageTooLarge: 圖片太大了（單張不超過 8 MB、2500 萬像素）
+      imageUnsupported: 只收 PNG、JPEG、WebP 圖片
+      imageReadFailed: 圖片讀不出來
+      imageWriteFailed: 圖片沒存進去
+      tooManyImages: 一次最多選 12 張圖片
+      clipboardImageFailed: 剪貼板裡的圖片讀不出來
   stageReview:
     title: 階段小結 · 整理
     sinceNode: "和「{{title}}」定格時比"

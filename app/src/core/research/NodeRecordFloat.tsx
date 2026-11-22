@@ -5,7 +5,19 @@ import { store } from "@/state";
 import { cn } from "@/utils/cn";
 import i18next from "i18next";
 import { atom, useAtomValue } from "jotai";
-import { Check, ChevronDown, ChevronUp, ExternalLink, FileText, GripHorizontal, Link2, Minus, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FileText,
+  GripHorizontal,
+  Images,
+  Link2,
+  Maximize2,
+  Minus,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -34,9 +46,9 @@ import { ResearchFolder } from "./ResearchFolder";
  *（xw-Soleil/LabWeave 第 1 号）里的事项浮窗；他的浮窗只能看和勾，这里加了顶上的输入框。
  */
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+export type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-function useRecordText(): Translate {
+export function useRecordText(): Translate {
   const { t } = useTranslation("research");
   return useCallback(
     (key, options) => t(`nodeRecord.${key}`, { ...options, interpolation: { escapeValue: false } }),
@@ -59,7 +71,14 @@ function useProjectRoot() {
   return root;
 }
 
-const projectName = (root: string) => root.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? root;
+export const projectName = (root: string) => root.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? root;
+
+/** 打开记录面板（看全部、改、贴图）。itemId 给了就滚到那一条。面板的代码用到时才加载 */
+export function openRecordPanel(itemId?: string): void {
+  void import("./NodeRecordPanel")
+    .then(({ openNodeRecordPanel }) => openNodeRecordPanel(undefined, itemId))
+    .catch((cause) => toast.error(recordErrorText(cause)));
+}
 
 /** 读「进行中」这一份；别处改了（便签、面板、定格、切回窗口）就重读 */
 function useCurrentRecord(root: string) {
@@ -179,6 +198,11 @@ export function useRecordFloatOpen(): boolean {
   const root = useProjectRoot();
   useAtomValue(floatRevisionAtom, { store });
   return !!root && readPreference(root).open;
+}
+
+/** 把便签显示出来（面板上的「显示便签」用） */
+export function showRecordFloat(root: string): void {
+  savePreference(root, { open: true, minimized: false });
 }
 
 /** 显示或者关掉便签。没选项目时提示一句 */
@@ -384,16 +408,28 @@ function Float({ root, preference, revision }: { root: string; preference: Float
           )}
         </span>
         {!preference.minimized && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={icon}
-            title={t("openFile")}
-            aria-label={t("openFile")}
-            onClick={openFile}
-          >
-            <FileText className="size-3" />
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={icon}
+              title={t("showAll")}
+              aria-label={t("showAll")}
+              onClick={() => openRecordPanel()}
+            >
+              <Maximize2 className="size-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={icon}
+              title={t("openFile")}
+              aria-label={t("openFile")}
+              onClick={openFile}
+            >
+              <FileText className="size-3" />
+            </Button>
+          </>
         )}
         <Button
           variant="ghost"
@@ -533,15 +569,29 @@ function Row({
         />
       )}
       <div className="min-w-0 flex-1">
-        <p
+        {/* 点这一条：在面板里看全、改、贴图 */}
+        <button
+          type="button"
           className={cn(
-            "text-xs leading-relaxed break-words",
+            "hover:text-primary block w-full cursor-pointer text-left text-xs leading-relaxed break-words",
             item.done && item.section !== "done" && "text-muted-foreground line-through",
           )}
           title={item.text}
+          aria-label={t("inspect", { text: title })}
+          onClick={() => openRecordPanel(item.id)}
         >
           {title}
-        </p>
+        </button>
+        {!!item.images?.length && (
+          <button
+            type="button"
+            className="text-muted-foreground flex cursor-pointer items-center gap-1 text-[11px] hover:underline"
+            onClick={() => openRecordPanel(item.id)}
+          >
+            <Images className="size-3" />
+            {t("imageCount", { count: item.images.length })}
+          </button>
+        )}
         {item.links.length > 0 && (
           <div className="flex flex-wrap gap-x-3">
             {item.links.map((link, index) => (
