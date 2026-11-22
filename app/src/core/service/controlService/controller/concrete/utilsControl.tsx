@@ -9,16 +9,13 @@ import type { StageObject } from "@/core/stage/stageObject/abstract/StageObject"
 import type { Edge } from "@/core/stage/stageObject/association/Edge";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
-import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
-import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
-import { ReferenceBlockNode } from "@/core/stage/stageObject/entity/ReferenceBlockNode";
 import { Section } from "@/core/stage/stageObject/entity/Section";
-import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
 import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import type { Direction } from "@/types/directions";
 import { colorInvert, Vector } from "@graphif/data-structures";
 import { Rectangle } from "@graphif/shapes";
 import { toast } from "sonner";
+import { isResizableEntity } from "./ControllerEntityResize";
 import { autoChangeTextNodeToReferenceBlock, AutoCompleteManager, LatexPreviewManager } from "./utilsControlTools";
 
 /**
@@ -323,24 +320,8 @@ export class ControllerUtils {
     const selectedEntities = this.project.stageManager.getSelectedStageObjects();
 
     for (const selectedEntity of selectedEntities) {
-      // 检查是否是支持缩放的实体类型
-      if (
-        selectedEntity instanceof TextNode ||
-        selectedEntity instanceof ImageNode ||
-        selectedEntity instanceof SvgNode ||
-        selectedEntity instanceof MediaNode ||
-        selectedEntity instanceof ReferenceBlockNode
-      ) {
-        // 对TextNode进行特殊处理，只在手动模式下允许缩放
-        if (selectedEntity instanceof TextNode && selectedEntity.sizeAdjust === "auto") {
-          continue;
-        }
-
-        const resizeRect = selectedEntity.getResizeHandleRect();
-        if (resizeRect.isPointIn(clickedLocation)) {
-          // 点中了扩大缩小的东西
-          return true;
-        }
+      if (isResizableEntity(selectedEntity) && selectedEntity.getResizeHandleRect().isPointIn(clickedLocation)) {
+        return true;
       }
     }
     return false;

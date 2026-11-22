@@ -379,6 +379,22 @@ function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitm
     (card.missing ? 3 : 1) * cameraScale,
     radius,
   );
+
+  if (card.isSelected && card.canResize) {
+    const resizeHandleRect = card.getResizeHandleRect();
+    const viewResizeHandleRect = new Rectangle(
+      project.renderer.transformWorld2View(resizeHandleRect.location),
+      resizeHandleRect.size.multiply(cameraScale),
+    );
+    project.shapeRenderer.renderRect(
+      viewResizeHandleRect,
+      style.CollideBoxSelected,
+      style.StageObjectBorder,
+      2 * cameraScale,
+      8 * cameraScale,
+    );
+    project.shapeRenderer.renderResizeArrow(viewResizeHandleRect, style.StageObjectBorder, 2 * cameraScale);
+  }
 }
 
 function renderDocumentCard(project: Project, card: FileCardNode) {

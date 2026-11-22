@@ -1,14 +1,44 @@
 import { Vector } from "@graphif/data-structures";
-import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
-import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
+import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
+import type { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
+import type { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
+import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { MediaNode } from "@/core/stage/stageObject/entity/MediaNode";
-import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
 import { ReferenceBlockNode } from "@/core/stage/stageObject/entity/ReferenceBlockNode";
+import { SvgNode } from "@/core/stage/stageObject/entity/SvgNode";
+import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
+
+export function isResizableEntity(entity: StageObject): entity is Entity & ResizeAble {
+  if (entity instanceof TextNode) {
+    return entity.sizeAdjust !== "auto";
+  }
+  if (entity instanceof FileCardNode) {
+    return entity.canResize;
+  }
+  return (
+    entity instanceof ImageNode ||
+    entity instanceof SvgNode ||
+    entity instanceof MediaNode ||
+    entity instanceof ReferenceBlockNode
+  );
+}
 
 export class ControllerEntityResizeClass extends ControllerClass {
-  private changeSizeEntity: Entity | null = null;
+  private changeSizeEntity: (Entity & ResizeAble) | null = null;
+  private sizeBefore: Vector | null = null;
+
+  private finishResize() {
+    const entity = this.changeSizeEntity;
+    const sizeBefore = this.sizeBefore;
+    this.changeSizeEntity = null;
+    this.sizeBefore = null;
+    if (entity && sizeBefore && !entity.collisionBox.getRectangle().size.equals(sizeBefore)) {
+      this.project.historyManager.recordStep();
+    }
+  }
+
   public mousedown: (event: MouseEvent) => void = (event) => {
     if (!(event.button == 0)) {
       return;
@@ -21,26 +51,14 @@ export class ControllerEntityResizeClass extends ControllerClass {
     const pressWorldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
     this.lastMoveLocation = pressWorldLocation.clone();
     for (const selectedEntity of selectedEntities) {
-      // 检查是否是支持缩放的实体类型
-      if (
-        selectedEntity instanceof TextNode ||
-        selectedEntity instanceof ImageNode ||
-        selectedEntity instanceof SvgNode ||
-        selectedEntity instanceof MediaNode ||
-        selectedEntity instanceof ReferenceBlockNode
-      ) {
-        // 对TextNode进行特殊处理，只在手动模式下允许缩放
-        if (selectedEntity instanceof TextNode && selectedEntity.sizeAdjust === "auto") {
-          continue;
-        }
-
-        // 检查是否点击了缩放控制点
-        const resizeRect = selectedEntity.getResizeHandleRect();
-        if (resizeRect.isPointIn(pressWorldLocation)) {
-          // 点中了扩大缩小的东西
-          this.changeSizeEntity = selectedEntity;
-          break;
-        }
+      if (!isResizableEntity(selectedEntity)) {
+        continue;
+      }
+      const resizeRect = selectedEntity.getResizeHandleRect();
+      if (resizeRect.isPointIn(pressWorldLocation)) {
+        this.changeSizeEntity = selectedEntity;
+        this.sizeBefore = selectedEntity.collisionBox.getRectangle().size.clone();
+        break;
       }
     }
   };
@@ -51,18 +69,7 @@ export class ControllerEntityResizeClass extends ControllerClass {
     }
     const pressWorldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
     const diff = pressWorldLocation.subtract(this.lastMoveLocation);
-
-    // 对所有支持缩放的实体类型调用resizeHandle方法
-    if (
-      this.changeSizeEntity instanceof TextNode ||
-      this.changeSizeEntity instanceof ImageNode ||
-      this.changeSizeEntity instanceof SvgNode ||
-      this.changeSizeEntity instanceof MediaNode ||
-      this.changeSizeEntity instanceof ReferenceBlockNode
-    ) {
-      this.changeSizeEntity.resizeHandle(diff);
-    }
-
+    this.changeSizeEntity.resizeHandle(diff);
     this.lastMoveLocation = pressWorldLocation.clone();
   };
 
@@ -71,15 +78,11 @@ export class ControllerEntityResizeClass extends ControllerClass {
     if (this.changeSizeEntity === null) {
       return;
     }
-    // if (this.changeSizeEntity instanceof TextNode) {
-    //   this.project.effects.addEffect(new EntityDashTipEffect(50, this.changeSizeEntity.getResizeHandleRect()));
-    // }
-    this.changeSizeEntity = null;
-    // const pressWorldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    this.finishResize();
   };
 
   public mouseMoveOutWindowForcedShutdown(_outsideLocation: Vector) {
     super.mouseMoveOutWindowForcedShutdown(_outsideLocation);
-    this.changeSizeEntity = null;
+    this.finishResize();
   }
 }

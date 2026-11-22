@@ -1,9 +1,38 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/core/Project", () => ({ Project: class Project {} }));
-vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
+vi.mock("@/core/Project", () => ({
+  Project: class Project {},
+  ProjectState: { Saved: 0, Stashed: 1, Unsaved: 2 },
+  service: () => () => undefined,
+}));
+vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24 } }));
+vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: { play: {} } }));
+vi.mock("@/core/research/LegacyMathCards", async () => ({
+  deserializeStageObjects: (await import("@graphif/serializer")).deserialize,
+}));
+vi.mock("@/utils/font", () => ({
+  getTextSize: () => new Vector(20, 20),
+  getMultiLineTextSize: () => new Vector(20, 20),
+}));
+vi.mock("@/core/service/Settings", () => ({
+  Settings: {
+    historyRecordMode: "timeEfficient",
+    historySize: 20,
+    showDebug: false,
+    viewerMode: false,
+    watch: (_key: string, callback: (value: string) => void) => {
+      callback("timeEfficient");
+      return vi.fn();
+    },
+  },
+}));
 vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsManager: class DetailsManager {} }));
 
+import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
+import { diffItems, sidecarItems } from "@/core/research/ProjectRecord";
+import { ControllerEntityResizeClass } from "@/core/service/controlService/controller/concrete/ControllerEntityResize";
+import { HistoryManager } from "@/core/stage/stageManager/StageHistoryManager";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Color, Vector } from "@graphif/data-structures";
 import { deserialize, serialize } from "@graphif/serializer";
@@ -144,5 +173,113 @@ describe("image card size", () => {
     const tall = FileCardNode.fitImageInBox(box, 900, 1600);
     expect(tall.size).toEqual(new Vector(113, 200));
     expect(tall.center).toEqual(box.center);
+  });
+});
+
+describe("PDF boxed-region card resize", () => {
+  it("only resizes PDF excerpt cards with an image attachment, preserving aspect ratio and min size", () => {
+    const region = new FileCardNode(project as never, {
+      fileKind: "pdf",
+      pdfPage: 3,
+      pdfAnnotation: "BOX1",
+      attachmentId: "box-img",
+      collisionBox: new CollisionBox([new Rectangle(new Vector(40, 50), new Vector(300, 200))]),
+    });
+    expect(region.canResize).toBe(true);
+
+    region.resizeHandle(new Vector(150, 80));
+    expect(region.rectangle.location).toEqual(new Vector(40, 50));
+    expect(region.rectangle.size.x).toBeCloseTo(450);
+    expect(region.rectangle.size.y).toBeCloseTo(300);
+
+    // 往左上缩过头时，短边停在 imageMinSide（60），长宽比不变
+    region.resizeHandle(new Vector(-1000, -1000));
+    expect(region.rectangle.size.x).toBeCloseTo(90);
+    expect(region.rectangle.size.y).toBeCloseTo(FileCardNode.imageMinSide);
+
+    const quote = new FileCardNode(project as never, {
+      fileKind: "pdf",
+      pdfPage: 3,
+      pdfAnnotation: "Q1",
+      attachmentId: "",
+      excerpt: "摘录文字",
+      collisionBox: new CollisionBox([new Rectangle(Vector.getZero(), new Vector(320, 120))]),
+    });
+    const ordinaryPdf = new FileCardNode(project as never, {
+      fileKind: "pdf",
+      pdfPage: 0,
+      attachmentId: "cover",
+      collisionBox: new CollisionBox([new Rectangle(Vector.getZero(), new Vector(240, 340))]),
+    });
+    const ordinaryImage = new FileCardNode(project as never, {
+      fileKind: "image",
+      pdfPage: 0,
+      attachmentId: "img-thumb",
+      collisionBox: new CollisionBox([new Rectangle(Vector.getZero(), new Vector(300, 169))]),
+    });
+
+    for (const fixed of [quote, ordinaryPdf, ordinaryImage]) {
+      const before = fixed.rectangle.size.clone();
+      expect(fixed.canResize).toBe(false);
+      fixed.resizeHandle(new Vector(100, 100));
+      expect(fixed.rectangle.size).toEqual(before);
+    }
+  });
+
+  it("persists resized dimensions, supports undo via resize controller, and does not change content fingerprint", () => {
+    const board = {
+      attachments: new Map<string, Blob>(),
+      stage: [] as FileCardNode[],
+      projectState: 0,
+      emit: vi.fn(),
+      renderer: { transformView2World: (v: Vector) => v },
+      stageManager: {
+        getSelectedEntities: () => board.stage.filter((item) => item.isSelected),
+        updateReferences: vi.fn(),
+      },
+      historyManager: null as unknown as HistoryManager,
+    };
+    const region = new FileCardNode(board as never, {
+      uuid: "region-1",
+      title: "Fluid Net",
+      caption: "Fluid Net · p. 6",
+      sourcePath: "papers/fluid.pdf",
+      fileKind: "pdf",
+      pdfPage: 6,
+      pdfAnnotation: "FIG2",
+      attachmentId: "fig-2",
+      collisionBox: new CollisionBox([new Rectangle(new Vector(100, 100), new Vector(300, 150))]),
+    });
+    region.isSelected = true;
+    board.stage = [region];
+    board.historyManager = new HistoryManager(board as never);
+
+    const beforeSidecar = buildAiSidecar({ serializedStage: serialize(board.stage), workspaceFile: "/r/board.prg" });
+
+    const controller = new ControllerEntityResizeClass(board as never);
+    const handleCenter = region.getResizeHandleRect().center;
+    controller.mousedown({ button: 0, clientX: handleCenter.x, clientY: handleCenter.y } as MouseEvent);
+    controller.mousemove({ clientX: handleCenter.x + 100, clientY: handleCenter.y + 40 } as MouseEvent);
+    controller.mouseup({ button: 0 } as MouseEvent);
+
+    expect(region.rectangle.size.x).toBeCloseTo(400);
+    expect(region.rectangle.size.y).toBeCloseTo(200);
+    expect(board.projectState).toBe(2);
+
+    // 存盘再开保持调完后的大小；调大小不算内容改动
+    const [reopened] = deserialize(structuredClone(serialize(board.stage)), board) as FileCardNode[];
+    expect(reopened.rectangle.size.x).toBeCloseTo(400);
+    expect(reopened.rectangle.size.y).toBeCloseTo(200);
+
+    const afterSidecar = buildAiSidecar({ serializedStage: serialize(board.stage), workspaceFile: "/r/board.prg" });
+    expect(diffItems(sidecarItems(beforeSidecar.json), sidecarItems(afterSidecar.json))).toEqual({
+      added: [],
+      edited: [],
+      removed: [],
+    });
+
+    // 撤销恢复回原来的尺寸
+    board.historyManager.undo();
+    expect(board.stage[0].rectangle.size).toEqual(new Vector(300, 150));
   });
 });

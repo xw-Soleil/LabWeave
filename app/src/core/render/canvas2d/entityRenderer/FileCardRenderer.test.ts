@@ -27,7 +27,11 @@ function fixture(
     camera: { currentScale: 1 },
     renderer: { transformWorld2View: (value: unknown) => value, transformView2World: (value: unknown) => value },
     stageStyleManager: {
-      currentStyle: { Background: new Color(25, 25, 25), StageObjectBorder: new Color(240, 240, 240) },
+      currentStyle: {
+        Background: new Color(25, 25, 25),
+        StageObjectBorder: new Color(240, 240, 240),
+        CollideBoxSelected: new Color(80, 160, 255, 0.35),
+      },
     },
     textRenderer: {
       layoutClampedLines: () => ["Paper title"],
@@ -35,7 +39,8 @@ function fixture(
       renderTextFromCenter: vi.fn(),
       renderFittedText: vi.fn(),
     },
-    shapeRenderer: { renderRect: vi.fn() },
+    shapeRenderer: { renderRect: vi.fn(), renderResizeArrow: vi.fn() },
+    collisionBoxRenderer: { render: vi.fn() },
     imageRenderer: { renderImageElement: vi.fn() },
     canvas: { ctx: { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), clip: vi.fn() } },
   };
@@ -163,5 +168,33 @@ describe("PDF quote cards", () => {
     renderFileCard(region.project as never, region.card as never);
     expect(region.project.imageRenderer.renderImageElement).toHaveBeenCalledOnce();
     expect(region.project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
+  });
+
+  it("draws a corner resize handle only on selected PDF boxed-region cards", () => {
+    const regionRect = new Rectangle(new Vector(100, 50), new Vector(300, 200));
+    const region = quote({
+      attachmentId: "img",
+      excerpt: "",
+      bitmap: { width: 300, height: 200 },
+      isSelected: true,
+      canResize: true,
+      rectangle: regionRect,
+      getResizeHandleRect: () =>
+        new Rectangle(new Vector(regionRect.right - 25, regionRect.bottom - 25), new Vector(25, 25)),
+    });
+    renderFileCard(region.project as never, region.card as never);
+    expect(region.project.shapeRenderer.renderResizeArrow).toHaveBeenCalledOnce();
+
+    const ordinaryImage = quote({
+      fileKind: "image",
+      pdfPage: 0,
+      attachmentId: "img",
+      excerpt: "",
+      bitmap: { width: 300, height: 200 },
+      isSelected: true,
+      canResize: false,
+    });
+    renderFileCard(ordinaryImage.project as never, ordinaryImage.card as never);
+    expect(ordinaryImage.project.shapeRenderer.renderResizeArrow).not.toHaveBeenCalled();
   });
 });

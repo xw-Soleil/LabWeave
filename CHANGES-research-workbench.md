@@ -1305,3 +1305,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 原来 `onCloseRequested` 用循环逐个调 `await closeTab(tab)`，每个标签都要走 `TabWorkspace.close` 的 500 毫秒延迟并激活下一个标签重新渲染，开着多个标签时要看它们一个接一个慢吞吞关完；而且如果排在后面的笔记取消关闭，排在前面的标签已经被关掉了。
   - 现在窗口显示着时先做完关闭前自动保存，并把所有未保存的白板、草稿、笔记和 PDF 批注一次性问完（任一处点取消或保存失败就原样留着，一个标签都不关）；确认关闭后先趁标签都在记下会话和窗口位置，随即调 `hide()` 让窗口立刻消失，再在后台等自动保存/备份、快照、便签与附件、活动记录、工作区与设置全部写完，调 `TabWorkspace.disposeAllForShutdown()` 一次性并行释放所有标签和工作区锁子进程，最后销毁窗口退出。
 - 测试：新增 `AppShutdown.test.ts`（2 条：6 个标签关闭时自动保存、记会话、先藏窗口、等后台快照和记录写完再并行销毁退出；未保存草稿或文档取消关闭时所有标签原封不动），`TabWorkspace.test.tsx` 加 1 条（包含半途关闭倒计时中的标签在内一次性零延迟并行销毁）。
+
+### 102. 论文里框出来的截图摘录卡片支持拖右下角调大小（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/FileCardNode.tsx`、`app/src/core/render/canvas2d/entityRenderer/FileCardRenderer.tsx`、`app/src/core/service/controlService/controller/concrete/ControllerEntityResize.tsx`、`utilsControl.tsx`：
+  - `FileCardNode` 实现 `ResizeAble`，仅对来自 PDF 的带图摘录卡片（`pdfPage > 0 && Boolean(attachmentId)`）开放 `canResize`，拖动右下角把手时按原长宽比等比缩放，短边最小停在 `imageMinSide`（60）；圈字的摘录卡片和普通 PDF / 图片 / 笔记文件卡片保持不可调大小。
+  - `FileCardRenderer` 在选中可调大小的带图摘录卡片时，照 `ImageNode` 的样式画出右下角缩放把手与斜向双箭头。
+  - `ControllerEntityResize` 与 `isClickedResizeRect` 统一通过 `isResizableEntity` 识别可调大小实体，并在松开鼠标且尺寸真有改动时调用 `historyManager.recordStep()`，让拖把手调大小可以撤销，也会触发自动保存把新尺寸写进 `.prg`；`ProjectRecord` 的卡片指纹本来就不含 `rect`，调大小不会算成内容改动。
+- 测试：`FileCardNode.test.ts` 加 2 条（带图摘录等比缩放与最小尺寸限制、其余文件卡片不可调；经 `ControllerEntityResize` 拖动后存盘保持、指纹不变、撤销恢复原尺寸），`FileCardRenderer.test.ts` 加 1 条（只有选中的带图摘录卡片画缩放把手）。
