@@ -1,6 +1,7 @@
 import { Project } from "@/core/Project";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
+import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Settings } from "@/core/service/Settings";
 import { applyBlackAndWhite } from "@/core/service/dataManageService/imageUtils";
@@ -9,6 +10,55 @@ import { Vector } from "@graphif/data-structures";
 import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
 import type { Value } from "platejs";
+
+export type Rotate90Direction = "cw" | "ccw";
+
+export const JPEG_ROTATE_QUALITY = 0.92;
+
+function invertRateAxis(value: number): number {
+  return Number((1 - value).toPrecision(12));
+}
+
+export function rotateRate90(rate: Vector, direction: Rotate90Direction): Vector {
+  if (rate.x === 0.5 && rate.y === 0.5) return new Vector(0.5, 0.5);
+  return direction === "cw" ? new Vector(invertRateAxis(rate.y), rate.x) : new Vector(rate.y, invertRateAxis(rate.x));
+}
+
+export function rotateRgba90(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  direction: Rotate90Direction,
+): { data: Uint8ClampedArray<ArrayBuffer>; width: number; height: number } {
+  const outWidth = height;
+  const outHeight = width;
+  const out = new Uint8ClampedArray(outWidth * outHeight * 4);
+  const src32 = new Uint32Array(data.buffer, data.byteOffset, width * height);
+  const dst32 = new Uint32Array(out.buffer);
+  if (direction === "cw") {
+    for (let y = 0; y < height; y++) {
+      const dstX = height - 1 - y;
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x++) {
+        dst32[x * outWidth + dstX] = src32[rowOffset + x];
+      }
+    }
+  } else {
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x++) {
+        dst32[(width - 1 - x) * outWidth + y] = src32[rowOffset + x];
+      }
+    }
+  }
+  return { data: out, width: outWidth, height: outHeight };
+}
+
+export function rotatedMimeType(inputType: string): { type: string; quality?: number } {
+  if (inputType === "image/jpeg") return { type: "image/jpeg", quality: JPEG_ROTATE_QUALITY };
+  if (inputType === "image/webp") return { type: "image/webp", quality: JPEG_ROTATE_QUALITY };
+  return { type: "image/png" };
+}
 
 type ImageNodeOptions = {
   uuid?: string;
@@ -380,4 +430,102 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
     // 创建一个25x25的矩形，位于图片右下角
     return new Rectangle(new Vector(rect.right - 25, rect.bottom - 25), new Vector(25, 25));
   }
+
+  canRotate(): boolean {
+    return (
+      !this.disposed &&
+      this.state === "success" &&
+      Boolean(this.bitmap) &&
+      this.bitmap!.width > 0 &&
+      this.bitmap!.height > 0 &&
+      this.project.attachments.has(this.attachmentId)
+    );
+  }
+
+  async prepareRotated90(direction: Rotate90Direction): Promise<{ blob: Blob; bitmap: ImageBitmap } | null> {
+    if (!this.canRotate() || !this.bitmap) return null;
+    const sourceBlob = this.project.attachments.get(this.attachmentId);
+    if (!sourceBlob) return null;
+
+    const srcCanvas = document.createElement("canvas");
+    srcCanvas.width = this.bitmap.width;
+    srcCanvas.height = this.bitmap.height;
+    const srcCtx = srcCanvas.getContext("2d");
+    if (!srcCtx) return null;
+    srcCtx.drawImage(this.bitmap, 0, 0);
+    const srcImage = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+    const rotated = rotateRgba90(srcImage.data, srcImage.width, srcImage.height, direction);
+
+    const dstCanvas = document.createElement("canvas");
+    dstCanvas.width = rotated.width;
+    dstCanvas.height = rotated.height;
+    const dstCtx = dstCanvas.getContext("2d");
+    if (!dstCtx) return null;
+    const dstImage = dstCtx.createImageData(rotated.width, rotated.height);
+    dstImage.data.set(rotated.data);
+    dstCtx.putImageData(dstImage, 0, 0);
+
+    const { type, quality } = rotatedMimeType(sourceBlob.type);
+    const blob = await new Promise<Blob | null>((resolve) => dstCanvas.toBlob(resolve, type, quality));
+    if (!blob) return null;
+    const bitmap = await createImageBitmap(blob);
+    return { blob, bitmap };
+  }
+
+  applyRotatedImage(newAttachmentId: string, bitmap: ImageBitmap): void {
+    if (this.disposed) {
+      bitmap.close();
+      return;
+    }
+    const center = this.geometryCenter;
+    this.bitmap?.close();
+    this.bitmap = bitmap;
+    this.attachmentId = newAttachmentId;
+    this.state = "success";
+    const newSize = new Vector(bitmap.width, bitmap.height).multiply(this.scale);
+    this.collisionBox = new CollisionBox([new Rectangle(center.subtract(newSize.multiply(0.5)), newSize)]);
+    this.updateFatherSectionByMove();
+  }
+}
+
+export async function rotateSelectedImageNodes(project: Project, direction: Rotate90Direction): Promise<void> {
+  const nodes = project.stageManager
+    .getSelectedEntities()
+    .filter((entity): entity is ImageNode => entity instanceof ImageNode && entity.canRotate());
+  if (nodes.length === 0) return;
+
+  const prepared = await Promise.all(
+    nodes.map(async (node) => ({
+      node,
+      result: await node.prepareRotated90(direction),
+    })),
+  );
+  if (project.closing) {
+    for (const item of prepared) item.result?.bitmap.close();
+    return;
+  }
+
+  const ready = prepared.filter(
+    (item): item is { node: ImageNode; result: { blob: Blob; bitmap: ImageBitmap } } => item.result !== null,
+  );
+  if (ready.length === 0) return;
+
+  const rotatedNodes = new Set<ImageNode>();
+  for (const { node, result } of ready) {
+    const newAttachmentId = project.addAttachment(result.blob);
+    node.applyRotatedImage(newAttachmentId, result.bitmap);
+    rotatedNodes.add(node);
+  }
+
+  for (const association of project.stageManager.getAssociations()) {
+    if (!(association instanceof Edge)) continue;
+    if (rotatedNodes.has(association.source as ImageNode)) {
+      association.sourceRectangleRate = rotateRate90(association.sourceRectangleRate, direction);
+    }
+    if (rotatedNodes.has(association.target as ImageNode)) {
+      association.targetRectangleRate = rotateRate90(association.targetRectangleRate, direction);
+    }
+  }
+
+  project.historyManager.recordStep();
 }

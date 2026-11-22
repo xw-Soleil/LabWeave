@@ -1329,3 +1329,10 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 画布文字渲染、行内公式混排渲染（独立 `$$...$$` 块级公式保留数学居中惯例）、双击编辑时的 `<textarea>` 输入框、以及 SVG / PNG 导出统一按 `textAlign` 对齐，编辑框与 SVG 导出同时同步 `fontWeight`。
   - 选中一个或多个 `TextNode` 时，右键菜单新增文字样式组：靠左对齐、居中对齐、靠右对齐（当前项打勾）、字号大一档、字号小一档、加粗（全选加粗时打勾），支持多选批量生效与撤销；顺手修掉原字号快捷键先 `recordStep` 后改节点导致撤销错位的问题。
 - 测试：新增 `TextNode.test.tsx`（3 条：旧文件默认靠左与序列化往返；画布、DOM 编辑框、SVG 导出三处对齐与加粗一致；多选改对齐 / 字号 / 加粗及逐步撤销恢复）。
+
+### 105. 图片节点右键菜单支持向右转 90° 与向左转 90°（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/ImageNode.tsx`、`app/src/components/context-menu-content.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - 选中一个或多个 `ImageNode` 时，右键菜单新增「向右转 90°」「向左转 90°」。旋转直接按整数像素转置生成新图像附件写进 `project.attachments` 并切换当前卡片的 `attachmentId`，不新增角度字段；共用原附件的其他卡片不受影响。
+  - 旋转时保持图片中心坐标与 `scale` 不变、宽高互换，并同步旋转连到这张图上的 `Edge` 起点 / 终点比例（`(x, y)` 向右转成 `(1 - y, x)`、向左转成 `(y, 1 - x)`，中心 `(0.5, 0.5)` 不动）；PNG 仍存为无损 `image/png`，JPEG / WebP 按 `0.92` 质量重编码。多张图片一起旋转合为一步撤销，`project.attachments` 在会话内保留原附件，撤销后图片与连线端点一并恢复。
+- 测试：`ImageNode.test.tsx` 加 2 条（RGBA 像素与端点比例正反旋转及转 4 次逐字节还原；共用附件隔离、中心与缩放保持、连线端点联动、存盘重开保持及撤销恢复原附件与连线）。

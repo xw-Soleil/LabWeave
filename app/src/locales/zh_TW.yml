@@ -165,6 +165,8 @@ contextMenu:
   increaseFontSize: 字號大一檔
   decreaseFontSize: 字號小一檔
   toggleBold: 加粗
+  rotateClockwise90: 向右轉 90°
+  rotateCounterClockwise90: 向左轉 90°
   confirm: 確定
   cancel: 取消
 

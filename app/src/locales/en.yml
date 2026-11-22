@@ -1487,6 +1487,8 @@ contextMenu:
   increaseFontSize: Larger Font Size
   decreaseFontSize: Smaller Font Size
   toggleBold: Bold
+  rotateClockwise90: Rotate 90° Right
+  rotateCounterClockwise90: Rotate 90° Left
   confirm: OK
   cancel: Cancel
 
