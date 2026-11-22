@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+import { Vector } from "@graphif/data-structures";
+import { Rectangle } from "@graphif/shapes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -21,7 +24,7 @@ const mocks = vi.hoisted(() => {
     exists: async (path: string) => disk.has(path),
     initOk: true,
     focused: vi.fn(),
-    closed: vi.fn(async () => {}),
+    closed: vi.fn<(id: string) => Promise<void>>(async () => {}),
     opened: vi.fn(async () => undefined),
     shown: vi.fn(),
     info: vi.fn(),
@@ -35,9 +38,19 @@ vi.mock("@/core/Project", () => {
     metadata: Record<string, unknown> = { workbench: { id: "真白板的编号" } };
     providers = new Map<string, unknown>();
     closing = false;
+    layout: "docked" | "floating" = "docked";
+    floatingRect = new Rectangle(Vector.getZero(), Vector.same(100));
+    zIndex = 0;
+    canDock = true;
+    closable = true;
+    closeOnEscape = true;
+    closeWhenClickOutside = false;
+    closeWhenClickInside = false;
+    titleBarOverlay = false;
     id = crypto.randomUUID();
     camera = { location: { clone: () => "镜头位置" }, currentScale: 0.5, applySavedView: vi.fn() };
     loop = vi.fn();
+    pause = vi.fn();
     dispose = vi.fn(async () => {});
     constructor(readonly uri: { scheme: string; fsPath: string }) {}
     get projectState() {
@@ -73,18 +86,31 @@ vi.mock("@/core/loadAllServices", () => ({
     ),
   loadAllServicesAfterInit: () => {},
 }));
-vi.mock("@/core/TabWorkspace", () => ({ TabWorkspace: { focus: mocks.focused, close: mocks.closed } }));
-vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
-vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: mocks.opened }));
-vi.mock("@/state", async () => {
-  const { atom, createStore } = await import("jotai");
-  return {
-    store: createStore(),
-    tabsAtom: atom<unknown[]>([]),
-    activeTabAtom: atom<unknown>(undefined),
-    activeResourceTabAtom: atom<unknown>(undefined),
+vi.mock("@/core/TabWorkspace", async () => {
+  const actual = await vi.importActual<typeof import("@/core/TabWorkspace")>("@/core/TabWorkspace");
+  const realFocus = actual.TabWorkspace.focus.bind(actual.TabWorkspace);
+  const realClose = actual.TabWorkspace.close.bind(actual.TabWorkspace);
+  actual.TabWorkspace.focus = (id: string) => {
+    mocks.focused(id);
+    realFocus(id);
   };
+  actual.TabWorkspace.close = async (id: string, options?: { confirmed?: boolean }) => {
+    mocks.closed(id);
+    vi.useFakeTimers();
+    try {
+      const closing = realClose(id, options);
+      await vi.advanceTimersByTimeAsync(500);
+      return await closing;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+  return actual;
 });
+vi.mock("@/core/service/Settings", () => ({ Settings: { maxFps: 60, maxFpsUnfocused: 60 } }));
+vi.mock("@/core/service/Telemetry", () => ({ Telemetry: { event: vi.fn() } }));
+vi.mock("@/components/ui/dialog", () => ({ Dialog: { buttons: vi.fn() } }));
+vi.mock("@/core/service/GlobalMenu", () => ({ onOpenFile: mocks.opened }));
 vi.mock("@tauri-apps/plugin-fs", () => ({ exists: mocks.exists }));
 vi.mock("i18next", () => ({
   default: {
@@ -114,7 +140,17 @@ vi.mock("./SnapshotDiff", async (original) => ({
 }));
 
 import { Project, ProjectState } from "@/core/Project";
-import { activeTabAtom, store, tabsAtom } from "@/state";
+import { findTabGroupByTabId, splitTabGroup, createTabGroup } from "@/core/TabGroup";
+import { TabWorkspace } from "@/core/TabWorkspace";
+import {
+  activeDockedTabAtom,
+  activeGroupIdAtom,
+  activeResourceTabAtom,
+  activeTabAtom,
+  store,
+  tabGroupRootAtom,
+  tabsAtom,
+} from "@/state";
 import { buildAiSidecar } from "./AiSidecarBuilder";
 import { LookbackBoard, leaveLookback, nodeChip, nodeLabel, openLookback } from "./LookbackBoard";
 
@@ -189,6 +225,10 @@ beforeEach(() => {
   mocks.disk.clear();
   store.set(tabsAtom, []);
   store.set(activeTabAtom, undefined);
+  store.set(activeDockedTabAtom, undefined);
+  store.set(activeResourceTabAtom, undefined);
+  store.set(tabGroupRootAtom, null);
+  store.set(activeGroupIdAtom, undefined);
 });
 
 describe("looking back at a node", () => {
@@ -319,5 +359,72 @@ describe("looking back at a node", () => {
     expect(nodeChip(named as never)).toBe("11-21 组会");
     expect(nodeLabel(legacy as never)).toBe("11-15 09:30 阶段小结");
     expect(nodeChip(legacy as never)).toBe("11-15 阶段小结");
+  });
+
+  it("opens on the lookback board without activating or touching an open PDF tab in the same group or a split", async () => {
+    threeNodes();
+    // 情形一：白板和 PDF 开在同一个标签组里（包括从 PDF 发完摘录切回白板后点回看、切节点、退出回看）
+    const live = liveBoard();
+    const pdf = new Project({ scheme: "file", fsPath: `${root}/论文.pdf` } as never);
+    TabWorkspace.open(live as never);
+    TabWorkspace.open(pdf as never);
+    TabWorkspace.focus(live.id);
+    mocks.focused.mockClear();
+    const seenActive: unknown[] = [];
+    const seenGroupActive: (string | undefined)[] = [];
+    const offActive = store.sub(activeTabAtom, () => seenActive.push(store.get(activeTabAtom)));
+    const offGroup = store.sub(tabGroupRootAtom, () =>
+      seenGroupActive.push(findTabGroupByTabId(store.get(tabGroupRootAtom), pdf.id)?.activeTabId),
+    );
+
+    try {
+      const lookback = (await openLookback(live))!;
+      expect(store.get(activeTabAtom)).toBe(lookback);
+      expect(findTabGroupByTabId(store.get(tabGroupRootAtom), live.id)?.activeTabId).toBe(lookback.id);
+      expect(mocks.focused).not.toHaveBeenCalledWith(pdf.id);
+
+      const earlier = (await openLookback(lookback, "2026-11-14 1000"))!;
+      expect(store.get(activeTabAtom)).toBe(earlier);
+      expect(findTabGroupByTabId(store.get(tabGroupRootAtom), live.id)?.activeTabId).toBe(earlier.id);
+      expect(mocks.focused).not.toHaveBeenCalledWith(pdf.id);
+
+      await leaveLookback(earlier);
+      expect(store.get(activeTabAtom)).toBe(live);
+      expect(findTabGroupByTabId(store.get(tabGroupRootAtom), live.id)?.activeTabId).toBe(live.id);
+      expect(store.get(tabsAtom)).toContain(pdf);
+      expect(mocks.focused).not.toHaveBeenCalledWith(pdf.id);
+      expect(seenActive).not.toContain(pdf);
+      expect(seenGroupActive).not.toContain(pdf.id);
+    } finally {
+      offActive();
+      offGroup();
+    }
+
+    // 情形二：左白板、右 PDF 分屏，发完摘录后 activeGroupIdAtom 还停在右边 PDF 组上，点左边白板的回看
+    store.set(tabsAtom, []);
+    store.set(tabGroupRootAtom, null);
+    const leftBoard = liveBoard();
+    const rightPdf = new Project({ scheme: "file", fsPath: `${root}/分屏论文.pdf` } as never);
+    const leftGroup = createTabGroup([leftBoard.id], "left-board-group");
+    const rightGroup = createTabGroup([rightPdf.id], "right-pdf-group");
+    store.set(tabsAtom, [leftBoard as never, rightPdf as never]);
+    store.set(tabGroupRootAtom, splitTabGroup(leftGroup, leftGroup.id, rightGroup, "right"));
+    store.set(activeGroupIdAtom, rightGroup.id);
+    store.set(activeTabAtom, rightPdf as never);
+    mocks.focused.mockClear();
+
+    const splitLookback = (await openLookback(leftBoard))!;
+    expect(store.get(activeTabAtom)).toBe(splitLookback);
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), splitLookback.id)?.id).toBe("left-board-group");
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), leftBoard.id)?.activeTabId).toBe(splitLookback.id);
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), rightPdf.id)?.id).toBe("right-pdf-group");
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), rightPdf.id)?.activeTabId).toBe(rightPdf.id);
+    expect(mocks.focused).not.toHaveBeenCalledWith(rightPdf.id);
+
+    await leaveLookback(splitLookback);
+    expect(store.get(activeTabAtom)).toBe(leftBoard);
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), leftBoard.id)?.activeTabId).toBe(leftBoard.id);
+    expect(findTabGroupByTabId(store.get(tabGroupRootAtom), rightPdf.id)?.activeTabId).toBe(rightPdf.id);
+    expect(mocks.focused).not.toHaveBeenCalledWith(rightPdf.id);
   });
 });

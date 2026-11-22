@@ -1290,3 +1290,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`VirtualClipboard.tsx`：判断用户复制白板对象之后有没有在外部程序复制新内容时，不再只比对系统剪贴板里的纯文本，而是按粘贴时的同一顺序（文件列表 → 文字 → 图片像素摘要）给系统剪贴板算指纹并比对，读完图片立即释放句柄。白板内连续粘贴、跨白板粘贴、剪切后贴回、原位粘贴都不变；外部新复制了图片、文字或文件时都会自动清掉旧的虚拟剪贴板改贴新的。
 - 测试：`copyEngine.test.ts` 加 3 条（白板复制图 A → 连贴和跨板贴仍是图 A → 外部复制图 B → 贴出图 B；外部复制文字 → 贴出文字；外部复制文件 → 贴出文件）。
+
+### 100. 开着 PDF 标签时进出「回看」或切换节点不再先跳到 PDF（2026-11-22）
+
+- `app/src/core/TabWorkspace.tsx`、`app/src/core/research/LookbackBoard.ts`：
+  - 原来 `openLookback` 只把回看白板塞进 `tabsAtom` 就调 `TabWorkspace.focus`，等外层渲染后的 `useEffect` 再补进当前焦点所在的标签组：分屏看 PDF 发完摘录后焦点组还在 PDF 那一边时，回看会被塞进 PDF 所在的分屏组；切换回看节点关掉上一张回看时，新标签还没进组，组里当前标签会先回退到旁边的 PDF 标签。
+  - 原来 `leaveLookback` 先调 `await TabWorkspace.close` 再聚焦原白板，关标签的 500 毫秒等待期间组里会先激活旁边的 PDF 标签。
+  - 现在 `TabWorkspace.open` 支持紧挨指定标签前面插入同一标签组并立即切过去，`openLookback` 走这条路直接进原白板所在的组；`leaveLookback` 先把原白板聚焦到前面，再关闭回看标签。
+- 测试：`LookbackBoard.test.ts` 接入真实 `TabWorkspace` 与标签组状态，新增 1 条覆盖同组和左右分屏两种情形下进回看、切节点、退回原白板全过程不碰 PDF 标签。

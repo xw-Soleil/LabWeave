@@ -147,14 +147,28 @@ export namespace TabWorkspace {
     store.set(tabGroupRootAtom, root);
   }
 
-  export function open<T extends Tab>(tab: T): T {
+  export function open<T extends Tab>(tab: T, options?: { beforeTabId?: string }): T {
+    if (tab.layout === "docked" && options?.beforeTabId) {
+      synchronizeGroups();
+    }
     tab.floatingRect = constrainRect(tab.floatingRect);
     tab.zIndex = maxZIndex() + 1;
     store.set(tabsAtom, [...store.get(tabsAtom), tab]);
     if (tab.layout === "docked") {
-      store.set(tabGroupRootAtom, insertDockedTab(store.get(tabGroupRootAtom), tab));
+      const root = store.get(tabGroupRootAtom);
+      const anchorGroup = options?.beforeTabId ? findTabGroupByTabId(root, options.beforeTabId) : undefined;
+      if (anchorGroup && (!isResourceTab(tab) || !isFixedSideGroupId(anchorGroup.id))) {
+        const anchorIndex = anchorGroup.tabIds.indexOf(options!.beforeTabId!);
+        store.set(
+          tabGroupRootAtom,
+          insertTabIntoGroup(root, anchorGroup.id, tab.id, anchorIndex >= 0 ? anchorIndex : undefined),
+        );
+        store.set(activeGroupIdAtom, anchorGroup.id);
+      } else {
+        store.set(tabGroupRootAtom, insertDockedTab(root, tab));
+      }
     }
-    focus(tab.id);
+    TabWorkspace.focus(tab.id);
 
     if (tab.closeWhenClickOutside) {
       const listener = (event: PointerEvent) => {
@@ -346,7 +360,7 @@ export namespace TabWorkspace {
       const result = removeFromGroup(id);
       if (store.get(activeTabAtom) === tab) {
         const next = (result.nextActiveTabId && get(result.nextActiveTabId)) ?? firstAvailableDockedTab();
-        if (next) focus(next.id);
+        if (next) TabWorkspace.focus(next.id);
       }
     }
     store.set(tabsAtom, [...store.get(tabsAtom)]);

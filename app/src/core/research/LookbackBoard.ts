@@ -1,6 +1,6 @@
 import type { FileSystemProvider } from "@/core/interfaces/Service";
 import { Project, ProjectState } from "@/core/Project";
-import { activeResourceTabAtom, activeTabAtom, store, tabsAtom } from "@/state";
+import { store, tabsAtom } from "@/state";
 import { exists } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { toast } from "sonner";
@@ -173,16 +173,14 @@ export async function openLookback(from: Project, nodeName?: string): Promise<Lo
   board.camera.applySavedView(from.camera.location.clone(), from.camera.currentScale);
   showSnapshotDiff(board, base?.name ?? "", before, after);
 
-  store.set(tabsAtom, [...store.get(tabsAtom), board]);
-  store.set(activeTabAtom, board);
-  store.set(activeResourceTabAtom, board);
-  TabWorkspace.focus(board.id);
+  // 直接放进原白板所在的标签组并紧挨在它前面：分屏时不会落到另一边的 PDF 组里，切换节点和关闭时也不会先跳到旁边的 PDF 标签
+  TabWorkspace.open(board, { beforeTabId: from.id });
   board.loop();
   if (previous) await TabWorkspace.close(previous.id);
   return board;
 }
 
-/** 回到现在：关掉回看，把真的那块白板切到前面（没开着就打开） */
+/** 回到现在：先把真的那块白板切到前面（没开着就打开），再关掉回看，免得关标签那半秒先落到同组的别的标签上 */
 export async function leaveLookback(board: LookbackBoard): Promise<void> {
   const { root, file } = board.lookback;
   const path = under(root, file);
@@ -199,9 +197,12 @@ export async function leaveLookback(board: LookbackBoard): Promise<void> {
         tab.uri.scheme === "file" &&
         pathKey(tab.uri.fsPath) === pathKey(path),
     );
-  await TabWorkspace.close(board.id);
   if (live) {
     TabWorkspace.focus(live.id);
     live.loop();
-  } else if (await exists(path)) await onOpenFile(URI.file(path), "Lookback");
+  } else if (await exists(path)) {
+    const opened = await onOpenFile(URI.file(path), "Lookback");
+    if (opened) TabWorkspace.focus(opened.id);
+  }
+  await TabWorkspace.close(board.id);
 }
