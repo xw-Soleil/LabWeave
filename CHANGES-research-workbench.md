@@ -1236,3 +1236,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 文案：`research.stageReview.records`、`recordDone`。
 - 测试：`ResearchReport.test.ts` 加 3 条，`ResearchReportExport.test.ts` 加 2 条，`StageReport.test.ts` 加 2 条，`StageReview.test.ts` 加 1 条。
 - AI 找「对不上」找得准不准，没有用真模型试过。
+
+### 95. 在开发版里验便签和汇报时查出来的四处小问题（2026-11-21）
+
+用隔离的程序数据启动开发版，临时代码（已删）在便签的输入框里填字回车、点勾、进整理、点「定格并生成汇报」，AI 用的是本机的一个假接口。便签、封存、带到下一段、手记进汇报、「两边对不上的地方」都走通了，另查出下面四处：
+
+- `app/src/core/research/ReportTask.tsx`：汇报的小条原来在窗口底部正中，会压住白板状态条上的缩放按钮，窗口窄时还伸到右边的 AI 面板上。改成靠左、在状态条上面一行。
+- `app/src/core/research/NodeRecord.ts`：
+  - 关联当前内容时，选中了卡片的，链接的名字用卡片上的字（最多 30 个字），不再用白板的文件名。
+  - 事项没写标题时，自动提炼标题不把挂在行尾的链接名字算进去（原来会变成「对比了两种取法 演示白板.prg」）。
+  - 定格带到下一段时，同一句话记了两遍的只带一条。
+- 测试：`NodeRecord.test.ts` 加 1 条、补 1 处。

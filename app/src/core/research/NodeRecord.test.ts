@@ -127,6 +127,14 @@ describe("a record as Markdown", () => {
     // 没写标题的，标题是从内容里提炼的；短的就是它自己
     expect(parsed.items[2].summary).toBe("换损失函数再跑一遍");
     expect(summarizeRecordItem("换损失函数再跑一遍", "todo")).toBe("换损失函数再跑一遍");
+    // 挂在末尾的关联链接不算进标题；整条只有一个链接的还是用它的名字
+    const linked = record(
+      "## 进展\n\n- [x] 对比了两种取法 [边界条件怎么取](<../白板.prg#node=c1>) [综述](<../论文/review.pdf>)\n- [x] [综述](<../论文/review.pdf>)\n",
+    );
+    expect(linked.items.map(({ summary, text }) => [summary, text])).toEqual([
+      ["对比了两种取法", "对比了两种取法 边界条件怎么取 综述"],
+      ["综述", "综述"],
+    ]);
   });
 
   it("adds an item at the end of its section, with a checkbox to tick later", () => {
@@ -362,6 +370,17 @@ describe("freezing a node", () => {
     const third = sealMarkdown(second.next, second.sealed, "2026-11-21 组会");
     expect(third.sealed).toBe(second.sealed);
     expect(third.next).toBe(second.next);
+  });
+
+  it("carries one copy of something that was noted twice", () => {
+    // 「下一步」里同一句写了两遍；同一个问题记了两遍
+    const twice = WEEK.replace("- 整理实验记录", "- [ ] 试试 C 方法").replace(
+      "- [ ] 边界条件会炸",
+      "- [ ] 边界条件会炸\n- [ ] 边界条件会炸",
+    );
+    const { next } = sealMarkdown(twice, undefined, "2026-11-21 组会");
+    const carried = record(next).items.map(({ section, text }) => `${section} ${text.split("\n")[0]}`);
+    expect(carried).toEqual(["todo 换损失函数再跑一遍", "todo 试试 C 方法", "notes 边界条件会炸"]);
   });
 
   it("puts loose lines that have no heading of their own under 其他", () => {

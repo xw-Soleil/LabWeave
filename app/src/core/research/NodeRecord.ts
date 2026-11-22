@@ -398,6 +398,20 @@ function contentLines(lines: string[]): boolean[] {
   });
 }
 
+/**
+ * 提炼标题用的内容：第一行末尾挂着的那几个链接的名字不算（「关联当前内容」加的链接就挂在那里），
+ * 不然标题会变成「对比了两种取法 演示白板.prg」。整行只有链接的不动。
+ */
+function withoutTrailingLinks(item: RecordItem): string {
+  const [first, ...rest] = item.text.split("\n");
+  let head = first.trimEnd();
+  for (const link of item.links.toReversed()) {
+    const label = link.label.trim();
+    if (label && head.endsWith(label)) head = head.slice(0, -label.length).trimEnd();
+  }
+  return head ? [head, ...rest].join("\n") : item.text;
+}
+
 function parseRecordSource(record: StoredRecord): { record: NodeRecord; sourceRows: Map<string, number[]> } {
   const { lines } = markdownLines(record.markdown);
   const items: RecordItem[] = [];
@@ -463,7 +477,8 @@ function parseRecordSource(record: StoredRecord): { record: NodeRecord; sourceRo
   });
   items.forEach((item) => {
     item.summary ??=
-      summarizeRecordItem(item.text, item.section) || (item.images?.[0] ? imageLabel(item.images[0]) : "");
+      summarizeRecordItem(withoutTrailingLinks(item), item.section) ||
+      (item.images?.[0] ? imageLabel(item.images[0]) : "");
     item.links = uniqueLinks(item.links);
     item.images = uniqueLinks(item.images ?? []);
   });
@@ -984,11 +999,16 @@ export function sealMarkdown(
   }
 
   let next = recordTemplate(CURRENT_RECORD);
+  // 同一句话记了两遍的（比如「下一步」里写的和一条带过来的待办一样）：带过去一条就够
+  const carried = new Set<string>();
   for (const item of items) {
     if (item.done) continue;
     const first = itemLine.exec(lines[rowsOf(item)[0]]);
     const open = first?.[2] === " ";
     if (item.section === "done" || (item.section === "notes" && !open)) continue;
+    const key = recordItemKey(item);
+    if (carried.has(key)) continue;
+    carried.add(key);
     const block = blockOf(item);
     next =
       item.section === "next"
@@ -1167,7 +1187,12 @@ export async function currentContextLink(root: string, record: NodeRecord): Prom
     path = active.uri.fsPath;
     label = active.title;
     const selected = active.stageManager.getSelectedEntities()[0];
-    if (selected) fragment = `node=${selected.uuid}`;
+    if (selected) {
+      fragment = `node=${selected.uuid}`;
+      // 选中了卡片：链接叫卡片上的字，比叫白板的文件名看得懂
+      const words = "text" in selected && typeof selected.text === "string" ? selected.text.trim().split("\n")[0] : "";
+      if (words) label = words.length > 30 ? `${words.slice(0, 30)}…` : words;
+    }
   } else return undefined;
   if (!ResearchFolder.isInside(path, root)) return undefined;
   const directory = ResearchFolder.toAbsolute(record.path.split("/").slice(0, -1).join("/"), root);

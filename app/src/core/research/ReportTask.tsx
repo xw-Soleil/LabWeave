@@ -8,10 +8,9 @@ import { Check, FileText, FolderOpen, LoaderCircle, Presentation, RefreshCw, X }
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { retryResearchReportExport, type ReportProgress, type ResearchReportResult } from "./ResearchReport";
-import { syncTaskAtom } from "./ZoteroSyncTask";
 
 /*
- * 汇报在后台生成：任务的状态，和窗口底部正中的小条（进度、取消、打开报告和 PPT、导出失败后重新导出）。
+ * 汇报在后台生成：任务的状态，和窗口左下角的小条（进度、取消、打开报告和 PPT、导出失败后重新导出）。
  * 任务状态和小条出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号）里的 ResearchProgressDialog.tsx；
  * 他那个选周、填重点的对话框没有搬，材料在阶段小结整理时就挑好了（StageReviewTray.tsx）。
  */
@@ -129,10 +128,9 @@ export function retryReportTask(task: ReportTask): boolean {
 
 const openOutside = (path: string) => void openWithSystem(path).catch(fail);
 
-/** 窗口底部正中的小条。和 Zotero 同步的小条在同一个位置，两个都在时这个往上让一格 */
+/** 窗口左下角的小条，在白板状态条的上面一行（Zotero 同步的小条在底部正中，两个互不挡着） */
 export function ReportTaskBar() {
   const task = useAtomValue(reportTaskAtom, { store });
-  const syncing = useAtomValue(syncTaskAtom, { store });
   const { t: translate } = useTranslation("research");
   if (!task) return null;
   const t = (key: string, options?: Record<string, unknown>) =>
@@ -149,8 +147,8 @@ export function ReportTaskBar() {
     <div
       role="status"
       className={cn(
-        "bg-popover text-popover-foreground fixed left-1/2 z-50 flex min-h-8 max-w-[min(44rem,calc(100%-2rem))] -translate-x-1/2 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-3 text-xs shadow-md",
-        syncing ? "bottom-12" : "bottom-3",
+        // 靠左、在白板状态条的上面一行：正中会压住状态条的缩放按钮，窗口窄时还会伸到右边的 AI 面板上
+        "bg-popover text-popover-foreground fixed bottom-12 left-16 z-50 flex min-h-8 max-w-[min(44rem,calc(100%-5rem))] items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-3 text-xs shadow-md",
       )}
     >
       {running ? (
