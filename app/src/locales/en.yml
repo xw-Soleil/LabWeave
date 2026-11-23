@@ -3039,6 +3039,19 @@ research:
     restoreFailed: "Couldn't reopen board {{path}}: {{message}}"
     panelFailed: "Couldn't open the panel: {{message}}"
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
+    closePrompt:
+      saveTitle: Save changes?
+      save: Save
+      discard: Don't save
+      cancel: Cancel
+      stashed: This file isn't saved yet, but a copy is stashed. You can restore it from Recent files.
+      unsavedTitle: Unsaved files
+      unsavedDescription: "{{count}} file(s) have unsaved changes. Closing now could leave a file empty, so it's safer to save them first."
+      continue: Close anyway
+      flushFailedTitle: Some data wasn't written to disk
+      flushFailed: "These didn't get written: {{message}}. Click Go back, check that the drive holding your research folder is still connected, then close again. If you quit anyway, this data won't be saved this time."
+      back: Go back
+      quitAnyway: Quit anyway
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
     resizeSidePanel: Drag to resize the panel
     pinSidePanel: Pin the panel

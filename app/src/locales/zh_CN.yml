@@ -3158,6 +3158,19 @@ research:
     restoreFailed: "没能重新打开白板 {{path}}：{{message}}"
     panelFailed: "没能打开面板：{{message}}"
     autoSaveFailed: "关闭前自动保存「{{name}}」失败：{{message}}"
+    closePrompt:
+      saveTitle: 是否保存更改？
+      save: 保存
+      discard: 不保存
+      cancel: 取消
+      stashed: 文件还没有保存，但已经暂存，在“最近打开的文件”中可恢复文件
+      unsavedTitle: 检测到未保存文件
+      unsavedDescription: "当前有 {{count}} 个未保存的文件。直接关闭可能有文件被清空的风险，建议先手动保存文件。"
+      continue: 继续关闭
+      flushFailedTitle: 退出前有内容没写进磁盘
+      flushFailed: "没写进去的有：{{message}}。可以先点「返回」，看看研究文件夹所在的盘是不是还连着，再重新关闭；点「仍然退出」，这部分内容这次就存不下来了。"
+      back: 返回
+      quitAnyway: 仍然退出
     extensionsDisabled: 科研工作台不运行扩展，数据只留在本机
     resizeSidePanel: 拖动调整面板宽度
     pinSidePanel: 固定面板

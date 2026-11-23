@@ -1348,3 +1348,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `app/src/core/service/Settings.tsx`：第 101 节加退出收尾时把 `store.set(key, value)` 放进了微任务队列，导致修改 `Settings` 属性后紧接着同步检查底层存储的调用方还没拿到本次 `store.set`。改成同步发起 `store.set(key, value)`，再用集合记下所有尚未结束的写入 Promise 供 `flushSettings()` 等待并调 `store.save()`。
 - 测试：`AppShutdown.test.ts`、`ReadingTheme.test.ts`、`LocalAgentTransport.test.ts` 全部通过。
+
+### 108. 关程序时收尾出错也不会留下退不掉的进程；三处「是否保存更改？」合成一个（2026-11-22）
+
+- `app/src/core/research/AppShutdown.ts`：
+  - 原来窗口藏起来以后，后台收尾（活动记录、工作区列表、设置写盘）只要有一步出错就不往下走，窗口看不见、进程退不掉；「正在关闭」的标记在藏窗口之前就设上了，藏窗口这一步报错的话，之后再点关闭都没反应。
+  - 现在记窗口位置、藏窗口失败都照样往下退。后台写盘某一步失败，后面几步照样写，写完把窗口重新亮出来，告诉用户哪些没写进去，让用户选「返回」（标签都还在，可以检查外接盘后再关）或「仍然退出」；窗口亮不出来就直接退出。销毁窗口失败时把窗口亮出来并报错，可以再关一次。
+  - 「是否保存更改？」对话框、「已经暂存」提示、关程序时的「检测到未保存文件」对话框改成从文案文件取字，抽成 `confirmSaveBeforeClose()`；工作区名的取法 `researchWorkspaceName()` 从 `App.tsx` 挪到这里。
+- `app/src/App.tsx`：点标签上的叉关白板时改用 `confirmSaveBeforeClose()`；原来对话框按 Esc 关掉（既没点保存也没点取消）会照样关标签，现在当成取消；保存后仍没存上也不关。
+- `app/src/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister.tsx`：「关闭当前标签页」快捷键（默认不开）改用同一个对话框，关标签交给 `TabWorkspace.close()`，不再自己改标签列表；对话框里显示工作区名，不再显示 `file://` 地址。
+- `app/src/locales/zh_CN.yml`、`en.yml`（`zh_TW.yml` 由 `sync-locales` 生成）：加 `research.shell.closePrompt` 一组文案。
+- 测试：`AppShutdown.test.ts` 加 3 条（记窗口位置和藏窗口失败照样退出；后台写盘失败时亮出窗口，点「返回」标签都在、再关一次点「仍然退出」照样退出；销毁窗口失败后能再关一次）。

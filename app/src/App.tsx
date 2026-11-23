@@ -5,11 +5,9 @@ import PieMenu from "@/components/pie-menu";
 import ThemeModeSwitch from "@/components/theme-mode-switch";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { Dialog } from "@/components/ui/dialog";
-import { displayWorkspaceName } from "@/components/ui/file-name";
-import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
+import { Project, ResearchSaveRefusedError } from "@/core/Project";
 import { startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
-import { requestCloseResearchApp } from "@/core/research/AppShutdown";
+import { confirmSaveBeforeClose, requestCloseResearchApp } from "@/core/research/AppShutdown";
 import { NodeRecordFloat } from "@/core/research/NodeRecordFloat";
 import { startSnapshotSchedule } from "@/core/research/Snapshot";
 import { persistResearchSession, registerResearchSession } from "@/core/research/ResearchSession";
@@ -57,14 +55,6 @@ function reportResearchCloseError(error: unknown) {
   if (error instanceof ResearchSaveRefusedError) return;
   if (error instanceof Error && (error.message === "取消操作" || error.message === "未选择路径")) return;
   toast.error(error instanceof Error ? error.message : String(error));
-}
-
-/** 给人看的工作区名，和标签栏一致：文件名去掉 .prg，草稿叫「未命名 1」 */
-function researchWorkspaceName(project: Project, untitled: (n: string) => string): string {
-  if (project.tabName) return project.tabName;
-  if (project.isDraft) return untitled(project.uri.path);
-  if (project.uri.scheme === "file") return displayWorkspaceName(project.title);
-  return project.title;
 }
 
 /** 红绿灯占的宽度（不随 UI 缩放）；左上角的菜单和标签从它右边开始 */
@@ -132,7 +122,6 @@ export default function App() {
   const [_, _setMaximized] = useAtom(isWindowMaxsizedAtom);
 
   const [tabs, setTabs] = useAtom(tabsAtom);
-  const [, setActiveTab] = useAtom(activeTabAtom);
   const [activeResourceTab] = useAtom(activeResourceTabAtom);
   // const [isWide, setIsWide] = useState(false);
   const [telemetryEventSent, setTelemetryEventSent] = useState(false);
@@ -322,8 +311,8 @@ export default function App() {
         await requestCloseResearchApp({
           saveWindowState: () => saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED),
           hideWindow: () => appWindow.hide(),
+          showWindow: () => appWindow.show(),
           destroyWindow: () => appWindow.destroy(),
-          workspaceName: (project) => researchWorkspaceName(project, (n) => tResearch("tabs.untitled", { n })),
           onAutoSaveError: (project, error) => {
             toast.error(tResearch("shell.autoSaveFailed", { name: project.title, message: String(error) }));
           },
@@ -376,26 +365,7 @@ export default function App() {
   }, [tabs]);
 
   const closeTab = async (tab: Tab) => {
-    if (tab instanceof Project) {
-      if (tab.projectState === ProjectState.Stashed) {
-        toast("文件还没有保存，但已经暂存，在“最近打开的文件”中可恢复文件");
-      } else if (tab.projectState === ProjectState.Unsaved) {
-        // 切换到这个文件
-        setActiveTab(tab);
-        // 只显示工作区名，不显示 file:// 地址
-        const description = researchWorkspaceName(tab, (n) => tResearch("tabs.untitled", { n }));
-        const response = await Dialog.buttons("是否保存更改？", description, [
-          { id: "cancel", label: "取消", variant: "ghost" },
-          { id: "discard", label: "不保存", variant: "destructive" },
-          { id: "save", label: "保存" },
-        ]);
-        if (response === "save") {
-          await tab.save();
-        } else if (response === "cancel") {
-          throw new Error("取消操作");
-        }
-      }
-    }
+    if (tab instanceof Project && !(await confirmSaveBeforeClose(tab))) throw new Error("取消操作");
     if ((await TabWorkspace.close(tab.id)) === false) throw new Error("取消操作");
   };
 

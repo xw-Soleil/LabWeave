@@ -125,10 +125,12 @@ function makeDeps() {
     hideWindow: vi.fn(async () => {
       mocks.events.push("hideWindow");
     }),
+    showWindow: vi.fn(async () => {
+      mocks.events.push("showWindow");
+    }),
     destroyWindow: vi.fn(async () => {
       mocks.events.push("destroyWindow");
     }),
-    workspaceName: (project: Project) => project.title,
     onAutoSaveError: vi.fn(),
     onSaveError: vi.fn(),
     onCloseCancelled: vi.fn(),
@@ -235,5 +237,57 @@ describe("requestCloseResearchApp", () => {
     expect(cleanBoard.dispose).not.toHaveBeenCalled();
     expect(dirtyDraft.dispose).not.toHaveBeenCalled();
     expect(store.get(tabsAtom)).toEqual([cleanBoard, dirtyDraft, dirtyDoc]);
+  });
+
+  it("still exits when recording the window position or hiding the window fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const board = TabWorkspace.open(new Project(URI.file("/research/a.prg")) as never) as unknown as Project;
+    const deps = makeDeps();
+    deps.saveWindowState.mockRejectedValueOnce(new Error("window state"));
+    deps.hideWindow.mockRejectedValueOnce(new Error("hide"));
+
+    expect(await requestCloseResearchApp(deps)).toBe(true);
+    expect(board.dispose).toHaveBeenCalledOnce();
+    expect(deps.destroyWindow).toHaveBeenCalledOnce();
+    expect(deps.showWindow).not.toHaveBeenCalled();
+  });
+
+  it("shows the window again when a write fails after hiding: Go back keeps every tab, Quit anyway still exits", async () => {
+    const board = TabWorkspace.open(new Project(URI.file("/research/a.prg")) as never) as unknown as Project;
+    const deps = makeDeps();
+
+    // 第一次：活动记录写失败，后面的工作区列表和设置照样写；用户点「返回」
+    mocks.flushActivity.mockRejectedValueOnce(new Error("disk gone"));
+    mocks.buttons.mockResolvedValueOnce("back");
+    expect(await requestCloseResearchApp(deps)).toBe(false);
+    expect(mocks.events).toEqual(
+      expect.arrayContaining(["hideWindow", "flushWorkspace", "flushSettings", "showWindow"]),
+    );
+    expect(mocks.buttons).toHaveBeenCalledWith(
+      "shell.closePrompt.flushFailedTitle",
+      "shell.closePrompt.flushFailed",
+      expect.any(Array),
+    );
+    expect(board.dispose).not.toHaveBeenCalled();
+    expect(deps.destroyWindow).not.toHaveBeenCalled();
+    expect(store.get(tabsAtom)).toEqual([board]);
+
+    // 第二次：还能再关；这回设置写失败，点「仍然退出」
+    mocks.flushSettings.mockRejectedValueOnce(new Error("disk gone"));
+    mocks.buttons.mockResolvedValueOnce("quit");
+    expect(await requestCloseResearchApp(deps)).toBe(true);
+    expect(board.dispose).toHaveBeenCalledOnce();
+    expect(deps.destroyWindow).toHaveBeenCalledOnce();
+  });
+
+  it("shows the window again and lets the user retry when destroying the window fails", async () => {
+    TabWorkspace.open(new Project(URI.file("/research/a.prg")) as never);
+    const deps = makeDeps();
+    deps.destroyWindow.mockRejectedValueOnce(new Error("destroy"));
+
+    await expect(requestCloseResearchApp(deps)).rejects.toThrow("destroy");
+    expect(deps.showWindow).toHaveBeenCalledOnce();
+    expect(await requestCloseResearchApp(deps)).toBe(true);
+    expect(deps.destroyWindow).toHaveBeenCalledTimes(2);
   });
 });
