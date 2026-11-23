@@ -2,6 +2,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Project, ResearchSaveRefusedError } from "@/core/Project";
 import { confirmSaveBeforeClose } from "@/core/research/AppShutdown";
 import { activeDocumentTab } from "@/core/research/DocumentTab";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
@@ -2284,7 +2285,7 @@ export const allKeyBinds: KeyBindItem[] = [
       }
 
       try {
-        const arrayBuffer = await blob.arrayBuffer();
+        const arrayBuffer = await (await rotatedImageBlob(blob, imageNode.rotation)).arrayBuffer();
         const tauriImage = await TauriImage.fromBytes(new Uint8Array(arrayBuffer));
         await writeImage(tauriImage);
         if (selectedImageNodes.length === 1) {

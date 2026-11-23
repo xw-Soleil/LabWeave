@@ -9,10 +9,14 @@ const mocks = vi.hoisted(() => ({
   left: vi.fn(),
   started: vi.fn(),
   generated: vi.fn(),
+  turnedPicture: vi.fn(),
   notes: new Map<string, string>(),
 }));
 vi.mock("@/state", async () => ({ store: (await import("jotai")).createStore() }));
-vi.mock("@graphif/serializer", () => ({ serialize: (stage: unknown) => stage }));
+vi.mock("@graphif/serializer", async (original) => ({
+  ...(await original<typeof import("@graphif/serializer")>()),
+  serialize: (stage: unknown) => stage,
+}));
 vi.mock("@tauri-apps/plugin-fs", () => ({
   readTextFile: async (path: string) => {
     const text = mocks.notes.get(path);
@@ -24,6 +28,10 @@ vi.mock("i18next", () => ({ default: { t: (key: string) => (key === "stageNode.t
 vi.mock("./ActivityLog", () => ({ flushActivityLog: mocks.flushed, noteSummary: mocks.summaryNoted }));
 vi.mock("./AiSidecarBuilder", () => ({
   buildAiSidecar: ({ serializedStage }: { serializedStage: unknown }) => ({ json: serializedStage }),
+}));
+vi.mock("./ImageRotation", async (original) => ({
+  ...(await original<typeof import("./ImageRotation")>()),
+  rotatedImageBlob: mocks.turnedPicture,
 }));
 vi.mock("./ReportTask", () => ({ reportBusy: () => mocks.busy, startReportTask: mocks.started }));
 vi.mock("./ReportTools", () => ({
@@ -420,5 +428,26 @@ describe("freezing and starting the report", () => {
       result.markdownPath,
       expect.objectContaining({ since: "2026-11-14T10:00:00+08:00", snapshot: "2026-11-21 1030" }),
     );
+  });
+
+  it("puts a picture in the report the way it was turned on the board when the report was started", async () => {
+    const stored = new Blob([png()], { type: "image/png" });
+    const turnedBytes = new Uint8Array([...png(), 90]);
+    mocks.turnedPicture.mockResolvedValue(new Blob([turnedBytes], { type: "image/png" }));
+    const picture = { uuid: "c1", attachmentId: "a1", rotation: 90 };
+    reviewing({
+      project: {
+        ...board,
+        attachments: new Map([["a1", stored]]),
+        stageManager: { getEntities: () => [picture] },
+      },
+    });
+    await freezeAndReport(cards);
+    picture.rotation = 180;
+    const [task] = mocks.started.mock.calls[0];
+    await task.run(new AbortController().signal, () => {});
+    expect(mocks.turnedPicture).toHaveBeenCalledExactlyOnceWith(stored, 90);
+    const [, materials] = mocks.generated.mock.calls[0];
+    expect(materials.images.map(({ bytes }: { bytes: Uint8Array }) => [...bytes])).toEqual([[...turnedBytes]]);
   });
 });

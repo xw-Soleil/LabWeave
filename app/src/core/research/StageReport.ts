@@ -5,6 +5,7 @@ import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { flushActivityLog, noteSummary, type ActivityMark } from "./ActivityLog";
 import { buildAiSidecar, type ResearchSidecar } from "./AiSidecarBuilder";
+import { imageRotationOf, rotatedImageBlob, type ImageRotation } from "./ImageRotation";
 import { recordPath, resolveRecordLinkPath, type RecordSection } from "./NodeRecord";
 import { localTime, under } from "./ProjectRecord";
 import { readAnnotations, recordLink } from "./ReportTools";
@@ -331,16 +332,21 @@ async function regionImage(project: Project, id: string): Promise<Uint8Array | u
   }
 }
 
-/** 勾着的卡片里带图的（图片卡片、PDF 框选的摘录）：卡片编号 → 图。趁白板还开着先拿到手 */
-function attachedImages(project: Project, cards: readonly ReviewItem[]): Map<string, Blob> {
+/** 勾着的卡片里带图的（图片卡片、PDF 框选的摘录）：卡片编号 → 图和转过的角度。趁白板还开着先拿到手 */
+function attachedImages(
+  project: Project,
+  cards: readonly ReviewItem[],
+): Map<string, { blob: Blob; rotation: ImageRotation }> {
   const wanted = new Set(cards.map((card) => card.id));
-  const found = new Map<string, Blob>();
+  const found = new Map<string, { blob: Blob; rotation: ImageRotation }>();
   for (const entity of project.stageManager.getEntities()) {
     if (!wanted.has(entity.uuid)) continue;
-    const attachment = (entity as { attachmentId?: unknown }).attachmentId;
-    const blob = typeof attachment === "string" ? project.attachments.get(attachment) : undefined;
+    const { attachmentId, rotation } = entity as { attachmentId?: unknown; rotation?: unknown };
+    const blob = typeof attachmentId === "string" ? project.attachments.get(attachmentId) : undefined;
     // SVG 放不进 PPT
-    if (blob && /^image\/(?!svg)/.test(blob.type)) found.set(entity.uuid, blob);
+    if (blob && /^image\/(?!svg)/.test(blob.type)) {
+      found.set(entity.uuid, { blob, rotation: imageRotationOf(rotation) });
+    }
   }
   return found;
 }
@@ -415,8 +421,8 @@ export async function freezeAndReport(cards: readonly ReviewItem[]): Promise<voi
       return result.success && "annotations" in result ? (result.annotations as ReportAnnotation[]) : undefined;
     },
     async cardImage(id) {
-      const blob = images.get(id);
-      return blob && new Uint8Array(await blob.arrayBuffer());
+      const image = images.get(id);
+      return image && new Uint8Array(await (await rotatedImageBlob(image.blob, image.rotation)).arrayBuffer());
     },
     sectionImage: (id) => regionImage(project, id),
     exists: (path) => exists(under(root, path)),

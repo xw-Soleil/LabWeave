@@ -1368,3 +1368,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
   - 原来打开一个节点要先把图片一张接一张读出来、打成一个完整的白板文件、再拆开读，30 张图要来回近百次。现在图片直接交给白板，不再打包；快照清单、白板文件、文字版、图片一起读；眼前开着的白板里已有的图片（内容指纹对得上的）直接拿来用，不再读文件。`joinBoard()` 用不到了，去掉；`snapshotBoardFile()` 换成 `readSnapshotBoardContent()`。
 - `app/src/core/stage/Canvas.tsx`：白板关掉时摘掉它挂在窗口上的键盘和失焦监听。原来关掉的白板（每看一个节点就关一块）连同它的图片一直留在内存里。
 - 测试：新增 `ReactDevTracks.test.tsx`（2 条：换一块白板不写性能记录；它是 `main.tsx` 的第一条 import）、`Canvas.test.ts`（1 条：关掉以后不再响应窗口事件）；`SnapshotBoard.test.ts` 改 1 条、加 1 条（同一张图只读一次；编号一样但内容换过的图不拿来用），`LookbackBoard.test.ts` 加 1 条（卡片建出来之前图片已就位，没变的图不读文件），`Snapshot.test.ts` 的「拼回去」改成「拍下来再读出来，图片和内容一样不少」。
+
+### 110. 图片转 90° 只记角度，不再改图片文件（2026-11-23）
+
+- 第 105 节的做法是每转一次就按转好的像素存一张新图：JPEG、WebP 每转一次掉一点画质，转一次多占一份地方。改成只在图片卡片上记顺时针转了多少度（`ImageNode.rotation`，0 / 90 / 180 / 270，以前的文件没有这一项就是没转），图片文件不动，也不用重新解码。以前已经按像素转过的图保持原样。
+- 新增 `app/src/core/research/ImageRotation.ts`：角度的加减、画的时候用的变换、连线端点跟着转；`rotatedImageBlob()` 在图片要拿到程序外面用时现画一张转好的（没转过就是原文件）。
+- `app/src/core/stage/stageObject/entity/ImageNode.tsx`：转的时候中心和缩放不变、宽高互换，连到图上的线跟着转，多张一起转合成一步撤销；按角度算宽高（`naturalSize`），缩放、拖角改大小都按转好的宽高比。去掉按像素转、重新编码那一套。
+- 用到图片的地方都按角度走：画布（`ImageRenderer.tsx`、`EntityRenderer.tsx`，圆角按转好的框裁）、导出 SVG（`StageExportSvg.tsx`）、复制到系统剪贴板（`copyEngine.tsx`、`shortcutKeysRegister.tsx`）、导出图片到文件夹（`imageExport.tsx`）、阶段小结的汇报（`StageReport.ts`，开始生成那一刻的角度）、AI 看图和按尺寸改图（`BuiltInToolExecutors.tsx`）、背景管理器的预览。命令行里没有画布，AI 看到的是没转过的原图。
+- 测试：新增 `ImageRotation.test.ts`（9 条）；`ImageNode.test.tsx` 的旋转测试重写（角度、中心、宽高、缩放、连线端点、图片文件没动、存盘重开、转 4 次还原、撤销；以前的文件打开就是没转），`ImageRenderer.test.ts` 加 1 条（转过的图画在转好的框里，画完还原），`StageReport.test.ts` 加 1 条（汇报里的图是开始生成时的朝向）。另在真的 WebKit 里用四角颜色不同的图核对过四个方向：画布、拿出去用的图、导出的 SVG 都对。

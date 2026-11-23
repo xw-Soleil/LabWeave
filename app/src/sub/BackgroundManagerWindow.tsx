@@ -76,6 +76,7 @@ export default function BackgroundManagerWindow() {
                         src={urls.get(imageNode.uuid)}
                         alt={imageNode.uuid}
                         className="h-full w-full object-cover"
+                        style={{ rotate: `${imageNode.rotation}deg` }}
                         onError={() => {
                           setBrokenUuids((prev) => new Set(prev).add(imageNode.uuid));
                         }}

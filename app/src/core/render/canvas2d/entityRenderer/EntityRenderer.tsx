@@ -309,6 +309,7 @@ export class EntityRenderer {
         this.project.renderer.transformWorld2View(imageNode.rectangle.location),
         imageNode.scale,
         Renderer.NODE_ROUNDED_RADIUS,
+        imageNode.rotation,
       );
     } else if (imageNode.state === "notFound") {
       this.project.textRenderer.renderTextFromCenter(

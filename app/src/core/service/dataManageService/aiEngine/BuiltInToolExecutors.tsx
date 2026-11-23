@@ -1,4 +1,5 @@
 import type { Project } from "@/core/Project";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import type { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
@@ -264,8 +265,8 @@ addExecutor("edit_image_node", () => (project, { ref, data }, references) => {
   try {
     const currentRect = node.collisionBox.getRectangle();
     if (data.displaySize) {
-      const intrinsicWidth = node.bitmap?.width ?? currentRect.width / node.scale;
-      const intrinsicHeight = node.bitmap?.height ?? currentRect.height / node.scale;
+      const intrinsicWidth = node.naturalSize?.x ?? currentRect.width / node.scale;
+      const intrinsicHeight = node.naturalSize?.y ?? currentRect.height / node.scale;
       if (
         !Number.isFinite(intrinsicWidth) ||
         !Number.isFinite(intrinsicHeight) ||
@@ -894,7 +895,8 @@ addExecutor("recognize_image", () => async (project, { ref, prompt }, references
     return { success: false, error: "图片数据未找到（附件可能已丢失）" };
   }
   try {
-    const dataUrl = await encodeModelImageDataUrl(blob, Settings.maxPastedImageSize);
+    const upright = await rotatedImageBlob(blob, imageNode.rotation);
+    const dataUrl = await encodeModelImageDataUrl(upright, Settings.maxPastedImageSize);
     const description = await recognizeImage(dataUrl, prompt);
     return { success: true, description };
   } catch (e) {

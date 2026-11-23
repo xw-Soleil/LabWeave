@@ -558,11 +558,11 @@ export default function MyContextMenuContent() {
       {imageNodes.length > 0 && (
         <>
           <Group>
-            <Item disabled={!canRotateImages} onSelect={() => void rotateSelectedImageNodes(p, "cw")}>
+            <Item disabled={!canRotateImages} onSelect={() => rotateSelectedImageNodes(p, "cw")}>
               <LucideIcons.RotateCw />
               {t("rotateClockwise90")}
             </Item>
-            <Item disabled={!canRotateImages} onSelect={() => void rotateSelectedImageNodes(p, "ccw")}>
+            <Item disabled={!canRotateImages} onSelect={() => rotateSelectedImageNodes(p, "ccw")}>
               <LucideIcons.RotateCcw />
               {t("rotateCounterClockwise90")}
             </Item>

@@ -5,6 +5,7 @@ import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { resolveSourcePath, rewriteSerializedFileCardPaths, toStoredSourcePath } from "@/core/research/FileCardFactory";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
@@ -137,7 +138,8 @@ export class CopyEngine {
       const blob = this.project.attachments.get(imageNode.attachmentId);
       if (blob) {
         toast.success("已将选中的图片复制到系统剪贴板");
-        await writeImage(await TauriImage.fromBytes(await blob.arrayBuffer()));
+        const upright = await rotatedImageBlob(blob, imageNode.rotation);
+        await writeImage(await TauriImage.fromBytes(await upright.arrayBuffer()));
       }
     } else {
       // 否则复制全部文本节点，用两个换行分割

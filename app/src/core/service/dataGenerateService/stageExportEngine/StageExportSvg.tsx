@@ -1,5 +1,6 @@
 import { Project, service } from "@/core/Project";
 import { Renderer } from "@/core/render/canvas2d/renderer";
+import { isSideways } from "@/core/research/ImageRotation";
 import { Settings } from "@/core/service/Settings";
 import { SvgUtils } from "@/core/render/svg/SvgUtils";
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
@@ -293,6 +294,11 @@ export class StageExportSvg {
 
     // 获取详细信息数据属性
     const detailsData = this.getEntityDetailsDataAttribute(node);
+    const { leftTop, size, center } = node.rectangle;
+    // 图片文件是没转过的：按原来的朝向摆在同一个中心上，再转过去
+    const image = isSideways(node.rotation)
+      ? { x: center.x - size.y / 2, y: center.y - size.x / 2, width: size.y, height: size.x }
+      : { x: leftTop.x, y: leftTop.y, width: size.x, height: size.y };
 
     return (
       <g data-details={detailsData}>
@@ -304,10 +310,8 @@ export class StageExportSvg {
         )}
         <image
           href={href}
-          x={node.rectangle.leftTop.x}
-          y={node.rectangle.leftTop.y}
-          width={node.rectangle.size.x}
-          height={node.rectangle.size.y}
+          {...image}
+          {...(node.rotation !== 0 && { transform: `rotate(${node.rotation} ${center.x} ${center.y})` })}
         />
         {this.dumpEntityDetails(node)}
       </g>

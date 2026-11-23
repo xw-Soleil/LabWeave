@@ -1,4 +1,12 @@
 import { Project } from "@/core/Project";
+import {
+  imageRotationOf,
+  isSideways,
+  rotateRate90,
+  turned,
+  type ImageRotation,
+  type Rotate90Direction,
+} from "@/core/research/ImageRotation";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
@@ -11,55 +19,6 @@ import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializ
 import { Rectangle } from "@graphif/shapes";
 import type { Value } from "platejs";
 
-export type Rotate90Direction = "cw" | "ccw";
-
-export const JPEG_ROTATE_QUALITY = 0.92;
-
-function invertRateAxis(value: number): number {
-  return Number((1 - value).toPrecision(12));
-}
-
-export function rotateRate90(rate: Vector, direction: Rotate90Direction): Vector {
-  if (rate.x === 0.5 && rate.y === 0.5) return new Vector(0.5, 0.5);
-  return direction === "cw" ? new Vector(invertRateAxis(rate.y), rate.x) : new Vector(rate.y, invertRateAxis(rate.x));
-}
-
-export function rotateRgba90(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  direction: Rotate90Direction,
-): { data: Uint8ClampedArray<ArrayBuffer>; width: number; height: number } {
-  const outWidth = height;
-  const outHeight = width;
-  const out = new Uint8ClampedArray(outWidth * outHeight * 4);
-  const src32 = new Uint32Array(data.buffer, data.byteOffset, width * height);
-  const dst32 = new Uint32Array(out.buffer);
-  if (direction === "cw") {
-    for (let y = 0; y < height; y++) {
-      const dstX = height - 1 - y;
-      const rowOffset = y * width;
-      for (let x = 0; x < width; x++) {
-        dst32[x * outWidth + dstX] = src32[rowOffset + x];
-      }
-    }
-  } else {
-    for (let y = 0; y < height; y++) {
-      const rowOffset = y * width;
-      for (let x = 0; x < width; x++) {
-        dst32[(width - 1 - x) * outWidth + y] = src32[rowOffset + x];
-      }
-    }
-  }
-  return { data: out, width: outWidth, height: outHeight };
-}
-
-export function rotatedMimeType(inputType: string): { type: string; quality?: number } {
-  if (inputType === "image/jpeg") return { type: "image/jpeg", quality: JPEG_ROTATE_QUALITY };
-  if (inputType === "image/webp") return { type: "image/webp", quality: JPEG_ROTATE_QUALITY };
-  return { type: "image/png" };
-}
-
 type ImageNodeOptions = {
   uuid?: string;
   collisionBox?: CollisionBox;
@@ -67,6 +26,7 @@ type ImageNodeOptions = {
   attachmentId?: string;
   scale?: number;
   isBackground?: boolean;
+  rotation?: ImageRotation;
 };
 
 /**
@@ -101,6 +61,9 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
    */
   @serializable
   isBackground: boolean = false;
+  /** 顺时针转了多少度：只改怎么画，图片文件不动 */
+  @serializable
+  rotation: ImageRotation = 0;
   /**
    * 节点是否被选中
    */
@@ -131,6 +94,7 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
       attachmentId = "",
       scale = 1,
       isBackground = false,
+      rotation = 0,
     }: ImageNodeOptions,
     public unknown = false,
     public onReady?: () => void,
@@ -142,6 +106,7 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
     this.attachmentId = attachmentId;
     this.scale = scale;
     this.isBackground = isBackground;
+    this.rotation = imageRotationOf(rotation);
 
     const blob = project.attachments.get(attachmentId);
     if (!blob) {
@@ -185,6 +150,13 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
     if (errors.length > 0) throw new AggregateError(errors, "ImageNode cleanup failed");
   }
 
+  /** 转好以后、没缩放时的宽高；图片还没解码出来时没有 */
+  get naturalSize(): Vector | undefined {
+    if (!this.bitmap) return undefined;
+    const { width, height } = this.bitmap;
+    return isSideways(this.rotation) ? new Vector(height, width) : new Vector(width, height);
+  }
+
   public scaleUpdate(scaleDiff: number) {
     this.scale += scaleDiff;
     if (this.scale < 0.1) {
@@ -193,10 +165,9 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
     if (this.scale > 10) {
       this.scale = 10;
     }
-    if (!this.bitmap) return;
-    this.collisionBox = new CollisionBox([
-      new Rectangle(this.rectangle.location, new Vector(this.bitmap.width, this.bitmap.height).multiply(this.scale)),
-    ]);
+    const size = this.naturalSize;
+    if (!size) return;
+    this.collisionBox = new CollisionBox([new Rectangle(this.rectangle.location, size.multiply(this.scale))]);
     this.updateFatherSectionByMove();
   }
 
@@ -405,16 +376,17 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
    * @param delta 拖拽距离向量
    */
   resizeHandle(delta: Vector) {
-    if (!this.bitmap) return;
+    const size = this.naturalSize;
+    if (!size) return;
 
     // 计算当前图片的实际显示尺寸
-    const currentDisplayWidth = this.bitmap.width * this.scale;
+    const currentDisplayWidth = size.x * this.scale;
 
     // 根据delta计算新的显示尺寸（只使用delta.x，保持等比例缩放）
-    const newDisplayWidth = Math.max(currentDisplayWidth + delta.x, this.bitmap.width * 0.1);
+    const newDisplayWidth = Math.max(currentDisplayWidth + delta.x, size.x * 0.1);
 
     // 计算新的缩放比例
-    const newScale = newDisplayWidth / this.bitmap.width;
+    const newScale = newDisplayWidth / size.x;
 
     // 更新缩放比例，使用现有的scaleUpdate方法保持一致性
     const scaleDiff = newScale - this.scale;
@@ -432,100 +404,37 @@ export class ImageNode extends ConnectableEntity implements ResizeAble {
   }
 
   canRotate(): boolean {
-    return (
-      !this.disposed &&
-      this.state === "success" &&
-      Boolean(this.bitmap) &&
-      this.bitmap!.width > 0 &&
-      this.bitmap!.height > 0 &&
-      this.project.attachments.has(this.attachmentId)
-    );
+    return !this.disposed && this.state === "success" && Boolean(this.bitmap);
   }
 
-  async prepareRotated90(direction: Rotate90Direction): Promise<{ blob: Blob; bitmap: ImageBitmap } | null> {
-    if (!this.canRotate() || !this.bitmap) return null;
-    const sourceBlob = this.project.attachments.get(this.attachmentId);
-    if (!sourceBlob) return null;
-
-    const srcCanvas = document.createElement("canvas");
-    srcCanvas.width = this.bitmap.width;
-    srcCanvas.height = this.bitmap.height;
-    const srcCtx = srcCanvas.getContext("2d");
-    if (!srcCtx) return null;
-    srcCtx.drawImage(this.bitmap, 0, 0);
-    const srcImage = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
-    const rotated = rotateRgba90(srcImage.data, srcImage.width, srcImage.height, direction);
-
-    const dstCanvas = document.createElement("canvas");
-    dstCanvas.width = rotated.width;
-    dstCanvas.height = rotated.height;
-    const dstCtx = dstCanvas.getContext("2d");
-    if (!dstCtx) return null;
-    const dstImage = dstCtx.createImageData(rotated.width, rotated.height);
-    dstImage.data.set(rotated.data);
-    dstCtx.putImageData(dstImage, 0, 0);
-
-    const { type, quality } = rotatedMimeType(sourceBlob.type);
-    const blob = await new Promise<Blob | null>((resolve) => dstCanvas.toBlob(resolve, type, quality));
-    if (!blob) return null;
-    const bitmap = await createImageBitmap(blob);
-    return { blob, bitmap };
-  }
-
-  applyRotatedImage(newAttachmentId: string, bitmap: ImageBitmap): void {
-    if (this.disposed) {
-      bitmap.close();
-      return;
-    }
+  /** 绕中心转 90° */
+  rotate90(direction: Rotate90Direction): void {
     const center = this.geometryCenter;
-    this.bitmap?.close();
-    this.bitmap = bitmap;
-    this.attachmentId = newAttachmentId;
-    this.state = "success";
-    const newSize = new Vector(bitmap.width, bitmap.height).multiply(this.scale);
-    this.collisionBox = new CollisionBox([new Rectangle(center.subtract(newSize.multiply(0.5)), newSize)]);
+    const { size } = this.rectangle;
+    const turnedSize = new Vector(size.y, size.x);
+    this.rotation = turned(this.rotation, direction);
+    this.collisionBox = new CollisionBox([new Rectangle(center.subtract(turnedSize.multiply(0.5)), turnedSize)]);
     this.updateFatherSectionByMove();
   }
 }
 
-export async function rotateSelectedImageNodes(project: Project, direction: Rotate90Direction): Promise<void> {
-  const nodes = project.stageManager
-    .getSelectedEntities()
-    .filter((entity): entity is ImageNode => entity instanceof ImageNode && entity.canRotate());
-  if (nodes.length === 0) return;
-
-  const prepared = await Promise.all(
-    nodes.map(async (node) => ({
-      node,
-      result: await node.prepareRotated90(direction),
-    })),
+/** 选中的图片一起转 90°，连到图片上的线跟着转；合成一步撤销 */
+export function rotateSelectedImageNodes(project: Project, direction: Rotate90Direction): void {
+  const nodes = new Set(
+    project.stageManager
+      .getSelectedEntities()
+      .filter((entity): entity is ImageNode => entity instanceof ImageNode && entity.canRotate()),
   );
-  if (project.closing) {
-    for (const item of prepared) item.result?.bitmap.close();
-    return;
-  }
-
-  const ready = prepared.filter(
-    (item): item is { node: ImageNode; result: { blob: Blob; bitmap: ImageBitmap } } => item.result !== null,
-  );
-  if (ready.length === 0) return;
-
-  const rotatedNodes = new Set<ImageNode>();
-  for (const { node, result } of ready) {
-    const newAttachmentId = project.addAttachment(result.blob);
-    node.applyRotatedImage(newAttachmentId, result.bitmap);
-    rotatedNodes.add(node);
-  }
-
+  if (nodes.size === 0) return;
+  for (const node of nodes) node.rotate90(direction);
   for (const association of project.stageManager.getAssociations()) {
     if (!(association instanceof Edge)) continue;
-    if (rotatedNodes.has(association.source as ImageNode)) {
+    if (nodes.has(association.source as ImageNode)) {
       association.sourceRectangleRate = rotateRate90(association.sourceRectangleRate, direction);
     }
-    if (rotatedNodes.has(association.target as ImageNode)) {
+    if (nodes.has(association.target as ImageNode)) {
       association.targetRectangleRate = rotateRate90(association.targetRectangleRate, direction);
     }
   }
-
   project.historyManager.recordStep();
 }
