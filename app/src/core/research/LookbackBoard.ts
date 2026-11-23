@@ -5,6 +5,7 @@ import { exists } from "@tauri-apps/plugin-fs";
 import i18next from "i18next";
 import { toast } from "sonner";
 import { URI } from "vscode-uri";
+import { lookbackTransitionOver, startLookbackTransition } from "./LookbackTransition";
 import { listSnapshots, readSnapshotBoard, under, type Snapshot } from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 import { reportFolderName } from "./ResearchReport";
@@ -120,6 +121,12 @@ export class LookbackBoard extends Project {
   override async saveAs(): Promise<void> {
     toast.info(text("lookback.readOnly"));
   }
+
+  override async dispose(): Promise<void> {
+    // 切走的那一小会儿，过渡里还要画它
+    await lookbackTransitionOver(this);
+    await super.dispose();
+  }
 }
 
 /** 真的那块白板，开着的话 */
@@ -201,6 +208,7 @@ export async function openLookback(from: Project, nodeName?: string): Promise<Lo
   // 镜头接着刚才看的地方，切节点时画面不跳，看得出哪里长出来了
   board.camera.applySavedView(from.camera.location.clone(), from.camera.currentScale);
   showSnapshotDiff(board, base?.name ?? "", before, after);
+  startLookbackTransition(from, board);
 
   // 直接放进原白板所在的标签组并紧挨在它前面：分屏时不会落到另一边的 PDF 组里，切换节点和关闭时也不会先跳到旁边的 PDF 标签
   TabWorkspace.open(board, { beforeTabId: from.id });
@@ -209,16 +217,24 @@ export async function openLookback(from: Project, nodeName?: string): Promise<Lo
   return board;
 }
 
-/** 回到现在：先把真的那块白板切到前面（没开着就打开），再关掉回看，免得关标签那半秒先落到同组的别的标签上 */
+/**
+ * 回到现在：先把真的那块白板切到前面（没开着就打开），再关掉回看，免得关标签那半秒先落到同组的别的标签上。
+ * 真的那块开着、又没有和回看并排摆着的话，镜头留在原处，从回看过渡回去。
+ */
 export async function leaveLookback(board: LookbackBoard): Promise<void> {
   const { root, file } = board.lookback;
   const path = under(root, file);
-  const [{ TabWorkspace }, { onOpenFile }] = await Promise.all([
+  const [{ TabWorkspace }, { onOpenFile }, { isTabVisibleInWorkspace }] = await Promise.all([
     import("@/core/TabWorkspace"),
     import("@/core/service/GlobalMenu"),
+    import("./ResearchSession"),
   ]);
   const live = liveBoardOf(root, file);
   if (live) {
+    if (!isTabVisibleInWorkspace(live.id)) {
+      live.camera.applySavedView(board.camera.location.clone(), board.camera.currentScale);
+      startLookbackTransition(board, live);
+    }
     TabWorkspace.focus(live.id);
     live.loop();
   } else if (await exists(path)) {

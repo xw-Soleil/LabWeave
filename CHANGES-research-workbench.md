@@ -1376,3 +1376,12 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/stage/stageObject/entity/ImageNode.tsx`：转的时候中心和缩放不变、宽高互换，连到图上的线跟着转，多张一起转合成一步撤销；按角度算宽高（`naturalSize`），缩放、拖角改大小都按转好的宽高比。去掉按像素转、重新编码那一套。
 - 用到图片的地方都按角度走：画布（`ImageRenderer.tsx`、`EntityRenderer.tsx`，圆角按转好的框裁）、导出 SVG（`StageExportSvg.tsx`）、复制到系统剪贴板（`copyEngine.tsx`、`shortcutKeysRegister.tsx`）、导出图片到文件夹（`imageExport.tsx`）、阶段小结的汇报（`StageReport.ts`，开始生成那一刻的角度）、AI 看图和按尺寸改图（`BuiltInToolExecutors.tsx`）、背景管理器的预览。命令行里没有画布，AI 看到的是没转过的原图。
 - 测试：新增 `ImageRotation.test.ts`（9 条）；`ImageNode.test.tsx` 的旋转测试重写（角度、中心、宽高、缩放、连线端点、图片文件没动、存盘重开、转 4 次还原、撤销；以前的文件打开就是没转），`ImageRenderer.test.ts` 加 1 条（转过的图画在转好的框里，画完还原），`StageReport.test.ts` 加 1 条（汇报里的图是开始生成时的朝向）。另在真的 WebKit 里用四角颜色不同的图核对过四个方向：画布、拿出去用的图、导出的 SVG 都对。
+
+### 111. 回看切节点、打开回看、回到现在有过渡动画（2026-11-23）
+
+- 原来换一块白板是一下子变过去的，看不出哪里变了。现在镜头不动，一秒左右：删掉的淡出缩小，两边都有的滑到新位置、改大小、改过的淡变，新加的从原有的卡片往外一圈圈长出来（整棵都是新的就从根往外），连线等两头都长出来再从起点画到终点，最后浮出「新加 / 改过 / 删掉」的标记。没有的步骤不占时间，新加得再多也不会越拖越长。
+- 新增 `app/src/core/research/LookbackTimeline.ts`：只算哪张卡片什么时候动。
+- 新增 `app/src/core/research/LookbackTransition.ts`：按算好的时间画。旧白板和新白板的卡片都用原来的画法，只在画这一帧时把卡片的位置借成中间的位置、画完就还，白板的数据不变。新白板的图片还没解码出来时用旧白板的顶着，不闪空框。连点时前一段直接跳到末尾；播到一半在白板上动手改、旧白板被拆掉、画出错，都直接到头；系统开了「减弱动态效果」就不播。
+- `app/src/core/research/LookbackBoard.ts`：在切标签之前开始过渡；旧的回看标签等过渡播完再拆；回到现在时，真的那块白板开着、又没和回看并排摆着，就把镜头接过去再过渡（并排摆着的镜头不动，没开着的照旧打开）。
+- `app/src/core/render/canvas2d/renderer.tsx`、`entityRenderer/EntityRenderer.tsx`：画白板内容前先问有没有过渡要画；「画一条连线」「画一个分组」各抽成一个方法，画标签装饰的方法改成外面能调，原来的画法没变。
+- 测试：新增 `LookbackTimeline.test.ts`（7 条）、`LookbackTransition.test.ts`（13 条）；`LookbackBoard.test.ts` 加 3 条（切到前面之前就开始过渡，打开、切节点、回到现在都有；和回看并排摆着时不动镜头、不播；还在画旧白板时不拆它）。另在真的 WebKit 里用一块 60 多张卡片的白板逐帧看过。

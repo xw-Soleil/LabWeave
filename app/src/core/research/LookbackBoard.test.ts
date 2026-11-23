@@ -28,6 +28,10 @@ const mocks = vi.hoisted(() => {
     opened: vi.fn(async () => undefined),
     shown: vi.fn(),
     info: vi.fn(),
+    disposed: vi.fn(),
+    visible: vi.fn<(id: string) => boolean>(),
+    transition: vi.fn<(from: { id: string }, to: { id: string }) => void>(),
+    transitionOver: vi.fn<(from: { id: string }) => Promise<void>>(),
   };
 });
 // 假的白板基类：只留这里要用到的——状态的读写、init 成功就标成已保存、镜头、读写方式的登记
@@ -54,8 +58,10 @@ vi.mock("@/core/Project", () => {
     camera = { location: { clone: () => "镜头位置" }, currentScale: 0.5, applySavedView: vi.fn() };
     loop = vi.fn();
     pause = vi.fn();
-    dispose = vi.fn(async () => {});
     constructor(readonly uri: { scheme: string; fsPath: string }) {}
+    async dispose() {
+      mocks.disposed(this.id);
+    }
     get projectState() {
       return this.state;
     }
@@ -134,6 +140,11 @@ vi.mock("./ResearchFolder", () => ({
   },
 }));
 vi.mock("./ResearchReport", () => ({ reportFolderName: (title: string) => title }));
+vi.mock("./ResearchSession", () => ({ isTabVisibleInWorkspace: mocks.visible }));
+vi.mock("./LookbackTransition", () => ({
+  startLookbackTransition: mocks.transition,
+  lookbackTransitionOver: mocks.transitionOver,
+}));
 vi.mock("./Snapshot", () => ({
   snapshotFiles: { read: mocks.read, folders: mocks.folders },
 }));
@@ -229,6 +240,9 @@ function threeNodes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.visible.mockReset().mockReturnValue(false);
+  mocks.transition.mockReset();
+  mocks.transitionOver.mockReset().mockResolvedValue(undefined);
   mocks.root = root;
   mocks.initOk = true;
   mocks.disk.clear();
@@ -372,6 +386,54 @@ describe("looking back at a node", () => {
     mocks.disk.set(`${root}/白板.prg`, "还在");
     await leaveLookback(board);
     expect(mocks.opened).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays the transition from the board on screen, ready before the new one is brought to the front", async () => {
+    threeNodes();
+    const live = liveBoard();
+    TabWorkspace.open(live as never);
+    // 开始过渡的那一刻：眼前还是旧的那块，新的那块镜头已经摆好、标记已经比出来
+    const seen: unknown[] = [];
+    mocks.transition.mockImplementation((from, to) => {
+      seen.push([from.id, to.id, store.get(activeTabAtom)?.id]);
+      expect((to as Project).camera.applySavedView).toHaveBeenCalledWith("镜头位置", 0.5);
+    });
+    const latest = (await openLookback(live))!;
+    const earlier = (await openLookback(latest, "2026-11-14 1000"))!;
+    await leaveLookback(earlier);
+    expect(seen).toEqual([
+      [live.id, latest.id, live.id],
+      [latest.id, earlier.id, latest.id],
+      [earlier.id, live.id, earlier.id],
+    ]);
+    expect(mocks.shown.mock.invocationCallOrder[0]).toBeLessThan(mocks.transition.mock.invocationCallOrder[0]);
+  });
+
+  it("leaves the camera of the real board alone, and plays nothing, when it is in view next to the lookback", async () => {
+    threeNodes();
+    const live = liveBoard();
+    TabWorkspace.open(live as never);
+    const board = (await openLookback(live))!;
+    mocks.transition.mockReset();
+    mocks.visible.mockImplementation((id) => id === live.id);
+    await leaveLookback(board);
+    expect(live.camera.applySavedView).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(store.get(activeTabAtom)).toBe(live);
+  });
+
+  it("is not taken apart while the transition away from it is still drawing it", async () => {
+    threeNodes();
+    const board = (await openLookback(liveBoard()))!;
+    let over!: () => void;
+    mocks.transitionOver.mockReturnValue(new Promise((resolve) => (over = resolve)));
+    const disposing = board.dispose();
+    await Promise.resolve();
+    expect(mocks.transitionOver).toHaveBeenCalledWith(board);
+    expect(mocks.disposed).not.toHaveBeenCalled();
+    over();
+    await disposing;
+    expect(mocks.disposed).toHaveBeenCalledWith(board.id);
   });
 
   it("names nodes for the strip, including summaries made before nodes had names", () => {
