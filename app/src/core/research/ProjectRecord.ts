@@ -220,11 +220,16 @@ export async function listSnapshots(
   limit = Infinity,
 ): Promise<Snapshot[]> {
   const names = (await io.folders(under(root, SNAPSHOT_DIR))).filter((name) => name !== SNAPSHOT_IMAGE_DIR);
-  const snapshots: Snapshot[] = [];
-  for (const name of names.sort().reverse()) {
-    if (snapshots.length >= limit) break;
+  const read = async (name: string): Promise<Snapshot[]> => {
     const manifest = decodeJson<SnapshotManifest>(await io.read(under(root, SNAPSHOT_DIR, name, SNAPSHOT_MANIFEST)));
-    if (manifest?.v === 1 && Array.isArray(manifest.boards)) snapshots.push({ name, manifest });
+    return manifest?.v === 1 && Array.isArray(manifest.boards) ? [{ name, manifest }] : [];
+  };
+  names.sort().reverse();
+  if (limit === Infinity) return (await Promise.all(names.map(read))).flat();
+  const snapshots: Snapshot[] = [];
+  for (const name of names) {
+    if (snapshots.length >= limit) break;
+    snapshots.push(...(await read(name)));
   }
   return snapshots;
 }

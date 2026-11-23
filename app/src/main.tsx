@@ -1,3 +1,4 @@
+import "./core/research/ReactDevTracks";
 import { runCli } from "@/cli";
 import { Toaster } from "@/components/ui/sonner";
 import { authClient } from "@/core/service/AuthClient";

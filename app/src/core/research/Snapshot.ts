@@ -26,6 +26,7 @@ import {
   type SnapshotReason,
 } from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
+import { contentHash } from "./SnapshotBoard";
 
 /*
  * 快照：把项目里每块白板当时的样子留一份，放在 项目/.workbench/快照/ 下面。
@@ -78,11 +79,6 @@ export interface SnapshotIO {
 const posix = (path: string) => path.replace(/\\/g, "/");
 const snapshotPath = (root: string, ...parts: string[]) => under(root, SNAPSHOT_DIR, ...parts);
 
-async function contentHash(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 /** 把一个白板文件拆开：拿掉图片和缩略图的白板文件，加上按内容指纹命名的图片 */
 export async function splitBoard(content: Uint8Array): Promise<{
   stripped: Uint8Array;
@@ -114,36 +110,6 @@ export async function splitBoard(content: Uint8Array): Promise<{
     await writer.close();
   }
   return { stripped: await output.getData(), images, refs };
-}
-
-/** 把拆开的白板拼回完整的白板文件 */
-export async function joinBoard(
-  stripped: Uint8Array,
-  refs: Record<string, string>,
-  image: (name: string) => Promise<Uint8Array | undefined>,
-): Promise<Uint8Array> {
-  const reader = new ZipReader(new Uint8ArrayReader(stripped));
-  const output = new Uint8ArrayWriter();
-  const writer = new ZipWriter(output, { level: 0 });
-  try {
-    for (const entry of await reader.getEntries()) {
-      if (entry.directory) continue;
-      await writer.add(entry.filename, new Uint8ArrayReader(await entry.getData!(new Uint8ArrayWriter())), {
-        level: 0,
-      });
-    }
-    for (const [id, name] of Object.entries(refs)) {
-      const bytes = await image(name);
-      if (!bytes) throw new Error("snapshot.imageMissing");
-      await writer.add(`attachments/${id}.${name.slice(name.lastIndexOf(".") + 1)}`, new Uint8ArrayReader(bytes), {
-        level: 0,
-      });
-    }
-  } finally {
-    await reader.close();
-    await writer.close();
-  }
-  return output.getData();
 }
 
 async function boardSidecar(content: Uint8Array, path: string, root: string): Promise<ResearchSidecar> {

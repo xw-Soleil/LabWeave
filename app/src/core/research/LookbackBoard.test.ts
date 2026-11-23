@@ -37,6 +37,9 @@ vi.mock("@/core/Project", () => {
     state = ProjectState.Unsaved;
     metadata: Record<string, unknown> = { workbench: { id: "真白板的编号" } };
     providers = new Map<string, unknown>();
+    attachments = new Map<string, Blob>();
+    /** 读白板文件、建卡片的那一刻，手边有哪些图片 */
+    imagesAtInit: string[] = [];
     closing = false;
     layout: "docked" | "floating" = "docked";
     floatingRect = new Rectangle(Vector.getZero(), Vector.same(100));
@@ -63,6 +66,7 @@ vi.mock("@/core/Project", () => {
       this.providers.set(scheme, new provider(this));
     }
     async init() {
+      this.imagesAtInit = [...this.attachments.keys()];
       if (mocks.initOk) this.projectState = ProjectState.Saved;
     }
     async save() {
@@ -132,7 +136,6 @@ vi.mock("./ResearchFolder", () => ({
 vi.mock("./ResearchReport", () => ({ reportFolderName: (title: string) => title }));
 vi.mock("./Snapshot", () => ({
   snapshotFiles: { read: mocks.read, folders: mocks.folders },
-  joinBoard: async (stripped: Uint8Array) => stripped,
 }));
 vi.mock("./SnapshotDiff", async (original) => ({
   ...(await original<typeof import("./SnapshotDiff")>()),
@@ -153,6 +156,7 @@ import {
 } from "@/state";
 import { buildAiSidecar } from "./AiSidecarBuilder";
 import { LookbackBoard, leaveLookback, nodeChip, nodeLabel, openLookback } from "./LookbackBoard";
+import { contentHash } from "./SnapshotBoard";
 
 const root = "/research/课题";
 const text = (uuid: string, value: string) => ({
@@ -166,7 +170,12 @@ const text = (uuid: string, value: string) => ({
 });
 
 /** 往假磁盘上放一份快照：清单、白板文件（内容用一个记号代替）、文字版 */
-function putSnapshot(name: string, boards: Record<string, unknown[]>, node?: Record<string, unknown>) {
+function putSnapshot(
+  name: string,
+  boards: Record<string, unknown[]>,
+  node?: Record<string, unknown>,
+  images: Record<string, string> = {},
+) {
   const [day, time] = name.split(" ");
   const folder = `${root}/.workbench/快照/${name}`;
   mocks.disk.set(
@@ -182,7 +191,7 @@ function putSnapshot(name: string, boards: Record<string, unknown[]>, node?: Rec
         cards: boards[file].length,
         sections: 0,
         edges: 0,
-        images: {},
+        images,
       })),
     }),
   );
@@ -249,7 +258,7 @@ describe("looking back at a node", () => {
       report: `${root}/汇报/2026-11-21 组会/报告.md`,
     });
     expect(board.lookback.nodes.map(({ name }) => name)).toEqual(["2026-11-14 1000", "2026-11-21 1000"]);
-    expect(new TextDecoder().decode(board.content)).toBe("2026-11-21 1000 的 白板.prg");
+    expect(new TextDecoder().decode(board.content.stripped)).toBe("2026-11-21 1000 的 白板.prg");
     // 画布上的标记是那两份快照的文字版比出来的
     const [shownBoard, name, before, after] = mocks.shown.mock.calls[0];
     expect(shownBoard).toBe(board);
@@ -274,7 +283,7 @@ describe("looking back at a node", () => {
     const files = (
       board as unknown as { providers: Map<string, { read(): Promise<Uint8Array>; write(): Promise<void> }> }
     ).providers.get("draft")!;
-    expect(await files.read()).toBe(board.content);
+    expect(await files.read()).toBe(board.content.stripped);
     await expect(files.write()).rejects.toThrow("lookback.readOnly");
 
     board.projectState = ProjectState.Unsaved;
@@ -308,6 +317,22 @@ describe("looking back at a node", () => {
     expect(first.lookback.base).toBeUndefined();
     expect(first.lookback.counts).toEqual({ added: 2, edited: 0, removed: 0 });
     expect(mocks.shown.mock.calls.at(-1)!.slice(1, 3)).toEqual(["", undefined]);
+  });
+
+  it("has its pictures ready before the cards are built, and takes unchanged ones from the open board", async () => {
+    const [kept, gone] = [new Uint8Array([1, 2]), new Uint8Array([3, 4])];
+    const names = await Promise.all([kept, gone].map(async (bytes) => `${await contentHash(bytes)}.png`));
+    const pictures = { 还在的: names[0], 删掉的: names[1] };
+    putSnapshot("2026-11-21 1000", { "白板.prg": [text("a", "一")] }, meeting("2026-11-21"), pictures);
+    // 还在的那张不放到磁盘上：要是去读文件就会报缺图
+    mocks.disk.set(`${root}/.workbench/快照/图片/${names[1]}`, gone);
+    const live = liveBoard();
+    const picture = new Blob([kept]);
+    live.attachments.set("还在的", picture);
+    const board = (await openLookback(live))!;
+    expect((board as unknown as { imagesAtInit: string[] }).imagesAtInit).toEqual(["还在的", "删掉的"]);
+    expect(board.attachments.get("还在的")).toBe(picture);
+    expect(new Uint8Array(await board.attachments.get("删掉的")!.arrayBuffer())).toEqual(gone);
   });
 
   it("says why it cannot open, and opens no tab", async () => {

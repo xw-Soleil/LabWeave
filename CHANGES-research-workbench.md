@@ -1359,3 +1359,12 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister.tsx`：「关闭当前标签页」快捷键（默认不开）改用同一个对话框，关标签交给 `TabWorkspace.close()`，不再自己改标签列表；对话框里显示工作区名，不再显示 `file://` 地址。
 - `app/src/locales/zh_CN.yml`、`en.yml`（`zh_TW.yml` 由 `sync-locales` 生成）：加 `research.shell.closePrompt` 一组文案。
 - 测试：`AppShutdown.test.ts` 加 3 条（记窗口位置和藏窗口失败照样退出；后台写盘失败时亮出窗口，点「返回」标签都在、再关一次点「仍然退出」照样退出；销毁窗口失败后能再关一次）。
+
+### 109. 回看切节点、回到现在不再卡住（2026-11-23）
+
+- 新增 `app/src/core/research/ReactDevTracks.ts`，`app/src/main.tsx` 第一条 import 就是它：
+  - 原来开发版里切一次节点会冻住界面十秒以上：React 19 的开发版给每次组件更新写性能记录，记录里带着前后两份 props 的逐项对比，而标签栏、状态条这些组件的 props 里有整块白板，换一块白板就把两块白板从头比到尾再复制一份。卡片越多越久，记录还一直留在内存里。现在赶在 React 载入之前关掉它。打包版的 React 本来就不记，不受影响。
+- `app/src/core/research/SnapshotBoard.ts`、`LookbackBoard.ts`、`Snapshot.ts`、`ProjectRecord.ts`：
+  - 原来打开一个节点要先把图片一张接一张读出来、打成一个完整的白板文件、再拆开读，30 张图要来回近百次。现在图片直接交给白板，不再打包；快照清单、白板文件、文字版、图片一起读；眼前开着的白板里已有的图片（内容指纹对得上的）直接拿来用，不再读文件。`joinBoard()` 用不到了，去掉；`snapshotBoardFile()` 换成 `readSnapshotBoardContent()`。
+- `app/src/core/stage/Canvas.tsx`：白板关掉时摘掉它挂在窗口上的键盘和失焦监听。原来关掉的白板（每看一个节点就关一块）连同它的图片一直留在内存里。
+- 测试：新增 `ReactDevTracks.test.tsx`（2 条：换一块白板不写性能记录；它是 `main.tsx` 的第一条 import）、`Canvas.test.ts`（1 条：关掉以后不再响应窗口事件）；`SnapshotBoard.test.ts` 改 1 条、加 1 条（同一张图只读一次；编号一样但内容换过的图不拿来用），`LookbackBoard.test.ts` 加 1 条（卡片建出来之前图片已就位，没变的图不读文件），`Snapshot.test.ts` 的「拼回去」改成「拍下来再读出来，图片和内容一样不少」。

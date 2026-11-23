@@ -1,5 +1,6 @@
+import { parseProjectFile } from "@/core/ProjectFile";
 import { createDefaultMetadata } from "@/types/metadata";
-import { encode } from "@msgpack/msgpack";
+import { Decoder, encode } from "@msgpack/msgpack";
 import { Uint8ArrayReader, Uint8ArrayWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,7 +55,6 @@ vi.mock("./ResearchFolder", () => ({
 import { baselineOf, isNode, localTime, nodeSince, replacedNodes, sinceOf } from "./ProjectRecord";
 import {
   currentBaseline,
-  joinBoard,
   latestSnapshot,
   listSnapshots,
   nodeTitle,
@@ -62,13 +62,13 @@ import {
   readSnapshotBoard,
   snapshotFiles,
   snapshotIfDue,
-  splitBoard,
   startSnapshotSchedule,
   takeNode,
   takeSnapshot,
   writeSnapshot,
   type SnapshotIO,
 } from "./Snapshot";
+import { readSnapshotBoardContent } from "./SnapshotBoard";
 
 const box = { _: "CollisionBox", shapes: [] };
 const text = (uuid: string, value: string) => ({ _: "TextNode", uuid, text: value, collisionBox: box });
@@ -186,15 +186,23 @@ describe("taking a snapshot", () => {
     expect(under(`${base}/图片/`)).toHaveLength(1);
   });
 
-  it("can be put back together into the complete board file", async () => {
+  it("gives back everything that was on the board, pictures included", async () => {
+    const { io } = memory();
     const original = await prg([text("a", "一")], { "id-1.png": png(1), "id-2.webp": png(2, 2) });
-    const { stripped, images, refs } = await splitBoard(original);
-    const restored = await entries(await joinBoard(stripped, refs, async (name) => images.get(name)));
-    const expected = await entries(original);
-    expected.delete("thumbnail.png");
-    expect([...restored.keys()].sort()).toEqual([...expected.keys()].sort());
-    for (const [name, bytes] of expected) expect(restored.get(name), name).toEqual(bytes);
-    await expect(joinBoard(stripped, refs, async () => undefined)).rejects.toThrow("snapshot.imageMissing");
+    const snapshot = await writeSnapshot(io, "/research", "manual", [{ file: "a.prg", content: original }], {
+      now: at(21),
+    });
+    const { stripped, images } = (await readSnapshotBoardContent(io, "/research", snapshot!, "a.prg"))!;
+    const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
+    const [before, after] = [new Map<string, Blob>(), new Map<string, Blob>()];
+    const expected = await parseProjectFile(original, new Decoder(), before);
+    expect(await parseProjectFile(stripped, new Decoder(), after)).toEqual(expected);
+    expect(after.size).toBe(0);
+    expect([...images.keys()].sort()).toEqual([...before.keys()].sort());
+    for (const [id, image] of before) {
+      expect(await bytes(images.get(id)!), id).toEqual(await bytes(image));
+      expect(images.get(id)!.type).toBe(image.type);
+    }
   });
 
   it("lists snapshots newest first, numbers a second one in the same minute, and ignores a half-written one", async () => {

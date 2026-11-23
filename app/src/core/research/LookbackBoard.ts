@@ -8,7 +8,13 @@ import { URI } from "vscode-uri";
 import { listSnapshots, readSnapshotBoard, under, type Snapshot } from "./ProjectRecord";
 import { ResearchFolder } from "./ResearchFolder";
 import { reportFolderName } from "./ResearchReport";
-import { boardInSnapshot, nodesOf, previousOf, snapshotBoardFile } from "./SnapshotBoard";
+import {
+  boardInSnapshot,
+  nodesOf,
+  previousOf,
+  readSnapshotBoardContent,
+  type SnapshotBoardContent,
+} from "./SnapshotBoard";
 import { compareBoards, showSnapshotDiff } from "./SnapshotDiff";
 
 /*
@@ -54,7 +60,7 @@ export function nodeChip({ manifest }: Snapshot): string {
 class LookbackFiles implements FileSystemProvider {
   constructor(private readonly board: LookbackBoard) {}
   async read() {
-    return this.board.content;
+    return this.board.content.stripped;
   }
   async readDir() {
     return [];
@@ -73,8 +79,7 @@ class LookbackFiles implements FileSystemProvider {
 export class LookbackBoard extends Project {
   constructor(
     readonly lookback: Lookback,
-    /** 拼回图片以后的白板文件 */
-    readonly content: Uint8Array,
+    readonly content: SnapshotBoardContent,
   ) {
     // 用草稿的地址：程序里凡是「草稿没有路径」的地方都照样成立
     super(URI.parse(`draft:lookback-${crypto.randomUUID()}`));
@@ -92,6 +97,8 @@ export class LookbackBoard extends Project {
   }
 
   override async init(): Promise<void> {
+    // 快照里图片另放着，读白板文件之前先放好，卡片一建出来就找得到
+    for (const [id, image] of this.content.images) this.attachments.set(id, image);
     await super.init();
     // 快照里带着真白板的工作区编号，AI 对话记录是按它存的：换一个，免得两个标签写同一份对话
     this.metadata = { ...this.metadata, workbench: { id: crypto.randomUUID(), createdAt: Date.now() } };
@@ -115,6 +122,17 @@ export class LookbackBoard extends Project {
   }
 }
 
+/** 真的那块白板，开着的话 */
+function liveBoardOf(root: string, file: string): Project | undefined {
+  const key = pathKey(under(root, file));
+  return store
+    .get(tabsAtom)
+    .find(
+      (tab): tab is Project =>
+        tab instanceof Project && !tab.closing && tab.uri.scheme === "file" && pathKey(tab.uri.fsPath) === key,
+    );
+}
+
 /**
  * 打开回看。from 是眼前的白板（项目里的一块白板，或者已经在回看的那一块）；
  * nodeName 是要看的节点，不给就是最近的那个——也就是「上上次到上次」。
@@ -130,23 +148,34 @@ export async function openLookback(from: Project, nodeName?: string): Promise<Lo
   }
   const file = previous?.lookback.file ?? ResearchFolder.toRelative(from.uri.fsPath, root);
   await ResearchFolder.ensureRootRegistered();
-  const [{ snapshotFiles, joinBoard }, { loadAllServicesAfterInit, loadAllServicesBeforeInit }, { TabWorkspace }] =
+  const [{ snapshotFiles }, { loadAllServicesAfterInit, loadAllServicesBeforeInit }, { TabWorkspace }] =
     await Promise.all([import("./Snapshot"), import("@/core/loadAllServices"), import("@/core/TabWorkspace")]);
 
   const snapshots = await listSnapshots(snapshotFiles, root);
   const nodes = nodesOf(snapshots);
   const node = nodeName ? nodes.find((candidate) => candidate.name === nodeName) : nodes.at(-1);
   if (!node) throw new Error("lookback.noNode");
-  const content = await snapshotBoardFile(snapshotFiles, root, node, file, joinBoard);
+  const nodeFile = boardInSnapshot(node, file)?.file;
   // 那个节点定格的时候还没有这块白板（或者它那时叫别的名字）
-  if (!content) throw new Error("lookback.noBoard");
-  const after = await readSnapshotBoard(snapshotFiles, root, node.name, boardInSnapshot(node, file)!.file);
-  if (!after) throw new Error("snapshot.boardMissing");
+  if (!nodeFile) throw new Error("lookback.noBoard");
   const base = previousOf(snapshots, node);
   const baseFile = base && boardInSnapshot(base, file)?.file;
-  const before = base && baseFile ? await readSnapshotBoard(snapshotFiles, root, base.name, baseFile) : undefined;
-  const diff = compareBoards(before, after);
   const report = under(root, "汇报", reportFolderName(nodeLabel(node)), "报告.md");
+  const live = liveBoardOf(root, file);
+  const [content, after, before, hasReport] = await Promise.all([
+    readSnapshotBoardContent(
+      snapshotFiles,
+      root,
+      node,
+      file,
+      (id) => from.attachments.get(id) ?? live?.attachments.get(id),
+    ),
+    readSnapshotBoard(snapshotFiles, root, node.name, nodeFile),
+    base && baseFile ? readSnapshotBoard(snapshotFiles, root, base.name, baseFile) : undefined,
+    exists(report),
+  ]);
+  if (!content || !after) throw new Error("snapshot.boardMissing");
+  const diff = compareBoards(before, after);
 
   const board = new LookbackBoard(
     {
@@ -156,7 +185,7 @@ export async function openLookback(from: Project, nodeName?: string): Promise<Lo
       node,
       ...(base && { base }),
       counts: { added: diff.added.size, edited: diff.edited.size, removed: diff.removed.length },
-      ...((await exists(report)) && { report }),
+      ...(hasReport && { report }),
     },
     content,
   );
@@ -188,15 +217,7 @@ export async function leaveLookback(board: LookbackBoard): Promise<void> {
     import("@/core/TabWorkspace"),
     import("@/core/service/GlobalMenu"),
   ]);
-  const live = store
-    .get(tabsAtom)
-    .find(
-      (tab): tab is Project =>
-        tab instanceof Project &&
-        !tab.closing &&
-        tab.uri.scheme === "file" &&
-        pathKey(tab.uri.fsPath) === pathKey(path),
-    );
+  const live = liveBoardOf(root, file);
   if (live) {
     TabWorkspace.focus(live.id);
     live.loop();
