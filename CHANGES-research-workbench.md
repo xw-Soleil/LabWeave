@@ -1385,3 +1385,11 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `app/src/core/research/LookbackBoard.ts`：在切标签之前开始过渡；旧的回看标签等过渡播完再拆；回到现在时，真的那块白板开着、又没和回看并排摆着，就把镜头接过去再过渡（并排摆着的镜头不动，没开着的照旧打开）。
 - `app/src/core/render/canvas2d/renderer.tsx`、`entityRenderer/EntityRenderer.tsx`：画白板内容前先问有没有过渡要画；「画一条连线」「画一个分组」各抽成一个方法，画标签装饰的方法改成外面能调，原来的画法没变。
 - 测试：新增 `LookbackTimeline.test.ts`（7 条）、`LookbackTransition.test.ts`（13 条）；`LookbackBoard.test.ts` 加 3 条（切到前面之前就开始过渡，打开、切节点、回到现在都有；和回看并排摆着时不动镜头、不播；还在画旧白板时不拆它）。另在真的 WebKit 里用一块 60 多张卡片的白板逐帧看过。
+
+### 112. 去掉状态条上的相机按钮，快照只剩定格和自动拍（2026-11-23）
+
+- 相机按钮最早是用来换对比起点的；有了阶段小结的「定格」以后它拍的只是留底：不换起点，回看里也看不到，和定格重复。现在定格只在阶段小结里按。
+- `app/src/core/research/SinceLastToggle.tsx`：去掉按钮，状态条上剩「自上次小结以来」和「回看」。
+- `app/src/core/research/Snapshot.ts`：`takeSnapshot()` 只接受自动拍和定格两种。超过 7 天没拍自动拍一份的规矩不变。以前用相机拍的快照（清单里的 `manual`）不删，照样能读。
+- `app/src/core/research/ReportTools.ts`、`app/src/locales/zh_CN.yml`、`en.yml`（`zh_TW.yml` 由 `sync-locales` 生成）：提示里不再叫人点相机，改成做一次阶段小结；删掉相机用的三条文案。
+- 测试：`Snapshot.test.ts` 里原来用相机那种方式拍的改成自动拍。

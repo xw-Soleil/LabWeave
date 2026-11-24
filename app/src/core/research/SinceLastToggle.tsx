@@ -1,21 +1,13 @@
 import type { Project } from "@/core/Project";
 import { cn } from "@/utils/cn";
-import { Camera, History, Rewind } from "lucide-react";
+import { History, Rewind } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { openLookback } from "./LookbackBoard";
 import { lookbackFailed } from "./NodeStrip";
 import { ResearchFolder } from "./ResearchFolder";
-import {
-  currentBaseline,
-  isNode,
-  onSnapshotTaken,
-  readSnapshotBoard,
-  snapshotFiles,
-  takeSnapshot,
-  type Snapshot,
-} from "./Snapshot";
+import { currentBaseline, isNode, onSnapshotTaken, readSnapshotBoard, snapshotFiles, type Snapshot } from "./Snapshot";
 import { hideSinceLast, showSinceLast, sinceLastCounts } from "./SnapshotDiff";
 
 type Counts = NonNullable<ReturnType<typeof sinceLastCounts>>;
@@ -26,17 +18,15 @@ const BUTTON =
 const shortTime = (name: string) => name.replace(/^\d{4}-(\d\d-\d\d) (\d\d)(\d\d)(?:-\d+)?$/, "$1 $2:$3");
 
 /**
- * 白板状态条上的三个按钮：
- * 「自上次小结以来」开关——和上一个节点比，新加的描边、改过的打点、删掉的留影，旁边写着各有几张；
- * 回看——打开上一个节点定格时这块白板的样子，从那里能一个节点一个节点往回看（做过小结才亮）；
- * 相机——现在拍一份快照留底，不改变和谁比。还没有快照时开关是灰的。
+ * 白板状态条上的两个按钮：
+ * 「自上次小结以来」开关——和上一个节点比，新加的描边、改过的打点、删掉的留影，旁边写着各有几张；还没有快照时是灰的；
+ * 回看——打开上一个节点定格时这块白板的样子，从那里能一个节点一个节点往回看（做过小结才亮）。
  */
 export function SinceLastToggle({ project }: { project: Project }) {
   const { t } = useTranslation("research");
   // undefined：还在查；null：一份都没有
   const [base, setBase] = useState<Snapshot | null>();
   const [counts, setCounts] = useState<Counts>();
-  const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
   const report = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -63,7 +53,7 @@ export function SinceLastToggle({ project }: { project: Project }) {
     setCounts(sinceLastCounts(project));
     currentBaseline().then((snapshot) => alive && setBase(snapshot ?? null), report);
     const off = onSnapshotTaken(() => {
-      // 定格了新节点，基准就换成它；自动拍的、手动拍的不换（除非这是项目的第一份）
+      // 定格了新节点，基准就换成它；自动拍的不换（除非这是项目的第一份）
       currentBaseline().then((snapshot) => {
         if (!alive) return;
         setBase(snapshot ?? null);
@@ -105,22 +95,6 @@ export function SinceLastToggle({ project }: { project: Project }) {
       setCounts(undefined);
       project.loop();
     } else if (base) void compareWith(base).catch(report);
-  };
-  const take = () => {
-    setBusy(true);
-    takeSnapshot("manual")
-      .then((snapshot) => {
-        if (!snapshot) return;
-        const { boards } = snapshot.manifest;
-        toast.success(
-          t("snapshot.taken", {
-            time: shortTime(snapshot.name),
-            boards: boards.length,
-            cards: boards.reduce((sum, board) => sum + board.cards, 0),
-          }),
-        );
-      }, report)
-      .finally(() => setBusy(false));
   };
   const lookBack = () => {
     setOpening(true);
@@ -164,16 +138,6 @@ export function SinceLastToggle({ project }: { project: Project }) {
       >
         <Rewind />
         {t("lookback.open")}
-      </button>
-      <button
-        type="button"
-        aria-label={t("snapshot.take")}
-        title={t("snapshot.takeHint")}
-        disabled={busy}
-        className={BUTTON}
-        onClick={take}
-      >
-        <Camera />
       </button>
     </div>
   );

@@ -243,7 +243,7 @@ export async function snapshotList({ root, reader }: ReportSource) {
       };
     }),
     ...(snapshots.length === 0 && {
-      note: "这个项目还没有快照。做一次阶段小结会定格一份；在白板底部状态栏点相机按钮可以拍一份留底；超过 7 天没拍，程序也会自动拍。",
+      note: "这个项目还没有快照。做一次阶段小结会定格一份；超过 7 天没拍，程序也会自动拍。",
     }),
   };
 }
@@ -349,7 +349,7 @@ export async function compareSnapshots(
 ) {
   const all = await listSnapshots(reader, root);
   if (all.length === 0) {
-    return fail("这个项目还没有快照，比不了。在白板底部状态栏点相机按钮可以拍一份；这次先只用活动记录。");
+    return fail("这个项目还没有快照，比不了。做一次阶段小结会定格一份；这次先只用活动记录。");
   }
   const named = (name: string) => all.find((snapshot) => snapshot.name === name);
   const unknown = (name: string) =>

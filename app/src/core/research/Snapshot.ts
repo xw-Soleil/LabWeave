@@ -271,7 +271,7 @@ export async function finishPendingSnapshots(): Promise<void> {
  * 没选项目抛 snapshot.noProject，项目里没有白板抛 snapshot.noBoard。
  */
 export function takeSnapshot(
-  reason: SnapshotReason,
+  reason: "auto" | "node",
   options: { unlessUnchanged?: boolean; node?: NodeInput } = {},
 ): Promise<Snapshot | undefined> {
   // 正在拍的那一份不带这次的节点信息，不能拿它顶替：等它拍完再拍

@@ -140,7 +140,7 @@ export const SNAPSHOT_DIR = ".workbench/快照";
 export const SNAPSHOT_IMAGE_DIR = "图片";
 export const SNAPSHOT_MANIFEST = "清单.json";
 
-/** manual：点「现在拍一份」；auto：超过 7 天自动拍的；node：定格一个节点时拍的；summary：加节点信息之前做阶段小结时拍的 */
+/** manual：以前状态条上的相机按钮拍的，现在没有了，旧的照样读；auto：超过 7 天自动拍的；node：定格一个节点时拍的；summary：加节点信息之前做阶段小结时拍的 */
 export type SnapshotReason = "manual" | "auto" | "summary" | "node";
 
 /** 节点的类型：组会、周报、自己复盘 */

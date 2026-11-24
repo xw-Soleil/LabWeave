@@ -3744,10 +3744,7 @@ research:
     counts: "New {{added}} · Edited {{edited}} · Removed {{removed}}"
     sinceNodeHint: "Compared with “{{title}}”: new cards are outlined, edited ones have a dot at the top right, removed ones leave a faint shadow"
     sinceFirstHint: "No stage summary yet, so this compares with the earliest snapshot ({{time}}): new cards are outlined, edited ones have a dot at the top right, removed ones leave a faint shadow"
-    none: No snapshot yet. Do a stage summary, or take one with the camera on the right; then “Since last summary” becomes available
-    take: Take a snapshot now
-    takeHint: Take a snapshot now, for the record. What the board is compared with stays the same until the next stage summary
-    taken: "Snapshot {{time}} taken: {{boards}} boards, {{cards}} cards"
+    none: No snapshot yet. Freeze one with “Stage summary” in the left rail; then “Since last summary” becomes available
     failed: "The snapshot could not be taken: {{error}}"
     errors:
       noProject: No project folder is chosen yet, so there is nothing to snapshot

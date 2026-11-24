@@ -339,21 +339,21 @@ describe("snapshots of the current project", () => {
     const heard = vi.fn();
     const off = onSnapshotTaken(heard);
 
-    const snapshot = (await takeSnapshot("manual"))!;
+    const snapshot = (await takeSnapshot("auto"))!;
     expect(snapshot.manifest.boards.map(({ file }) => file)).toEqual(["开着.prg", "没开.prg"]);
     expect((await readSnapshotBoard(snapshotFiles, "/research", snapshot.name, "开着.prg"))!.cards[0].text).toBe(
       "还没存的新内容",
     );
     expect(heard).toHaveBeenCalledWith(snapshot);
-    expect(mocks.noted).toHaveBeenCalledWith("/research", snapshot.name, { reason: "manual", boards: 2, cards: 2 });
+    expect(mocks.noted).toHaveBeenCalledWith("/research", snapshot.name, { reason: "auto", boards: 2, cards: 2 });
     expect((await latestSnapshot())!.name).toBe(snapshot.name);
     off();
   });
 
   it("refuses when there is no project or no board", async () => {
-    await expect(takeSnapshot("manual")).rejects.toThrow("snapshot.noBoard");
+    await expect(takeSnapshot("auto")).rejects.toThrow("snapshot.noBoard");
     mocks.root = "";
-    await expect(takeSnapshot("manual")).rejects.toThrow("snapshot.noProject");
+    await expect(takeSnapshot("auto")).rejects.toThrow("snapshot.noProject");
     expect(await latestSnapshot()).toBeUndefined();
     expect(await currentBaseline()).toBeUndefined();
     expect(await snapshotIfDue()).toBeUndefined();
@@ -379,7 +379,7 @@ describe("snapshots of the current project", () => {
     });
     // 之后的对比和这个节点比；再拍一份留底的不换基准
     expect((await currentBaseline())!.name).toBe(node.name);
-    await takeSnapshot("manual");
+    await takeSnapshot("auto");
     expect((await currentBaseline())!.name).toBe(node.name);
   });
 
