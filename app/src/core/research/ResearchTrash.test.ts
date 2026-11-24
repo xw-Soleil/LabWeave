@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import path from "node:path";
-import { URI } from "vscode-uri";
+import { URI, Utils } from "vscode-uri";
 
 const mocks = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
@@ -39,30 +39,31 @@ vi.mock("./ResearchFolder", () => ({
   ResearchFolder: {
     getRoot: () => "/research",
     ensureRootRegistered: vi.fn(),
-    isInside: (p: string) => p.startsWith("/research/"),
-    toRelative: (p: string) => path.posix.relative("/research", p),
-    toAbsolute: (p: string) => path.posix.resolve("/research", p),
+    isInside: (p: string) => slash(p).startsWith("/research/"),
+    toRelative: (p: string) => path.posix.relative("/research", slash(p)),
+    toAbsolute: (p: string) => path.posix.resolve("/research", slash(p)),
   },
 }));
 vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: async (p: string) => mocks.files.has(p) || [...mocks.files.keys()].some((name) => name.startsWith(p + "/")),
+  exists: async (p: string) =>
+    mocks.files.has(slash(p)) || [...mocks.files.keys()].some((name) => name.startsWith(slash(p) + "/")),
   mkdir: vi.fn(),
   rename: mocks.move,
   readFile: async (p: string) => {
-    if (!mocks.files.has(p)) throw new Error("missing");
-    return mocks.files.get(p)!;
+    if (!mocks.files.has(slash(p))) throw new Error("missing");
+    return mocks.files.get(slash(p))!;
   },
-  readTextFile: async (p: string) => new TextDecoder().decode(mocks.files.get(p)),
+  readTextFile: async (p: string) => new TextDecoder().decode(mocks.files.get(slash(p))),
   writeFile: async (p: string, data: Uint8Array, options: { createNew?: boolean }) => {
-    if (options.createNew && mocks.files.has(p)) throw new Error("exists");
-    mocks.files.set(p, data);
+    if (options.createNew && mocks.files.has(slash(p))) throw new Error("exists");
+    mocks.files.set(slash(p), data);
   },
   remove: mocks.remove,
   readDir: async (root: string) =>
     [
       ...new Set(
         [...mocks.files.keys()]
-          .filter((p) => p.startsWith(root + "/"))
+          .filter((p) => p.startsWith(slash(root) + "/"))
           .map((p) => p.slice(root.length + 1).split("/")[0]),
       ),
     ].map((name) => ({ name, isDirectory: true, isSymlink: false })),
@@ -78,6 +79,11 @@ import {
   promptTrashResearchFile,
 } from "./ResearchTrash";
 
+/** Windows 上程序里的路径会是反斜杠写法，真的磁盘两种都认，这里的假磁盘一律按正斜杠存 */
+const slash = (p: string) => p.replaceAll("\\", "/");
+const stored = (directory: string, name: string) => mocks.files.get(`${slash(directory)}/${name}`);
+const child = (directory: string, name: string) => Utils.joinPath(URI.file(directory), name).fsPath;
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.files.clear();
@@ -87,16 +93,16 @@ beforeEach(() => {
   );
   mocks.files.set("/research/paper.pdf", new Uint8Array([0, 255, 17]));
   mocks.remove.mockImplementation(async (p: string) => {
-    mocks.files.delete(p);
+    mocks.files.delete(slash(p));
   });
   mocks.close.mockImplementation(async (id: string) => {
     const index = mocks.tabs.findIndex((tab) => (tab as Project).id === id);
     if (index >= 0) mocks.tabs.splice(index, 1);
   });
   mocks.move.mockImplementation(async (from: string, to: string) => {
-    if (!mocks.files.has(from)) throw new Error("missing");
-    mocks.files.set(to, mocks.files.get(from)!);
-    mocks.files.delete(from);
+    if (!mocks.files.has(slash(from))) throw new Error("missing");
+    mocks.files.set(slash(to), mocks.files.get(slash(from))!);
+    mocks.files.delete(slash(from));
   });
 });
 
@@ -106,28 +112,24 @@ describe("recoverable file deletion", () => {
     mocks.remove.mockRejectedValueOnce(new Error("payload is locked"));
     await expect(restoreResearchFile(record)).rejects.toThrow("payload is locked");
     expect(mocks.files.has("/research/paper.pdf")).toBe(false);
-    expect(mocks.files.has(`${record.directory}/paper.pdf`)).toBe(true);
+    expect(stored(record.directory, "paper.pdf")).toBeDefined();
     await expect(restoreResearchFile(record)).resolves.toBe("/research/paper.pdf");
   });
   it("routes the same annotation entry through trash and restore, and refuses a conflicting sidecar", async () => {
     const record = await trashResearchFile("/research/paper.pdf");
-    const entryId = record.directory.split("/").at(-1);
-    expect(mocks.annotations).toHaveBeenLastCalledWith(
-      "/research/paper.pdf",
-      `${record.directory}/paper.pdf`,
-      expect.any(Function),
-      { entryId },
-    );
+    const entryId = slash(record.directory).split("/").at(-1);
+    const payload = child(record.directory, "paper.pdf");
+    expect(mocks.annotations).toHaveBeenLastCalledWith("/research/paper.pdf", payload, expect.any(Function), {
+      entryId,
+    });
     mocks.annotations.mockRejectedValueOnce(new Error("annotationDestinationExists"));
     await expect(restoreResearchFile(record)).rejects.toThrow("annotationDestinationExists");
     expect(mocks.files.has("/research/paper.pdf")).toBe(false);
-    expect(mocks.files.get(`${record.directory}/paper.pdf`)).toEqual(new Uint8Array([0, 255, 17]));
-    expect(mocks.annotations).toHaveBeenLastCalledWith(
-      `${record.directory}/paper.pdf`,
-      "/research/paper.pdf",
-      expect.any(Function),
-      { entryId, restoring: true },
-    );
+    expect(stored(record.directory, "paper.pdf")).toEqual(new Uint8Array([0, 255, 17]));
+    expect(mocks.annotations).toHaveBeenLastCalledWith(payload, "/research/paper.pdf", expect.any(Function), {
+      entryId,
+      restoring: true,
+    });
   });
 
   it("moves the source file and restores the exact bytes using the persisted recovery record", async () => {
@@ -143,7 +145,7 @@ describe("recoverable file deletion", () => {
     mocks.files.set("/research/paper.pdf", new Uint8Array([99]));
     await expect(restoreResearchFile(record)).rejects.toThrow("restoreConflict");
     expect(mocks.files.get("/research/paper.pdf")).toEqual(new Uint8Array([99]));
-    expect(mocks.files.get(`${record.directory}/paper.pdf`)).toEqual(new Uint8Array([0, 255, 17]));
+    expect(stored(record.directory, "paper.pdf")).toEqual(new Uint8Array([0, 255, 17]));
   });
   it("keeps the original when the move fails", async () => {
     mocks.move.mockRejectedValueOnce(new Error("permission denied"));
@@ -165,7 +167,7 @@ describe("recoverable file deletion", () => {
     const record = await trashResearchFile("/research/a.prg");
     expect(mocks.close).toHaveBeenCalledWith("a");
     expect(project.save.mock.invocationCallOrder[0]).toBeLessThan(mocks.close.mock.invocationCallOrder[0]);
-    expect(mocks.files.get(`${record.directory}/a.prg`)).toEqual(new Uint8Array([2]));
+    expect(stored(record.directory, "a.prg")).toEqual(new Uint8Array([2]));
     expect(mocks.release).toHaveBeenCalledOnce();
   });
   it("does not close or move a workspace if saving fails", async () => {

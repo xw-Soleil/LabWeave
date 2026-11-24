@@ -812,20 +812,23 @@ mod tests {
     #[test]
     fn ownership_artifacts_use_the_canonical_project_path_hash_as_their_key() {
         let canonical_path = CanonicalProjectPath(PathBuf::from("/projects/graph.prg"));
-        let paths =
-            ownership_artifact_paths(Path::new("/app-data/project-ownership"), &canonical_path);
+        let directory = Path::new("/app-data/project-ownership");
+        let paths = ownership_artifact_paths(directory, &canonical_path);
+        // Windows 上算的是 UTF-16 的路径，值不一样
+        let key = if cfg!(windows) {
+            "598b785c37707fab20bd2dcd69c2bf94d9b245c4bc390650ad326ea2ee6ba0a9"
+        } else {
+            "624b76f040538e5c4bab3f62f4111c955343dec3ede76c976f50ca8ac300a62e"
+        };
 
-        assert_eq!(
-            paths.ownership_lock,
-            Path::new("/app-data/project-ownership/624b76f040538e5c4bab3f62f4111c955343dec3ede76c976f50ca8ac300a62e.lock")
-        );
+        assert_eq!(paths.ownership_lock, directory.join(format!("{key}.lock")));
         assert_eq!(
             paths.connectable_owner_lock,
-            Path::new("/app-data/project-ownership/624b76f040538e5c4bab3f62f4111c955343dec3ede76c976f50ca8ac300a62e.connectable.lock")
+            directory.join(format!("{key}.connectable.lock"))
         );
         assert_eq!(
             paths.connectable_owner_record,
-            Path::new("/app-data/project-ownership/624b76f040538e5c4bab3f62f4111c955343dec3ede76c976f50ca8ac300a62e.connectable")
+            directory.join(format!("{key}.connectable"))
         );
     }
 

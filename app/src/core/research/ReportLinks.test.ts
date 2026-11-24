@@ -151,7 +151,7 @@ describe("openReportLink", () => {
     const project = board(["c1"]);
     mocks.openBoard.mockResolvedValue(project);
     expect(await openReportLink("rwb://open?project=课题&path=白板.prg&target=c1")).toBe(true);
-    expect(mocks.openBoard.mock.calls[0][0].fsPath).toBe("/research/课题/白板.prg");
+    expect(mocks.openBoard.mock.calls[0][0].path).toBe("/research/课题/白板.prg");
     expect(project.camera.resetByRectangle).toHaveBeenCalledWith("c1 的位置");
     expect(project.camera.applySavedView).toHaveBeenCalledWith("视野中心", 2);
   });

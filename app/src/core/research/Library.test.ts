@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as disk from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join as nativeJoin } from "node:path";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { parse } from "yaml";
@@ -72,6 +72,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
 });
 
 import * as fs from "@tauri-apps/plugin-fs";
+import { documentPath } from "./DocumentFile";
 import {
   addCollection,
   countLibrary,
@@ -99,6 +100,8 @@ let view: Root | undefined;
 let state: LibraryState;
 const template = "\n# 研究笔记\n\n## 研究问题\n\n\n## 方法\n\n\n## 结论与启发\n\n";
 const smallPdf = Uint8Array.of(37, 80, 68, 70, 45, 49, 46, 55, 10);
+/** 文献库里的路径一律是 documentPath 的写法，Windows 上和 node 拼出来的不一样 */
+const join = (...parts: string[]) => documentPath(nativeJoin(...parts));
 const note = (key: string) => join(root, "条目", key, `${key}.md`);
 const noteReads = () =>
   vi

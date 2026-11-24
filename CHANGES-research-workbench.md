@@ -1451,3 +1451,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 ### 114. 加一个手动触发的 Windows 打包流程（2026-11-24）
 
 - 新文件 `.github/workflows/windows-package.yml`：在 GitHub 的云端 Windows 上按指定的标签或提交打 NSIS 安装包。只能手动触发，推代码不会跑；只有读权限，打出来的放在那次运行的附件里，不自动发布。程序代码没有改动。
+
+### 115. 让只在 Windows 上没过的测试不再看系统（2026-11-24）
+
+- 只改测试，程序代码没有改动。0.2.0 在 GitHub 的 Windows 检查里有 121 条前端测试、1 条 Rust 测试没过，原因都在测试这边。
+- 路径：期望值不再写死 Mac 的斜杠写法，改成用 `URI.file(…).fsPath` 或 `.path` 算；测试里的假文件夹两种斜杠都认（`ProjectSidecar`、`ResearchRename`、`ResearchTrash`、`Library`、`ResearchSession`、`TemporaryWorkspaceOpen`、`ReportLinks`、`FileSystemProviderFile`、`ProjectTabs`、`FileManagerWindow`、`research-file-menu`）。
+- `ZoteroSync.test.ts`：假磁盘在 Windows 上不再给出权限值（和真程序一致）；权限的断言只在别的系统上查；等后台那一步做完再看结果，不再在它刚开始时就查。
+- `ProjectGraphCli.test.ts`、`OpenProjectRuntimeHost.test.ts`：超时统一放到 5 分钟，只用来发现卡死；临时目录的短写法（`RUNNER~1`）先还原再比；设置目录按当前系统算，不再写死 Mac 的位置。三条取消测试在 Windows 上跳过：Node 在 Windows 上的 `kill` 是直接结束进程，没法模拟 Ctrl+C。
+- `ProjectGraphMcpServer.test.ts`：临时目录同样先还原。
+- `ReactDevTracks.test.tsx`：按行读源码时两种换行都认。
+- `PdfView.test.tsx`：点目录或内部链接以后没跳到就再点一次（打开时的缩放会把页面拉回第一页，机器一慢就撞上）。
+- `app/src-tauri/src/project_ownership.rs` 里那条查锁文件名的测试：Windows 上的值单写一份。

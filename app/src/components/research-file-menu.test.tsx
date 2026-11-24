@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { URI } from "vscode-uri";
 const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   trash: vi.fn(),
@@ -148,7 +149,7 @@ describe("file list context menu", () => {
   it("opens the containing folder", async () => {
     await openMenu();
     await select("fileMenu.reveal");
-    expect(mocks.open).toHaveBeenCalledWith("/research/papers");
+    expect(mocks.open).toHaveBeenCalledWith(URI.file("/research/papers").fsPath);
   });
   it("explicitly opens the source with the system app", async () => {
     await openMenu();

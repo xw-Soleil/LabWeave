@@ -9,10 +9,11 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import * as disk from "node:fs/promises";
 import { webcrypto } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join as nativeJoin } from "node:path";
 import { parse } from "yaml";
 import i18next from "i18next";
 import { I18nextProvider } from "react-i18next";
+import { documentPath } from "./DocumentFile";
 import { loadLibrary, type LibraryItem, type LibrarySnapshot } from "./Library";
 import { libraryExtra, libraryMetadata, parseLibraryYaml, splitLibraryNote } from "./LibraryFormat";
 
@@ -48,7 +49,8 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
     isSymlink: s.isSymbolicLink(),
     size: s.size,
     mtime: s.mtime,
-    mode: s.mode,
+    // 真的 plugin-fs 在 Windows 上给不出权限位，node 会编一个出来
+    mode: process.platform === "win32" ? null : s.mode,
   });
   return {
     exists: async (path: string) => {
@@ -161,6 +163,8 @@ import ZoteroSyncDialog from "./ZoteroSyncDialog";
 import { syncTaskAtom } from "./ZoteroSyncTask";
 import { store } from "@/state";
 
+/** 文献库里的路径一律是 documentPath 的写法，Windows 上和 node 拼出来的不一样 */
+const join = (...parts: string[]) => documentPath(nativeJoin(...parts));
 const item = (key: string, fields: Partial<LibraryItem> = {}): LibraryItem => ({
   key,
   dir: `/fixture/条目/${key}`,
@@ -947,7 +951,7 @@ describe("dialog", () => {
   });
 });
 
-describe("sync, backups and rollback with a fake Zotero", () => {
+describe("sync, backups and rollback with a fake Zotero", { timeout: 30_000 }, () => {
   let temp: string, root: string, items: ZoteroData[], collections: ZoteroData[], version: number;
   let beforeWrite: ((kind: string, data: Record<string, unknown>) => void | Promise<void>) | undefined;
   let afterWrite: (() => void) | undefined;
@@ -998,7 +1002,7 @@ describe("sync, backups and rollback with a fake Zotero", () => {
     mocks.diskEnabled = true;
     temp = await disk.realpath(await mkdtemp(join(tmpdir(), "zotero-sync-")));
     root = join(temp, "library");
-    mocks.data = join(temp, "app-data");
+    mocks.data = nativeJoin(temp, "app-data");
     await disk.mkdir(join(root, "条目"), { recursive: true });
     await disk.mkdir(mocks.data);
     await writeFile(manifest(), JSON.stringify({ version: 1, collections: [], custom: "keep" }));
@@ -1844,9 +1848,11 @@ print(json.dumps(out, ensure_ascii=False))
       if ((await disk.stat(join(temp, file))).isFile() && (await readFile(join(temp, file), "utf8")).includes(secret))
         containing.push(file);
     expect(containing).toHaveLength(1);
-    expect(containing[0]).toMatch(/app-data\/zotero-sync\/auth\/[a-f0-9]{64}\.json$/);
-    expect((await disk.stat(join(temp, containing[0]))).mode & 0o777).toBe(0o600);
-    expect((await disk.stat(join(mocks.data, "zotero-sync", "auth"))).mode & 0o777).toBe(0o700);
+    expect(join(temp, containing[0])).toMatch(/app-data\/zotero-sync\/auth\/[a-f0-9]{64}\.json$/);
+    if (process.platform !== "win32") {
+      expect((await disk.stat(join(temp, containing[0]))).mode & 0o777).toBe(0o600);
+      expect((await disk.stat(join(mocks.data, "zotero-sync", "auth"))).mode & 0o777).toBe(0o700);
+    }
     expect(await readFile(join(path, "journal.json"), "utf8")).not.toContain(secret);
     await localEdit("one", { title: "Another edit" });
     refusal = 401;
@@ -2005,33 +2011,37 @@ print(json.dumps(out, ensure_ascii=False))
         ),
       ),
     );
-    const settle = () =>
-      vi.waitFor(async () => {
-        await act(async () => {
-          await new Promise((r) => setTimeout(r, 10));
-        });
-        expect(document.querySelector('[aria-busy="false"]')).not.toBeNull();
-      });
+    const settle = () => eventually(() => expect(document.querySelector('[aria-busy="false"]')).not.toBeNull());
     await settle();
-    // Sync, rollback and backup run as a background task; wait for it before looking at the window
-    const finished = () => vi.waitFor(() => expect(store.get(syncTaskAtom)?.state).not.toBe("running"));
     const click = async (label: string) => {
       // Buttons such as "roll back" appear once the window has re-read the sync record
-      const button = await vi.waitFor(() => {
+      const button = await eventually(() => {
         const found = [...document.querySelectorAll("button")].find((b) => b.textContent === label);
         expect(found).toBeDefined();
         return found!;
       });
       await act(async () => button.click());
-      await finished();
       await settle();
     };
     const close = async () => {
       await act(async () => view.unmount());
       host.remove();
     };
-    return { click, close, finished };
+    return { click, close };
   }
+  // Sync, rollback and backup start some time after the click and run in the background, so wait for what they lead to
+  const eventually = <T>(check: () => T) =>
+    vi.waitFor(
+      async () => {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+        });
+        return check();
+      },
+      { timeout: 10_000 },
+    );
+  const taskState = (state: string) => eventually(() => expect(store.get(syncTaskAtom)?.state).toBe(state));
+  const windowText = (text: string) => eventually(() => expect(document.body.textContent).toContain(text));
 
   it("asks for a concrete system confirmation, respects cancel, shows results and opens the backup", async () => {
     items.push(paper("PAPER001", { title: "Remote" }));
@@ -2041,21 +2051,23 @@ print(json.dumps(out, ensure_ascii=False))
       await ui.click("全部用本地");
       mocks.confirm.mockResolvedValue(false);
       await ui.click("同步（1 处）");
-      expect(mocks.confirm).toHaveBeenCalledWith(
-        expect.stringContaining("将修改 2 处"),
-        expect.objectContaining({ kind: "warning" }),
+      await eventually(() =>
+        expect(mocks.confirm).toHaveBeenCalledWith(
+          expect.stringContaining("将修改 2 处"),
+          expect.objectContaining({ kind: "warning" }),
+        ),
       );
       expect(items[0].title).toBe("Remote");
       expect((await readSyncHistory(root)).run).toBeUndefined();
       mocks.confirm.mockResolvedValue(true);
       await ui.click("同步（1 处）");
-      expect(store.get(syncTaskAtom)?.state).toBe("done");
+      await taskState("done");
       // The window re-reads the sync record once the background task reports done
-      await vi.waitFor(() => expect(document.body.textContent).toContain("上次同步已完成：改了 2 处"));
+      await windowText("上次同步已完成：改了 2 处");
       await ui.click("打开同步记录");
       expect(mocks.shell).toHaveBeenCalledWith((await readSyncHistory(root)).runPath);
       await ui.click("回退本次同步");
-      expect(document.body.textContent).toContain("已回退，可以重新预览");
+      await windowText("已回退，可以重新预览");
       expect(items[0].title).toBe("Remote");
     } finally {
       await ui.close();
@@ -2075,11 +2087,10 @@ print(json.dumps(out, ensure_ascii=False))
     await act(async () =>
       [...document.querySelectorAll("button")].find((b) => b.textContent === "同步（1 处）")!.click(),
     );
-    await vi.waitFor(() => expect(store.get(syncTaskAtom)?.state).toBe("running"));
+    await taskState("running");
     await ui.close();
     release();
-    await ui.finished();
-    expect(store.get(syncTaskAtom)?.state).toBe("done");
+    await taskState("done");
     expect(items[0].title).toBe("Local");
     // Cancel between steps leaves an unfinished run that the window offers to roll back
     await localEdit("one", { title: "Local again" });
@@ -2090,11 +2101,11 @@ print(json.dumps(out, ensure_ascii=False))
         if (to.endsWith("journal.json")) store.get(syncTaskAtom)?.cancel();
       };
       await ui.click("同步（1 处）");
+      await taskState("cancelled");
       mocks.beforeRename = undefined;
-      expect(store.get(syncTaskAtom)?.state).toBe("cancelled");
       expect(pendingSync((await readSyncHistory(root)).run)).toBe(true);
       await ui.click("回退上次同步");
-      expect(store.get(syncTaskAtom)?.state).toBe("done");
+      await taskState("done");
       expect(items[0].title).toBe("Local");
     } finally {
       await ui.close();
@@ -2111,9 +2122,9 @@ print(json.dumps(out, ensure_ascii=False))
     const ui = await showWindow();
     try {
       await ui.click("备份");
-      expect(document.body.textContent).toContain("备份不能放在文献库里面");
+      await windowText("备份不能放在文献库里面");
       await ui.click("备份");
-      expect(store.get(syncTaskAtom)).toMatchObject({ kind: "backup", state: "done" });
+      await eventually(() => expect(store.get(syncTaskAtom)).toMatchObject({ kind: "backup", state: "done" }));
       const copy = store.get(syncTaskAtom)!.result!;
       expect(copy.startsWith(join(target, "library 备份 "))).toBe(true);
       expect(await readFile(join(copy, "条目/one/paper.pdf"), "utf8")).toBe("%PDF-backup-fixture");
@@ -2153,7 +2164,7 @@ print(json.dumps(out, ensure_ascii=False))
       expect(mocks.fetch).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain("上次同步或回退没有完成");
       await ui.click("回退上次同步");
-      expect(document.body.textContent).toContain("已回退，可以重新预览");
+      await windowText("已回退，可以重新预览");
     } finally {
       await ui.close();
     }

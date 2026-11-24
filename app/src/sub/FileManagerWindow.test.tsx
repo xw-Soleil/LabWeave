@@ -49,7 +49,7 @@ vi.mock("@/core/research/ResearchWorkspace", () => ({
   readResearchDirectory: mocks.read,
   requestResearchProject: mocks.switchProject,
   updateResearchWorkspace: mocks.update,
-  projectPathKey: (path: string) => path.toLowerCase(),
+  projectPathKey: (path: string) => path.replaceAll("\\", "/").toLowerCase(),
   projectName: (path: string) => path.split("/").at(-1),
   researchWorkspaceError: String,
 }));

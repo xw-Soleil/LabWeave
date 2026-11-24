@@ -157,7 +157,7 @@ describe("workspace open entry points", () => {
         return true;
       });
       expect((await onOpenFile(uri, "test", origin))?.uri).toEqual(uri);
-      expect(mocks.switchProject).toHaveBeenCalledWith("/other", "/other/a.prg");
+      expect(mocks.switchProject).toHaveBeenCalledWith("/other", uri.fsPath);
       expect(mocks.create).not.toHaveBeenCalled();
       mocks.switchProject.mockResolvedValueOnce(false);
       mocks.settings.researchFolderPath = "/research";
@@ -167,7 +167,7 @@ describe("workspace open entry points", () => {
   it("opens an outside file selected in the dialog without importing or clearing its sibling TXT", async () => {
     mocks.open.mockResolvedValueOnce("/outside/a.prg");
     const project = await onOpenFile();
-    expect(project?.uri.fsPath).toBe("/outside/a.prg");
+    expect(project?.uri.path).toBe("/outside/a.prg");
     expect(mocks.create).toHaveBeenCalledOnce();
     await vi.runAllTimersAsync();
     expect(mocks.exists).not.toHaveBeenCalled();

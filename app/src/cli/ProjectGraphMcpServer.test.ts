@@ -19,7 +19,8 @@ let calls: PathRoutedInvocationOptions[];
 let nextResult: InvokeResult;
 
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), "research-workbench-mcp-")));
+  // Windows 的临时目录可能是短写法（RUNNER~1），只有 native 会还原成完整写法
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "research-workbench-mcp-")));
   for (const file of ["a.prg", "sub/b.prg", "sub2/b.prg", ".hidden/x.prg", "a_backup.prg", "notes.md"]) {
     mkdirSync(join(root, file, ".."), { recursive: true });
     writeFileSync(join(root, file), "");
