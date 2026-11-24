@@ -54,6 +54,7 @@ import { createSubWindow } from "@/core/subWindowOpen";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { activeResourceTabAtom, store, tabsAtom } from "@/state";
 import { subscribeReadingAiDraft } from "@/core/research/ReadingContext";
+import { ReportLinkAnchor, reportLinkRehypePlugins } from "@/core/research/ReportLinkMarkdown";
 import { cn } from "@/utils/cn";
 import { AIRequestTraceView } from "@/sub/AIRequestTraceView";
 import SettingsWindow from "@/sub/SettingsWindow";
@@ -869,7 +870,8 @@ function AIChatPanel({
     if (sendText(inputValue)) setInputValue("");
   }
 
-  function sendText(rawText: string): boolean {
+  // 「阶段小结」「出 PPT」要发的话：会话读好、不在回答中时直接发出去；发不了就放进输入框，说明原因
+  function sendText(rawText: string, withSelection = true): boolean {
     const text = rawText.trim();
     if (contextCommand && text === `/${contextCommand.name}`) {
       if (!sessionLoaded) return false;
@@ -880,7 +882,7 @@ function AIChatPanel({
     // 斜杠命令必须在提示词最前面程序才认，不加选中内容的前缀
     const isCommand = localAgent !== undefined && isLocalAgentCommand(text);
     const selectedObjects =
-      isCommand || selectionKey(project) === excludedSelectionKey
+      !withSelection || isCommand || selectionKey(project) === excludedSelectionKey
         ? []
         : [...project.stageManager.getSelectedEntities(), ...project.stageManager.getSelectedAssociations()];
     const selectedRefs = selectedObjects.map((object) => references.getOrCreateRef(object));
@@ -968,7 +970,7 @@ function AIChatPanel({
   );
 
   const markdownComponents = useMemo<Record<string, React.ComponentType<any>>>(
-    () => ({ inlineCode: ObjectRefCode, img: SafeMarkdownImage }),
+    () => ({ inlineCode: ObjectRefCode, img: SafeMarkdownImage, a: ReportLinkAnchor }),
     [ObjectRefCode],
   );
 
@@ -1491,6 +1493,7 @@ function MessageBubble({
         <Streamdown
           className="pg-ai-markdown"
           plugins={{ code }}
+          rehypePlugins={reportLinkRehypePlugins}
           components={components}
           animated={!isUser}
           isAnimating={!isUser && requesting}
@@ -1565,6 +1568,7 @@ function MessagePart({
       <Streamdown
         className="pg-ai-markdown"
         plugins={{ code }}
+        rehypePlugins={reportLinkRehypePlugins}
         components={components}
         animated={isAnimating}
         isAnimating={isAnimating}

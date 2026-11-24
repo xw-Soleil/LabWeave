@@ -12,6 +12,7 @@ import {
 import { createBuiltInToolAgentTools } from "@/core/service/dataManageService/aiEngine/BuiltInToolAgentAdapter";
 import { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { AIProjectReferenceStore } from "@/core/service/dataManageService/aiEngine/AIProjectReferenceStore";
+import { REPORT_GUIDE_HINT } from "@/core/research/ReportGuide";
 import { LocalAgentTransport } from "@/core/service/dataManageService/aiEngine/LocalAgentTransport";
 import { createChatModel, mergeAIRequestHeaders } from "@/core/service/dataManageService/aiEngine/AIProvider";
 import { resolveHttpRequestBody } from "@/core/service/dataManageService/aiEngine/AIHttpBody";
@@ -45,6 +46,7 @@ export const RESEARCH_ASSISTANT_GUIDE = [
   "3. 提到具体内容时引用卡片标题和文件路径；",
   "4. 不编造没出现在材料里的内容，材料不够就直接说还缺什么；",
   "5. 用户问别的问题也照常回答。",
+  REPORT_GUIDE_HINT,
 ].join("\n");
 
 export const RESEARCH_SYSTEM_PROMPT = [

@@ -76,6 +76,7 @@ vi.mock("react-i18next", () => ({
 }));
 import { store, tabsAtom } from "@/state";
 import { DocumentTab } from "@/core/research/DocumentTab";
+import { createSubWindow } from "@/core/subWindowOpen";
 import FileManagerWindow from "./FileManagerWindow";
 
 let root: Root;
@@ -163,6 +164,11 @@ const press = (target: Element, key: string, init: KeyboardEventInit = {}) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }));
   });
 const renameBox = () => container.querySelector<HTMLInputElement>('input[aria-label="rename.title"]');
+/** 按改名的键，等输入框出来：改名前要先确认能不能改这个项目，是异步的，机器忙时会晚一拍 */
+async function beginRename(name: string, key = "F2") {
+  await press(row(name), key);
+  await vi.waitFor(() => expect(renameBox()).not.toBeNull());
+}
 /** React 不认直接赋的 value，要走原生的 setter 再发 input 事件 */
 function type(input: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -172,7 +178,7 @@ function type(input: HTMLInputElement, value: string) {
 describe("renaming in place", () => {
   it("turns the name into a text box on F2 with the part before the extension selected, and renames on Enter", async () => {
     await expandOther();
-    await press(row("a.pdf"), "F2");
+    await beginRename("a.pdf");
     // 先切到文件所在的项目，再在原位改
     expect(mocks.switchProject).toHaveBeenCalledWith("/other");
     const input = renameBox()!;
@@ -195,7 +201,7 @@ describe("renaming in place", () => {
 
     mocks.openDocument.mockClear();
     mocks.platform.mac = true;
-    await press(row("a.md"), "Enter");
+    await beginRename("a.md", "Enter");
     expect(renameBox()!.value).toBe("a.md");
     expect(mocks.openDocument).not.toHaveBeenCalled();
     await press(renameBox()!, "Escape");
@@ -205,18 +211,18 @@ describe("renaming in place", () => {
 
   it("keeps the old name on Escape, on an unchanged or empty name, and commits when focus leaves", async () => {
     await expandOther();
-    await press(row("a.md"), "F2");
+    await beginRename("a.md");
     type(renameBox()!, "other.md");
     await press(renameBox()!, "Escape");
     expect(renameBox()).toBeNull();
     for (const value of ["a.md", "  "]) {
-      await press(row("a.md"), "F2");
+      await beginRename("a.md");
       type(renameBox()!, value);
       await press(renameBox()!, "Enter");
     }
     expect(mocks.rename).not.toHaveBeenCalled();
 
-    await press(row("a.md"), "F2");
+    await beginRename("a.md");
     type(renameBox()!, "notes.md");
     await act(async () => renameBox()!.blur());
     expect(mocks.rename).toHaveBeenCalledExactlyOnceWith("/other/a.md", "notes.md");
@@ -224,7 +230,7 @@ describe("renaming in place", () => {
 
   it("shows a board without .prg, does not treat Enter while picking a pinyin candidate as confirm, and reports failures", async () => {
     await expandOther();
-    await press(row("a.prg"), "F2");
+    await beginRename("a.prg");
     const input = renameBox()!;
     expect(input.value).toBe("a");
     type(input, "板");
@@ -367,5 +373,94 @@ describe("workspace file tree", () => {
     });
     expect(container.textContent).toContain("match.md");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it("keeps expanded folders and the context menu open on right-click and refresh, while collapse-all and reveal still work", async () => {
+    mocks.read.mockImplementation(async (_root: string, path: string) => {
+      if (path === "/other") {
+        return [
+          { absPath: "/other/sub", relPath: "sub", name: "sub", directory: true, kind: "other" },
+          { absPath: "/other/a.md", relPath: "a.md", name: "a.md", directory: false, kind: "markdown" },
+        ];
+      }
+      if (path === "/other/sub") {
+        return [
+          {
+            absPath: "/other/sub/nested.md",
+            relPath: "sub/nested.md",
+            name: "nested.md",
+            directory: false,
+            kind: "markdown",
+          },
+        ];
+      }
+      return [];
+    });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="files.clearSearch"]')?.click(),
+    );
+
+    await expandOther();
+    await act(async () => button("projectTree.expand:sub").click());
+    expect(row("sub/nested.md")).toBeDefined();
+    expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+
+    const later = Date.now() + 5000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      await act(async () => {
+        row("sub/nested.md").dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, button: 2, clientX: 30, clientY: 30 }),
+        );
+      });
+      const fileMenu = document.querySelector<HTMLElement>('[role="menu"]');
+      expect(fileMenu).not.toBeNull();
+
+      // 鼠标移进挂在 Portal 里的菜单，或者窗口重新拿到焦点触发刷新，子文件夹和菜单都不能丢
+      await act(async () => {
+        fileMenu!.dispatchEvent(
+          new MouseEvent("pointerover", { bubbles: true, relatedTarget: document.documentElement }),
+        );
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+      expect(row("sub/nested.md")).toBeDefined();
+      expect(document.querySelector('[role="menu"]')).toBe(fileMenu);
+
+      await press(fileMenu!, "Escape");
+
+      const folderTrigger = container.querySelector<HTMLElement>('[data-file-key="/other/sub"]')!;
+      await act(async () => {
+        folderTrigger.dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, button: 2, clientX: 30, clientY: 30 }),
+        );
+      });
+      const folderMenu = document.querySelector<HTMLElement>('[role="menu"]');
+      expect(folderMenu).not.toBeNull();
+      await act(async () => {
+        folderMenu!.dispatchEvent(
+          new MouseEvent("pointerover", { bubbles: true, relatedTarget: document.documentElement }),
+        );
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
+      expect(row("sub/nested.md")).toBeDefined();
+      expect(document.querySelector('[role="menu"]')).toBe(folderMenu);
+
+      await press(folderMenu!, "Escape");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    await act(async () => button("files.collapseAll").click());
+    expect(button("projectTree.expand:other").getAttribute("aria-expanded")).toBe("false");
+    expect(row("sub/nested.md")).toBeUndefined();
+
+    vi.mocked(createSubWindow).mockReturnValueOnce({ id: "files-tab" } as never);
+    await act(async () => FileManagerWindow.reveal("/other/sub/nested.md"));
+    await vi.waitFor(() => expect(row("sub/nested.md")).toBeDefined());
+    expect(button("projectTree.expand:other").getAttribute("aria-expanded")).toBe("true");
+    expect(button("projectTree.expand:sub").getAttribute("aria-expanded")).toBe("true");
   });
 });

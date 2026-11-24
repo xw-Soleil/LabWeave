@@ -1,7 +1,10 @@
 import { Project, service } from "@/core/Project";
+import { renderLookbackTransition } from "@/core/research/LookbackTransition";
+import { renderSinceLast } from "@/core/research/SnapshotDiff";
 import { Settings } from "@/core/service/Settings";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
+import { Association } from "@/core/stage/stageObject/abstract/Association";
 import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { ArcEdge } from "@/core/stage/stageObject/association/ArcEdge";
 import { CubicCatmullRomSplineEdge } from "@/core/stage/stageObject/association/CubicCatmullRomSplineEdge";
@@ -178,11 +181,15 @@ export class Renderer {
 
   // 渲染一切实体相关的要素
   private renderStageElementsWithoutReactions(viewRectangle: Rectangle) {
+    // 回看切节点的那一小会儿，按过渡中间的样子画
+    if (renderLookbackTransition(this.project, viewRectangle)) return;
     this.project.entityRenderer.renderAllSectionsBackground(viewRectangle);
     this.renderEntities(viewRectangle);
     this.renderEdges(viewRectangle); // 先渲染实体再渲染连线，因为连线要在图片上面
     this.project.entityRenderer.renderAllSectionsBigTitle(viewRectangle);
     this.renderTags(viewRectangle);
+    // 开着「自上次以来」时，标出和最近一份快照比新加、改过、删掉的卡片
+    renderSinceLast(this.project, viewRectangle);
     // debug
 
     // debugRender();
@@ -704,7 +711,7 @@ export class Renderer {
   }
 
   /** 画所有被标签了的节点的特殊装饰物和缩小视野时的直观显示 */
-  private renderTags(viewRectangle: Rectangle) {
+  renderTags(viewRectangle: Rectangle) {
     for (const tagString of this.project.tags) {
       const tagObject = this.project.stageManager.get(tagString); // 这不成了ON方了？
       if (!tagObject || this.isOverView(viewRectangle, tagObject)) {
@@ -730,46 +737,53 @@ export class Renderer {
   private renderEdges(viewRectangle: Rectangle) {
     this.renderedEdges = 0;
     for (const association of this.project.stageManager.getAssociations()) {
-      if (this.isOverView(viewRectangle, association)) {
-        continue;
-      }
-      if (this.project.sectionMethods.isAssociationHiddenByBigTitleSection(association)) {
-        continue;
-      }
-      const ctx = this.project.canvas.ctx;
-      ctx.save();
-      // 连线在图片上方绘制，但不能覆盖端点文本；逐个裁剪也能处理节点重叠。
-      for (const entity of association.associationList) {
-        if (
-          !("clipConnectionToBoundary" in entity) ||
-          !entity.clipConnectionToBoundary ||
-          ("isHiddenBySectionCollapse" in entity && entity.isHiddenBySectionCollapse)
-        )
-          continue;
-        const rect = this.transformWorld2View(entity.collisionBox.getRectangle());
-        ctx.beginPath();
-        ctx.rect(0, 0, this.w, this.h);
-        ctx.rect(rect.left, rect.top, rect.width, rect.height);
-        ctx.clip("evenodd");
-      }
-      try {
-        if (association instanceof MultiTargetUndirectedEdge) {
-          this.project.multiTargetUndirectedEdgeRenderer.render(association);
-        }
-        if (association instanceof LineEdge) {
-          this.project.edgeRenderer.renderLineEdge(association);
-        }
-        if (association instanceof CubicCatmullRomSplineEdge) {
-          this.project.edgeRenderer.renderCrEdge(association);
-        }
-        if (association instanceof ArcEdge) {
-          this.project.edgeRenderer.renderArcEdge(association);
-        }
-      } finally {
-        ctx.restore();
-      }
-      this.renderedEdges++;
+      this.renderEdge(viewRectangle, association);
     }
+  }
+
+  renderEdge(viewRectangle: Rectangle, association: Association) {
+    if (this.isOverView(viewRectangle, association)) {
+      return;
+    }
+    if (this.project.sectionMethods.isAssociationHiddenByBigTitleSection(association)) {
+      return;
+    }
+    const ctx = this.project.canvas.ctx;
+    ctx.save();
+    // 连线在图片上方绘制，但不能覆盖端点文本；逐个裁剪也能处理节点重叠。
+    for (const entity of association.associationList) {
+      if (
+        !("clipConnectionToBoundary" in entity) ||
+        !entity.clipConnectionToBoundary ||
+        ("isHiddenBySectionCollapse" in entity && entity.isHiddenBySectionCollapse)
+      )
+        continue;
+      const rect = this.transformWorld2View(entity.collisionBox.getRectangle());
+      ctx.beginPath();
+      ctx.rect(0, 0, this.w, this.h);
+      ctx.rect(rect.left, rect.top, rect.width, rect.height);
+      ctx.clip("evenodd");
+    }
+    try {
+      if (association instanceof MultiTargetUndirectedEdge) {
+        this.project.multiTargetUndirectedEdgeRenderer.render(association);
+      }
+      if (association instanceof LineEdge) {
+        this.project.edgeRenderer.renderLineEdge(association);
+      }
+      if (association instanceof CubicCatmullRomSplineEdge) {
+        this.project.edgeRenderer.renderCrEdge(association);
+      }
+      if (association instanceof ArcEdge) {
+        this.project.edgeRenderer.renderArcEdge(association);
+      }
+    } finally {
+      ctx.restore();
+    }
+    if (association instanceof LineEdge && association.isSelected) {
+      this.project.edgeRenderer.renderSelectedLineEdgeOverlay(association);
+    }
+    this.renderedEdges++;
   }
 
   /**

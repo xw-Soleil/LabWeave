@@ -1,4 +1,5 @@
 import type { Project } from "@/core/Project";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import type { AIObjectReferenceRegistry } from "@/core/service/dataManageService/aiEngine/AIObjectReferenceRegistry";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
@@ -12,6 +13,7 @@ import { TextNode } from "@/core/stage/stageObject/entity/TextNode";
 import { Color, Vector } from "@graphif/data-structures";
 import { serialize } from "@graphif/serializer";
 import { Rectangle } from "@graphif/shapes";
+import { URI } from "vscode-uri";
 import type { BuiltInToolExecutor } from "./BuiltInToolRegistry";
 import { findFirstImageInChildren } from "./imageNodeFinder";
 import type { ImageOrientation, OpenverseImageCandidate } from "./OpenverseImageSearch";
@@ -263,8 +265,8 @@ addExecutor("edit_image_node", () => (project, { ref, data }, references) => {
   try {
     const currentRect = node.collisionBox.getRectangle();
     if (data.displaySize) {
-      const intrinsicWidth = node.bitmap?.width ?? currentRect.width / node.scale;
-      const intrinsicHeight = node.bitmap?.height ?? currentRect.height / node.scale;
+      const intrinsicWidth = node.naturalSize?.x ?? currentRect.width / node.scale;
+      const intrinsicHeight = node.naturalSize?.y ?? currentRect.height / node.scale;
       if (
         !Number.isFinite(intrinsicWidth) ||
         !Number.isFinite(intrinsicHeight) ||
@@ -893,7 +895,8 @@ addExecutor("recognize_image", () => async (project, { ref, prompt }, references
     return { success: false, error: "图片数据未找到（附件可能已丢失）" };
   }
   try {
-    const dataUrl = await encodeModelImageDataUrl(blob, Settings.maxPastedImageSize);
+    const upright = await rotatedImageBlob(blob, imageNode.rotation);
+    const dataUrl = await encodeModelImageDataUrl(upright, Settings.maxPastedImageSize);
     const description = await recognizeImage(dataUrl, prompt);
     return { success: true, description };
   } catch (e) {
@@ -1009,6 +1012,98 @@ addExecutor("move_nodes", () => (project, { moves }, references) => {
       };
     }),
   };
+});
+
+/**
+ * 做汇报的几个工具从哪读项目记录：项目文件夹，加上这块白板自带的文件接口
+ * （桌面端和命令行各有一套，所以程序没开时也能读）。读不了时返回给 AI 看的原因。
+ */
+async function openReportSource(project: Project) {
+  const { Settings } = await import("@/core/service/Settings");
+  const root = Settings.researchFolderPath;
+  if (!root) return { success: false as const, error: "还没有选择研究文件夹" };
+  if (project.uri.scheme !== "file") {
+    return {
+      success: false as const,
+      error: "这块白板还没存成文件，读不了项目记录。先保存它，或者换一块项目里的白板再试。",
+    };
+  }
+  const { fs } = project;
+  const entries = async (path: string) => {
+    const uri = URI.file(path);
+    return (await fs.exists(uri)) ? await fs.readDir(uri) : [];
+  };
+  return {
+    root,
+    reader: {
+      read: async (path: string) => {
+        const uri = URI.file(path);
+        return (await fs.exists(uri)) ? await fs.read(uri) : undefined;
+      },
+      folders: async (path: string) =>
+        (await entries(path)).filter((entry) => entry.isDirectory).map((entry) => entry.name),
+      files: async (path: string) => (await entries(path)).filter((entry) => entry.isFile).map((entry) => entry.name),
+    },
+  };
+}
+
+addExecutor("read_report_guide", () => async () => {
+  const { REPORT_GUIDE } = await import("@/core/research/ReportGuide");
+  return { guide: REPORT_GUIDE };
+});
+addExecutor("read_activity_log", () => async (project, input) => {
+  const source = await openReportSource(project);
+  if ("error" in source) return source;
+  const { readActivityLog } = await import("@/core/research/ReportTools");
+  return readActivityLog(source, input);
+});
+addExecutor("list_snapshots", () => async (project) => {
+  const source = await openReportSource(project);
+  if ("error" in source) return source;
+  const { snapshotList } = await import("@/core/research/ReportTools");
+  return snapshotList(source);
+});
+addExecutor("compare_snapshots", () => async (project, input) => {
+  const source = await openReportSource(project);
+  if ("error" in source) return source;
+  const [{ compareSnapshots }, { buildAiSidecar }] = await Promise.all([
+    import("@/core/research/ReportTools"),
+    import("@/core/research/AiSidecarBuilder"),
+  ]);
+  return compareSnapshots(source, input, {
+    path: project.uri.fsPath,
+    sidecar: (workspaceFile) =>
+      buildAiSidecar({
+        serializedStage: serialize(project.stage),
+        tags: project.tags,
+        metadata: project.metadata,
+        workspaceFile,
+        researchRoot: source.root,
+      }).json,
+  });
+});
+addExecutor("read_annotations", () => async (project, input) => {
+  const source = await openReportSource(project);
+  if ("error" in source) return source;
+  const [{ readAnnotations }, { isTauri }] = await Promise.all([
+    import("@/core/research/ReportTools"),
+    import("@tauri-apps/api/core"),
+  ]);
+  // 文献库里 PDF 的批注存在程序的数据目录里，只有桌面端读得到
+  if (!isTauri()) return readAnnotations(source, input);
+  return readAnnotations(source, input, {
+    library: async (path) => {
+      const [{ Settings }, { ResearchFolder }, { annotationIO, annotationTarget }] = await Promise.all([
+        import("@/core/service/Settings"),
+        import("@/core/research/ResearchFolder"),
+        import("@/core/research/PdfAnnotationStore"),
+      ]);
+      const library = Settings.literatureLibraryPath;
+      if (!library) return [];
+      const target = await annotationTarget(ResearchFolder.toAbsolute(path, library));
+      return (await annotationIO.load(target)).annotations;
+    },
+  });
 });
 
 Object.freeze(builtInToolExecutorLoaders);

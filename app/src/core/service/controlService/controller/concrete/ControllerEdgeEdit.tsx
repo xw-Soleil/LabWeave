@@ -1,7 +1,9 @@
 import { Dialog } from "@/components/ui/dialog";
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import type { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
+import { Vector } from "@graphif/data-structures";
 
 /**
  * 包含编辑节点文字，编辑详细信息等功能的控制器
@@ -22,6 +24,10 @@ export class ControllerEdgeEditClass extends ControllerClass {
       return;
     }
     if (this.project.controller.camera.isPreGrabbingWhenSpace) {
+      return;
+    }
+    const worldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    if (findEndpointHandle(this.project, worldLocation)) {
       return;
     }
     const firstHoverEdge = this.project.mouseInteraction.firstHoverEdge;

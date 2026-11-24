@@ -1,5 +1,6 @@
 import { Project, service } from "@/core/Project";
 import { Renderer } from "@/core/render/canvas2d/renderer";
+import { isSideways } from "@/core/research/ImageRotation";
 import { Settings } from "@/core/service/Settings";
 import { SvgUtils } from "@/core/render/svg/SvgUtils";
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
@@ -47,9 +48,8 @@ export class StageExportSvg {
       return <></>;
     }
 
-    // 根据 sizeAdjust 模式确定宽度限制
-    // manual 模式下需要根据容器宽度自动换行
-    const limitWidth = node.sizeAdjust === "manual" ? node.rectangle.size.x - Renderer.NODE_PADDING * 2 : Infinity;
+    const padding = node.getPadding();
+    const limitWidth = node.sizeAdjust === "manual" ? node.rectangle.size.x - padding * 2 : Infinity;
 
     // 获取节点的实际字体大小（考虑 fontScaleLevel）
     const fontSize = node.getFontSize();
@@ -71,7 +71,7 @@ export class StageExportSvg {
           node.rectangle.leftTop.add(
             // 2025年1月23日 晚上，对这个地方进行了微调，但还没弄懂原理，只是看上去像是加了点偏移
             // 着急发布节点多行文本的功能，所以先这样吧
-            new Vector(0, Renderer.NODE_PADDING + fontSize / 4),
+            new Vector(0, padding + fontSize / 4),
           ),
           fontSize,
           node.color.a === 1
@@ -79,6 +79,13 @@ export class StageExportSvg {
             : colorInvert(this.project.stageStyleManager.currentStyle.Background),
           limitWidth,
           1.5,
+          {
+            textAlign: node.textAlign,
+            boxWidth: node.rectangle.size.x,
+            padding,
+            fontFamily: node.fontFamily || undefined,
+            fontWeight: node.fontWeight || undefined,
+          },
         )}
         {this.dumpEntityDetails(node)}
       </g>
@@ -287,6 +294,11 @@ export class StageExportSvg {
 
     // 获取详细信息数据属性
     const detailsData = this.getEntityDetailsDataAttribute(node);
+    const { leftTop, size, center } = node.rectangle;
+    // 图片文件是没转过的：按原来的朝向摆在同一个中心上，再转过去
+    const image = isSideways(node.rotation)
+      ? { x: center.x - size.y / 2, y: center.y - size.x / 2, width: size.y, height: size.x }
+      : { x: leftTop.x, y: leftTop.y, width: size.x, height: size.y };
 
     return (
       <g data-details={detailsData}>
@@ -298,10 +310,8 @@ export class StageExportSvg {
         )}
         <image
           href={href}
-          x={node.rectangle.leftTop.x}
-          y={node.rectangle.leftTop.y}
-          width={node.rectangle.size.x}
-          height={node.rectangle.size.y}
+          {...image}
+          {...(node.rotation !== 0 && { transform: `rotate(${node.rotation} ${center.x} ${center.y})` })}
         />
         {this.dumpEntityDetails(node)}
       </g>

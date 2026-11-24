@@ -1,6 +1,9 @@
 import { ProjectTabs } from "@/ProjectTabs";
 import { Project, ProjectState } from "@/core/Project";
 import { findResearchPanelTab, peekLeftSide } from "@/core/research/ResearchSession";
+import { SinceLastToggle } from "@/core/research/SinceLastToggle";
+import { NodeStrip } from "@/core/research/NodeStrip";
+import { StageReviewTray } from "@/core/research/StageReviewTray";
 import { sideDropPreviewAtom } from "@/core/research/SidePanelDrag";
 import { isTemporaryWorkspace } from "@/core/research/TemporaryWorkspace";
 import {
@@ -192,6 +195,7 @@ function ResearchStatusBar({
       <span className="min-w-0 truncate" title={summary}>
         {summary}
       </span>
+      <SinceLastToggle project={project} />
       <TooltipProvider>
         <div className="flex shrink-0 items-center gap-0.5">
           <StatusBarButton
@@ -670,6 +674,11 @@ export default function DockedArea({
           : rightPinned
             ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
             : "0px";
+    // 浮在白板上的小件（回看的节点条、阶段小结的素材卡片）要让开右侧栏：固定住的、临时弹出来的都会盖在画布上
+    const rightInset =
+      edges.right && rightTabs.length > 0 && isSidePanelShown(sideStates.right)
+        ? `${sideWidths.right + SIDE_PANEL_GAP * 2}px`
+        : `${SIDE_PANEL_GAP}px`;
     // 贴边时标签从正文左边开始，和 Obsidian 一样排在正文正上方；挨着窗口上边时还要让开红绿灯
     const tabsLeft = docked
       ? edges.top && edges.left
@@ -723,6 +732,15 @@ export default function DockedArea({
             left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
           />
         )}
+        {project && (
+          <NodeStrip
+            key={`lookback-${project.id}`}
+            project={project}
+            left={edges.left ? statusLeftBesidePanel : `${SIDE_PANEL_GAP}px`}
+            right={rightInset}
+          />
+        )}
+        {project && <StageReviewTray key={`review-${project.id}`} project={project} right={rightInset} />}
         <DropPreview groupId={group.id} />
       </section>
     );

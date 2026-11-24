@@ -533,11 +533,14 @@ export default function FileManagerWindow() {
   };
 
   const focusRow = (path: string) =>
-    requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      // 这一帧之前用户已经点进了别的输入框（比如马上又开始给另一行改名）：不抢它的焦点。
+      // 抢了的话，新开的改名框会当场失焦、等于立刻确认
+      if (document.activeElement instanceof HTMLInputElement) return;
       rootRef.current
         ?.querySelector<HTMLElement>(`[data-file-key="${CSS.escape(projectPathKey(path))}"]`)
-        ?.focus({ preventScroll: true }),
-    );
+        ?.focus({ preventScroll: true });
+    });
   // 原位改名，照系统文件管理器：名字变成输入框，回车或点别处就改，Esc 取消
   const startRename = (entry: ResearchFileEntry, projectRoot: string) =>
     void beforeModify(projectRoot)
@@ -636,7 +639,8 @@ export default function FileManagerWindow() {
     <div
       ref={rootRef}
       className="flex h-full min-h-0 min-w-0 flex-col"
-      onPointerEnter={() => {
+      onPointerEnter={(event) => {
+        if (event.target instanceof Node && !rootRef.current?.contains(event.target)) return;
         if (Date.now() - lastRefresh.current > 3000) refresh();
       }}
     >
@@ -891,10 +895,9 @@ function DirectoryRow({
   React.useEffect(() => {
     if (!expanded && depth !== 0) return;
     let alive = true;
-    setError("");
-    setEntries(undefined);
-    setVisibleCount(200);
     if (!expanded) {
+      setError("");
+      setVisibleCount(200);
       void exists(path)
         .then((available) => {
           if (alive && !available) setError("missing");
@@ -906,16 +909,18 @@ function DirectoryRow({
         alive = false;
       };
     }
+    // 刷新时保留已有的列表，别先清空再挂载，否则子文件夹的展开状态和正开着的右键菜单都会一起丢掉
     void authorizeResearchProject(projectRoot)
       .then(() => readResearchDirectory(projectRoot, path))
       .then((entries) => {
-        if (alive) setEntries(entries);
+        if (!alive) return;
+        setError("");
+        setEntries(entries);
       })
       .catch((error) => {
-        if (alive) {
-          setEntries(undefined);
-          setError(String(error));
-        }
+        if (!alive) return;
+        setEntries(undefined);
+        setError(String(error));
       });
     return () => {
       alive = false;

@@ -32,7 +32,7 @@ import {
 } from "./TabGroup";
 
 const outsideListeners = new Map<string, (event: PointerEvent) => void>();
-const closeTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
+const closeFlushers = new Map<string, () => void>();
 const closeTasks = new Map<string, Promise<void>>();
 const closeChecks = new Map<string, Promise<boolean>>();
 
@@ -147,14 +147,28 @@ export namespace TabWorkspace {
     store.set(tabGroupRootAtom, root);
   }
 
-  export function open<T extends Tab>(tab: T): T {
+  export function open<T extends Tab>(tab: T, options?: { beforeTabId?: string }): T {
+    if (tab.layout === "docked" && options?.beforeTabId) {
+      synchronizeGroups();
+    }
     tab.floatingRect = constrainRect(tab.floatingRect);
     tab.zIndex = maxZIndex() + 1;
     store.set(tabsAtom, [...store.get(tabsAtom), tab]);
     if (tab.layout === "docked") {
-      store.set(tabGroupRootAtom, insertDockedTab(store.get(tabGroupRootAtom), tab));
+      const root = store.get(tabGroupRootAtom);
+      const anchorGroup = options?.beforeTabId ? findTabGroupByTabId(root, options.beforeTabId) : undefined;
+      if (anchorGroup && (!isResourceTab(tab) || !isFixedSideGroupId(anchorGroup.id))) {
+        const anchorIndex = anchorGroup.tabIds.indexOf(options!.beforeTabId!);
+        store.set(
+          tabGroupRootAtom,
+          insertTabIntoGroup(root, anchorGroup.id, tab.id, anchorIndex >= 0 ? anchorIndex : undefined),
+        );
+        store.set(activeGroupIdAtom, anchorGroup.id);
+      } else {
+        store.set(tabGroupRootAtom, insertDockedTab(root, tab));
+      }
     }
-    focus(tab.id);
+    TabWorkspace.focus(tab.id);
 
     if (tab.closeWhenClickOutside) {
       const listener = (event: PointerEvent) => {
@@ -346,42 +360,61 @@ export namespace TabWorkspace {
       const result = removeFromGroup(id);
       if (store.get(activeTabAtom) === tab) {
         const next = (result.nextActiveTabId && get(result.nextActiveTabId)) ?? firstAvailableDockedTab();
-        if (next) focus(next.id);
+        if (next) TabWorkspace.focus(next.id);
       }
     }
     store.set(tabsAtom, [...store.get(tabsAtom)]);
 
-    let disposeTimer!: ReturnType<typeof setTimeout>;
+    let disposed = false;
+    let resolveDispose!: () => void;
+    let rejectDispose!: (reason: unknown) => void;
     const disposePromise = new Promise<void>((resolve, reject) => {
-      disposeTimer = setTimeout(() => {
-        void Promise.resolve()
-          .then(() => tab.dispose())
-          .then(resolve, reject);
-      }, 450);
+      resolveDispose = resolve;
+      rejectDispose = reject;
     });
-    let removeTimer!: ReturnType<typeof setTimeout>;
+    const runDispose = () => {
+      if (disposed) return;
+      disposed = true;
+      void Promise.resolve()
+        .then(() => tab.dispose())
+        .then(resolveDispose, rejectDispose);
+    };
+
+    let removed = false;
+    let resolveRemove!: () => void;
     const removePromise = new Promise<void>((resolve) => {
-      removeTimer = setTimeout(() => {
-        startTransition(() => {
-          const remaining = store.get(tabsAtom).filter((candidate) => candidate !== tab);
-          store.set(tabsAtom, remaining);
-          if (store.get(activeTabAtom) === tab) {
-            const next = remaining
-              .filter((candidate) => !candidate.closing)
-              .reduce<
-                Tab | undefined
-              >((highest, candidate) => (!highest || candidate.zIndex > highest.zIndex ? candidate : highest), undefined);
-            store.set(activeTabAtom, next);
-            if (next && isResourceTab(next)) store.set(activeResourceTabAtom, next);
-          }
-          const docked = firstAvailableDockedTab();
-          store.set(activeDockedTabAtom, docked);
-        });
-        closeTimers.delete(id);
-        resolve();
-      }, 500);
+      resolveRemove = resolve;
     });
-    closeTimers.set(id, [disposeTimer, removeTimer]);
+    const runRemove = () => {
+      if (removed) return;
+      removed = true;
+      startTransition(() => {
+        const remaining = store.get(tabsAtom).filter((candidate) => candidate !== tab);
+        store.set(tabsAtom, remaining);
+        if (store.get(activeTabAtom) === tab) {
+          const next = remaining
+            .filter((candidate) => !candidate.closing)
+            .reduce<
+              Tab | undefined
+            >((highest, candidate) => (!highest || candidate.zIndex > highest.zIndex ? candidate : highest), undefined);
+          store.set(activeTabAtom, next);
+          if (next && isResourceTab(next)) store.set(activeResourceTabAtom, next);
+        }
+        const docked = firstAvailableDockedTab();
+        store.set(activeDockedTabAtom, docked);
+      });
+      closeFlushers.delete(id);
+      resolveRemove();
+    };
+
+    const disposeTimer = setTimeout(runDispose, 450);
+    const removeTimer = setTimeout(runRemove, 500);
+    closeFlushers.set(id, () => {
+      clearTimeout(disposeTimer);
+      clearTimeout(removeTimer);
+      runDispose();
+      runRemove();
+    });
     const closeTask = Promise.allSettled([disposePromise, removePromise]).then(([disposeResult]) => {
       if (disposeResult.status === "rejected") throw disposeResult.reason;
     });
@@ -391,6 +424,44 @@ export namespace TabWorkspace {
     } finally {
       closeTasks.delete(id);
     }
+  }
+
+  /**
+   * 关闭整个应用时一次性并行销毁所有标签页：不再逐个走 500ms 动画和切换下一个标签，
+   * 已经在半秒关闭倒计时里的标签也立即冲刷完，保证所有工作区锁进程和服务都释放干净。
+   */
+  export async function disposeAllForShutdown(): Promise<void> {
+    for (const flush of [...closeFlushers.values()]) {
+      flush();
+    }
+    for (const listener of outsideListeners.values()) {
+      document.removeEventListener("pointerdown", listener);
+    }
+    outsideListeners.clear();
+
+    const tabs = store.get(tabsAtom);
+    const freshTabs = tabs.filter((tab) => !closeTasks.has(tab.id));
+    for (const tab of freshTabs) {
+      tab.closing = true;
+    }
+    const inflightTasks = [...closeTasks.values()];
+
+    store.set(tabDropTargetAtom, null);
+    store.set(tabGroupRootAtom, null);
+    store.set(activeGroupIdAtom, undefined);
+    store.set(activeTabAtom, undefined);
+    store.set(activeDockedTabAtom, undefined);
+    store.set(activeResourceTabAtom, undefined);
+    store.set(tabsAtom, []);
+
+    const results = await Promise.allSettled([
+      ...inflightTasks,
+      ...freshTabs.map((tab) => Promise.resolve().then(() => tab.dispose())),
+    ]);
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map(({ reason }) => reason);
+    if (errors.length > 0) throw new AggregateError(errors, "Shutdown tab cleanup failed");
   }
 
   export function closeAllFloating() {

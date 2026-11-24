@@ -143,16 +143,7 @@ export class EntityRenderer {
       if (this.project.renderer.isOverView(viewRectangle, section)) {
         continue;
       }
-      if (this.project.sectionMethods.isEntityHiddenByBigTitleSection(section)) {
-        continue;
-      }
-      this.project.sectionRenderer.render(section);
-      // details右上角小按钮
-      if (this.project.camera.currentScale > 0.065 && !section.isHiddenBySectionCollapse) {
-        this.project.entityDetailsButtonRenderer.render(section);
-      }
-      this.renderEntityDebug(section);
-      this.renderEntityTagShap(section);
+      this.renderSection(section);
     }
     // 4 遍历所有涂鸦实体
     for (const penStroke of this.project.stageManager.getPenStrokes()) {
@@ -165,6 +156,19 @@ export class EntityRenderer {
       this.renderEntity(penStroke);
     }
     this.renderOverlapHints(viewRectangle);
+  }
+
+  renderSection(section: Section) {
+    if (this.project.sectionMethods.isEntityHiddenByBigTitleSection(section)) {
+      return;
+    }
+    this.project.sectionRenderer.render(section);
+    // details右上角小按钮
+    if (this.project.camera.currentScale > 0.065 && !section.isHiddenBySectionCollapse) {
+      this.project.entityDetailsButtonRenderer.render(section);
+    }
+    this.renderEntityDebug(section);
+    this.renderEntityTagShap(section);
   }
 
   /** 科研模式拖动时，被拖动的实体压住的实体描红（松手后会把被拖的挪开） */
@@ -309,6 +313,7 @@ export class EntityRenderer {
         this.project.renderer.transformWorld2View(imageNode.rectangle.location),
         imageNode.scale,
         Renderer.NODE_ROUNDED_RADIUS,
+        imageNode.rotation,
       );
     } else if (imageNode.state === "notFound") {
       this.project.textRenderer.renderTextFromCenter(

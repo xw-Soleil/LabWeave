@@ -641,6 +641,10 @@ export class TextNodeRenderer {
       }
     } else {
       if (this.project.inlineMath?.render(node)) return;
+      const contentWidthView = Math.max(
+        0,
+        (node.rectangle.size.x - node.getPadding() * 2) * this.project.camera.currentScale,
+      );
       this.project.textRenderer.renderMultiLineText(
         node.text,
         this.project.renderer.transformWorld2View(
@@ -648,9 +652,7 @@ export class TextNodeRenderer {
         ),
         fontSize,
         // Infinity,
-        node.sizeAdjust === "manual"
-          ? (node.rectangle.size.x - node.getPadding() * 2) * this.project.camera.currentScale
-          : Infinity,
+        node.sizeAdjust === "manual" ? contentWidthView : Infinity,
         node.color.a === 1
           ? colorInvert(node.color)
           : colorInvert(this.project.stageStyleManager.currentStyle.Background),
@@ -658,6 +660,8 @@ export class TextNodeRenderer {
         undefined,
         node.fontFamily || undefined,
         node.fontWeight || undefined,
+        node.textAlign,
+        contentWidthView,
       );
     }
   }

@@ -162,11 +162,7 @@ export class StraightEdgeRenderer extends EdgeRendererClass {
     const arrowHead = this.shouldRenderTargetArrow(edge)
       ? this.project.edgeRenderer.generateArrowHeadSvg(
           edge.bodyLine.end.clone(),
-          edge.target.collisionBox
-            .getRectangle()
-            .getCenter()
-            .subtract(edge.source.collisionBox.getRectangle().getCenter())
-            .normalize(),
+          edge.bodyLine.end.subtract(edge.bodyLine.start).normalize(),
           15,
           edgeColor,
         )

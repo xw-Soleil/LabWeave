@@ -200,11 +200,19 @@ export class InlineMathService {
     const imageScale = fontSize / MATH_REFERENCE_FONT_SIZE;
     const color = this.color(node);
     const ctx = this.project.canvas.ctx;
+    const contentWidth = Math.max(entry.width, node.rectangle.width - node.getPadding() * 2);
     for (const line of entry.lines) {
+      const isDisplayBlock = line.fragments.length === 1 && line.fragments[0].type === "display";
+      const lineOffset =
+        isDisplayBlock || node.textAlign === "left"
+          ? 0
+          : node.textAlign === "center"
+            ? (contentWidth - line.width) / 2
+            : contentWidth - line.width;
       for (const fragment of line.fragments) {
         const location = origin.add(
           new Vector(
-            fragment.x * scale,
+            (fragment.x + lineOffset) * scale,
             (line.y + line.baseline - fragment.height + fragment.descent - node.getFontSize() / 4) * scale,
           ),
         );

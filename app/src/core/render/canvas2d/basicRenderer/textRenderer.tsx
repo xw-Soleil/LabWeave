@@ -281,6 +281,8 @@ export class TextRenderer {
     limitLines: number = Infinity,
     fontFamily?: string,
     fontWeight?: string,
+    textAlign: "left" | "center" | "right" = "left",
+    boxWidth?: number,
   ): void {
     this.renderTempMultiLineText(
       text,
@@ -292,6 +294,8 @@ export class TextRenderer {
       limitLines,
       fontFamily,
       fontWeight,
+      textAlign,
+      boxWidth,
     );
   }
   renderTempMultiLineText(
@@ -304,12 +308,15 @@ export class TextRenderer {
     limitLines: number = Infinity,
     fontFamily?: string,
     fontWeight?: string,
+    textAlign: "left" | "center" | "right" = "left",
+    boxWidth?: number,
   ): void {
     if (text.trim().length === 0) return;
     if (Settings.textIntegerLocationAndSizeRender) {
       location = location.toInteger();
       fontSize = Math.round(fontSize);
       limitWidth = Math.round(limitWidth);
+      if (boxWidth !== undefined) boxWidth = Math.round(boxWidth);
       if (fontSize === 0) return;
     }
     text = this.prepareText(text);
@@ -320,8 +327,26 @@ export class TextRenderer {
       textLineArray = textLineArray.slice(0, limitLines);
       textLineArray[limitLines - 1] += "..."; // 最后一行加省略号
     }
-    for (const line of textLineArray) {
-      this.drawText(line, location.add(new Vector(0, currentY)), fontSize, color, fontFamily, fontWeight);
+    if (textAlign === "left") {
+      for (const line of textLineArray) {
+        this.drawText(line, location.add(new Vector(0, currentY)), fontSize, color, fontFamily, fontWeight);
+        currentY += fontSize * lineHeight;
+      }
+      return;
+    }
+    const lineWidths = textLineArray.map((line) => getTextSize(line, fontSize, fontFamily, fontWeight).x);
+    const alignWidth =
+      boxWidth ?? (Number.isFinite(limitWidth) ? limitWidth : lineWidths.reduce((max, w) => Math.max(max, w), 0));
+    for (let i = 0; i < textLineArray.length; i++) {
+      const offsetX = textAlign === "center" ? (alignWidth - lineWidths[i]) / 2 : alignWidth - lineWidths[i];
+      this.drawText(
+        textLineArray[i],
+        location.add(new Vector(offsetX, currentY)),
+        fontSize,
+        color,
+        fontFamily,
+        fontWeight,
+      );
       currentY += fontSize * lineHeight;
     }
   }

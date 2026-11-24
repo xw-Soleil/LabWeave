@@ -21,15 +21,18 @@ export interface BoardChoice {
 
 /** 白板给人看的名字，和标签上写的一样 */
 export function boardName(board: Project): string {
+  if (board.tabName) return board.tabName;
   if (board.isDraft) return i18next.t("tabs.untitled", { ns: "research", n: board.uri.path });
   return board.uri.scheme === "file" ? displayWorkspaceName(board.title) : board.title;
 }
 
 let lastPicked: string | undefined;
 
-/** 开着的白板。上次发过去的排最前，其次是主编辑区正显示的那块 */
+/** 开着的白板。上次发过去的排最前，其次是主编辑区正显示的那块。只读的回看白板不算，发过去的东西存不下来 */
 export function openBoards(): Project[] {
-  const boards = store.get(tabsAtom).filter((tab): tab is Project => tab instanceof Project && !tab.closing);
+  const boards = store
+    .get(tabsAtom)
+    .filter((tab): tab is Project => tab instanceof Project && !tab.closing && !tab.tabName);
   const main = findMainProject();
   const rank = (board: Project) => (board.id === lastPicked ? 0 : board === main ? 1 : 2);
   return boards.sort((a, b) => rank(a) - rank(b));

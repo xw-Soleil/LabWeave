@@ -1,4 +1,5 @@
 import { Project, service } from "@/core/Project";
+import { isSideways, rotationMatrix, type ImageRotation } from "@/core/research/ImageRotation";
 import { superellipseRect } from "@/utils/superellipse";
 import { Vector } from "@graphif/data-structures";
 
@@ -15,37 +16,36 @@ export class ImageRenderer {
    * @param imageElement
    * @param location 图片左上角位置
    * @param scale 1 表示正常，0.5 表示缩小一半，2 表示放大两倍
+   * @param rotation 顺时针转多少度；location 是转好以后的左上角
    */
   renderImageElement(
     source: Exclude<CanvasImageSource, VideoFrame | SVGElement>,
     location: Vector,
     scale: number = 1 / (window.devicePixelRatio || 1),
     radius: number = 0,
+    rotation: ImageRotation = 0,
   ) {
     const ctx = this.project.canvas.ctx;
-    if (radius > 0) {
-      ctx.save();
-      ctx.beginPath();
-      superellipseRect(
-        ctx,
-        location.x,
-        location.y,
-        source.width * scale * this.project.camera.currentScale,
-        source.height * scale * this.project.camera.currentScale,
-        radius,
-      );
-      ctx.clip();
-    }
+    const width = source.width * scale * this.project.camera.currentScale;
+    const height = source.height * scale * this.project.camera.currentScale;
+    const isolated = radius > 0 || rotation !== 0;
+    if (isolated) ctx.save();
     try {
-      this.project.canvas.ctx.drawImage(
-        source,
-        location.x,
-        location.y,
-        source.width * scale * this.project.camera.currentScale,
-        source.height * scale * this.project.camera.currentScale,
-      );
+      if (radius > 0) {
+        ctx.beginPath();
+        const [boxWidth, boxHeight] = isSideways(rotation) ? [height, width] : [width, height];
+        superellipseRect(ctx, location.x, location.y, boxWidth, boxHeight, radius);
+        ctx.clip();
+      }
+      if (rotation === 0) {
+        ctx.drawImage(source, location.x, location.y, width, height);
+      } else {
+        ctx.translate(location.x, location.y);
+        ctx.transform(...rotationMatrix(rotation, width, height));
+        ctx.drawImage(source, 0, 0, width, height);
+      }
     } finally {
-      if (radius > 0) ctx.restore();
+      if (isolated) ctx.restore();
     }
   }
 

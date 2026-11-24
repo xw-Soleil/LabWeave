@@ -1,6 +1,8 @@
 import { Dialog } from "@/components/ui/dialog";
-import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
+import { Project, ResearchSaveRefusedError } from "@/core/Project";
+import { confirmSaveBeforeClose } from "@/core/research/AppShutdown";
 import { activeDocumentTab } from "@/core/research/DocumentTab";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import { RESEARCH_DISABLED_KEYBIND_IDS } from "@/core/research/ResearchMenu";
 import { emitResearchEvent } from "@/core/research/ResearchShell";
 import { AssetsRepository } from "@/core/service/AssetsRepository";
@@ -1441,36 +1443,9 @@ export const allKeyBinds: KeyBindItem[] = [
         toast.error("当前没有打开的标签页");
         return;
       }
-      const tabs = store.get(tabsAtom);
-      if (tab instanceof Project) {
-        if (tab.projectState === ProjectState.Stashed) {
-          toast("文件还没有保存，但已经暂存，在“最近打开的文件”中可恢复文件");
-        } else if (tab.projectState === ProjectState.Unsaved) {
-          const response = await Dialog.buttons("是否保存更改？", decodeURI(tab.uri.toString()), [
-            { id: "cancel", label: "取消", variant: "ghost" },
-            { id: "discard", label: "不保存", variant: "destructive" },
-            { id: "save", label: "保存" },
-          ]);
-          if (response === "save") {
-            await tab.save();
-          } else if (response === "cancel") {
-            return;
-          }
-        }
-      }
-      await tab.dispose();
-      const result = tabs.filter((t) => t !== tab);
-      const activeTabIndex = tabs.indexOf(tab);
-      if (result.length > 0) {
-        if (activeTabIndex === tabs.length - 1) {
-          store.set(activeTabAtom, result[activeTabIndex - 1]);
-        } else {
-          store.set(activeTabAtom, result[activeTabIndex]);
-        }
-      } else {
-        store.set(activeTabAtom, undefined);
-      }
-      store.set(tabsAtom, result);
+      // 和点标签上的叉走同一条路：同一个保存对话框，由 TabWorkspace 负责摘标签、挑下一个激活的标签
+      if (tab instanceof Project && !(await confirmSaveBeforeClose(tab))) return;
+      await TabWorkspace.close(tab.id);
     },
   },
   /*------- 导出操作 ------- */
@@ -2310,7 +2285,7 @@ export const allKeyBinds: KeyBindItem[] = [
       }
 
       try {
-        const arrayBuffer = await blob.arrayBuffer();
+        const arrayBuffer = await (await rotatedImageBlob(blob, imageNode.rotation)).arrayBuffer();
         const tauriImage = await TauriImage.fromBytes(new Uint8Array(arrayBuffer));
         await writeImage(tauriImage);
         if (selectedImageNodes.length === 1) {
@@ -3249,13 +3224,7 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenKeyboardOnlyOpenWithSelectedTextNodes,
     onPress: (project) => {
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
-      const selectedNodes = project!.stageManager.getSelectedEntities();
-      const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      if (textNodes.length === 0) return;
-      project!.historyManager.recordStep();
-      for (const node of textNodes) {
-        node.decreaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
+      TextNodeSmartTools.stepSelectedTextNodesFontSize(project!, "decrease");
     },
   },
   {
@@ -3265,13 +3234,7 @@ export const allKeyBinds: KeyBindItem[] = [
     when: whenKeyboardOnlyOpenWithSelectedTextNodes,
     onPress: (project) => {
       if (!project!.keyboardOnlyEngine.isOpenning()) return;
-      const selectedNodes = project!.stageManager.getSelectedEntities();
-      const textNodes = selectedNodes.filter((node) => node instanceof TextNode) as TextNode[];
-      if (textNodes.length === 0) return;
-      project!.historyManager.recordStep();
-      for (const node of textNodes) {
-        node.increaseFontSize(TextNodeSmartTools.getAnchorRateForTextNode(project!, node));
-      }
+      TextNodeSmartTools.stepSelectedTextNodesFontSize(project!, "increase");
     },
   },
 

@@ -1481,6 +1481,14 @@ contextMenu:
   switchMTUEdgeRenderType: Switch Render Type
   convertToDirectedEdge: Convert to Directed Edge
   editUrlNodeLink: Edit URL Node Link
+  textAlignLeft: Align Left
+  textAlignCenter: Align Center
+  textAlignRight: Align Right
+  increaseFontSize: Larger Font Size
+  decreaseFontSize: Smaller Font Size
+  toggleBold: Bold
+  rotateClockwise90: Rotate 90° Right
+  rotateCounterClockwise90: Rotate 90° Left
   confirm: OK
   cancel: Cancel
 
@@ -3024,11 +3032,26 @@ research:
       aiNeedsWorkspace: AI chat (open a board first)
       files: Files
       library: Library
+      summary: Stage summary
+      summaryNeedsWorkspace: Stage summary (open a board first)
       settings: Settings
     setRootFailed: "The research folder {{path}} can't be used right now: {{message}}"
     restoreFailed: "Couldn't reopen board {{path}}: {{message}}"
     panelFailed: "Couldn't open the panel: {{message}}"
     autoSaveFailed: "Couldn't auto-save \"{{name}}\" before closing: {{message}}"
+    closePrompt:
+      saveTitle: Save changes?
+      save: Save
+      discard: Don't save
+      cancel: Cancel
+      stashed: This file isn't saved yet, but a copy is stashed. You can restore it from Recent files.
+      unsavedTitle: Unsaved files
+      unsavedDescription: "{{count}} file(s) have unsaved changes. Closing now could leave a file empty, so it's safer to save them first."
+      continue: Close anyway
+      flushFailedTitle: Some data wasn't written to disk
+      flushFailed: "These didn't get written: {{message}}. Click Go back, check that the drive holding your research folder is still connected, then close again. If you quit anyway, this data won't be saved this time."
+      back: Go back
+      quitAnyway: Quit anyway
     extensionsDisabled: Research Workbench doesn't run extensions; your data stays on this computer
     resizeSidePanel: Drag to resize the panel
     pinSidePanel: Pin the panel
@@ -3289,6 +3312,8 @@ research:
     pickItem: Select a paper to see its details
     toggleAttachments: Show or hide attachments
     openPdf: Open PDF
+    sendToBoard: Put on board
+    noPdfToBoard: This item has no local PDF yet
     openTranslation: Open translation
     openNote: Open note
     markAs: "Mark as {{status}}"
@@ -3638,6 +3663,8 @@ research:
       whatIsMissing: What is missing?
     inputPlaceholder: "Ask about the board, e.g. how are these papers related?"
     inputPlaceholderCommands: "Ask about the board; type / for commands such as /compact"
+    link:
+      confirm: Open this link in your browser?
     composer:
       board: "Current board \"{{name}}\": the AI works on this board"
       selected: "{{count}} selected"
@@ -3703,6 +3730,232 @@ research:
       login: Sign in in Terminal
       permissionTitle: "{{name}} asks for approval"
       permissionInput: Arguments
+  activityLog:
+    failed: "The activity record could not be written and will be retried: {{error}}"
+    mark:
+      menu: Mark as…
+      progress: Progress
+      problem: Problem
+      idea: Idea
+      done: "Added to the activity record: {{mark}} ({{count}})"
+      outside: This board is not inside the current project folder, so nothing was recorded
+  snapshot:
+    since: Since last summary
+    counts: "New {{added}} · Edited {{edited}} · Removed {{removed}}"
+    sinceNodeHint: "Compared with “{{title}}”: new cards are outlined, edited ones have a dot at the top right, removed ones leave a faint shadow"
+    sinceFirstHint: "No stage summary yet, so this compares with the earliest snapshot ({{time}}): new cards are outlined, edited ones have a dot at the top right, removed ones leave a faint shadow"
+    none: No snapshot yet. Freeze one with “Stage summary” in the left rail; then “Since last summary” becomes available
+    failed: "The snapshot could not be taken: {{error}}"
+    errors:
+      noProject: No project folder is chosen yet, so there is nothing to snapshot
+      noBoard: This project has no board yet, so there is nothing to snapshot
+      boardMissing: The board file in this snapshot can't be found. It may have been deleted
+      imageMissing: An image in this snapshot can't be found. It may have been deleted
+  stageNode:
+    types:
+      meeting: Group meeting
+      weekly: Weekly report
+      review: Self review
+  lookback:
+    open: Look back
+    openHint: See this board as it was frozen at the last node, with what was added, edited and removed since the node before it. From there you can step back node by node
+    noNodeHint: Looking back is available after your first stage summary
+    tabName: "Look back · {{node}} · {{board}}"
+    previous: Previous node
+    next: Next node
+    now: Now
+    nowHint: Close the look-back and return to the board as it is now
+    since: "Compared with “{{title}}”"
+    firstSnapshot: "the snapshot of {{time}}"
+    first: This is the first record, so there is nothing earlier to compare with and every card counts as new
+    counts: "{{added}} new · {{edited}} edited · {{removed}} removed"
+    note: "Written then: {{note}}"
+    report: Open report
+    readOnly: This is a look-back and is read-only. Changes made here are not saved
+    failed: "The look-back could not be opened: {{error}}"
+    errors:
+      noNode: This project has no node yet. Do a stage summary first
+      noBoard: This board did not exist yet when that node was frozen (or it had another name)
+  nodeRecord:
+    float: Sticky note
+    toggleFloat: "Sticky note: jot down to-dos, progress, problems and next steps"
+    noProject: Choose a project before using the sticky note
+    short:
+      done: Progress
+      todo: To-do
+      notes: Problem
+      next: Next
+    section:
+      done: Progress
+      todo: To-do
+      notes: Problems and decisions
+      next: Next steps
+    placeholder:
+      done: What got done? Type a line and press Enter
+      todo: What needs doing? Type a line and press Enter
+      notes: What problem came up, or what was decided? Press Enter
+      next: What do you plan to do next? Press Enter
+    attach: Link what is open
+    attachHint: Attach what is in front of you to the note — the selected card, the open page of a paper, the note you are reading
+    noContext: Nothing here can be linked (it has to be a board, paper or note in the project), so this item has no link
+    pending: "{{count}} to do"
+    sinceNode: "{{days}} days since the last summary"
+    sinceToday: Summarised today
+    noNode: No summary yet
+    empty: Nothing noted yet. Type a line above and press Enter.
+    more: "{{count}} more"
+    less: Show fewer
+    untitled: (no text)
+    markDone: "Mark “{{text}}” as done"
+    markPending: "Mark “{{text}}” as not done"
+    openFile: Open the record file
+    minimize: Collapse
+    expand: Expand
+    close: Close the sticky note
+    reloaded: The record was changed elsewhere and has been read again. Please click once more
+    failed: "Could not note that: {{error}}"
+    sealFailed: "The node is frozen, but the hand-written record was not sealed into it: {{error}}. Fix that and freeze again to fill it in."
+    showAll: "Show all: read, edit, add pictures, and look at earlier nodes"
+    inspect: "Show “{{text}}” in the record panel"
+    imageCount: "{{count}} pictures"
+    panel:
+      title: Progress record
+      subtitle: Notes since the last node are under “In progress”. Freezing seals them, and carries what is still open into the next stretch
+      choose: Which stretch to show
+      current: In progress
+      sealed: Sealed, read-only
+      sealedHint: "This was sealed when “{{name}}” was frozen and is read-only. To change it, use “Open the file” below."
+      missing: "The file for “{{name}}” can't be found."
+      refresh: Refresh
+      loading: Reading the record
+      emptyCurrent: Nothing noted in this stretch yet. Add an item below, or jot things down with the sticky note.
+      emptySection:
+        done: No progress yet
+        todo: No to-dos
+        notes: No issues or decisions
+        next: No next steps yet
+      addItem: Add an item
+      editItem: Edit this item
+      editItemNamed: "Edit “{{title}}”"
+      editHint: Only the lines this item takes up in the file are changed. Its section is not changed here.
+      editConflict: The record was changed elsewhere, so this edit can't be saved. Copy what you want to keep, cancel, and edit again.
+      itemSection: Section
+      itemTitle: Title
+      titlePlaceholder: Title (taken from the details if left empty)
+      itemDetails: Details
+      detailsPlaceholder: Details, as many lines as you like
+      attachCurrent: Link what's open
+      addLink: Add a link
+      linkLabel: Link name
+      linkTarget: Link target
+      linkPlaceholder: "A path relative to this record, e.g. ../notes/experiment.md"
+      linkRequired: The link target is missing
+      confirmLink: OK
+      cancelLink: Cancel
+      editLink: Edit this link
+      editNamedLink: "Edit link “{{name}}”"
+      removeNamedLink: "Remove link “{{name}}”"
+      source: Source
+      addImage: Add pictures
+      pasteImage: Paste a picture
+      noClipboardImage: There is no picture on the clipboard
+      viewImage: "Open picture “{{name}}”"
+      removeImage: "Remove picture “{{name}}”"
+      imageRecord: Picture note
+      linkedRecord: Linked note
+      cancelEdit: Cancel edit
+      save: Add
+      saveChanges: Save changes
+      otherLinks: Other links in the file
+      openFile: Open the file
+      showFloat: Show the sticky note
+    errors:
+      conflict: The record file was changed elsewhere
+      documentBusy: The record file is open with unsaved changes. Save it first
+      unsafeLink: Only files inside the project folder can be linked
+      fileNotFound: The linked file can't be found
+      emptyItem: The item is empty
+      invalidPath: The record file is not where it should be
+      imageTooLarge: The picture is too large (at most 8 MB and 25 megapixels each)
+      imageUnsupported: Only PNG, JPEG and WebP pictures are accepted
+      imageReadFailed: The picture can't be read
+      imageWriteFailed: The picture could not be saved
+      tooManyImages: Choose at most 12 pictures at a time
+      clipboardImageFailed: The picture on the clipboard can't be read
+  stageReview:
+    title: Stage summary · Review
+    sinceNode: "Compared with “{{title}}”"
+    sinceFirst: "No summary yet; compared with the earliest snapshot ({{time}})"
+    sinceNothing: No snapshot yet, so every card on the board counts as new
+    thisBoard: This board
+    onlySelected: Only the selected
+    dropSelected: Skip the selected
+    selectFirst: Select some of the cards listed here on the canvas first
+    added: New
+    edited: Edited
+    untitled: (untitled)
+    removed: "{{count}} more were removed; the canvas keeps a faint shadow of each"
+    elsewhere: Other boards, papers and notes
+    records: What you noted
+    recordDone: ticked as done
+    boardCounts: "Board: new {{added}} · edited {{edited}} · removed {{removed}}"
+    paperCounts: "Paper: {{annotations}} annotations · {{excerpts}} excerpts"
+    noteSaved: "Note: edited"
+    empty: Nothing has been recorded since the last summary. You can freeze right away, or leave and get some work done first.
+    notePlaceholder: What do you want to say this time? A few plain sentences will do; optional
+    type: This is a
+    picked: "{{picked}} of {{total}} picked"
+    freeze: Freeze only
+    freezeHint: Take a node snapshot without asking the AI to write. Later comparisons start from here
+    summarize: Freeze and write the report
+    summarizeHint: After freezing, the report and slides are generated in the background and saved to the project's “汇报” folder
+    frozen: "“{{title}}” is frozen; later comparisons start from here"
+    leave: Leave the review
+    toggleBusy: A stage summary review is in progress; use this switch after leaving it
+    failed: "That didn't work: {{error}}"
+    errors:
+      outside: This board is not in the current project, so it cannot be summarized
+  stageSummary:
+    title: Stage summary
+    errors:
+      noProject: No project folder is chosen yet
+  report:
+    stage:
+      collecting: Collecting report materials…
+      analyzing: The AI is writing the report…
+      exporting: Exporting the report and slides…
+    task:
+      done: "Report ready: {{title}}"
+      failed: "The report was not generated: {{error}}"
+      cancelled: Report generation cancelled
+    warnings: "{{count}} to check"
+    openReport: Report
+    openSlides: Slides
+    openFolder: Folder
+    retryExport: Export again
+    cancel: Cancel
+    close: Close
+    errors:
+      busy: The previous report is still being generated. Wait for it to finish or cancel it; for now you can use “Freeze only”
+      nothingPicked: Nothing is ticked and no note is written, so there is nothing to write about. Tick a few items or type a sentence and try again
+      aiNotConfigured: The AI API is not set up yet. Fill in the endpoint and model under Settings › AI; for now you can use “Freeze only”
+      rateLimited: The AI API is rate limited. Try again later
+      network: Cannot reach the AI API. Check your connection and API settings
+      timeout: The AI took too long. Try again later, or tick fewer items
+      invalidResponse: The AI response was incomplete. Try again
+      invalidReferences: The AI cited material numbers that do not exist, so they could not be verified. Try again
+      noMaterials: No text could be read from the ticked items, so there is nothing to write about
+      unsafeOutput: Cannot write to the project's “汇报” folder. Check its location and permissions
+      exportFailed: The files were not exported. What the AI wrote is saved; you can export again without calling the AI
+      invalidDraft: The saved draft could not be read. Generate the report again
+  reportLink:
+    cardGone: This card no longer exists
+    noProject: The project named in the link can't be found. Add it to your project list first
+    noLibrary: No literature library is set up, so files in the library can't be opened
+    outside: The link points outside your projects and the library, so it was not opened
+    missing: The file this link points to no longer exists
+    unsupported: This kind of file can't be opened
+    failed: "The link couldn't be opened: {{message}}"
   tabs:
     untitled: "Untitled {{n}}"
     aiChat: AI Chat

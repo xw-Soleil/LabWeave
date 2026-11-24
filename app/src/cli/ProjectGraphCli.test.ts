@@ -20,6 +20,7 @@ import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { URI } from "vscode-uri";
 import sharp from "sharp";
+import { resolveProjectGraphAppDataDirectories } from "./ProjectGraphAppDataPath";
 import { holdProjectOwnership, isProjectOwned, releaseProjectOwnership } from "./ProjectGraphOwnershipProcess";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -406,6 +407,117 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     );
     expect(readFileSync(projectPath)).toEqual(before);
   });
+  // 做汇报的工具读的是项目文件夹里 .workbench/ 下的记录：程序没开、直接读文件时也要读得到
+  it("reads the activity log, snapshots and annotations of a closed workspace", { timeout: 90_000 }, async () => {
+    const projectPath = await createProjectFixture("2.7.0", createMutationStage());
+    const folder = realpathSync(dirname(projectPath));
+    const projectName = folder.split(/[\\/]/).pop()!;
+    const write = (path: string, content: string) => {
+      mkdirSync(dirname(join(folder, path)), { recursive: true });
+      writeFileSync(join(folder, path), content);
+    };
+    write(
+      ".workbench/活动记录.jsonl",
+      `${JSON.stringify({
+        at: "2026-11-10T10:00:00+08:00",
+        project: projectName,
+        kind: "card.add",
+        where: { board: "fixture.prg", card: "11111111-1111-4111-8111-111111111111" },
+        title: "Source",
+      })}\n`,
+    );
+    write(
+      ".workbench/快照/2026-11-08 1030/清单.json",
+      JSON.stringify({
+        v: 1,
+        at: "2026-11-08T10:30:00+08:00",
+        reason: "manual",
+        project: projectName,
+        boards: [{ file: "fixture.prg", cards: 0, sections: 0, edges: 0, images: {} }],
+      }),
+    );
+    write(
+      ".workbench/快照/2026-11-08 1030/fixture.ai.json",
+      JSON.stringify({ cards: [], sections: [], edges: [], hyperedges: [], tags: [] }),
+    );
+    write(
+      ".workbench/annotations/paper.pdf.json",
+      JSON.stringify([
+        {
+          id: "A1",
+          type: "highlight",
+          color: "#ffd400",
+          sortIndex: "00002|000010|00000",
+          pageLabel: "3",
+          position: { pageIndex: 2, rects: [[0, 0, 10, 10]] },
+          text: "highlighted words",
+          comment: "",
+          tags: [],
+          dateModified: "2026-11-10T02:00:00.000Z",
+        },
+      ]),
+    );
+    const settingsHome = mkdtempSync(join(tmpdir(), "project-graph-cli-settings-"));
+    temporaryDirectories.push(settingsHome);
+    const environment = {
+      HOME: settingsHome,
+      USERPROFILE: settingsHome,
+      APPDATA: join(settingsHome, "AppData", "Roaming"),
+      XDG_DATA_HOME: join(settingsHome, ".local", "share"),
+      COREPACK_HOME: process.env.COREPACK_HOME ?? join(homedir(), ".cache/node/corepack"),
+    };
+    const [settingsDirectory] = resolveProjectGraphAppDataDirectories(process.platform, environment, settingsHome);
+    mkdirSync(settingsDirectory, { recursive: true });
+    writeFileSync(join(settingsDirectory, "settings.json"), JSON.stringify({ researchFolderPath: folder }));
+    const before = readFileSync(projectPath);
+    const invoke = async (tool: string, input: object) => {
+      const result = await runCliAsyncWithEnvironment(
+        environment,
+        "tool",
+        "invoke",
+        tool,
+        "--project",
+        projectPath,
+        "--input",
+        JSON.stringify(input),
+      );
+      expect(result).toMatchObject({ status: 0, stderr: "" });
+      return JSON.parse(result.stdout);
+    };
+
+    expect((await invoke("read_report_guide", {})).guide).toContain("read_activity_log");
+    expect(await invoke("read_activity_log", { since: "2026-11-01" })).toMatchObject({
+      success: true,
+      project: projectName,
+      total: 1,
+      entries: [
+        {
+          kind: "card.add",
+          title: "Source",
+          link: expect.stringMatching(/&path=fixture\.prg&target=11111111-1111-4111-8111-111111111111$/),
+        },
+      ],
+    });
+    expect(await invoke("list_snapshots", {})).toMatchObject({ total: 1, snapshots: [{ name: "2026-11-08 1030" }] });
+    const compared = await invoke("compare_snapshots", {});
+    expect(compared).toMatchObject({
+      success: true,
+      from: { name: "2026-11-08 1030" },
+      boards: [{ board: "fixture.prg" }],
+    });
+    expect(compared.totals.added).toBeGreaterThanOrEqual(2);
+    expect(compared.boards[0].added.map(({ title }: { title: string }) => title)).toEqual(
+      expect.arrayContaining(["Source", "Target"]),
+    );
+    expect(await invoke("read_annotations", { file: "paper.pdf" })).toMatchObject({
+      success: true,
+      count: 1,
+      annotations: [{ id: "A1", page: 3, text: "highlighted words" }],
+    });
+    // 文献库的批注存在程序数据目录里，命令行读不到：照实说只有一部分
+    expect(await invoke("read_annotations", { library: "x/y.pdf" })).toMatchObject({ partial: true, count: 0 });
+    expect(readFileSync(projectPath)).toEqual(before);
+  });
   it("prints standard help without protocol output noise", () => {
     const result = runCli("--help");
 
@@ -428,8 +540,18 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     const tools = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
 
     expect(result).toMatchObject({ status: 0, stderr: "" });
-    expect(tools).toHaveLength(36);
-    expect(tools.map(({ name }) => name)).toEqual(expect.arrayContaining(["read_pdf_text", "search_pdf"]));
+    expect(tools).toHaveLength(41);
+    expect(tools.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "read_pdf_text",
+        "search_pdf",
+        "read_report_guide",
+        "read_activity_log",
+        "list_snapshots",
+        "compare_snapshots",
+        "read_annotations",
+      ]),
+    );
     expect(tools[0]).toMatchObject({
       name: "get_all_nodes",
       description: expect.any(String),

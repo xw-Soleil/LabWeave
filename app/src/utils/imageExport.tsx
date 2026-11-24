@@ -1,3 +1,4 @@
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { dirname, join } from "@tauri-apps/api/path";
 import { exists, writeFile } from "@tauri-apps/plugin-fs";
@@ -29,12 +30,13 @@ export async function exportImagesToProjectDirectory(
 
     try {
       // 获取图片 Blob
-      const blob = attachments.get(imageNode.attachmentId);
-      if (!blob) {
+      const stored = attachments.get(imageNode.attachmentId);
+      if (!stored) {
         console.warn(`跳过：无法找到图片 ${i + 1} 的数据`);
         failedCount++;
         continue;
       }
+      const blob = await rotatedImageBlob(stored, imageNode.rotation);
 
       // 从 Blob type 推断扩展名
       const ext = mime.getExtension(blob.type) || "png";

@@ -127,15 +127,54 @@ export namespace SvgUtils {
     color: Color,
     limitWidth: number = Infinity,
     lineHeight: number = 1.5,
+    options: {
+      textAlign?: "left" | "center" | "right";
+      boxWidth?: number;
+      padding?: number;
+      fontFamily?: string;
+      fontWeight?: string;
+    } = {},
   ) {
-    // 如果没有宽度限制，使用原来的简单分割逻辑
-    const lines = limitWidth === Infinity ? text.split("\n") : textToTextArray(text, fontSize, limitWidth);
+    const fontFamily = options.fontFamily || Settings.defaultFontFamily;
+    const fontWeight = options.fontWeight || undefined;
+    const padding = options.padding ?? Renderer.NODE_PADDING;
+    const textAlign = options.textAlign ?? "left";
+    const lines =
+      limitWidth === Infinity ? text.split("\n") : textToTextArray(text, fontSize, limitWidth, fontFamily, fontWeight);
 
-    const textSizeHeight = getTextSize(text, fontSize).y;
+    const textSizeHeight = getTextSize(text, fontSize, fontFamily, fontWeight).y;
+    const maxLineWidth = lines.reduce(
+      (max, line) => Math.max(max, getTextSize(line, fontSize, fontFamily, fontWeight).x),
+      0,
+    );
+    const boxWidth = options.boxWidth ?? maxLineWidth + padding * 2;
+    const x =
+      textAlign === "center"
+        ? location.x + boxWidth / 2
+        : textAlign === "right"
+          ? location.x + boxWidth - padding
+          : location.x + padding;
+    const textAnchor = textAlign === "center" ? "middle" : textAlign === "right" ? "end" : "start";
+
     const result: React.ReactNode[] = [];
-    for (let y = 0; y < lines.length; y++) {
-      const line = lines[y];
-      result.push(textFromLeftTop(line, location.add(new Vector(0, y * textSizeHeight * lineHeight)), fontSize, color));
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const lineSize = getTextSize(line, fontSize, fontFamily, fontWeight);
+      const y = location.y + index * textSizeHeight * lineHeight + lineSize.y / 2 + Renderer.NODE_PADDING;
+      result.push(
+        <text
+          x={x.toFixed(1)}
+          y={y.toFixed(1)}
+          key={v4()}
+          fill={color.toString()}
+          fontSize={fontSize}
+          fontWeight={fontWeight}
+          textAnchor={textAnchor}
+          fontFamily={fontFamily}
+        >
+          {line}
+        </text>,
+      );
     }
     return <>{result.map((item) => item)}</>;
   }

@@ -19,8 +19,11 @@ export interface ResearchSidecarCard {
   text: string;
   /** 用户备注（details）摊平成的纯文本 */
   notes: string;
-  /** 只有 FileCardNode 有；path 相对工作区 .prg 所在文件夹 */
-  file?: { path: string; kind: FileKind; pages: number };
+  /**
+   * 只有 FileCardNode 有；path 相对工作区 .prg 所在文件夹。
+   * page（从 1 数）和 annotation 只有 PDF 摘录卡片有：摘自哪一页、对应哪条批注
+   */
+  file?: { path: string; kind: FileKind; pages: number; page?: number; annotation?: string };
   url?: string;
   rect: ResearchSidecarRect;
   /** 直接所在的 Section */
@@ -419,6 +422,11 @@ export function buildAiSidecar(input: {
         card.title = asString(object.caption) || asString(object.title) || baseName(path);
         card.text = asString(object.excerpt);
         card.file = { path, kind, pages: asNumber(object.pageCount) };
+        // 从 PDF 发上来的摘录：记着它来自哪一页、哪条批注
+        if (asNumber(object.pdfPage) > 0) {
+          card.file.page = asNumber(object.pdfPage);
+          if (asString(object.pdfAnnotation)) card.file.annotation = asString(object.pdfAnnotation);
+        }
         break;
       }
       case "UrlNode":

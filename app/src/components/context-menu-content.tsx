@@ -1,5 +1,7 @@
 import {
+  ContextMenuCheckboxItem,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuShortcut,
@@ -8,6 +10,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
+import { ACTIVITY_MARKS, noteCardMarks } from "@/core/research/ActivityLog";
 import { promptImageCaption, refreshFileCard, resolveFileCardPath } from "@/core/research/FileCardFactory";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
@@ -15,8 +18,11 @@ import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/R
 import { KeyBindsUI } from "@/core/service/controlService/shortcutKeysEngine/KeyBindsUI";
 import { allKeyBinds } from "@/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister";
 import { ColorManager } from "@/core/service/feedbackService/ColorManager";
+import { TextNodeSmartTools } from "@/core/service/dataManageService/textNodeSmartTools";
 import { Settings } from "@/core/service/Settings";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
+import { ImageNode, rotateSelectedImageNodes } from "@/core/stage/stageObject/entity/ImageNode";
+import { TextNode, type TextNodeAlign } from "@/core/stage/stageObject/entity/TextNode";
 import { activeResourceTabAtom } from "@/state";
 import ColorPaletteWindow from "@/sub/ColorPaletteWindow";
 import ColorWindow from "@/sub/ColorWindow";
@@ -87,6 +93,8 @@ const SIMPLE_PALETTE: (Color | null)[] = [
 
 const Content = ContextMenuContent;
 const Item = ContextMenuItem;
+const CheckboxItem = ContextMenuCheckboxItem;
+const Group = ContextMenuGroup;
 const Sub = ContextMenuSub;
 const SubTrigger = ContextMenuSubTrigger;
 const SubContent = ContextMenuSubContent;
@@ -438,6 +446,14 @@ export default function MyContextMenuContent() {
 
   // 只选中一张图片卡片时，最上面多一项「图片标题…」：图片卡片不显示文件名，想要标题就在这里填
   const selected = p.stageManager.getSelectedEntities();
+  const textNodes = selected.filter((entity): entity is TextNode => entity instanceof TextNode);
+  const sharedTextAlign: TextNodeAlign | undefined =
+    textNodes.length > 0 && textNodes.every((node) => node.textAlign === textNodes[0].textAlign)
+      ? textNodes[0].textAlign
+      : undefined;
+  const allBold = textNodes.length > 0 && textNodes.every((node) => node.isBold());
+  const imageNodes = selected.filter((entity): entity is ImageNode => entity instanceof ImageNode);
+  const canRotateImages = imageNodes.some((node) => node.canRotate());
   const fileCard = selected.length === 1 && selected[0] instanceof FileCardNode ? selected[0] : undefined;
   // PDF 里框下来的图也算图片卡片，可以改标题
   const imageCard =
@@ -465,6 +481,92 @@ export default function MyContextMenuContent() {
             <LucideIcons.Captions />
             {tResearch(imageCard.caption ? "card.caption.editMenu" : "card.caption.menu")}
           </Item>
+          <div className="bg-border my-1 h-px" />
+        </>
+      )}
+      {/* 给选中的卡片记一笔：做阶段小结时，标过的会优先写进去。只记在活动记录里，卡片本身不变 */}
+      {selected.length > 0 && (
+        <>
+          <Sub>
+            <SubTrigger>
+              <LucideIcons.Flag />
+              {tResearch("activityLog.mark.menu")}
+            </SubTrigger>
+            <SubContent>
+              {ACTIVITY_MARKS.map((mark) => (
+                <Item
+                  key={mark}
+                  onClick={() => {
+                    if (noteCardMarks(p, selected, mark)) {
+                      toast.success(
+                        tResearch("activityLog.mark.done", {
+                          mark: tResearch(`activityLog.mark.${mark}`),
+                          count: selected.length,
+                        }),
+                      );
+                    } else toast.warning(tResearch("activityLog.mark.outside"));
+                  }}
+                >
+                  {tResearch(`activityLog.mark.${mark}`)}
+                </Item>
+              ))}
+            </SubContent>
+          </Sub>
+          <div className="bg-border my-1 h-px" />
+        </>
+      )}
+      {textNodes.length > 0 && (
+        <>
+          <Group>
+            <CheckboxItem
+              checked={sharedTextAlign === "left"}
+              onSelect={() => TextNodeSmartTools.setSelectedTextNodesAlign(p, "left")}
+            >
+              <LucideIcons.AlignLeft />
+              {t("textAlignLeft")}
+            </CheckboxItem>
+            <CheckboxItem
+              checked={sharedTextAlign === "center"}
+              onSelect={() => TextNodeSmartTools.setSelectedTextNodesAlign(p, "center")}
+            >
+              <LucideIcons.AlignCenter />
+              {t("textAlignCenter")}
+            </CheckboxItem>
+            <CheckboxItem
+              checked={sharedTextAlign === "right"}
+              onSelect={() => TextNodeSmartTools.setSelectedTextNodesAlign(p, "right")}
+            >
+              <LucideIcons.AlignRight />
+              {t("textAlignRight")}
+            </CheckboxItem>
+            <Item inset onSelect={() => TextNodeSmartTools.stepSelectedTextNodesFontSize(p, "increase")}>
+              <LucideIcons.AArrowUp />
+              {t("increaseFontSize")}
+            </Item>
+            <Item inset onSelect={() => TextNodeSmartTools.stepSelectedTextNodesFontSize(p, "decrease")}>
+              <LucideIcons.AArrowDown />
+              {t("decreaseFontSize")}
+            </Item>
+            <CheckboxItem checked={allBold} onSelect={() => TextNodeSmartTools.toggleSelectedTextNodesBold(p)}>
+              <LucideIcons.Bold />
+              {t("toggleBold")}
+            </CheckboxItem>
+          </Group>
+          <div className="bg-border my-1 h-px" />
+        </>
+      )}
+      {imageNodes.length > 0 && (
+        <>
+          <Group>
+            <Item disabled={!canRotateImages} onSelect={() => rotateSelectedImageNodes(p, "cw")}>
+              <LucideIcons.RotateCw />
+              {t("rotateClockwise90")}
+            </Item>
+            <Item disabled={!canRotateImages} onSelect={() => rotateSelectedImageNodes(p, "ccw")}>
+              <LucideIcons.RotateCcw />
+              {t("rotateCounterClockwise90")}
+            </Item>
+          </Group>
           <div className="bg-border my-1 h-px" />
         </>
       )}

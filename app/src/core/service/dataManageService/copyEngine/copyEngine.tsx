@@ -5,6 +5,7 @@ import { StageObject } from "@/core/stage/stageObject/abstract/StageObject";
 import { Edge } from "@/core/stage/stageObject/association/Edge";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
 import { resolveSourcePath, rewriteSerializedFileCardPaths, toStoredSourcePath } from "@/core/research/FileCardFactory";
+import { rotatedImageBlob } from "@/core/research/ImageRotation";
 import { nudgeEntitiesOutOfOverlap } from "@/core/research/OverlapResolver";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
@@ -19,8 +20,9 @@ import { Color, ProgressNumber, Vector } from "@graphif/data-structures";
 import { serialize } from "@graphif/serializer";
 import { deserializeStageObjects } from "@/core/research/LegacyMathCards";
 import { Rectangle } from "@graphif/shapes";
+import { invoke } from "@tauri-apps/api/core";
 import { Image as TauriImage } from "@tauri-apps/api/image";
-import { readText, writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { readImage, readText, writeImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import i18next from "i18next";
 import _ from "lodash";
 import { toast } from "sonner";
@@ -124,7 +126,7 @@ export class CopyEngine {
 
     await this.writeSystemClipboard(selectedEntities);
     // 记下复制完成时系统剪贴板里是什么，粘贴时对比，就知道用户之后有没有在别处复制新东西
-    VirtualClipboard.rememberSystemClipboardText(copyGeneration, await readSystemClipboardText());
+    VirtualClipboard.rememberSystemClipboardText(copyGeneration, await readSystemClipboardSnapshot());
     return selectedEntities;
   }
 
@@ -136,7 +138,8 @@ export class CopyEngine {
       const blob = this.project.attachments.get(imageNode.attachmentId);
       if (blob) {
         toast.success("已将选中的图片复制到系统剪贴板");
-        await writeImage(await TauriImage.fromBytes(await blob.arrayBuffer()));
+        const upright = await rotatedImageBlob(blob, imageNode.rotation);
+        await writeImage(await TauriImage.fromBytes(await upright.arrayBuffer()));
       }
     } else {
       // 否则复制全部文本节点，用两个换行分割
@@ -175,7 +178,7 @@ export class CopyEngine {
   /** 虚拟剪贴板可以反复粘贴；但用户在别处复制了新东西以后，就该贴新的了 */
   private async hasFreshVirtualClipboardData(): Promise<boolean> {
     if (!VirtualClipboard.hasData()) return false;
-    if (VirtualClipboard.isOutdatedBy(await readSystemClipboardText())) {
+    if (VirtualClipboard.isOutdatedBy(await readSystemClipboardSnapshot())) {
       VirtualClipboard.clear();
     }
     return VirtualClipboard.hasData();
@@ -421,7 +424,6 @@ export class CopyEngine {
 
 /**
  * 剪贴板里没有文字（比如是图片）时 arboard 会报错，这里当作空文字。
- * 复制时也用它记下剪贴板内容：记下的若是文字，换成图片也能看出变了。
  */
 async function readSystemClipboardText(): Promise<string> {
   try {
@@ -429,6 +431,49 @@ async function readSystemClipboardText(): Promise<string> {
   } catch {
     return "";
   }
+}
+
+function hashBytes(bytes: ArrayLike<number>): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    h1 = Math.imul(h1 ^ byte, 0x01000193);
+    h2 = Math.imul(h2 ^ byte, 0x85ebca6b);
+  }
+  return `${bytes.length}:${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`;
+}
+
+async function readSystemClipboardImageDigest(): Promise<string | null> {
+  let image: Awaited<ReturnType<typeof readImage>>;
+  try {
+    image = await readImage();
+  } catch {
+    return null;
+  }
+  if (!image) return null;
+  try {
+    const { width, height } = await image.size();
+    if (width <= 0 || height <= 0) return null;
+    const rgba = await image.rgba();
+    return `${width}x${height}:${hashBytes(rgba)}`;
+  } finally {
+    await image.close();
+  }
+}
+
+/**
+ * 按 pasteFromSystemClipboard 的同一顺序（文件 → 文字 → 图片）给系统剪贴板算一份指纹：
+ * 白板里复制过图片以后，用户在别处又复制了另一张图、一段字或文件，都能看出来变了。
+ */
+async function readSystemClipboardSnapshot(): Promise<string> {
+  const files = await invoke<string[]>("read_clipboard_file_paths");
+  if (files.length > 0) return `files:${files.join("\n")}`;
+  const text = await readSystemClipboardText();
+  if (text) return `text:${text}`;
+  const image = await readSystemClipboardImageDigest();
+  if (image) return `image:${image}`;
+  return "";
 }
 
 export function getRectangleFromSerializedEntities(serializedEntities: Serialized.Entity[]): Rectangle {

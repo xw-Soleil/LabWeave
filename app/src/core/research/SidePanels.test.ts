@@ -8,7 +8,13 @@ vi.mock("@/state", async () => {
   return { store: createStore(), activeTabAtom: atom(undefined), tabGroupRootAtom: atom(null) };
 });
 
-import { decidePanelToggle, edgeToRevealOnActivate, occludedInsets, type SidePanelStates } from "./SidePanels";
+import {
+  decidePanelToggle,
+  edgeToRevealOnActivate,
+  isPeekHeld,
+  occludedInsets,
+  type SidePanelStates,
+} from "./SidePanels";
 
 const states = (left: Partial<SidePanelStates["left"]>, right: Partial<SidePanelStates["right"]> = {}) => ({
   left: { pinned: false, peek: false, ...left },
@@ -76,5 +82,24 @@ describe("how much of a canvas the floating panels cover", () => {
 
   it("ignores collapsed panels that have no size", () => {
     expect(occludedInsets(canvas, [{ edge: "left", rect: rect(0, 0, 0, 0) }])).toEqual({ left: 0, right: 0 });
+  });
+});
+
+describe("keeping a peeking panel open while its context menu is open", () => {
+  it("holds peek while a context menu trigger inside the panel is open", () => {
+    const panel = document.createElement("div");
+    panel.dataset.pgSidePanel = "left";
+    const trigger = document.createElement("div");
+    trigger.dataset.slot = "context-menu-trigger";
+    trigger.dataset.state = "open";
+    panel.append(trigger);
+    document.body.append(panel);
+    try {
+      expect(isPeekHeld("left")).toBe(true);
+      trigger.dataset.state = "closed";
+      expect(isPeekHeld("left")).toBe(false);
+    } finally {
+      panel.remove();
+    }
   });
 });

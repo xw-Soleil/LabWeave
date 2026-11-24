@@ -12,6 +12,7 @@ import {
 } from "./ResearchWorkspace";
 import { checkWorkspaceName, RESEARCH_FILES_CHANGED_EVENT, ResearchFolder } from "@/core/research/ResearchFolder";
 import { onResearchEvent } from "@/core/research/ResearchShell";
+import { flushActivityLog } from "./ActivityLog";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import {
   decidePanelToggle,
@@ -274,6 +275,8 @@ export async function switchResearchProject(path: string, openPath?: string, rem
       if (path && !(await exists(path))) throw new Error(t("projectTree.missing"));
       if (path) await readDir(path);
       if (openPath && !(await exists(openPath))) throw new Error(t("projectTree.boardMissing", { path: openPath }));
+      // 换项目前，把这个项目里还攒着的活动记录写进它自己的文件夹
+      await flushActivityLog();
       persistResearchSession();
       const data = await loadResearchWorkspace();
       const next = activeResearchWorkspace(data).projects.find(

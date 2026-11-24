@@ -1,5 +1,6 @@
 import { Dialog } from "@/components/ui/dialog";
 import { Project } from "@/core/Project";
+import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 
 import { ControllerClass } from "@/core/service/controlService/controller/ControllerClass";
 import { Section } from "@/core/stage/stageObject/entity/Section";
@@ -24,6 +25,9 @@ export class ControllerSectionEditClass extends ControllerClass {
       return;
     }
     const worldLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    if (findEndpointHandle(this.project, worldLocation)) {
+      return;
+    }
     const clickedEntity = this.project.stageManager.findEntityByLocation(worldLocation);
     if (clickedEntity instanceof Section && this.project.sectionMethods.isSectionBigTitleActive(clickedEntity)) {
       this.editSectionTitle(clickedEntity);

@@ -1026,7 +1026,9 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 测试：`FileCardRenderer.test.ts` 新增 3 条，`FileCardContent.test.ts` 新增 3 条。
 - 实测（开发版）：把 `测试白板2` 里一张旧的摘录卡片放大到 200% 截了窗口，淡黄底、黄色竖线、原文接成一段、底下一行出处，都在卡片里。
 
-### 84. 补记：本机 AI 程序（ACP）接入（2026-11-05～11-06）
+### 84（main）. 补记：本机 AI 程序（ACP）接入（2026-11-05～11-06）
+
+（第 84～87 节有两份：这四节是 11-14 以后在 `main` 上记的，再往下是同一段时间在 `stage-summary` 上记的，合并时编号不改。）
 
 这一节是合并进主线时补写的，后续的改动见第 25、34、35 节。
 
@@ -1040,7 +1042,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 界面：设置 → AI 多了「AI 来源」和「本机 AI 程序」页（在终端中安装、登录，复制安装命令，手动指定位置）；AI 面板标题下面可以切换来源，输入框上方显示连接状态。
 - Codex、Claude Code 和它们的转接器都不打进安装包，由用户自己安装。
 
-### 85. 内测安装包：改名 LabWeave、版本号 0.1.0、本机签名、新图标（2026-11-14）
+### 85（main）. 内测安装包：改名 LabWeave、版本号 0.1.0、本机签名、新图标（2026-11-14）
 
 第一次打安装包发给内测的人。原来的名字「Research Workbench」、版本号 `4.2.6-alpha1` 和图标都是上游或早期留下的。
 
@@ -1059,16 +1061,389 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 没验证：没有跑打包（约定 AI 不跑 build）。安装包能不能打出来、签名后别人第一次打开看到什么提示、安装包版里「在终端中安装」能不能用、图标在程序坞里的样子，都要打包后手测。
 - 检查：Rust 测试 83 条通过（改完配置和图标后各编译一次）；`prettier --check` 通过。
 
-### 86. 分支链合回主线，主线改名 `main`（2026-11-14）
+### 86（main）. 分支链合回主线，主线改名 `main`（2026-11-14）
 
 - `zotero-sync`（`358ce69e`）已经包含原主线 `research-shell` 的全部提交，主线直接快进到它，一次并入了 `acp-local-agent` → `file-features` → `pdf-reader` → `literature-library` → `zotero-sync` 这条分支链上的 91 个提交。
 - GitHub 上的默认分支从 `research-shell` 改名为 `main`。以后新分支都从 `main` 拉，做完测过再合回 `main`，不再一条接一条往下套。
 - `.github/workflows/check.yml`：触发检查的分支从 `[research-shell, acp-local-agent]` 改成 `[main]`。
 
-### 87. Windows 安装程序不再改用户的 PATH（2026-11-15）
+### 87（main）. Windows 安装程序不再改用户的 PATH（2026-11-15）
 
 - 原来：上游留下的 `app/src-tauri/nsis/installer.nsh` 在安装后用 `setx` 把安装目录加进当前用户的 PATH，卸载时再用 `setx` 写回去。`setx` 会把超过 1024 个字符的值截断，PATH 长的电脑装一次就可能丢掉后面的条目。
 - 上游这样做是为了能在命令行里直接叫出程序。我们的安装包不带命令行入口，用不到。
 - 现在：删掉 `installer.nsh`，`app/src-tauri/tauri.conf.json` 里去掉 `bundle.windows.nsis.installerHooks`。安装和卸载都不再碰 PATH。
 - 还没有人装过 Windows 版，所以没有「旧版装过、卸载时要清 PATH」的情况。
 - 没验证：Windows 安装包还没打过，这一处只确认了配置能被读懂（Rust 测试编译通过）。
+
+### 84. 活动记录：项目里干了什么，程序自己记进 `.workbench/活动记录.jsonl`（2026-11-14）
+
+主线第 ① 步（任务书在方案仓库的 `主线-任务书.md`）。只写文件，没有界面。
+
+- 新文件 `app/src/core/research/ActivityLog.ts`：
+  - **记什么**：白板上加、改、删卡片（分组框也算）；从 PDF 发到白板的摘录；PDF 上加、改、删批注；笔记保存；文献库加论文；右键给卡片标「进展 / 问题 / 想法」。
+  - **怎么记**：比出来的。每次保存后把内容交给它，它和「上次记到哪」比，多了、改了、少了的各记一行。只挪位置、改大小、换颜色不记。剪切再粘贴会给卡片换编号：少掉的和多出来的内容一样，就当成同一张，不记。
+  - **什么时候写**：攒着，停手 2 分钟或最多 10 分钟写一批；关掉白板、切项目、关程序时立刻写。一张卡片打一段话中间存了很多回，只记最后的样子。
+  - **「上次记到哪」**存在 `.workbench/活动记录.状态.json`。程序崩了、别处改了白板文件，下次打开那块白板或那篇 PDF 时会补记；第一次见到一块白板只记下现状，不把已有的卡片算成新加。
+  - 每行的字段：`at`（时间，带时区）、`project`、`kind`、`where`（白板和卡片编号 / 文件、页、批注编号 / 文献库里的条目）、`title`、`text`（最多 300 字）、`more`。
+  - 写不成时只提示一次、攒着下次再写，不影响保存本身。
+- 挂上的地方：
+  - `app/src/core/Project.tsx`：`save()`、`saveAs()` 写盘成功后发一个 `saved` 事件，带上这次存盘的卡片数据。没人听时（命令行）什么也不发生。
+  - `app/src/core/research/DocumentTab.tsx`：批注读进来后、批注和笔记存成功后各一行。
+  - `app/src/core/research/Library.ts`：`createItem` 成功后一行。Zotero 同步写进来的论文不走这里，不记。
+  - `app/src/App.tsx`：启动时开始记；开着的白板变了就告诉记录模块；窗口销毁前把攒着的写掉（Mac 菜单的「退出」走的也是这一处）。
+  - `app/src/core/research/ResearchSession.ts`：换项目前把攒着的写进原项目。
+  - `app/src/components/context-menu-content.tsx`：选中卡片时右键多一项「标成… → 进展 / 问题 / 想法」。标记只记进活动记录，不改白板。
+- `app/src/core/research/AiSidecarBuilder.ts`：从 PDF 发上来的摘录卡片，文字版（`.ai.json`、`dump_workspace`）里的 `file` 多了 `page` 和 `annotation`，写明摘自哪一页、哪条批注。
+- 这一版不记：连线、卡片进出分组；是用户改的还是 AI 改的。
+- 测试：新增 `ActivityLog.test.ts` 18 条。
+- 实测（从这个工作树启动开发版，用临时代码在一块白板上加、改、删一张卡片）：第一次只写了「记到哪」（946 字节，4 张已有卡片），没有记录；之后三次保存各追加一行（`card.add`、`card.edit`、`card.delete`），白板恢复原样。批注、笔记、文献库、右键标记、两分钟定时和退出时写盘这几条只有单元测试，没有在真程序里跑。
+
+### 85. 快照：项目里每块白板留一份；画布上「自上次以来」（2026-11-14）
+
+主线第 ② 步。
+
+- 新文件 `app/src/core/research/Snapshot.ts`：
+  - 快照放在 `项目文件夹/.workbench/快照/`。一次快照一个文件夹（名字是「日期 时分」），里面是每块白板拿掉图片和缩略图后的文件、它的文字版（`.ai.json`），和一份 `清单.json`（什么时候拍、为什么拍、每块白板几张卡片、每个图片附件对应哪个图片文件）。
+  - 图片统一放在 `快照/图片/`，文件名是内容的 SHA-256。同一张图只存一份：粘贴出来的同一张图附件编号不同，也认得出；以前的快照存过的不再写。
+  - 清单最后写，没有清单的文件夹当作没拍完，不算数。
+  - `joinBoard` 能把拆开的白板和图片拼回完整的白板文件（这次只做对比，界面上还不能打开旧快照）。
+  - 开着的白板用当前内容（哪怕还没存），没开的读文件。
+  - 自动拍：程序启动 20 秒后、之后每 6 小时、每次换项目后各查一次。从没拍过、或者最近一份超过 7 天，而且白板和上一份比有变化，就拍一份。项目里一张卡片都没有时不拍第一份。
+- 新文件 `app/src/core/research/SnapshotDiff.ts`：拿现在的白板和最近一份快照的文字版比，在画布上标出来——新加的卡片描一圈绿边，改过的右上角一个橙色小点，删掉的在原位置留一个淡影和标题。「改没改」和活动记录用同一个标准（只看内容，挪位置不算；剪切再粘贴的不算新加和删除）。白板在改的时候最多每半秒重新比一次。
+- 新文件 `app/src/core/research/SinceLastToggle.tsx`：白板左下角状态条上多了两个按钮。「自上次以来」是开关，开着时写着「新 n · 改 n · 删 n」；相机是「现在拍一份快照」。还没有快照时开关是灰的。草稿和研究文件夹外临时打开的白板不显示这两个按钮。
+- 接上的地方：`app/src/core/render/canvas2d/renderer.tsx`（画完卡片后加一步）、`app/src/components/docked-area.tsx`（状态条里放按钮）、`app/src/App.tsx`（启动自动拍的定时检查）。
+- `app/src/core/research/ActivityLog.ts`：拍快照记一行 `snapshot`；把「卡片指纹」拆成 `sidecarItems`，对比和记录共用。
+- 顺手修：`app/src/sub/FileManagerWindow.tsx` 改名结束后把焦点还给那一行时，如果用户已经点进了别的输入框就不抢。原来在机器忙的时候，紧接着开的改名框会被这一下弄得立刻失焦、当场确认；这条在整套测试里偶尔失败。测试里等输入框出现再往下走。
+- 测试：新增 `Snapshot.test.ts` 9 条、`SnapshotDiff.test.ts` 6 条。
+- 实测（从这个工作树启动开发版，用临时代码跑）：两块白板的项目拍一份 157 毫秒；2.97 MB 的白板文件拆出来是 4 KB 的白板文件加图片，四个图片附件里两个内容相同、只存了一份（图片共 1.8 MB）；紧接着再拍一份只多了约 11 KB。加一张、改一张、删一张后打开对比，数字是「新 1 · 改 1 · 删 1」，状态条上显示的也是这个。画布上三种标记的样子没截到图（当时窗口没露出来），自动拍和两个按钮的点按也没在真程序里试。
+
+### 86. 给 AI 的「怎么做汇报」说明和五个只读工具（2026-11-15）
+
+主线第 ③ 步。
+
+- 新文件 `app/src/core/research/ReportGuide.ts`：一份「怎么写阶段小结」的说明（先取哪些材料、报告分哪四节、出处链接怎么带、没有记录的不写）。平时不放进系统说明，AI 要写小结时通过工具来取。另有一句提示 `REPORT_GUIDE_HINT`（「写小结、周报、汇报前先调用 read_report_guide」），程序自带的 AI（`AIEngine.tsx` 的 `RESEARCH_ASSISTANT_GUIDE`，接着的本机 Claude Code、Codex 也用它）和 MCP 的说明（`cli/ProjectGraphMcpServer.ts`）各放了这一句，是同一个常量。
+- 工具目录（`BuiltInToolRegistry.ts`、`BuiltInToolExecutors.tsx`）加了五个只读工具，自带 AI 和 MCP 都能用，工具总数 36 → 41：
+  - `read_report_guide`：取上面那份说明。
+  - `read_activity_log`：读一段时间的活动记录（`days`，或 `since`、`until`；都不填是最近 7 天），可以按种类筛。按时间排好，带各种活动的条数、记录从哪天开始、每条能点回原处的链接；一次最多 300 条，读不完时告诉从哪接着读。
+  - `list_snapshots`：列出项目里的快照。
+  - `compare_snapshots`：比两份快照，或一份快照和现在。每块白板新加、改过、删掉的卡片（改过的带原来的样子），新连上和断开的连线；白板改了名认得出来；读不了的白板单独标出来。「改没改」和活动记录、画布上的「自上次以来」是同一个标准。
+  - `read_annotations`：读一篇 PDF 上自己划的批注；不指定时列出哪些 PDF 有批注、各几条。
+- 新文件 `app/src/core/research/ReportTools.ts`：这几个工具背后的逻辑，以及链接的写法（`rwb://open?project=…&path=…&target=…` 等四种；中文不转码，空格、括号这些会截断 Markdown 链接的字符转码）。链接点了能跳转是第 ④ 步的事。
+- 新文件 `app/src/core/research/ProjectRecord.ts`：把活动记录和快照「在盘上是什么样、怎么读」的那部分从 `ActivityLog.ts`、`Snapshot.ts` 里挪出来（原样挪，两个文件照旧导出这些名字）。原因：命令行（外部 AI 走 MCP、程序没开时）也要读这些文件，而那两个文件引着界面和桌面端接口，命令行里带不进去。
+- 这些工具只通过白板自带的文件接口读 `项目文件夹/.workbench/` 下的文件，所以程序没开时也能用。一处例外：文献库里 PDF 的批注存在程序数据目录里，只有桌面端读得到；程序没开时 `read_annotations` 退一步，给出活动记录里记下的那部分（每条开头 300 字），并标明 `partial`。
+- 测试：新增 `ReportTools.test.ts` 15 条；`cli/ProjectGraphCli.test.ts` 加一条真的起命令行、对一块没打开的白板把这几个工具各调一遍；四组写死工具名单的测试和那条逐字核对系统说明的测试跟着改。
+- 实测（不经过模型，在本机起 MCP 服务直接调）：程序没开时和程序开着时（调用转进程序里执行）各调了一遍五个工具，对的是一个真项目：读到活动记录、3 份快照、快照和现在的差别（新加 2 张卡片、新连 2 条线）、一篇 PDF 的 3 条批注；程序开着时读文献库里一篇 PDF 的批注走的是程序的批注接口，没有报错。没有让真的模型来调，AI 会不会照说明去用这些工具要手测。
+
+### 87. 阶段小结：一键让 AI 写报告存进「我的进展」，报告里的链接能跳，再转成 PPT（2026-11-15）
+
+主线第 ④ 步。
+
+- 新文件 `app/src/core/research/StageSummary.ts`：
+  - 默认范围：从上一次小结写到的地方（活动记录里最后一条 `summary`）到现在；没做过小结就从最早的记录；没有记录是 7 天前。
+  - 开始时先把攒着没写的活动落盘、拍一份快照（原因记成 `summary`），挑一份快照做对比（范围开头之前最近的一份，没有就用范围里最早的），然后把一段话交给 AI 面板发出去。这段话第一行是「【阶段小结】起 ~ 止」，后面写明先调 `read_report_guide`、读哪段活动记录、比哪两份快照。
+  - AI 的回答存成 `我的进展/日期 阶段小结.md`：去掉标题前的客套话、代码块外壳和模型自己写的属性，最前面换成程序填的属性（类型、日期、范围、项目、快照）。同一份再存一次不会多出文件；同一天的第二份文件名加序号。存下来时在活动记录里记一行 `summary`（带范围和快照），下一次小结从这里接着算。
+  - 「我的进展」默认是项目文件夹同一级的文件夹，新设置项 `progressFolderPath` 可以改（设置 → 第一页）；第一次存报告时弹窗问一次。
+  - 出 PPT：把一段带着报告路径的话（「【出 PPT】路径」）发给 AI，让它把报告改写成一页一页的提纲（JSON）；程序把提纲转成 `.pptx` 放在报告旁边。提纲里指定了卡片的页，用那张卡片的截图当配图（只能截 AI 面板所在那块白板上的卡片）。只往「我的进展」里现成的报告旁边写。
+- 新文件 `app/src/core/research/SlidesExport.ts`：提纲转 `.pptx`。没有加库，用程序里已有的 zip.js 按 Office 的文件格式拼（一个母版、一个空白版式、一套主题，每页一个标题框、一个要点框、可选一张图）。
+- 新文件 `app/src/core/research/StageSummaryPanel.tsx`：竖栏按钮弹出来的那一小块（看默认范围、改起止日期、开始写），和 AI 回答下面的按钮（报告下面是「存进我的进展」「出 PPT」，提纲下面是「转成 PPT 文件」）。AI 回答完时自动存报告并在标签页里打开、自动转 PPT；回答不像一份写完的报告（被停掉、报错）时不自动存。
+- `app/src/components/activity-rail.tsx`：竖栏多一个「阶段小结」按钮，没开白板时是灰的。
+- `app/src/sub/AIWindow.tsx`：接收要发的话（会话读好、不在回答中时直接发，发不了就放进输入框并提示）；回答完成时通知上面的逻辑；回答下面放按钮。
+- 新文件 `app/src/core/research/ReportLinks.ts`：打开 `rwb://open?project=…&path=…` 这类链接——白板上的卡片（打开白板、把镜头对过去）、PDF 的页和批注、文献库里的 PDF、笔记。项目按文件夹名找，认项目列表里别的项目；路径不能跑到项目、文献库、「我的进展」外面；卡片已经删掉时提示一句，不报错。白板标签页刚切到前面时画布宽高还是 0，要等它排好再定位（否则算出 NaN，视野被重置）。
+- 补上链接原来的三个缺口：
+  - 笔记里点 `rwb://` 没反应：`app/src/core/research/DocumentView.tsx` 的阅读模式和实时预览都接上了。
+  - 同一个网址一次运行只处理一回：`app/src/core/service/dataFileService/DeepLinkHandler.ts` 改成只挡 1 秒内的重复（系统偶尔连递两次），隔一会儿再点照常打开。
+  - 只会打开白板：系统递进来的链接也先交给 `ReportLinks`，PDF、笔记、文献库、别的项目都能开。
+- 新文件 `app/src/core/research/ReportLinkMarkdown.tsx`：AI 面板里的回答也会带这些链接。面板渲染 Markdown 用的 Streamdown 默认只认 http 这类协议，`rwb://` 会被去掉、显示成「[blocked]」，所以放行了这个协议，并换掉链接的部件：`rwb://` 在程序里跳；网页链接先弹窗确认，再用系统浏览器打开（原来是组件自带的确认框）。
+- `app/src/core/research/ProjectRecord.ts`、`ActivityLog.ts`：活动种类加 `summary`；`app/src/core/Tab.tsx` 加一个只读的 `looping`（截图会把白板的画面循环停掉，原来在跑的要接着跑）。
+- 修了一个原来就有的问题（`aiEngine/BuiltInToolRegistry.ts`）：工具的执行代码是第一次调用时才加载的，原来每次调用各自发起一次加载。模型一步里并行调几个工具时，桌面端（WebKit）会让后几次在模块还没执行完时就拿到它，报「Cannot access uninitialized variable」——每次启动后的第一批并行调用，除了第一个全失败。改成只加载一次、大家等同一个。
+- 文案：`research.stageSummary.*`、`research.reportLink.*`、`research.shell.rail.summary*`、`research.ai.link.confirm`、`settings.progressFolderPath`。
+- 测试：新增 `StageSummary.test.ts` 15 条、`SlidesExport.test.ts` 3 条、`ReportLinks.test.ts` 11 条、`ReportLinkMarkdown.test.tsx` 2 条，`ReportTools.test.ts` 加 1 条。
+- 实测（从这个工作树启动开发版，用一套隔离的程序数据目录、一个临时项目和一个本机的假模型服务，没有用到真的密钥和真的项目）：从「开始写」到报告存好并打开约 0.4 秒（假模型立刻回话）；模型一步里并行调了五个工具，修好后都拿到了结果；报告的属性、正文、链接在标签页里都对，AI 面板里链接不再是「[blocked]」；白板不在前面时点卡片链接，白板切到前面、镜头对到卡片上；点已删卡片的链接提示「这张卡片已经不在了」；点笔记链接打开笔记；出 PPT 约 2 秒，文件里 4 页、2 张卡片截图，系统预览（QuickLook）能渲染。没有在 PowerPoint、Keynote 里打开过；真的模型写得怎么样、第一次问放哪的弹窗、竖栏按钮和日期框的点按都没试。
+
+### 88. 快照加「节点」：对比永远和上一个节点比（2026-11-20）
+
+主线第 ⑤ 步（第二版的第一步）。
+
+- `app/src/core/research/ProjectRecord.ts`：
+  - 快照清单多一段可选的节点信息 `node`：类型（`meeting` 组会、`weekly` 周报、`review` 自己复盘）、显示用的名字、`since`（这个节点和哪份快照比的）、用户的原话、要讲的和不讲的。拍的原因多一种 `node`。没有这一段的旧清单照常能读。
+  - 新函数：`isNode`（是不是节点；加节点信息之前做阶段小结时拍的 `summary` 也算）、`baselineOf`（现在该和哪份比：最近的节点，一个节点都没有时用最早的那份）、`sinceOf`（一个节点当初和哪份比）、`nodeSince`（定格一个节点时它该和哪份比：同一天已经定格过同一种类型的，照抄那一次的基准，所以重新定格不推基准）、`replacedNodes`（被同一天同类型的后一次定格顶替掉的）。
+- `app/src/core/research/Snapshot.ts`：
+  - `writeSnapshot`、`takeSnapshot` 能带节点信息，「和哪份比」由程序算好一起写进清单；新增 `takeNode`、`nodeTitle`、`currentBaseline`。
+  - 定格节点时如果正好有一份快照在拍（比如自动拍的），原来会直接拿那一份当结果，现在等它拍完再拍，免得节点信息丢掉。
+  - 活动记录里 `snapshot` 那一行，节点多记一个名字。
+- `app/src/core/research/StageSummary.ts`：做阶段小结时拍的那份改成定格一个「组会」节点；交给 AI 的对比起点改用节点记下的 `since`。去掉按日期范围挑快照的 `baselineSnapshot`。
+- `app/src/core/research/SinceLastToggle.tsx`：白板状态条上的开关改叫「自上次小结以来」，和上一个节点比，鼠标移上去写明是和哪个节点比；一次小结都没做过时和最早的那份快照比。相机拍的只是留底，不换基准，提示里写明了。
+- `app/src/core/research/ReportTools.ts`、`aiEngine/BuiltInToolRegistry.ts`、`ReportGuide.ts`：
+  - `list_snapshots` 的返回里，节点多带 `node`（类型、名字、`since`、原话、`replacedBy`），另给 `baseline`（现在的基准）。
+  - `compare_snapshots` 不填 `from` 时：`to` 是节点就用它当初比的那一份，不是节点用前一份；`to` 也不填就用上一个节点（原来是最近一份）。返回里的 `from`、`to` 是节点时带上名字。
+  - 给 AI 的说明里加两句：用户说「自上次小结以来」时 `from` 用 `baseline`；节点上的原话可以当材料用。
+- 文案：`research.snapshot.since`、`none`、`takeHint` 改了，`sinceHint` 拆成 `sinceNodeHint`、`sinceFirstHint`；新增 `research.stageNode.types.*`。
+- 测试：`Snapshot.test.ts` 加 4 条，`ReportTools.test.ts` 加 2 条；`StageSummary.test.ts` 去掉 `baselineSnapshot` 的 1 条、改 1 条。
+
+### 89. 阶段小结改成在画布上整理：没变的卡片压暗，角落一张素材卡片挑要讲的（2026-11-20）
+
+主线第 ⑥ 步。
+
+- 新文件 `app/src/core/research/StageReview.ts`：整理的逻辑。
+  - 进入整理时定好和哪份快照比（今天已经定格过同一种类型的节点，就接着改那一次：基准和它一样，上次去掉的、敲的原话带回来）。
+  - 列出上个节点以来的事：这块白板上新加的、改过的、右键标记过的卡片（标记过的排最前）；别的白板有变化的各一条；从活动记录里把每篇论文归并成一条（几条批注、几段摘录）、每篇改过的笔记一条。
+  - 勾选：默认全要，去掉的记在 `dropped` 里；「只讲选中的」「不讲选中的」照画布上选中的卡片来。
+  - 定格：把类型、原话、要讲的和不讲的写进节点；「只定格」不调 AI，「定格并生成汇报」定格后接到现有的那条路（AI 在对话面板里写）。
+- 新文件 `app/src/core/research/StageReviewTray.tsx`：浮在白板右下角的素材卡片。清单、勾选、两个按选区操作的按钮、原话输入框、节点类型、两个定格按钮。它不拦画布，白板改了清单跟着变。
+- `app/src/core/research/SnapshotDiff.ts`：整理时多两种画法——没变的卡片盖一层半透明的背景色（压暗），去掉不讲的也压暗并描一圈灰边；右键标记过的不压。分组框不压（会连里面的新卡片一起盖住）。对外多给 `sinceLastLive`（现在比出来的差别和白板上的卡片）、`setSinceLastDropped`。
+- `app/src/components/activity-rail.tsx`：竖栏的「阶段小结」按钮不再弹选日期的那一小块，点了直接进整理，再点一次退出；正在看 PDF、笔记时会把项目里开着的白板切到前面。
+- `app/src/components/docked-area.tsx`：白板区域挂上素材卡片，右侧栏固定显示时让开它。
+- `app/src/core/research/SinceLastToggle.tsx`：整理时状态条上的开关不能点（画布上的标记归整理管）。
+- `app/src/core/research/StageSummary.ts`、`StageSummaryPanel.tsx`：`startStageSummary` 能带上整理定好的节点和去掉的条目；给 AI 的话里多两行（用户的原话、不要写进报告的条目）。去掉选日期的 `StageSummaryForm`。
+- `app/src/core/research/ProjectRecord.ts`：加 `nodeOnDay`（某一天已经定格过的同类型节点）。
+- 文案：新增 `research.stageReview.*`；去掉 `research.stageSummary` 里选日期用的 10 条。
+- 测试：新增 `StageReview.test.ts` 9 条；`SnapshotDiff.test.ts` 加 1 条、改 1 条；`StageSummary.test.ts` 加 1 条。
+- 实测：用一套隔离的程序数据和临时项目启动了开发版，用临时代码（已删）加了三张卡片、改了一张、进入整理，程序里算出的基准和别处的条目是对的。没有截到画面：开发版的窗口被别的窗口盖住时页面不重画，截到的是旧画面。压暗、变灰、素材卡片的样子都没亲眼看过。
+
+### 90. 阶段小结的汇报换成同伴的引擎：照勾选的材料在后台生成报告和 PPT，放进项目的「汇报」文件夹（2026-11-20）
+
+主线第 ⑦ 步。汇报引擎出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号），只搬了引擎这一部分。
+
+- 新文件 `app/src/core/research/ResearchReport.ts`（从他的同名文件搬来）：
+  - 留下：给材料编号（S1、S2……，图片 I1、I2……）、调设置里配好的 AI、核对 AI 引用的编号（不对就让它重来一次）、草稿存进 `.workbench/report-jobs/`、导出、拿草稿重新导出。
+  - 去掉：读周记录、读他那套旧快照的两条路。材料改成由调用方一条条加进来（`collectReportMaterials`）。
+  - 改了：汇报放进 `项目/汇报/节点名/`（原来是带时间戳的文件夹）；同一个节点再生成一次，文件名加序号（`报告-2.md`、`汇报-2.pptx`、`素材-2/`），不盖掉上一份；`来源.json` 分开列用上的和没用上的材料；给 AI 的话换成针对节点小结的（没勾的不写、材料里没有的不编、打算不能写成做完了）；等 AI 的时间从 2 分钟放宽到 4 分钟。
+- 新文件 `app/src/core/research/ResearchReportExport.ts`（从他的同名文件搬来）：生成 `.pptx` 的部分没动。报告的 Markdown 改了三处：开头加属性（类型、日期、范围、项目、快照）；每节后面的出处写成能点的链接（卡片、批注是 `rwb://`，笔记是相对路径）；放图的文件夹名由调用方给。
+- 新文件 `app/src/core/research/ReportTask.tsx`（任务状态和小条取自他的 `ResearchProgressDialog.tsx`，对话框没搬）：汇报在后台生成，窗口底部正中一个小条显示进度，能取消；生成完能打开报告、PPT、文件夹；只是导出没成时能重新导出。生成完报告自动在标签页里打开。
+- 新文件 `app/src/core/research/StageReport.ts`：把整理时勾选的条目编成材料，定格后把任务跑起来。
+  - 材料的顺序：用户敲的原话 → 这块白板勾选的卡片（文字、备注、所在分组、来源文件；右键标记过的标签前面带【进展】【问题】【想法】）→ 勾选的卡片之间的连线 → 别的白板（新加、改过的卡片）→ 论文在上个节点以后动过的批注（每篇最多 40 条）→ 笔记正文。
+  - 配图：带图的卡片（图片卡片、PDF 框选的摘录）用原图；一个分组里有两张以上要讲的，给这个分组截一张图（最多 6 张）。截图在退出整理之后截，题板上的压暗和描边不会截进去。
+  - AI 接口没配好、已经有一份在生成、什么都没勾也没敲话时，不定格，直接提示。
+- `app/src/core/research/StageReview.ts`、`StageReviewTray.tsx`：「定格并生成汇报」接到上面这条路；整理的状态里多留一份别的白板比出来的细节；有一份汇报正在生成时这个按钮不能点。
+- 删掉旧的那条路：`StageSummary.ts`、`StageSummaryPanel.tsx`、`SlidesExport.ts` 和它们的测试；`sub/AIWindow.tsx` 里 AI 回答下面的「存进我的进展」「出 PPT」按钮和自动存报告；设置里「『我的进展』放哪」这一项（`progressFolderPath`）。
+- `app/src/core/research/ReportLinks.ts`：不再读那个设置项；项目旁边的「我的进展」文件夹仍然认，第一版存下的旧报告和旧记录里的链接照样点得开。
+- `app/src/core/research/ActivityLog.ts`：`汇报/` 里的文件保存不再记成「改了笔记」；生成一份汇报时记一行 `summary`，路径改成相对项目文件夹。
+- `app/src/main.tsx`：挂上汇报的小条。
+- 文案：新增 `research.report.*`；`research.stageSummary` 只留标题和「没选项目」；去掉 `settings.progressFolderPath`。
+- 测试：新增 `ResearchReport.test.ts` 12 条、`ResearchReportExport.test.ts` 5 条、`StageReport.test.ts` 8 条、`ReportTask.test.ts` 5 条；`StageReview.test.ts` 换 1 条、改 1 条；随旧文件删掉 18 条。
+- 没有调真的模型，也没有在开发版里走过这条路，只有单元测试。
+
+### 91. 在画布上回看历史：把某个节点定格时的白板原样打开，标出它比再前一个节点变了什么（2026-11-21）
+
+主线第 ⑧a 步。
+
+- 新文件 `app/src/core/research/SnapshotBoard.ts`：项目有哪些节点（同一天同一种类型定格过几次的只算最后一次）、一个节点当初是和哪份快照比的（记着的那份不在了就往前找）、把快照里的一块白板拼回完整的白板文件（图片装回去）。
+- 新文件 `app/src/core/research/LookbackBoard.ts`：
+  - `LookbackBoard` 是一块只读的白板，继承自普通白板。地址用草稿的写法，所以程序里对草稿的那些保护照样成立：不自动保存、不备份、不进活动记录和快照、切换项目时关掉。
+  - 另外三样：永远不会变成「未保存」（拖了、改了，关标签和关程序都不问要不要存）；「保存」「另存为」只提示这是回看；工作区编号换一个新的，AI 对话记录不和真的那块白板共用。
+  - `openLookback` 打开回看：不指定节点就是最近的那个（也就是「上上次到上次」）；从一个回看切到另一个时镜头留在原处，旧的标签关掉。`leaveLookback` 关掉回看、把真的那块白板切到前面。
+- 新文件 `app/src/core/research/NodeStrip.tsx`：回看时白板上方的节点条。从左到右是每个节点，最右边是「现在」；左右箭头切节点；下面一行写和谁比、新加改过删掉各几张、当时敲的原话；那个节点出过汇报就有「打开汇报」。
+- `app/src/core/research/SnapshotDiff.ts`：加 `showSnapshotDiff`——拿两份快照的文字版直接比，不跟着白板的改动重新比（回看时白板是静止的；现算的话文件卡片的路径对不上）。画法没变。
+- `app/src/core/research/SinceLastToggle.tsx`：状态条上加「回看」按钮，做过小结才亮，整理时不能点。
+- `app/src/core/Project.tsx`：加一个 `tabName`（标签上不照「未命名 N」或文件名写的白板在这里给名字），普通白板不给。`App.tsx`、`ProjectTabs.tsx`、`core/research/BoardPicker.ts` 三处取名字的地方先看它。
+- `app/src/core/research/BoardPicker.ts`：「发到哪块白板」的列表里不列回看白板（发过去存不下来）。
+- `app/src/components/activity-rail.tsx`：正在回看时点「阶段小结」，用项目里开着的真白板，不在回看白板上整理。
+- `app/src/components/docked-area.tsx`：白板区域挂上节点条。
+- 文案：新增 `research.lookback.*`、`research.snapshot.errors.boardMissing`、`imageMissing`。
+- 测试：新增 `SnapshotBoard.test.ts` 5 条、`LookbackBoard.test.ts` 7 条；`SnapshotDiff.test.ts` 加 1 条。`LookbackBoard.test.ts` 里的白板基类是假的，只验证了这一层自己的逻辑。
+- 没有在开发版里打开过，节点条和回看的画面都没看过。
+
+### 92. 回看的节点条和阶段小结的素材卡片让开显示着的右侧栏（2026-11-21）
+
+在开发版里看回看历史时发现的：窗口窄的时候，节点条的右半截被右边的 AI 面板盖住。
+
+- `app/src/components/docked-area.tsx`：右侧栏只要显示着（固定住的、临时弹出来的都算），浮在白板上的两个小件就让开它的宽度。原来只在「固定住」时让，而白板上的侧栏不管固不固定都是盖在画布上的。
+- `app/src/core/research/NodeStrip.tsx`：节点条不再按整块白板居中，改成在让开左右侧栏以后剩下的那一段里居中。
+- 阶段小结的素材卡片（`StageReviewTray`）用的是同一个让位的数，一起改了。
+- 实测：用隔离的程序数据启动开发版，临时代码（已删）定格一个节点、打开回看、切到更早的节点、回到现在，都通；改之前和改之后各截了图。
+
+### 93. 节点记录和便签：手填的进展、待办、问题、下一步，定格时跟着节点封存（2026-11-21）
+
+主线第 ⑧b 步。解析和改写 Markdown 的部分、便签的外壳出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号）。
+
+- 新文件 `app/src/core/research/NodeRecord.ts`（从他的 `WeeklyProgress.ts` 搬来）：
+  - 记录存成 Markdown：`项目/进展记录/进行中.md` 是上个节点以后记的，定格时封存成 `进展记录/节点名.md`。分四节：进展、待办、问题与决定、下一步。
+  - 留下：把 Markdown 读成一条条事项（勾没勾、标题、详细内容、关联的链接、图片）；加一条、勾一条、改一条时只动那一条占的几行，别的字、别的节、开头的属性、换行方式原样留着；链接只认项目里面的文件。
+  - 去掉：按周分文件的那一套；经过 Rust 后端的读写（改成前端直接读写）。
+  - 改了：存之前再读一遍文件，和当初读到的不一样（别处改过、在 Obsidian 里改过）就不覆盖；「问题」也带勾选框；打开关联的白板卡片改走报告链接的那条路。
+  - 新加 `sealMarkdown`、`sealNodeRecord`：定格时把「进行中」封存进节点，没勾的待办、没勾的问题带到新的「进行中」，「下一步」里的变成待办；同一个节点再定格，按事项逐条补（认同一条看内容），不丢不重复；不属于哪一条的零散文字也留在封存的那份里。
+- 新文件 `app/src/core/research/NodeRecordFloat.tsx`：便签。能拖、能收起、位置按项目记着（这部分出自他的事项浮窗）；顶上一个输入框，回车记一条，能选记成待办、进展、问题还是下一步，能顺手关联眼前的卡片、论文页、笔记；下面列出待办和各节最近几条，点勾完成；收起时一行写着几件待办、距上次小结几天。
+- `app/src/core/research/StageReview.ts`：加 `freezeNode`——拍节点快照以后封存手填的记录；「只定格」和「定格并生成汇报」都走它。快照拍好了、记录没封存成时抛 `nodeRecord.sealFailed`，整理不退出，再定格一次会补上。活动记录里 `进展记录/` 下的保存不再列成「改过的笔记」。
+- `app/src/core/research/StageReport.ts`、`StageReviewTray.tsx`：改用 `freezeNode`；封存没成时单独提示。
+- `app/src/components/activity-rail.tsx`：竖栏加便签的开关。`app/src/App.tsx`：挂上便签。
+- 文案：新增 `research.nodeRecord.*`。
+- 测试：新增 `NodeRecord.test.ts` 17 条；`StageReview.test.ts` 加 1 条、改 2 条；`StageReport.test.ts` 改 1 条。他那 630 行测试里改条目、改链接和图片的部分这一步没搬，留到记录面板（⑧c）用到这些功能时再搬。
+- 便签的界面没有在开发版里看过。
+
+### 94. 写汇报时手填的记录和自动记的两份都用，对不上的地方单独列出来（2026-11-21）
+
+主线第 ⑧d 步。
+
+- `app/src/core/research/StageReview.ts`、`StageReviewTray.tsx`：整理时素材卡片多一组「你记的」，列出这个节点定格以后会封存进去的手记（「进行中」里的，加上今天同一个节点已经封存过的），默认全勾，能去掉；去掉的和卡片一样记进节点，下次进来还认得（编号照内容算）。整理着的时候在便签里又记了一条，这一组跟着变。
+- `app/src/core/research/NodeRecord.ts`：加 `previewSealed`（不写文件，只算出这个节点封存以后会有哪些事项）；认「同一条」的办法对外可用。
+- `app/src/core/research/StageReport.ts`：勾着的手记编进材料，排在用户的原话后面，标签以【手记·进展】【手记·待办】这样开头，内容里写明勾没勾；出处指回封存的那份记录。取材料时程序自己查一样：手记里关联的卡片已经不在这块白板上、关联的文件找不到了，记成一处「对不上」。
+- `app/src/core/research/ResearchReport.ts`：
+  - 草稿格式加一栏 `conflicts`（哪里对不上、有关的材料编号）。给 AI 的话里写明：手记和别的材料对不上时不要自己挑一边写，放进这一栏；没有手记时这一栏给空。
+  - 新加 `settleConflicts` 核对这一栏：同时指到一条手记和一条别的材料的才算数，写进报告；只指到手记的、只指到别的材料的，不进正文，换成一句话放进待核对项；不存在的编号先去掉。这一栏写坏了不让整份草稿作废。
+  - `来源.json` 里多记一项 `conflicts`；只在「对不上」里用到的材料也算用上了。
+- `app/src/core/research/ResearchReportExport.ts`：报告在正文和「材料来源」之间多一节「两边对不上的地方」，每条后面跟着能点的出处；PPT 多一页。没有对不上的就没有这一节、这一页。
+- 文案：`research.stageReview.records`、`recordDone`。
+- 测试：`ResearchReport.test.ts` 加 3 条，`ResearchReportExport.test.ts` 加 2 条，`StageReport.test.ts` 加 2 条，`StageReview.test.ts` 加 1 条。
+- AI 找「对不上」找得准不准，没有用真模型试过。
+
+### 95. 在开发版里验便签和汇报时查出来的四处小问题（2026-11-21）
+
+用隔离的程序数据启动开发版，临时代码（已删）在便签的输入框里填字回车、点勾、进整理、点「定格并生成汇报」，AI 用的是本机的一个假接口。便签、封存、带到下一段、手记进汇报、「两边对不上的地方」都走通了，另查出下面四处：
+
+- `app/src/core/research/ReportTask.tsx`：汇报的小条原来在窗口底部正中，会压住白板状态条上的缩放按钮，窗口窄时还伸到右边的 AI 面板上。改成靠左、在状态条上面一行。
+- `app/src/core/research/NodeRecord.ts`：
+  - 关联当前内容时，选中了卡片的，链接的名字用卡片上的字（最多 30 个字），不再用白板的文件名。
+  - 事项没写标题时，自动提炼标题不把挂在行尾的链接名字算进去（原来会变成「对比了两种取法 演示白板.prg」）。
+  - 定格带到下一段时，同一句话记了两遍的只带一条。
+- 测试：`NodeRecord.test.ts` 加 1 条、补 1 处。
+
+### 96. 记录面板：看全、改一条、贴图、看以前的节点（2026-11-21）
+
+主线第 ⑧c 步。界面、改一条的做法、认图片格式和贴图的部分出自同伴 cleverfool-rnh 的 PR（xw-Soleil/LabWeave 第 1 号）里的 `WeeklyProgressPanel.tsx`（`WeeklyProgressDialog`）和 `WeeklyProgressMedia.ts`。
+
+- 新增 `app/src/core/research/NodeRecordPanel.tsx`：居中的窗口，分四节列出一段手填记录的全部事项。「进行中」那一段能加一条、改一条（标题、详细内容、关联的链接、图片）、勾完成；顶上切到以前的节点，看定格时封存的那一份，只能看。和同伴那一版不同的地方：
+  - 选哪一周换成选哪个节点；封存的不能在这里改（没有表单、没有勾选框、没有「改」）。
+  - 没有「AI 提炼标题」，没有从这里出汇报的按钮（汇报从「阶段小结」出）。
+  - 没自己写标题的事项，不往文件里写一个和内容一样的标题：加一条时标题和提炼出来的一样就不写；改内容时原来的标题是提炼的，就让它跟着新内容重新提炼。
+  - 文件在别处改过时：加一条会重读再加；勾一条会重读、提示再点一次；改一条存不进去，填的东西留着、提示复制出来重改。
+  - 同一段重读时先留着旧的，不闪；标题框和链接框里输入法选字的那一下回车不提交。
+- 新增 `app/src/core/research/NodeRecordMedia.ts`：事项里的图片。从电脑里选（一次最多 12 张，先把选中的都验过再开始存）、从剪贴板贴、出缩略图。图片存到 `进展记录/附件/<内容的指纹>.<后缀>`，同一张只存一份；本来就在项目文件夹里的不另存，直接链过去。只收 PNG、JPEG、WebP，单张不超过 8 MB、2500 万像素。同伴那边存图、读图走 Rust 命令，这里改成前端直接读写，没有新增 Rust 命令。
+- `app/src/core/research/NodeRecord.ts`：加 `hasOwnTitle`（这一条是不是自己写了标题）。
+- `app/src/core/research/NodeRecordFloat.tsx`：便签顶上加「查看全部」；点一条事项的字、点「N 张图」，在面板里打开并滚到那一条。面板的代码用到时才加载。
+- 文案：`research.nodeRecord.showAll`、`inspect`、`imageCount`、`panel.*`，`errors` 里加图片的六条。
+- 测试：`NodeRecordPanel.test.tsx`（新，15 条）、`NodeRecordMedia.test.ts`（新，10 条）；`NodeRecord.test.ts` 加 25 条，其中 23 条是照着同伴给 `WeeklyProgress.ts` 写的「改一条、加减链接和图片」那一组搬的。
+- 竖栏没有另加按钮：面板从便签上的「查看全部」进。
+- 界面没有在开发版里看过；剪贴板贴图、选图片的系统窗口、缩略图只在真程序里才走得到，单元测试里是假的。
+
+### 97. 在开发版里验记录面板时看出来的三处（2026-11-22）
+
+用隔离的程序数据启动开发版，临时代码（已删）点便签上的「查看全部」，在面板的表单里填字、点按钮、点铅笔、点勾选框、切下拉框，每步截窗口的图。功能都对；下面三处是看截图看出来的。
+
+- `app/src/core/research/NodeRecord.ts`：加 `displayRecordItem`，定面板里一条事项怎么显示。原来标题用提炼出来的短标题、下面再把全部内容列一遍，没自己写标题的事项等于同一句话显示两遍，行尾链接的名字还会在内容里和链接上各出现一次。现在：没写标题的，第一行当标题，其余几行是内容；只是用来挂链接的字（第一行行尾的链接名、整行只有链接名的行）不算内容。
+- `app/src/core/research/NodeRecordPanel.tsx`：
+  - 用上面这个显示规则。
+  - 打开时焦点落在面板自己身上，不再落在「看哪一段」的下拉框上（落在下拉框上，一按方向键就换了节点）；面板去掉外框线（原来焦点落到面板上时，整个窗口会出一圈蓝框）。
+  - 做完的待办挪到「进展」一格以后不再划掉，和别的进展一个样子；只有勾掉的问题划掉。
+- `app/src/core/research/NodeRecordFloat.tsx`：便签里同样只划掉勾掉的问题。
+- 测试：`NodeRecord.test.ts` 加 1 条，`NodeRecordPanel.test.tsx` 补 2 处。
+
+### 98. 文件侧栏里右键不再收起已展开的文件夹、不再弄丢右键菜单（2026-11-22）
+
+- `app/src/sub/FileManagerWindow.tsx`：
+  - 文件夹刷新（`version` 增加）时保留已读出来的条目，等新列表回来再替换，不再先清空成未加载状态——原来一清空就会把里面的子文件夹和文件行整批卸载重建，子文件夹的展开状态和刚弹出来的右键菜单宿主一起没了。
+  - 鼠标移进挂在 Portal 里的右键菜单、下拉菜单时，不再当成重新进入文件栏触发 3 秒自动刷新。
+- `app/src/core/research/SidePanels.ts`：左侧栏处于临时弹出状态时，面板里的右键菜单或下拉菜单开着（或者鼠标位置还在面板矩形内，哪怕模态菜单临时关掉了 `body` 的 `pointer-events`），不再在半秒后自动收回侧栏。
+- 测试：`FileManagerWindow.test.tsx` 加 1 条（展开多层文件夹后右键文件、右键子文件夹，移进菜单并触发刷新，文件夹保持展开、菜单不消失；全部收起和定位文件照常），`SidePanels.test.ts` 加 1 条。
+
+### 99. 白板里复制图片后再去别的软件复制新图片，粘贴时不再还贴旧图（2026-11-22）
+
+- `app/src/core/service/dataManageService/copyEngine/copyEngine.tsx`、`VirtualClipboard.tsx`：判断用户复制白板对象之后有没有在外部程序复制新内容时，不再只比对系统剪贴板里的纯文本，而是按粘贴时的同一顺序（文件列表 → 文字 → 图片像素摘要）给系统剪贴板算指纹并比对，读完图片立即释放句柄。白板内连续粘贴、跨白板粘贴、剪切后贴回、原位粘贴都不变；外部新复制了图片、文字或文件时都会自动清掉旧的虚拟剪贴板改贴新的。
+- 测试：`copyEngine.test.ts` 加 3 条（白板复制图 A → 连贴和跨板贴仍是图 A → 外部复制图 B → 贴出图 B；外部复制文字 → 贴出文字；外部复制文件 → 贴出文件）。
+
+### 100. 开着 PDF 标签时进出「回看」或切换节点不再先跳到 PDF（2026-11-22）
+
+- `app/src/core/TabWorkspace.tsx`、`app/src/core/research/LookbackBoard.ts`：
+  - 原来 `openLookback` 只把回看白板塞进 `tabsAtom` 就调 `TabWorkspace.focus`，等外层渲染后的 `useEffect` 再补进当前焦点所在的标签组：分屏看 PDF 发完摘录后焦点组还在 PDF 那一边时，回看会被塞进 PDF 所在的分屏组；切换回看节点关掉上一张回看时，新标签还没进组，组里当前标签会先回退到旁边的 PDF 标签。
+  - 原来 `leaveLookback` 先调 `await TabWorkspace.close` 再聚焦原白板，关标签的 500 毫秒等待期间组里会先激活旁边的 PDF 标签。
+  - 现在 `TabWorkspace.open` 支持紧挨指定标签前面插入同一标签组并立即切过去，`openLookback` 走这条路直接进原白板所在的组；`leaveLookback` 先把原白板聚焦到前面，再关闭回看标签。
+- 测试：`LookbackBoard.test.ts` 接入真实 `TabWorkspace` 与标签组状态，新增 1 条覆盖同组和左右分屏两种情形下进回看、切节点、退回原白板全过程不碰 PDF 标签。
+
+### 101. 关程序时不再逐个关标签卡顿，确认后立刻藏窗口并在后台收尾退出（2026-11-22）
+
+- 新增 `app/src/core/research/AppShutdown.ts`，改动 `app/src/App.tsx`、`app/src/core/TabWorkspace.tsx`、`app/src/core/service/dataFileService/AutoSaveBackupService.tsx`、`app/src/core/service/Settings.tsx`、`app/src/core/research/Snapshot.ts`、`app/src/core/research/NodeRecord.ts`、`app/src/core/research/NodeRecordMedia.ts`、`app/src/core/research/ResearchWorkspace.ts`：
+  - 原来 `onCloseRequested` 用循环逐个调 `await closeTab(tab)`，每个标签都要走 `TabWorkspace.close` 的 500 毫秒延迟并激活下一个标签重新渲染，开着多个标签时要看它们一个接一个慢吞吞关完；而且如果排在后面的笔记取消关闭，排在前面的标签已经被关掉了。
+  - 现在窗口显示着时先做完关闭前自动保存，并把所有未保存的白板、草稿、笔记和 PDF 批注一次性问完（任一处点取消或保存失败就原样留着，一个标签都不关）；确认关闭后先趁标签都在记下会话和窗口位置，随即调 `hide()` 让窗口立刻消失，再在后台等自动保存/备份、快照、便签与附件、活动记录、工作区与设置全部写完，调 `TabWorkspace.disposeAllForShutdown()` 一次性并行释放所有标签和工作区锁子进程，最后销毁窗口退出。
+- 测试：新增 `AppShutdown.test.ts`（2 条：6 个标签关闭时自动保存、记会话、先藏窗口、等后台快照和记录写完再并行销毁退出；未保存草稿或文档取消关闭时所有标签原封不动），`TabWorkspace.test.tsx` 加 1 条（包含半途关闭倒计时中的标签在内一次性零延迟并行销毁）。
+
+### 102. 论文里框出来的截图摘录卡片支持拖右下角调大小（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/FileCardNode.tsx`、`app/src/core/render/canvas2d/entityRenderer/FileCardRenderer.tsx`、`app/src/core/service/controlService/controller/concrete/ControllerEntityResize.tsx`、`utilsControl.tsx`：
+  - `FileCardNode` 实现 `ResizeAble`，仅对来自 PDF 的带图摘录卡片（`pdfPage > 0 && Boolean(attachmentId)`）开放 `canResize`，拖动右下角把手时按原长宽比等比缩放，短边最小停在 `imageMinSide`（60）；圈字的摘录卡片和普通 PDF / 图片 / 笔记文件卡片保持不可调大小。
+  - `FileCardRenderer` 在选中可调大小的带图摘录卡片时，照 `ImageNode` 的样式画出右下角缩放把手与斜向双箭头。
+  - `ControllerEntityResize` 与 `isClickedResizeRect` 统一通过 `isResizableEntity` 识别可调大小实体，并在松开鼠标且尺寸真有改动时调用 `historyManager.recordStep()`，让拖把手调大小可以撤销，也会触发自动保存把新尺寸写进 `.prg`；`ProjectRecord` 的卡片指纹本来就不含 `rect`，调大小不会算成内容改动。
+- 测试：`FileCardNode.test.ts` 加 2 条（带图摘录等比缩放与最小尺寸限制、其余文件卡片不可调；经 `ControllerEntityResize` 拖动后存盘保持、指纹不变、撤销恢复原尺寸），`FileCardRenderer.test.ts` 加 1 条（只有选中的带图摘录卡片画缩放把手）。
+
+### 103. 选中连线时支持拖动两头把手沿框边换边、四边中点吸附与重置回自动位置（2026-11-22）
+
+- `app/src/core/research/ImageEdgeEndpoints.ts`、`app/src/core/service/controlService/controller/concrete/ControllerImageEdgeEndpoint.tsx`、`ControllerNodeEdit.tsx`、`ControllerEdgeEdit.tsx`、`ControllerSectionEdit.tsx`、`app/src/core/stage/stageObject/association/Edge.tsx`、`app/src/core/render/canvas2d/entityRenderer/edge/EdgeRenderer.tsx`、`StraightEdgeRenderer.tsx`、`app/src/core/render/canvas2d/renderer.tsx`：
+  - 将选中 `LineEdge` 时的可拖动端点把手从图片放宽到文字框、文件卡片、分组框等所有矩形实体（连接点、背景图、自环、同组多条边散开、直角折线、折叠隐藏和只读模式保持不画把手）；图片端原有的框内瞄准逻辑保持不变。
+  - 普通框的端点拖动时投影到四条边上行走，靠近四条边中点时吸附过去；拖回框中间区域或双击把手会恢复成 `(0.5, 0.5)` 自动位置并记录撤销步骤，双击把手时文字框编辑、打开文件、连线改字和分组改名都会让开。
+  - 修掉 `Edge.bodyLine` 对已落在框边上的比例仍走 `getLineIntersectionPoint` 导致上下排布时右侧端点被拉回底边的问题，补全 `Edge.getNormalVectorByRate` 对 `0` / `1` 边界比例的法向量以及直线 SVG 导出的箭头方向；并把选中连线的把手移到节点 `evenodd` 裁剪区外绘制，避免文字框边上的圆点把手被裁掉一半。
+- 测试：`ImageEdgeEndpoints.test.ts` 补充文字框、文件卡片、分组框及不画把手各情形，以及沿边拖动、四边中点吸附、拖回中间重置和双击重置测试；`Edge.test.ts` 补充上下文字框显式定在侧边时的端点保持测试。
+
+### 104. 文字框支持靠左 / 居中 / 靠右水平对齐，右键菜单补齐字号调整与加粗（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/TextNode.tsx`、`app/src/core/service/dataManageService/textNodeSmartTools.tsx`、`app/src/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister.tsx`、`app/src/core/render/canvas2d/basicRenderer/textRenderer.tsx`、`app/src/core/render/canvas2d/entityRenderer/textNode/TextNodeRenderer.tsx`、`app/src/core/research/InlineMathService.ts`、`app/src/core/service/controlService/controller/concrete/utilsControl.tsx`、`app/src/core/render/svg/SvgUtils.tsx`、`app/src/core/service/dataGenerateService/stageExportEngine/StageExportSvg.tsx`、`app/src/components/context-menu-content.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - `TextNode` 新增可序列化字段 `textAlign: "left" | "center" | "right" = "left"`，缺省与原有左对齐排版一致，旧白板文件打开不变。
+  - 画布文字渲染、行内公式混排渲染（独立 `$$...$$` 块级公式保留数学居中惯例）、双击编辑时的 `<textarea>` 输入框、以及 SVG / PNG 导出统一按 `textAlign` 对齐，编辑框与 SVG 导出同时同步 `fontWeight`。
+  - 选中一个或多个 `TextNode` 时，右键菜单新增文字样式组：靠左对齐、居中对齐、靠右对齐（当前项打勾）、字号大一档、字号小一档、加粗（全选加粗时打勾），支持多选批量生效与撤销；顺手修掉原字号快捷键先 `recordStep` 后改节点导致撤销错位的问题。
+- 测试：新增 `TextNode.test.tsx`（3 条：旧文件默认靠左与序列化往返；画布、DOM 编辑框、SVG 导出三处对齐与加粗一致；多选改对齐 / 字号 / 加粗及逐步撤销恢复）。
+
+### 105. 图片节点右键菜单支持向右转 90° 与向左转 90°（2026-11-22）
+
+- `app/src/core/stage/stageObject/entity/ImageNode.tsx`、`app/src/components/context-menu-content.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - 选中一个或多个 `ImageNode` 时，右键菜单新增「向右转 90°」「向左转 90°」。旋转直接按整数像素转置生成新图像附件写进 `project.attachments` 并切换当前卡片的 `attachmentId`，不新增角度字段；共用原附件的其他卡片不受影响。
+  - 旋转时保持图片中心坐标与 `scale` 不变、宽高互换，并同步旋转连到这张图上的 `Edge` 起点 / 终点比例（`(x, y)` 向右转成 `(1 - y, x)`、向左转成 `(y, 1 - x)`，中心 `(0.5, 0.5)` 不动）；PNG 仍存为无损 `image/png`，JPEG / WebP 按 `0.92` 质量重编码。多张图片一起旋转合为一步撤销，`project.attachments` 在会话内保留原附件，撤销后图片与连线端点一并恢复。
+- 测试：`ImageNode.test.tsx` 加 2 条（RGBA 像素与端点比例正反旋转及转 4 次逐字节还原；共用附件隔离、中心与缩放保持、连线端点联动、存盘重开保持及撤销恢复原附件与连线）。
+
+### 106. 文献库列表支持直接把论文 PDF 放到白板上（2026-11-22）
+
+- 新增 `app/src/core/research/LibraryToBoard.ts`，改动 `app/src/core/research/LibraryView.tsx`、`app/src/core/research/BoardMenu.tsx`、`app/src/locales/{zh_CN,en,zh_TW}.yml`：
+  - 文献库每行附件操作栏、右键菜单与右侧详情栏均新增「放到白板」入口；没有本地 PDF 的条目显示为置灰禁用，鼠标悬停说明原因。
+  - 点击后复用 `BoardPicker` / `BoardMenu` 列出当前项目的已打开和未打开白板；选定后先登记活动记录监控，切到目标白板，再调 `createFileCards` 在白板当前视野中心（重叠时自动避开已有卡片）生成与文件面板拖放完全一致的 `FileCardNode`（双击打开论文、丢失提示与活动记录完全一致）。
+- 测试：`LibraryView.test.tsx` 加 1 条（无 PDF 置灰与悬停说明、有 PDF 选白板发送），新增 `LibraryToBoard.test.ts`（1 条：先挂活动记录监控、切换白板、在视野中心避让后调 `createFileCards` 生成卡片）。
+
+### 107. 修补设置写入追踪：立即调 `store.set` 并在退出时等全部写入完成（2026-11-22）
+
+- `app/src/core/service/Settings.tsx`：第 101 节加退出收尾时把 `store.set(key, value)` 放进了微任务队列，导致修改 `Settings` 属性后紧接着同步检查底层存储的调用方还没拿到本次 `store.set`。改成同步发起 `store.set(key, value)`，再用集合记下所有尚未结束的写入 Promise 供 `flushSettings()` 等待并调 `store.save()`。
+- 测试：`AppShutdown.test.ts`、`ReadingTheme.test.ts`、`LocalAgentTransport.test.ts` 全部通过。
+
+### 108. 关程序时收尾出错也不会留下退不掉的进程；三处「是否保存更改？」合成一个（2026-11-22）
+
+- `app/src/core/research/AppShutdown.ts`：
+  - 原来窗口藏起来以后，后台收尾（活动记录、工作区列表、设置写盘）只要有一步出错就不往下走，窗口看不见、进程退不掉；「正在关闭」的标记在藏窗口之前就设上了，藏窗口这一步报错的话，之后再点关闭都没反应。
+  - 现在记窗口位置、藏窗口失败都照样往下退。后台写盘某一步失败，后面几步照样写，写完把窗口重新亮出来，告诉用户哪些没写进去，让用户选「返回」（标签都还在，可以检查外接盘后再关）或「仍然退出」；窗口亮不出来就直接退出。销毁窗口失败时把窗口亮出来并报错，可以再关一次。
+  - 「是否保存更改？」对话框、「已经暂存」提示、关程序时的「检测到未保存文件」对话框改成从文案文件取字，抽成 `confirmSaveBeforeClose()`；工作区名的取法 `researchWorkspaceName()` 从 `App.tsx` 挪到这里。
+- `app/src/App.tsx`：点标签上的叉关白板时改用 `confirmSaveBeforeClose()`；原来对话框按 Esc 关掉（既没点保存也没点取消）会照样关标签，现在当成取消；保存后仍没存上也不关。
+- `app/src/core/service/controlService/shortcutKeysEngine/shortcutKeysRegister.tsx`：「关闭当前标签页」快捷键（默认不开）改用同一个对话框，关标签交给 `TabWorkspace.close()`，不再自己改标签列表；对话框里显示工作区名，不再显示 `file://` 地址。
+- `app/src/locales/zh_CN.yml`、`en.yml`（`zh_TW.yml` 由 `sync-locales` 生成）：加 `research.shell.closePrompt` 一组文案。
+- 测试：`AppShutdown.test.ts` 加 3 条（记窗口位置和藏窗口失败照样退出；后台写盘失败时亮出窗口，点「返回」标签都在、再关一次点「仍然退出」照样退出；销毁窗口失败后能再关一次）。
+
+### 109. 回看切节点、回到现在不再卡住（2026-11-23）
+
+- 新增 `app/src/core/research/ReactDevTracks.ts`，`app/src/main.tsx` 第一条 import 就是它：
+  - 原来开发版里切一次节点会冻住界面十秒以上：React 19 的开发版给每次组件更新写性能记录，记录里带着前后两份 props 的逐项对比，而标签栏、状态条这些组件的 props 里有整块白板，换一块白板就把两块白板从头比到尾再复制一份。卡片越多越久，记录还一直留在内存里。现在赶在 React 载入之前关掉它。打包版的 React 本来就不记，不受影响。
+- `app/src/core/research/SnapshotBoard.ts`、`LookbackBoard.ts`、`Snapshot.ts`、`ProjectRecord.ts`：
+  - 原来打开一个节点要先把图片一张接一张读出来、打成一个完整的白板文件、再拆开读，30 张图要来回近百次。现在图片直接交给白板，不再打包；快照清单、白板文件、文字版、图片一起读；眼前开着的白板里已有的图片（内容指纹对得上的）直接拿来用，不再读文件。`joinBoard()` 用不到了，去掉；`snapshotBoardFile()` 换成 `readSnapshotBoardContent()`。
+- `app/src/core/stage/Canvas.tsx`：白板关掉时摘掉它挂在窗口上的键盘和失焦监听。原来关掉的白板（每看一个节点就关一块）连同它的图片一直留在内存里。
+- 测试：新增 `ReactDevTracks.test.tsx`（2 条：换一块白板不写性能记录；它是 `main.tsx` 的第一条 import）、`Canvas.test.ts`（1 条：关掉以后不再响应窗口事件）；`SnapshotBoard.test.ts` 改 1 条、加 1 条（同一张图只读一次；编号一样但内容换过的图不拿来用），`LookbackBoard.test.ts` 加 1 条（卡片建出来之前图片已就位，没变的图不读文件），`Snapshot.test.ts` 的「拼回去」改成「拍下来再读出来，图片和内容一样不少」。
+
+### 110. 图片转 90° 只记角度，不再改图片文件（2026-11-23）
+
+- 第 105 节的做法是每转一次就按转好的像素存一张新图：JPEG、WebP 每转一次掉一点画质，转一次多占一份地方。改成只在图片卡片上记顺时针转了多少度（`ImageNode.rotation`，0 / 90 / 180 / 270，以前的文件没有这一项就是没转），图片文件不动，也不用重新解码。以前已经按像素转过的图保持原样。
+- 新增 `app/src/core/research/ImageRotation.ts`：角度的加减、画的时候用的变换、连线端点跟着转；`rotatedImageBlob()` 在图片要拿到程序外面用时现画一张转好的（没转过就是原文件）。
+- `app/src/core/stage/stageObject/entity/ImageNode.tsx`：转的时候中心和缩放不变、宽高互换，连到图上的线跟着转，多张一起转合成一步撤销；按角度算宽高（`naturalSize`），缩放、拖角改大小都按转好的宽高比。去掉按像素转、重新编码那一套。
+- 用到图片的地方都按角度走：画布（`ImageRenderer.tsx`、`EntityRenderer.tsx`，圆角按转好的框裁）、导出 SVG（`StageExportSvg.tsx`）、复制到系统剪贴板（`copyEngine.tsx`、`shortcutKeysRegister.tsx`）、导出图片到文件夹（`imageExport.tsx`）、阶段小结的汇报（`StageReport.ts`，开始生成那一刻的角度）、AI 看图和按尺寸改图（`BuiltInToolExecutors.tsx`）、背景管理器的预览。命令行里没有画布，AI 看到的是没转过的原图。
+- 测试：新增 `ImageRotation.test.ts`（9 条）；`ImageNode.test.tsx` 的旋转测试重写（角度、中心、宽高、缩放、连线端点、图片文件没动、存盘重开、转 4 次还原、撤销；以前的文件打开就是没转），`ImageRenderer.test.ts` 加 1 条（转过的图画在转好的框里，画完还原），`StageReport.test.ts` 加 1 条（汇报里的图是开始生成时的朝向）。另在真的 WebKit 里用四角颜色不同的图核对过四个方向：画布、拿出去用的图、导出的 SVG 都对。
+
+### 111. 回看切节点、打开回看、回到现在有过渡动画（2026-11-23）
+
+- 原来换一块白板是一下子变过去的，看不出哪里变了。现在镜头不动，一秒左右：删掉的淡出缩小，两边都有的滑到新位置、改大小、改过的淡变，新加的从原有的卡片往外一圈圈长出来（整棵都是新的就从根往外），连线等两头都长出来再从起点画到终点，最后浮出「新加 / 改过 / 删掉」的标记。没有的步骤不占时间，新加得再多也不会越拖越长。
+- 新增 `app/src/core/research/LookbackTimeline.ts`：只算哪张卡片什么时候动。
+- 新增 `app/src/core/research/LookbackTransition.ts`：按算好的时间画。旧白板和新白板的卡片都用原来的画法，只在画这一帧时把卡片的位置借成中间的位置、画完就还，白板的数据不变。新白板的图片还没解码出来时用旧白板的顶着，不闪空框。连点时前一段直接跳到末尾；播到一半在白板上动手改、旧白板被拆掉、画出错，都直接到头；系统开了「减弱动态效果」就不播。
+- `app/src/core/research/LookbackBoard.ts`：在切标签之前开始过渡；旧的回看标签等过渡播完再拆；回到现在时，真的那块白板开着、又没和回看并排摆着，就把镜头接过去再过渡（并排摆着的镜头不动，没开着的照旧打开）。
+- `app/src/core/render/canvas2d/renderer.tsx`、`entityRenderer/EntityRenderer.tsx`：画白板内容前先问有没有过渡要画；「画一条连线」「画一个分组」各抽成一个方法，画标签装饰的方法改成外面能调，原来的画法没变。
+- 测试：新增 `LookbackTimeline.test.ts`（7 条）、`LookbackTransition.test.ts`（13 条）；`LookbackBoard.test.ts` 加 3 条（切到前面之前就开始过渡，打开、切节点、回到现在都有；和回看并排摆着时不动镜头、不播；还在画旧白板时不拆它）。另在真的 WebKit 里用一块 60 多张卡片的白板逐帧看过。
+
+### 112. 去掉状态条上的相机按钮，快照只剩定格和自动拍（2026-11-23）
+
+- 相机按钮最早是用来换对比起点的；有了阶段小结的「定格」以后它拍的只是留底：不换起点，回看里也看不到，和定格重复。现在定格只在阶段小结里按。
+- `app/src/core/research/SinceLastToggle.tsx`：去掉按钮，状态条上剩「自上次小结以来」和「回看」。
+- `app/src/core/research/Snapshot.ts`：`takeSnapshot()` 只接受自动拍和定格两种。超过 7 天没拍自动拍一份的规矩不变。以前用相机拍的快照（清单里的 `manual`）不删，照样能读。
+- `app/src/core/research/ReportTools.ts`、`app/src/locales/zh_CN.yml`、`en.yml`（`zh_TW.yml` 由 `sync-locales` 生成）：提示里不再叫人点相机，改成做一次阶段小结；删掉相机用的三条文案。
+- 测试：`Snapshot.test.ts` 里原来用相机那种方式拍的改成自动拍。
+
+### 113. 0.2.0 内测版：把主线和白板的修改合到一起（2026-11-23）
+
+- `stage-summary`（活动记录、快照、阶段小结、汇报、便签和记录面板、回看）和 `board-bugfix`（白板的 10 个问题、关程序收尾、回看不卡、图片旋转只记角度、过渡动画、去掉相机按钮）合进从 `main` 拉出的 `release-0.2.0`。只有本文件有冲突，两边的内容都留着。
+- `app/src-tauri/tauri.conf.json`：`version` 从 `0.1.0` 改成 `0.2.0`。

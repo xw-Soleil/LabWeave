@@ -1,3 +1,4 @@
+import "./core/research/ReactDevTracks";
 import { runCli } from "@/cli";
 import { Toaster } from "@/components/ui/sonner";
 import { authClient } from "@/core/service/AuthClient";
@@ -33,6 +34,7 @@ import { URI } from "vscode-uri";
 import App from "./App";
 import { ExtensionManager } from "./core/extension/ExtensionManager";
 import { startResearchSession } from "./core/research/ResearchSession";
+import { ReportTaskBar } from "./core/research/ReportTask";
 import { SyncTaskBar } from "./core/research/ZoteroSyncTask";
 import { handleDeepLink, isProjectGraphDeepLink } from "./core/service/dataFileService/DeepLinkHandler";
 import { onOpenFile } from "./core/service/GlobalMenu";
@@ -220,6 +222,7 @@ async function renderApp(cli: boolean = false, cliDesktopAcceptance: boolean = f
           <App />
         </ErrorBoundary>
         <SyncTaskBar />
+        <ReportTaskBar />
       </Provider>,
     );
   }

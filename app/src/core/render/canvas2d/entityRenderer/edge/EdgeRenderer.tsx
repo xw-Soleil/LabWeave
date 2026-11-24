@@ -74,33 +74,40 @@ export class EdgeRenderer {
         renderer.renderNormalState(edge);
       }
     }
+  }
 
-    // 选中的高亮效果
-    if (edge.isSelected) {
-      // 还要标注起始点和终止点；连在图片上的那头换成能拖的端点圆点
-      for (const end of ["source", "target"] as const) {
-        if (hasEndpointHandle(edge, end)) {
-          renderEndpointHandle(this.project, edge, end);
-          continue;
-        }
-        this.project.shapeRenderer.renderCircle(
-          this.project.renderer.transformWorld2View(end === "source" ? edge.sourceLocation : edge.targetLocation),
-          10 * this.project.camera.currentScale,
-          Color.Transparent,
-          this.project.stageStyleManager.currentStyle.CollideBoxSelected,
-          2 * this.project.camera.currentScale,
-        );
+  /**
+   * 选中连线时的高亮与端点把手。放在节点边界裁剪（ctx.clip("evenodd")）外层调用，
+   * 否则停在文字框边框上的圆点把手会被裁掉落在框里的那一半。
+   */
+  renderSelectedLineEdgeOverlay(edge: LineEdge) {
+    if (!edge.isSelected) return;
+    if (edge.source.isHiddenBySectionCollapse && edge.target.isHiddenBySectionCollapse) {
+      return;
+    }
+    const viewEdge = this.getEdgeView(edge);
+    const renderer = this.rendererFor(viewEdge);
+    for (const end of ["source", "target"] as const) {
+      if (hasEndpointHandle(edge, end)) {
+        renderEndpointHandle(this.project, edge, end);
+        continue;
       }
-      // 画一个虚线
-      if (renderer instanceof StraightEdgeRenderer) {
-        this.project.curveRenderer.renderDashedLine(
-          this.project.renderer.transformWorld2View(edge.sourceLocation),
-          this.project.renderer.transformWorld2View(edge.targetLocation),
-          this.project.stageStyleManager.currentStyle.CollideBoxSelected,
-          2 * this.project.camera.currentScale,
-          10 * this.project.camera.currentScale,
-        );
-      }
+      this.project.shapeRenderer.renderCircle(
+        this.project.renderer.transformWorld2View(end === "source" ? viewEdge.sourceLocation : viewEdge.targetLocation),
+        10 * this.project.camera.currentScale,
+        Color.Transparent,
+        this.project.stageStyleManager.currentStyle.CollideBoxSelected,
+        2 * this.project.camera.currentScale,
+      );
+    }
+    if (renderer instanceof StraightEdgeRenderer) {
+      this.project.curveRenderer.renderDashedLine(
+        this.project.renderer.transformWorld2View(viewEdge.sourceLocation),
+        this.project.renderer.transformWorld2View(viewEdge.targetLocation),
+        this.project.stageStyleManager.currentStyle.CollideBoxSelected,
+        2 * this.project.camera.currentScale,
+        10 * this.project.camera.currentScale,
+      );
     }
   }
 

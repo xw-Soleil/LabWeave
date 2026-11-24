@@ -358,6 +358,10 @@ export class Project extends Tab {
   get isDraft() {
     return this.uri.scheme === "draft";
   }
+  /** 标签上不照「未命名 N」或文件名写的白板在这里给名字（只读的回看白板，见 LookbackBoard.ts）；别的不给 */
+  get tabName(): string | undefined {
+    return undefined;
+  }
   get isCollab() {
     return this.uri.scheme === "collab";
   }
@@ -417,6 +421,8 @@ export class Project extends Tab {
       await this.fs.write(this.uri, content);
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
+      // 活动记录靠它知道「刚存了什么」（core/research/ActivityLog.ts）；没人听的时候（命令行）什么也不发生
+      this.emit("saved", { uri: this.uri, serializedStage: this.serializedStageByContent.get(content) });
       await this.writeAiSidecar(this.uri, content);
     } finally {
       this.isSaving = false;
@@ -448,6 +454,7 @@ export class Project extends Tab {
       }
       this.adoptSavedWorkbench(content);
       this.markSavedIfUnchangedSince(revision);
+      this.emit("saved", { uri: targetUri, serializedStage: this.serializedStageByContent.get(content) });
       await this.writeAiSidecar(targetUri, content);
     } finally {
       this.saveAsTarget = null;

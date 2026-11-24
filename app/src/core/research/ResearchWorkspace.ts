@@ -37,6 +37,10 @@ export type ResearchWorkspaceData = z.infer<typeof workspaceSchema>;
 export const researchWorkspaceAtom = atom<ResearchWorkspaceData | null>(null);
 let loading: Promise<ResearchWorkspaceData> | undefined;
 let saving: Promise<unknown> = Promise.resolve();
+
+export async function flushResearchWorkspace(): Promise<void> {
+  await saving;
+}
 const authorized = new Map<string, Promise<string>>();
 
 export function projectPathKey(path: string): string {

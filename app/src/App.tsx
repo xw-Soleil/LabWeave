@@ -5,16 +5,12 @@ import PieMenu from "@/components/pie-menu";
 import ThemeModeSwitch from "@/components/theme-mode-switch";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { Dialog } from "@/components/ui/dialog";
-import { displayWorkspaceName } from "@/components/ui/file-name";
-import { Project, ProjectState, ResearchSaveRefusedError } from "@/core/Project";
-import {
-  beginResearchSessionChange,
-  endResearchSessionChange,
-  persistResearchSession,
-  registerResearchSession,
-  setResearchSessionTracking,
-} from "@/core/research/ResearchSession";
+import { Project, ResearchSaveRefusedError } from "@/core/Project";
+import { startActivityLog, trackActivityBoards } from "@/core/research/ActivityLog";
+import { confirmSaveBeforeClose, requestCloseResearchApp } from "@/core/research/AppShutdown";
+import { NodeRecordFloat } from "@/core/research/NodeRecordFloat";
+import { startSnapshotSchedule } from "@/core/research/Snapshot";
+import { persistResearchSession, registerResearchSession } from "@/core/research/ResearchSession";
 import { isResourceTab, Tab } from "@/core/Tab";
 import { TabWorkspace } from "@/core/TabWorkspace";
 import { GlobalMenu } from "@/core/service/GlobalMenu";
@@ -59,13 +55,6 @@ function reportResearchCloseError(error: unknown) {
   if (error instanceof ResearchSaveRefusedError) return;
   if (error instanceof Error && (error.message === "取消操作" || error.message === "未选择路径")) return;
   toast.error(error instanceof Error ? error.message : String(error));
-}
-
-/** 给人看的工作区名，和标签栏一致：文件名去掉 .prg，草稿叫「未命名 1」 */
-function researchWorkspaceName(project: Project, untitled: (n: string) => string): string {
-  if (project.isDraft) return untitled(project.uri.path);
-  if (project.uri.scheme === "file") return displayWorkspaceName(project.title);
-  return project.title;
 }
 
 /** 红绿灯占的宽度（不随 UI 缩放）；左上角的菜单和标签从它右边开始 */
@@ -133,7 +122,6 @@ export default function App() {
   const [_, _setMaximized] = useAtom(isWindowMaxsizedAtom);
 
   const [tabs, setTabs] = useAtom(tabsAtom);
-  const [, setActiveTab] = useAtom(activeTabAtom);
   const [activeResourceTab] = useAtom(activeResourceTabAtom);
   // const [isWide, setIsWide] = useState(false);
   const [telemetryEventSent, setTelemetryEventSent] = useState(false);
@@ -301,87 +289,53 @@ export default function App() {
     return registerResearchSession();
   }, []);
 
+  // 活动记录：启动一次；开着的白板变了（开了一块、关了一块）就告诉它
+  useEffect(() => startActivityLog(), []);
+  // 快照：超过 7 天没拍就自动拍一份
+  useEffect(() => startSnapshotSchedule(), []);
+  useEffect(() => {
+    trackActivityBoards(tabs.filter((tab): tab is Project => tab instanceof Project && !tab.closing));
+  }, [tabs]);
+
   useEffect(() => {
     persistResearchSession();
   }, [tabs, activeResourceTab]);
 
   useEffect(() => {
-    let unlisten1: () => void;
-    /**
-     * 关闭窗口时的事件监听
-     */
-    getCurrentWindow()
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void getCurrentWindow()
       .onCloseRequested(async (e) => {
         e.preventDefault();
-        if (!beginResearchSessionChange()) {
-          toast.error(tResearch("projectTree.switchBusy"));
-          return;
-        }
-        try {
-          // 已经存过盘的工作区在弹警告前先自动保存（草稿没有路径，仍走下面的提示）
-          if (Settings.autoSaveWhenClose || Settings.autoSave) {
-            for (const tab of tabs) {
-              if (!(tab instanceof Project) || tab.closing || tab.uri.scheme !== "file") continue;
-              if (tab.projectState !== ProjectState.Unsaved) continue;
-              try {
-                await tab.save();
-              } catch (error) {
-                toast.error(tResearch("shell.autoSaveFailed", { name: tab.title, message: String(error) }));
-              }
-            }
-          }
-
-          // 检查是否有未保存的项目
-          const unsavedTabs = tabs.filter(
-            (tab): tab is Project =>
-              tab instanceof Project &&
-              (tab.projectState === ProjectState.Unsaved || tab.projectState === ProjectState.Stashed),
-          );
-
-          if (unsavedTabs.length > 0) {
-            // 弹出警告对话框
-            const response = await Dialog.buttons(
-              "检测到未保存文件",
-              `当前有 ${unsavedTabs.length} 个未保存的文件。直接关闭可能有文件被清空的风险，建议先手动保存文件。`,
-              [
-                { id: "cancel", label: "取消", variant: "ghost" },
-                { id: "continue", label: "继续关闭", variant: "destructive" },
-              ],
-            );
-
-            if (response === "cancel") {
-              // 用户选择取消关闭，返回
-              return;
-            }
-            // 用户选择继续关闭，执行原有关闭流程
-          }
-
-          // 逐个关标签页时不能记会话，否则下次启动什么都恢复不了
-          setResearchSessionTracking(false);
-          try {
-            for (const tab of tabs) {
-              console.log("尝试关闭", tab);
-              await closeTab(tab);
-            }
-          } catch (error) {
+        const appWindow = getCurrentWindow();
+        await requestCloseResearchApp({
+          saveWindowState: () => saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED),
+          hideWindow: () => appWindow.hide(),
+          showWindow: () => appWindow.show(),
+          destroyWindow: () => appWindow.destroy(),
+          onAutoSaveError: (project, error) => {
+            toast.error(tResearch("shell.autoSaveFailed", { name: project.title, message: String(error) }));
+          },
+          onSaveError: reportResearchCloseError,
+          onCloseCancelled: () => {
             Telemetry.event("关闭应用提示是否保存文件选择了取消");
-            reportResearchCloseError(error);
-            setResearchSessionTracking(true);
-            persistResearchSession();
-            return;
-          }
-          Telemetry.event("关闭应用");
-          // 保存窗口位置
-          await saveWindowState(StateFlags.SIZE | StateFlags.POSITION | StateFlags.MAXIMIZED);
-          await getCurrentWindow().destroy();
-        } finally {
-          endResearchSessionChange();
-        }
+          },
+          onCloseConfirmed: () => {
+            Telemetry.event("关闭应用");
+          },
+        });
       })
-      .then((it) => {
-        unlisten1 = it;
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
       });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [tResearch]);
 
+  useEffect(() => {
     const onStateChange = () => {
       // 强制重新渲染一次
       setTabs([...tabs]);
@@ -402,36 +356,16 @@ export default function App() {
     }
 
     return () => {
-      unlisten1?.();
       // 只摘自己挂的监听：自动保存也监听 state-change，不能一起删掉
       for (const tab of tabs) {
         tab.off("state-change", onStateChange);
         tab.off("contextmenu", onContextMenu);
       }
     };
-  }, [tabs.length]);
+  }, [tabs]);
 
   const closeTab = async (tab: Tab) => {
-    if (tab instanceof Project) {
-      if (tab.projectState === ProjectState.Stashed) {
-        toast("文件还没有保存，但已经暂存，在“最近打开的文件”中可恢复文件");
-      } else if (tab.projectState === ProjectState.Unsaved) {
-        // 切换到这个文件
-        setActiveTab(tab);
-        // 只显示工作区名，不显示 file:// 地址
-        const description = researchWorkspaceName(tab, (n) => tResearch("tabs.untitled", { n }));
-        const response = await Dialog.buttons("是否保存更改？", description, [
-          { id: "cancel", label: "取消", variant: "ghost" },
-          { id: "discard", label: "不保存", variant: "destructive" },
-          { id: "save", label: "保存" },
-        ]);
-        if (response === "save") {
-          await tab.save();
-        } else if (response === "cancel") {
-          throw new Error("取消操作");
-        }
-      }
-    }
+    if (tab instanceof Project && !(await confirmSaveBeforeClose(tab))) throw new Error("取消操作");
     if ((await TabWorkspace.close(tab.id)) === false) throw new Error("取消操作");
   };
 
@@ -493,6 +427,8 @@ export default function App() {
         <FloatingCorners />
         {/* 不在缩放层里，竖栏自己按 --pg-ui-scale 缩放 */}
         <ActivityRail isClassroomMode={isClassroomMode} />
+        {/* 便签：浮在最上面，能拖到窗口里任何地方 */}
+        <NodeRecordFloat />
 
         {/* Zoomed UI layer - 缩放所有 DOM UI 元素，不缩放 Canvas 画布 */}
         <div

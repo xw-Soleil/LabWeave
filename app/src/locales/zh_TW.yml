@@ -159,6 +159,14 @@ contextMenu:
   switchMTUEdgeRenderType: 切換渲染形態
   convertToDirectedEdge: 轉換為有向邊
   editUrlNodeLink: 編輯URL節點的鏈接
+  textAlignLeft: 靠左對齊
+  textAlignCenter: 居中對齊
+  textAlignRight: 靠右對齊
+  increaseFontSize: 字號大一檔
+  decreaseFontSize: 字號小一檔
+  toggleBold: 加粗
+  rotateClockwise90: 向右轉 90°
+  rotateCounterClockwise90: 向左轉 90°
   confirm: 確定
   cancel: 取消
 
@@ -3143,11 +3151,26 @@ research:
       aiNeedsWorkspace: AI 對話（打開白板後可用）
       files: 文件
       library: 文獻庫
+      summary: 階段小結
+      summaryNeedsWorkspace: 階段小結（打開白板後可用）
       settings: 設置
     setRootFailed: "研究文件夾 {{path}} 暫時用不了：{{message}}"
     restoreFailed: "沒能重新打開白板 {{path}}：{{message}}"
     panelFailed: "沒能打開面板：{{message}}"
     autoSaveFailed: "關閉前自動保存「{{name}}」失敗：{{message}}"
+    closePrompt:
+      saveTitle: 是否保存更改？
+      save: 保存
+      discard: 不保存
+      cancel: 取消
+      stashed: 文件還沒有保存，但已經暫存，在“最近打開的文件”中可恢復文件
+      unsavedTitle: 檢測到未保存文件
+      unsavedDescription: "當前有 {{count}} 個未保存的文件。直接關閉可能有文件被清空的風險，建議先手動保存文件。"
+      continue: 繼續關閉
+      flushFailedTitle: 退出前有內容沒寫進磁盤
+      flushFailed: "沒寫進去的有：{{message}}。可以先點「返回」，看看研究文件夾所在的盤是不是還連著，再重新關閉；點「仍然退出」，這部分內容這次就存不下來了。"
+      back: 返回
+      quitAnyway: 仍然退出
     extensionsDisabled: 科研工作臺不運行擴展，數據只留在本機
     resizeSidePanel: 拖動調整面板寬度
     pinSidePanel: 固定面板
@@ -3408,6 +3431,8 @@ research:
     pickItem: 選擇一篇文獻查看詳情
     toggleAttachments: 展開或收起附件
     openPdf: 打開 PDF
+    sendToBoard: 放到白板
+    noPdfToBoard: 這篇條目還沒有本地 PDF，暫時不能放到白板
     openTranslation: 打開譯文
     openNote: 打開筆記
     markAs: "標成{{status}}"
@@ -3757,6 +3782,8 @@ research:
       whatIsMissing: 還缺什麼？
     inputPlaceholder: 問問白板上的內容，例如：這幾篇論文之間是什麼關係？
     inputPlaceholderCommands: 問問白板上的內容；輸入 / 可以用命令，比如 /compact
+    link:
+      confirm: 用瀏覽器打開這個鏈接？
     composer:
       board: 當前白板「{{name}}」，AI 在這張白板上幹活
       selected: 已選 {{count}} 個
@@ -3822,6 +3849,232 @@ research:
       login: 在終端中登錄
       permissionTitle: "{{name}} 請求批准"
       permissionInput: 參數
+  activityLog:
+    failed: "活動記錄沒寫成，稍後會再試：{{error}}"
+    mark:
+      menu: 標成…
+      progress: 進展
+      problem: 問題
+      idea: 想法
+      done: "已記進活動記錄：{{mark}}（{{count}} 張）"
+      outside: 這塊白板不在當前項目的文件夾裡，沒有記
+  snapshot:
+    since: 自上次小結以來
+    counts: "新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
+    sinceNodeHint: "和「{{title}}」定格時比：新加的卡片描邊，改過的右上角有個點，刪掉的留一個淡影"
+    sinceFirstHint: "還沒做過階段小結，先和最早的一份快照（{{time}}）比：新加的卡片描邊，改過的右上角有個點，刪掉的留一個淡影"
+    none: 還沒有快照。點左邊豎欄的「階段小結」定格一次，之後才能看「自上次小結以來」
+    failed: "快照沒拍成：{{error}}"
+    errors:
+      noProject: 還沒有選項目文件夾，拍不了快照
+      noBoard: 這個項目裡還沒有白板，沒有什麼可拍的
+      boardMissing: 這份快照裡的白板文件找不到了，可能被刪了
+      imageMissing: 這份快照裡有圖片找不到了，可能被刪了
+  stageNode:
+    types:
+      meeting: 組會
+      weekly: 週報
+      review: 自己覆盤
+  lookback:
+    open: 回看
+    openHint: 看上一個節點定格時這塊白板的樣子，標出它比再前一個節點多了、改了、少了什麼；從那裡可以一個節點一個節點往回看
+    noNodeHint: 做過一次階段小結以後才能回看
+    tabName: "回看 · {{node}} · {{board}}"
+    previous: 上一個節點
+    next: 下一個節點
+    now: 現在
+    nowHint: 關掉回看，回到現在的白板
+    since: "和「{{title}}」比"
+    firstSnapshot: "{{time}} 的快照"
+    first: 這是第一份記錄，前面沒有可以比的，卡片都算新加的
+    counts: "新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
+    note: "當時寫的：{{note}}"
+    report: 打開彙報
+    readOnly: 這是回看，只能看：在這裡的改動不會保存
+    failed: "回看沒打開：{{error}}"
+    errors:
+      noNode: 這個項目還沒有節點，先做一次階段小結
+      noBoard: 這個節點定格的時候，還沒有這塊白板（或者它那時叫別的名字）
+  nodeRecord:
+    float: 便籤
+    toggleFloat: 便籤：隨手記待辦、進展、問題和下一步
+    noProject: 先選一個項目，再用便籤
+    short:
+      done: 進展
+      todo: 待辦
+      notes: 問題
+      next: 下一步
+    section:
+      done: 進展
+      todo: 待辦
+      notes: 問題與決定
+      next: 下一步
+    placeholder:
+      done: 做完了什麼？敲一句，回車記下
+      todo: 要做什麼？敲一句，回車記下
+      notes: 碰到什麼問題、定了什麼？回車記下
+      next: 下一步打算做什麼？回車記下
+    attach: 關聯當前內容
+    attachHint: 記的時候順手掛上眼前的東西：選中的卡片、打開的論文那一頁、正在看的筆記
+    noContext: 眼前沒有能關聯的東西（要是項目裡的白板、論文或筆記），這一條沒掛鏈接
+    pending: "{{count}} 件待辦"
+    sinceNode: "距上次小結 {{days}} 天"
+    sinceToday: 今天做過小結
+    noNode: 還沒做過小結
+    empty: 還沒記過東西。在上面敲一句，回車就記下了。
+    more: "還有 {{count}} 條"
+    less: 收起
+    untitled: （沒有文字）
+    markDone: "把「{{text}}」勾成做完"
+    markPending: "把「{{text}}」改回沒做完"
+    openFile: 打開記錄文件
+    minimize: 收起
+    expand: 展開
+    close: 關掉便籤
+    reloaded: 記錄在別處改過，已經重新讀了一遍，請再點一次
+    failed: "沒記成：{{error}}"
+    sealFailed: "節點已經定格了，但手填的記錄沒封存進去：{{error}}。處理好以後再定格一次，會補上。"
+    showAll: 查看全部：看全、改、貼圖，也能看以前的節點
+    inspect: "在記錄面板裡看「{{text}}」"
+    imageCount: "{{count}} 張圖"
+    panel:
+      title: 進展記錄
+      subtitle: 上個節點以後記的在「進行中」，定格時封存成一份，沒做完的帶到下一段
+      choose: 看哪一段
+      current: 進行中
+      sealed: 封存的，只能看
+      sealedHint: "這是「{{name}}」定格時封存的一份，只能看。要改，點下面的「打開原文件」。"
+      missing: "「{{name}}」這份記錄的文件找不到了。"
+      refresh: 刷新
+      loading: 正在讀記錄
+      emptyCurrent: 這一段還沒記過東西。在下面填一條，或者用便籤隨手記。
+      emptySection:
+        done: 還沒有進展
+        todo: 沒有待辦
+        notes: 沒有問題和決定
+        next: 還沒寫下一步
+      addItem: 加一條
+      editItem: 改這一條
+      editItemNamed: "改「{{title}}」"
+      editHint: 只改這一條在文件裡佔的那幾行，別的內容不動。它在哪一節不在這裡改。
+      editConflict: 這份記錄在別處改過了，這次的修改存不進去。把要留的內容複製出來，點「取消修改」後重新改。
+      itemSection: 記到哪一節
+      itemTitle: 標題
+      titlePlaceholder: 標題（不填就從內容裡提煉）
+      itemDetails: 詳細內容
+      detailsPlaceholder: 詳細內容，可以寫多行
+      attachCurrent: 關聯當前內容
+      addLink: 加鏈接
+      linkLabel: 鏈接的名字
+      linkTarget: 鏈接指到哪
+      linkPlaceholder: 從這份記錄出發的相對路徑，比如 ../筆記/實驗.md
+      linkRequired: 鏈接指到哪還沒填
+      confirmLink: 確定
+      cancelLink: 取消
+      editLink: 改這個鏈接
+      editNamedLink: "改鏈接「{{name}}」"
+      removeNamedLink: "去掉鏈接「{{name}}」"
+      source: 來源
+      addImage: 添加圖片
+      pasteImage: 粘貼圖片
+      noClipboardImage: 剪貼板裡沒有圖片
+      viewImage: "看圖片「{{name}}」"
+      removeImage: "去掉圖片「{{name}}」"
+      imageRecord: 圖片記錄
+      linkedRecord: 關聯記錄
+      cancelEdit: 取消修改
+      save: 記下
+      saveChanges: 保存修改
+      otherLinks: 文件裡別處的鏈接
+      openFile: 打開原文件
+      showFloat: 顯示便籤
+    errors:
+      conflict: 記錄文件在別處改過了
+      documentBusy: 記錄文件正開著，裡面有還沒保存的改動，先把它保存了
+      unsafeLink: 只能關聯項目文件夾裡面的文件
+      fileNotFound: 關聯的文件找不到了
+      emptyItem: 內容是空的
+      invalidPath: 記錄文件的位置不對
+      imageTooLarge: 圖片太大了（單張不超過 8 MB、2500 萬像素）
+      imageUnsupported: 只收 PNG、JPEG、WebP 圖片
+      imageReadFailed: 圖片讀不出來
+      imageWriteFailed: 圖片沒存進去
+      tooManyImages: 一次最多選 12 張圖片
+      clipboardImageFailed: 剪貼板裡的圖片讀不出來
+  stageReview:
+    title: 階段小結 · 整理
+    sinceNode: "和「{{title}}」定格時比"
+    sinceFirst: "還沒做過小結，和最早的一份快照（{{time}}）比"
+    sinceNothing: 還沒有快照，白板上的卡片都算新加的
+    thisBoard: 這塊白板
+    onlySelected: 只講選中的
+    dropSelected: 不講選中的
+    selectFirst: 先在畫布上選中幾張列在這裡的卡片
+    added: 新
+    edited: 改
+    untitled: （沒有標題）
+    removed: "另有 {{count}} 張刪掉的，畫布上留著淡影"
+    elsewhere: 別的白板、論文和筆記
+    records: 你記的
+    recordDone: 已勾完成
+    boardCounts: "白板：新 {{added}} · 改 {{edited}} · 刪 {{removed}}"
+    paperCounts: "論文：{{annotations}} 條批註 · {{excerpts}} 段摘錄"
+    noteSaved: 筆記：改過
+    empty: 上次小結以來沒有記到變化。可以直接定格，也可以先退出去幹活。
+    notePlaceholder: 這次想講什麼？敲幾句大白話就行，可以不填
+    type: 這次是
+    picked: "講 {{picked}} / {{total}}"
+    freeze: 只定格
+    freezeHint: 拍一份節點快照，不讓 AI 寫。之後的對比從這裡算起
+    summarize: 定格並生成彙報
+    summarizeHint: 定格以後在後臺生成報告和 PPT，放進項目的「彙報」文件夾
+    frozen: "已定格「{{title}}」，之後的對比從這裡算起"
+    leave: 退出整理
+    toggleBusy: 正在做階段小結的整理，退出整理後再用這個開關
+    failed: "沒做成：{{error}}"
+    errors:
+      outside: 這塊白板不在當前項目裡，做不了階段小結
+  stageSummary:
+    title: 階段小結
+    errors:
+      noProject: 還沒有選項目文件夾
+  report:
+    stage:
+      collecting: 正在收集彙報材料…
+      analyzing: AI 正在寫彙報…
+      exporting: 正在導出報告和 PPT…
+    task:
+      done: "彙報已生成：{{title}}"
+      failed: "彙報沒生成：{{error}}"
+      cancelled: 已取消生成彙報
+    warnings: "{{count}} 項待核對"
+    openReport: 報告
+    openSlides: PPT
+    openFolder: 文件夾
+    retryExport: 重新導出
+    cancel: 取消
+    close: 關閉
+    errors:
+      busy: 上一份彙報還在生成，等它完成或取消後再試。這次可以先「只定格」
+      nothingPicked: 一條都沒勾，也沒寫想講什麼，沒有可以寫的。勾幾條或者敲兩句再試
+      aiNotConfigured: 還沒配好 AI 接口。先在設置的「AI」裡填好接口和模型；這次可以先「只定格」
+      rateLimited: AI 接口說請求太頻繁，過一會兒再試
+      network: 連不上 AI 接口，檢查網絡和接口設置
+      timeout: AI 太久沒寫完。過一會兒再試，或者少勾幾條
+      invalidResponse: AI 給的內容不完整，再試一次
+      invalidReferences: AI 引用了材料裡沒有的編號，核對不了，再試一次
+      noMaterials: 勾選的條目裡沒有讀到文字內容，沒有可以寫的
+      unsafeOutput: 沒法往項目的「彙報」文件夾裡寫文件，檢查它的位置和權限
+      exportFailed: 文件沒導出成。AI 寫好的內容已經存下，可以只重新導出
+      invalidDraft: 存下的草稿讀不出來，要重新生成
+  reportLink:
+    cardGone: 這張卡片已經不在了
+    noProject: 找不到鏈接裡說的項目，先把它加進項目列表
+    noLibrary: 還沒有設置文獻庫，打不開文獻庫裡的文件
+    outside: 鏈接指到了項目和文獻庫以外的地方，沒有打開
+    missing: 鏈接指的文件已經不在了
+    unsupported: 這種文件打不開
+    failed: "鏈接打不開：{{message}}"
   tabs:
     untitled: "未命名 {{n}}"
     aiChat: AI 對話

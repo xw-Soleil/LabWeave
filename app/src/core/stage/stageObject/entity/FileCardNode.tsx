@@ -1,6 +1,7 @@
 import { Project } from "@/core/Project";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
+import type { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Color, Vector } from "@graphif/data-structures";
 import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializer";
@@ -13,7 +14,7 @@ import type { Value } from "platejs";
  */
 @passExtraAtArg1
 @passObject
-export class FileCardNode extends ConnectableEntity {
+export class FileCardNode extends ConnectableEntity implements ResizeAble {
   @id
   @serializable
   uuid: string;
@@ -118,6 +119,28 @@ export class FileCardNode extends ConnectableEntity {
     newRectangle.location = location.clone();
     this.collisionBox.shapes[0] = newRectangle;
     this.updateFatherSectionByMove();
+  }
+
+  /** 只有从 PDF 框选截图发上来的摘录卡片可以拖右下角调大小；圈字的摘录卡片和普通文件卡片不能调 */
+  get canResize(): boolean {
+    return this.pdfPage > 0 && Boolean(this.attachmentId);
+  }
+
+  resizeHandle(delta: Vector): void {
+    if (!this.canResize) return;
+    const rect = this.rectangle;
+    if (!(rect.size.x > 0 && rect.size.y > 0)) return;
+    const aspectRatio = rect.size.x / rect.size.y;
+    const minWidth = aspectRatio >= 1 ? FileCardNode.imageMinSide * aspectRatio : FileCardNode.imageMinSide;
+    const newWidth = Math.max(rect.size.x + delta.x, minWidth);
+    const newHeight = newWidth / aspectRatio;
+    this.collisionBox.shapes[0] = new Rectangle(rect.location.clone(), new Vector(newWidth, newHeight));
+    this.updateFatherSectionByMove();
+  }
+
+  getResizeHandleRect(): Rectangle {
+    const rect = this.collisionBox.getRectangle();
+    return new Rectangle(new Vector(rect.right - 25, rect.bottom - 25), new Vector(25, 25));
   }
 
   /**

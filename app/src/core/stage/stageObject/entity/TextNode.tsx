@@ -12,6 +12,8 @@ import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializ
 import { Rectangle } from "@graphif/shapes";
 import type { Value } from "platejs";
 
+export type TextNodeAlign = "left" | "center" | "right";
+
 /**
  *
  * 文字节点类
@@ -68,6 +70,12 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
    */
   @serializable
   public borderStyle: "solid" | "dashed" | "none" = "solid";
+
+  /**
+   * 水平对齐：默认靠左，和旧白板多行排版一致
+   */
+  @serializable
+  public textAlign: TextNodeAlign = "left";
 
   /**
    * 节点是否被选中
@@ -127,6 +135,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
       fontFamily = "",
       fontWeight = "",
       borderStyle = "solid" as "solid" | "dashed" | "none",
+      textAlign = "left" as TextNodeAlign,
     }: {
       uuid?: string;
       text?: string;
@@ -138,6 +147,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
       fontFamily?: string;
       fontWeight?: string;
       borderStyle?: "solid" | "dashed" | "none";
+      textAlign?: TextNodeAlign;
     },
     public unknown = false,
   ) {
@@ -152,6 +162,7 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
     this.fontFamily = fontFamily;
     this.fontWeight = fontWeight;
     this.borderStyle = borderStyle;
+    this.textAlign = textAlign;
     // 初始化字体大小缓存
     this.updateFontSizeCache();
     // if (this.text.length < TextNode.enableResizeCharCount) {
@@ -217,6 +228,30 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
       this.adjustSizeByText();
     } else if (this.sizeAdjust === "manual") {
       this.resizeHandle(Vector.getZero());
+    }
+  }
+
+  public setTextAlign(align: TextNodeAlign): void {
+    this.textAlign = align;
+  }
+
+  public isBold(): boolean {
+    const weight = this.fontWeight.trim().toLowerCase();
+    if (!weight || weight === "normal") return false;
+    if (weight === "bold") return true;
+    const numeric = Number(weight);
+    return Number.isFinite(numeric) && numeric >= 600;
+  }
+
+  public setBold(bold: boolean): void {
+    const next = bold ? "bold" : "";
+    if (this.fontWeight === next) return;
+    this.fontWeight = next;
+    if (this.sizeAdjust === "auto") {
+      this.adjustSizeByText();
+      this.updateFatherSectionByMove();
+    } else if (this.sizeAdjust === "manual") {
+      this.adjustHeightByText();
     }
   }
 

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { URI } from "vscode-uri";
 import { identifyDocument, documentKey, documentPath, MarkdownDocument, markdownFileIO } from "./DocumentFile";
 import type { OutlinePosition } from "./NoteHeadings";
+import { noteDocument } from "./ActivityLog";
 import { notifyResearchFilesChanged, ResearchFolder } from "./ResearchFolder";
 import { fileKindOf } from "./ResearchShell";
 import { loadAnnotationStore, type PdfAnnotationStore } from "./PdfAnnotationStore";
@@ -187,6 +188,8 @@ export class DocumentTab extends Tab {
         if (!this.closing) this.annotations = annotations;
       }
       if (!this.closing) this.error = "";
+      // 活动记录先看一眼这篇现在有哪些批注，之后才比得出多了哪条
+      if (!this.closing) noteDocument(this);
     })()
       .catch((error) => {
         if (!this.closing) this.error = documentError(error);
@@ -245,6 +248,7 @@ export class DocumentTab extends Tab {
       await document.save();
       this.error = "";
       notifyResearchFilesChanged();
+      noteDocument(this);
       return true;
     } catch (error) {
       this.error = documentError(error);

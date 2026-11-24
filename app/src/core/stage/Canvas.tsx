@@ -10,6 +10,8 @@ import { Vector } from "@graphif/data-structures";
 export class Canvas {
   ctx: CanvasRenderingContext2D;
   private resizeObserver?: ResizeObserver;
+  /** 挂在 window 上的监听会一直拽着整块白板，关掉时一起摘掉 */
+  private readonly windowListeners = new AbortController();
 
   constructor(
     private readonly project: Project,
@@ -34,52 +36,59 @@ export class Canvas {
         document.activeElement?.tagName === "TEXTAREA" ||
         document.activeElement?.getAttribute("contenteditable") === "true"
       );
-    window.addEventListener("keydown", (event) => {
-      // 在窗口层面拦截浏览器默认快捷键，避免触发系统/浏览器查找/搜索等行为
-      // 必须在 shouldRedirectKeyboardEvent 判断之前执行，否则输入框聚焦时会被跳过
-      const key = event.key;
-      if (
-        (event.ctrlKey && (key === "f" || key === "F" || key === "g" || key === "G" || key === "r" || key === "R")) ||
-        key === "F3" ||
-        key === "F5" ||
-        key === "F7"
-      ) {
-        event.preventDefault();
-      }
-      if (!shouldRedirectKeyboardEvent()) return;
-      if (project.isRunning) {
-        element.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: event.key,
-            altKey: event.altKey,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            metaKey: event.metaKey,
-          }),
-        );
-      }
-    });
-    window.addEventListener("keyup", (event) => {
-      if (!shouldRedirectKeyboardEvent()) {
-        this.project.controller.pressingKeySet.clear();
-        return;
-      }
-      if (project.isRunning) {
-        element.dispatchEvent(
-          new KeyboardEvent("keyup", {
-            key: event.key,
-            altKey: event.altKey,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            metaKey: event.metaKey,
-          }),
-        );
-      }
-    });
+    const { signal } = this.windowListeners;
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        // 在窗口层面拦截浏览器默认快捷键，避免触发系统/浏览器查找/搜索等行为
+        // 必须在 shouldRedirectKeyboardEvent 判断之前执行，否则输入框聚焦时会被跳过
+        const key = event.key;
+        if (
+          (event.ctrlKey && (key === "f" || key === "F" || key === "g" || key === "G" || key === "r" || key === "R")) ||
+          key === "F3" ||
+          key === "F5" ||
+          key === "F7"
+        ) {
+          event.preventDefault();
+        }
+        if (!shouldRedirectKeyboardEvent()) return;
+        if (project.isRunning) {
+          element.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: event.key,
+              altKey: event.altKey,
+              ctrlKey: event.ctrlKey,
+              shiftKey: event.shiftKey,
+              metaKey: event.metaKey,
+            }),
+          );
+        }
+      },
+      { signal },
+    );
+    window.addEventListener(
+      "keyup",
+      (event) => {
+        if (!shouldRedirectKeyboardEvent()) {
+          this.project.controller.pressingKeySet.clear();
+          return;
+        }
+        if (project.isRunning) {
+          element.dispatchEvent(
+            new KeyboardEvent("keyup", {
+              key: event.key,
+              altKey: event.altKey,
+              ctrlKey: event.ctrlKey,
+              shiftKey: event.shiftKey,
+              metaKey: event.metaKey,
+            }),
+          );
+        }
+      },
+      { signal },
+    );
     // 失焦时清空按下的按键
-    window.addEventListener("blur", () => {
-      this.project.controller.pressingKeySet.clear();
-    });
+    window.addEventListener("blur", () => this.project.controller.pressingKeySet.clear(), { signal });
     this.ctx = element.getContext("2d")!;
     if (Settings.antialiasing === "disabled") {
       this.ctx.imageSmoothingEnabled = false;
@@ -124,6 +133,7 @@ export class Canvas {
   }
 
   dispose() {
+    this.windowListeners.abort();
     this.resizeObserver?.disconnect();
     this.element.remove();
   }
