@@ -1,0 +1,45 @@
+name: Windows package
+
+# 只能手动触发：在云端 Windows 上打安装包。打出来的放在这次运行的附件里，不自动发布，核对过再由人传到 Release
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 打哪一份代码（标签或提交）
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build:no-tauri
+
+      - name: Build installer
+        run: pnpm --filter @graphif/project-graph tauri build --bundles nsis
+
+      # 辅助程序没打进去的话白板打不开，所以连同没打包的两个程序一起留下来核对
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            app/src-tauri/target/release/bundle/nsis/*.exe
+            app/src-tauri/target/release/project-graph.exe
+            app/src-tauri/target/release/project-graph-ownership-helper.exe

@@ -1447,3 +1447,7 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - `stage-summary`（活动记录、快照、阶段小结、汇报、便签和记录面板、回看）和 `board-bugfix`（白板的 10 个问题、关程序收尾、回看不卡、图片旋转只记角度、过渡动画、去掉相机按钮）合进从 `main` 拉出的 `release-0.2.0`。只有本文件有冲突，两边的内容都留着。
 - `app/src-tauri/tauri.conf.json`：`version` 从 `0.1.0` 改成 `0.2.0`。
+
+### 114. 加一个手动触发的 Windows 打包流程（2026-11-24）
+
+- 新文件 `.github/workflows/windows-package.yml`：在 GitHub 的云端 Windows 上按指定的标签或提交打 NSIS 安装包。只能手动触发，推代码不会跑；只有读权限，打出来的放在那次运行的附件里，不自动发布。程序代码没有改动。
