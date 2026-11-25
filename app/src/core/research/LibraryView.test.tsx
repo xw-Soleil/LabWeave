@@ -116,6 +116,23 @@ afterEach(async () => {
 });
 
 describe("the literature list", () => {
+  it("places the selected title below the wrapping Info toolbar", async () => {
+    vi.stubGlobal("CSS", { escape: (value: string) => value });
+    const snapshot = library(1);
+    snapshot.items[0].title = "A paper with a title that wraps across several lines in the details pane";
+    mocks.snapshot = snapshot;
+    await act(async () => root.render(<LibraryView />));
+    await act(async () => rows()[0].click());
+
+    const info = container.querySelector('button[title="library.info"]')!;
+    const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="library.fields.title"]')!;
+    expect(title.value).toBe(snapshot.items[0].title);
+    // jsdom does not measure boxes, so check the row placement that keeps them apart.
+    const toolbar = info.closest(".grid > .row-start-1");
+    expect(toolbar?.classList.contains("flex-wrap")).toBe(true);
+    expect(title.closest(".row-start-2")?.parentElement).toBe(toolbar!.parentElement);
+  });
+
   it("draws the first screen at once and the rest straight after", async () => {
     vi.useFakeTimers();
     mocks.snapshot = library(45);
