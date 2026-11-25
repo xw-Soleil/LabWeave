@@ -375,7 +375,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
       }}
     >
       {layout.tree && (
-        <aside className="bg-foreground/[0.02] col-start-1 row-span-2 flex w-56 flex-col border-r">
+        <aside className="bg-foreground/[0.02] col-start-1 row-span-2 flex min-h-0 w-56 flex-col border-r">
           <CollectionPane
             root={root}
             snapshot={snapshot}
@@ -391,6 +391,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           <TagPane snapshot={snapshot} counts={counts} selected={tags} onChange={setTags} />
         </aside>
       )}
+      {/* 工具栏横跨列表和信息栏：只占列表那一栏时，窗口一窄，右边的按钮就会盖到信息栏上 */}
       <div className="col-span-2 col-start-2 row-start-1 flex min-h-10 flex-wrap items-center gap-1 px-3">
         <ToolButton
           icon={PanelLeft}
@@ -401,22 +402,29 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         <ToolButton icon={Plus} label={t("library.newItem")} onClick={newItem} />
         <ToolButton icon={Upload} label={t("library.importPdf")} onClick={importPdf} />
         <ToolButton icon={WandSparkles} label={t("library.addById")} onClick={addById} />
-        <span className="flex-1" />
-        <Button variant="ghost" size="sm" disabled={!snapshot || loading || !!error} onClick={() => setSyncOpen(true)}>
-          {t("zoteroSync.title")}
-        </Button>
-        <ToolButton
-          icon={RefreshCw}
-          label={t("library.refresh")}
-          onClick={() => void reloadAll()}
-          className={cn(loading && "[&_svg]:animate-spin")}
-        />
-        <ToolButton
-          icon={PanelRight}
-          label={t("library.info")}
-          active={layout.info}
-          onClick={() => toggleLayout("info")}
-        />
+        {/* 放不下时这三个一起换到下一行，仍然靠右 */}
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!snapshot || loading || !!error}
+            onClick={() => setSyncOpen(true)}
+          >
+            {t("zoteroSync.title")}
+          </Button>
+          <ToolButton
+            icon={RefreshCw}
+            label={t("library.refresh")}
+            onClick={() => void reloadAll()}
+            className={cn(loading && "[&_svg]:animate-spin")}
+          />
+          <ToolButton
+            icon={PanelRight}
+            label={t("library.info")}
+            active={layout.info}
+            onClick={() => toggleLayout("info")}
+          />
+        </div>
       </div>
       <section className="col-start-2 row-start-2 flex min-w-0 flex-col">
         <div className="px-3 pb-2">

@@ -116,21 +116,18 @@ afterEach(async () => {
 });
 
 describe("the literature list", () => {
-  it("places the selected title below the wrapping Info toolbar", async () => {
+  it("keeps the toolbar out of the list column, where its buttons used to cover the selected title", async () => {
     vi.stubGlobal("CSS", { escape: (value: string) => value });
-    const snapshot = library(1);
-    snapshot.items[0].title = "A paper with a title that wraps across several lines in the details pane";
-    mocks.snapshot = snapshot;
+    mocks.snapshot = library(1);
     await act(async () => root.render(<LibraryView />));
     await act(async () => rows()[0].click());
 
+    // jsdom does not measure boxes, so this can only pin the structure: the toolbar sits above
+    // both the list and the details pane instead of being squeezed into the list column.
     const info = container.querySelector('button[title="library.info"]')!;
-    const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="library.fields.title"]')!;
-    expect(title.value).toBe(snapshot.items[0].title);
-    // jsdom does not measure boxes, so check the row placement that keeps them apart.
-    const toolbar = info.closest(".grid > .row-start-1");
-    expect(toolbar?.classList.contains("flex-wrap")).toBe(true);
-    expect(title.closest(".row-start-2")?.parentElement).toBe(toolbar!.parentElement);
+    const title = container.querySelector('textarea[aria-label="library.fields.title"]')!;
+    expect(info.closest("section, aside")).toBeNull();
+    expect(title.closest("aside")).not.toBeNull();
   });
 
   it("draws the first screen at once and the rest straight after", async () => {
