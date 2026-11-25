@@ -1462,3 +1462,4 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `ReactDevTracks.test.tsx`：按行读源码时两种换行都认。
 - `PdfView.test.tsx`：点目录或内部链接以后没跳到就再点一次（打开时的缩放会把页面拉回第一页，机器一慢就撞上）。
 - `app/src-tauri/src/project_ownership.rs` 里那条查锁文件名的测试：Windows 上的值单写一份。
+- `MarkdownTable.test.tsx`（2026-11-25 补）：测试用的假浏览器不会量文字位置（`Range.getClientRects`）。编辑器在表格格子拿到焦点后过一会儿会自己去量，机器慢时测试还没收尾就量到了，报出一个没人接住的错误，测试全过也会被判整步失败。测试里补上这个功能（返回空结果）。让测试故意晚 0.6 秒收尾可以稳定复现，补上以后连跑三次不再出现。

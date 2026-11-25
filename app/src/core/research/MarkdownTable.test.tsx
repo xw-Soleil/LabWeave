@@ -72,6 +72,9 @@ describe("Markdown table in live preview", () => {
         disconnect() {}
       },
     );
+    // jsdom 的 Range 不会量文字位置。编辑器在格子拿到焦点后过一会儿会自己去量，机器慢时测试
+    // 还没收尾就量到了，变成没人接住的错误，整步测试被判失败（真浏览器里有这个功能）
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
     host = document.createElement("div");
     document.body.append(host);
     await act(async () => {
