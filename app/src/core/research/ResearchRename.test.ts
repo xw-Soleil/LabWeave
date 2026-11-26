@@ -43,31 +43,31 @@ vi.mock("@/core/research/ResearchFolder", () => ({
   ResearchFolder: {
     ensureRootRegistered: vi.fn(),
     getRoot: () => "/research",
-    isInside: (p: string) => p.startsWith("/research/"),
-    toRelative: (p: string, base = "/research") => path.posix.relative(base, p),
-    toAbsolute: (p: string, base = "/research") => path.posix.resolve(base, p),
+    isInside: (p: string) => slash(p).startsWith("/research/"),
+    toRelative: (p: string, base = "/research") => path.posix.relative(slash(base), slash(p)),
+    toAbsolute: (p: string, base = "/research") => path.posix.resolve(slash(base), slash(p)),
     scan: mocks.scan,
   },
 }));
 vi.mock("@/core/fileSystemProvider/FileSystemProviderFile", () => ({
   FileSystemProviderFile: class {
     write(uri: URI, bytes: Uint8Array) {
-      return mocks.write(uri.fsPath, bytes);
+      return mocks.write(slash(uri.fsPath), bytes);
     }
   },
 }));
 vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: async (p: string) => mocks.files.has(p),
+  exists: async (p: string) => mocks.files.has(slash(p)),
   readFile: async (p: string) => {
-    if (!mocks.files.has(p)) throw new Error("missing");
-    return mocks.files.get(p)!;
+    if (!mocks.files.has(slash(p))) throw new Error("missing");
+    return mocks.files.get(slash(p))!;
   },
   stat: async () => ({ mode: 0o644 }),
   mkdir: vi.fn(),
   remove: mocks.remove,
   writeFile: async (p: string, bytes: Uint8Array, options: { createNew?: boolean }) => {
-    if (options.createNew && mocks.files.has(p)) throw new Error("exists");
-    mocks.files.set(p, bytes);
+    if (options.createNew && mocks.files.has(slash(p))) throw new Error("exists");
+    mocks.files.set(slash(p), bytes);
   },
 }));
 vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
@@ -76,6 +76,9 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 import { Project } from "@/core/Project";
 import { createDefaultMetadata } from "@/types/metadata";
 import { renamedPath, renameResearchFile } from "./ResearchRename";
+
+/** Windows 上程序里的路径会是反斜杠写法，真的磁盘两种都认，这里的假磁盘一律按正斜杠存 */
+const slash = (p: string) => p.replaceAll("\\", "/");
 
 async function archive(source = "old.pdf") {
   const output = new Uint8ArrayWriter();
@@ -117,7 +120,7 @@ beforeEach(() => {
     mocks.files.set(p, bytes);
   });
   mocks.remove.mockImplementation(async (p: string) => {
-    mocks.files.delete(p);
+    mocks.files.delete(slash(p));
   });
   mocks.scan.mockImplementation(async () => ({
     truncated: false,
@@ -144,7 +147,11 @@ describe("research rename transaction", () => {
     mocks.files.set("/research/a.prg", board);
     mocks.annotations.mockRejectedValueOnce(new Error("annotationDestinationExists"));
     await expect(renameResearchFile("/research/old.pdf", "new")).rejects.toThrow("annotationDestinationExists");
-    expect(mocks.annotations).toHaveBeenCalledWith("/research/old.pdf", "/research/new.pdf", expect.any(Function));
+    expect(mocks.annotations).toHaveBeenCalledWith(
+      "/research/old.pdf",
+      URI.file("/research/new.pdf").fsPath,
+      expect.any(Function),
+    );
     expect(mocks.files.get("/research/old.pdf")).toEqual(new Uint8Array([1, 2, 3]));
     expect(mocks.files.has("/research/new.pdf")).toBe(false);
     expect(mocks.files.get("/research/a.prg")).toEqual(board);
@@ -169,7 +176,7 @@ describe("research rename transaction", () => {
     expect(project.getFileContent).not.toHaveBeenCalled();
   });
   it("preserves extensions and rejects path traversal", () => {
-    expect(renamedPath("/research/a.pdf", "新名称")).toBe("/research/新名称.pdf");
+    expect(slash(renamedPath("/research/a.pdf", "新名称"))).toBe("/research/新名称.pdf");
     expect(() => renamedPath("/research/a.pdf", "../oops")).toThrow();
   });
   it("updates references in closed workspaces before removing the original PDF", async () => {
@@ -226,10 +233,10 @@ describe("research rename transaction", () => {
     });
     mocks.tabs.push(project);
     await renameResearchFile("/research/a.prg", "新的工作区");
-    expect(project.uri.fsPath).toBe("/research/新的工作区.prg");
+    expect(project.uri.path).toBe("/research/新的工作区.prg");
     expect(project.metadata.workbench.id).toBe("keep-chat-id");
     expect(project.isSaving).toBe(false);
-    expect(await entry(mocks.files.get(project.uri.fsPath)!, "metadata.msgpack")).toMatchObject({
+    expect(await entry(mocks.files.get(project.uri.path)!, "metadata.msgpack")).toMatchObject({
       workbench: { id: "keep-chat-id", workspacePath: "新的工作区.prg" },
     });
     expect(mocks.session).toHaveBeenCalledWith("/research/a.prg", project.uri.fsPath);

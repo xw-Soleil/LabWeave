@@ -155,7 +155,7 @@ describe("ProjectTabs", () => {
     render([file, draft]);
 
     expect(tabElement(file).textContent).toBe("垃圾分类模型对比");
-    expect(tabElement(file).querySelector("[title]")!.getAttribute("title")).toBe("/research/垃圾分类模型对比.prg");
+    expect(tabElement(file).querySelector("[title]")!.getAttribute("title")).toBe(file.uri.fsPath);
     expect(tabElement(draft).textContent).toBe("tabs.untitled:3");
     expect(tabElement(file).getAttribute("aria-selected")).toBe("true");
     expect(tabElement(draft).getAttribute("aria-selected")).toBe("false");
@@ -174,7 +174,7 @@ describe("ProjectTabs", () => {
     const insideName = tabElement(inside).querySelector("[title]")!;
     expect(tabElement(inside).querySelector(".lucide-folder-output")).toBeNull();
     expect(insideName.className).not.toContain("italic");
-    expect(insideName.getAttribute("title")).toBe("/research/综述.prg");
+    expect(insideName.getAttribute("title")).toBe(inside.uri.fsPath);
   });
 
   it("labels the AI panel tab as AI chat instead of the workspace it points to", () => {

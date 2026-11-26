@@ -138,7 +138,7 @@ describe("ResearchSession", () => {
     mocks.ensureRootRegistered.mockResolvedValue(undefined);
     mocks.exists.mockImplementation(async (path: string) => !path.includes("missing"));
     mocks.onOpenFile.mockImplementation(async (uri: URI, _source: string, _origin: unknown, options) => {
-      mocks.calls.push(`open:${uri.fsPath}`);
+      mocks.calls.push(`open:${uri.path}`);
       return options?.deferActivation ? new Project(uri) : addProject(uri);
     });
     mocks.onNewDraft.mockImplementation(async () => {
@@ -194,7 +194,7 @@ describe("ResearchSession", () => {
     persistResearchSession();
     expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg"]);
     expect(mocks.settings.researchSession.active).toBe("");
-    expect((await listResearchWorkspaces()).map((item) => item.absPath)).toEqual(["/research/a.prg"]);
+    expect((await listResearchWorkspaces()).map((item) => URI.file(item.absPath).path)).toEqual(["/research/a.prg"]);
 
     mocks.settings.researchFolderPath = "/outside";
     persistResearchSession();
@@ -237,7 +237,7 @@ describe("ResearchSession", () => {
     expect(restored).toBe(true);
     expect(mocks.ensureRootRegistered).toHaveBeenCalledOnce();
     expect(mocks.calls).toEqual(["open:/research/a.prg", "open:/research/b.prg", "panel:files", "panel:ai"]);
-    expect((store.get(activeTabAtom) as Project | undefined)?.uri.fsPath).toBe("/research/a.prg");
+    expect((store.get(activeTabAtom) as Project | undefined)?.uri.path).toBe("/research/a.prg");
     // 别的都在、只缺一个，说明它真被删了，从会话里去掉
     expect(mocks.settings.researchSession.openWorkspaces).toEqual(["a.prg", "b.prg"]);
   });
@@ -330,14 +330,11 @@ describe("ResearchSession", () => {
     expect(board.save).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledWith(board.id, { confirmed: true });
     expect(mocks.remember).toHaveBeenCalledWith("/research", { openWorkspaces: ["old.prg"], active: "old.prg" });
-    expect(mocks.recent.mock.calls[0][0].map((uri: URI) => uri.fsPath)).toEqual([
+    expect(mocks.recent.mock.calls[0][0].map((uri: URI) => uri.path)).toEqual([
       "/next/restored.prg",
       "/next/deep/new.prg",
     ]);
-    expect(mocks.onOpenFile.mock.calls.map(([uri]) => uri.fsPath)).toEqual([
-      "/next/restored.prg",
-      "/next/deep/new.prg",
-    ]);
+    expect(mocks.onOpenFile.mock.calls.map(([uri]) => uri.path)).toEqual(["/next/restored.prg", "/next/deep/new.prg"]);
     expect(mocks.settings.researchSession.openWorkspaces).toEqual(["restored.prg", "deep/new.prg"]);
   });
 
@@ -367,7 +364,7 @@ describe("ResearchSession", () => {
     });
     expect(await switchResearchProject("/next")).toBe(true);
     expect(board.save).not.toHaveBeenCalled();
-    expect(vi.mocked(board.saveAs).mock.calls[0][0].fsPath).toBe("/research/new.prg");
+    expect(vi.mocked(board.saveAs).mock.calls[0][0].path).toBe("/research/new.prg");
     expect(mocks.remember).toHaveBeenLastCalledWith("/research", { openWorkspaces: ["new.prg"], active: "new.prg" });
   });
 
@@ -453,7 +450,7 @@ describe("ResearchSession", () => {
     const old = addProject(URI.file("/research/a.prg"));
     expect(await switchResearchProject("/Research", "/Research/a.prg")).toBe(true);
     expect(store.get(tabsAtom)).not.toContain(old);
-    expect(store.get(tabsAtom).map((tab) => (tab as Project).uri.fsPath)).toEqual(["/Research/a.prg"]);
+    expect(store.get(tabsAtom).map((tab) => (tab as Project).uri.path)).toEqual(["/Research/a.prg"]);
   });
 
   it.each(["cancel", "read error"])(

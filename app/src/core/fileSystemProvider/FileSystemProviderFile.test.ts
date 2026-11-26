@@ -28,7 +28,7 @@ describe("FileSystemProviderFile.write", () => {
   it("writes a hidden temporary file in the same folder, then renames it over the target", async () => {
     await new FileSystemProviderFile().write(target, content);
     const [temporaryPath, written, options] = vi.mocked(writeFile).mock.calls[0];
-    expect(temporaryPath).toMatch(/^\/research\/\.综述\.prg\.[0-9a-f-]{36}\.tmp$/);
+    expect(URI.file(temporaryPath as string).path).toMatch(/^\/research\/\.综述\.prg\.[0-9a-f-]{36}\.tmp$/);
     expect(written).toBe(content);
     expect(options).toEqual({ mode: 0o664 });
     expect(rename).toHaveBeenCalledExactlyOnceWith(temporaryPath, target.fsPath);

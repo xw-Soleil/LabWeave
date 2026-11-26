@@ -1452,6 +1452,18 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 
 - 新文件 `.github/workflows/windows-package.yml`：在 GitHub 的云端 Windows 上按指定的标签或提交打 NSIS 安装包。只能手动触发，推代码不会跑；只有读权限，打出来的放在那次运行的附件里，不自动发布。程序代码没有改动。
 
+### 115. 让只在 Windows 上没过的测试不再看系统（2026-11-24）
+
+- 只改测试，程序代码没有改动。0.2.0 在 GitHub 的 Windows 检查里有 121 条前端测试、1 条 Rust 测试没过，原因都在测试这边。
+- 路径：期望值不再写死 Mac 的斜杠写法，改成用 `URI.file(…).fsPath` 或 `.path` 算；测试里的假文件夹两种斜杠都认（`ProjectSidecar`、`ResearchRename`、`ResearchTrash`、`Library`、`ResearchSession`、`TemporaryWorkspaceOpen`、`ReportLinks`、`FileSystemProviderFile`、`ProjectTabs`、`FileManagerWindow`、`research-file-menu`）。
+- `ZoteroSync.test.ts`：假磁盘在 Windows 上不再给出权限值（和真程序一致）；权限的断言只在别的系统上查；等后台那一步做完再看结果，不再在它刚开始时就查。
+- `ProjectGraphCli.test.ts`、`OpenProjectRuntimeHost.test.ts`：超时统一放到 5 分钟，只用来发现卡死；临时目录的短写法（`RUNNER~1`）先还原再比；设置目录按当前系统算，不再写死 Mac 的位置。三条取消测试在 Windows 上跳过：Node 在 Windows 上的 `kill` 是直接结束进程，没法模拟 Ctrl+C。
+- `ProjectGraphMcpServer.test.ts`：临时目录同样先还原。
+- `ReactDevTracks.test.tsx`：按行读源码时两种换行都认。
+- `PdfView.test.tsx`：点目录或内部链接以后没跳到就再点一次（打开时的缩放会把页面拉回第一页，机器一慢就撞上）。
+- `app/src-tauri/src/project_ownership.rs` 里那条查锁文件名的测试：Windows 上的值单写一份。
+- `MarkdownTable.test.tsx`（2026-11-25 补）：测试用的假浏览器不会量文字位置（`Range.getClientRects`）。编辑器在表格格子拿到焦点后过一会儿会自己去量，机器慢时测试还没收尾就量到了，报出一个没人接住的错误，测试全过也会被判整步失败。测试里补上这个功能（返回空结果）。让测试故意晚 0.6 秒收尾可以稳定复现，补上以后连跑三次不再出现。
+
 ### 116. 文献库工具栏不再盖住信息栏的标题（2026-11-25）
 
 - 原来工具栏只占中间列表那一栏。窗口一窄（1200 宽、左右两栏都开着就会），右边的「同步 Zotero」「刷新」「信息」放不下，直接画到信息栏上，盖住选中文献的标题。
@@ -1459,4 +1471,3 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 代价：信息栏比原来矮一行工具栏的高度（约 40 像素；换成两行时约 76 像素）。
 - 测试：`LibraryView.test.tsx` 加一条，钉住「工具栏不在列表那一栏里」。测试环境不会量位置，重叠与否是在开发版里按 1000、1200、1500 三种宽度截图确认的。
 - 第一版改动由飞书反馈机器人（Codex）生成，Claude 审过后改了三处：右边三个按钮成组换行、分类栏补上高度限制、测试不再检查样式类名。
-- 编号跳过 115：那一条在 `windows-tests` 分支上，还没合进来。

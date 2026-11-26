@@ -27,13 +27,14 @@ vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: {}
 vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24, NODE_PADDING: 10 } }));
 vi.mock("@/core/research/ResearchFolder", async () => {
   const { posix } = await import("node:path");
+  // Windows 上传进来的是反斜杠写法（URI.fsPath），真的 ResearchFolder 两种都认
+  const slash = (path: string) => path.replaceAll("\\", "/");
   return {
     ResearchFolder: {
       getRoot: () => "/research",
-      isInside: (path: string) => path.startsWith("/research/"),
-      toRelative: (path: string, baseDir = "/research") => posix.relative(baseDir, path),
-      toAbsolute: (path: string, baseDir = "/research") =>
-        posix.isAbsolute(path) ? posix.normalize(path) : posix.join(baseDir, path),
+      isInside: (path: string) => slash(path).startsWith("/research/"),
+      toRelative: (path: string, baseDir = "/research") => posix.relative(slash(baseDir), slash(path)),
+      toAbsolute: (path: string, baseDir = "/research") => posix.resolve(slash(baseDir), slash(path)),
     },
   };
 });
@@ -425,7 +426,7 @@ describe("Save As", () => {
     const expected = ["topic/papers/a.pdf", "/research/c.pdf", "/Volumes/Archive/d.pdf"];
     expect(await storedSourcePaths("/research/b.prg")).toEqual(expected);
     expect(cards.map((card) => card.sourcePath)).toEqual(expected);
-    expect(project.uri.fsPath).toBe("/research/b.prg");
+    expect(project.uri.path).toBe("/research/b.prg");
     expect(project.projectState).toBe(ProjectState.Saved);
 
     const id = project.metadata.workbench?.id;
@@ -443,7 +444,7 @@ describe("Save As", () => {
       "volume unplugged",
     );
     expect(cards.map((card) => card.sourcePath)).toEqual(originalPaths);
-    expect(project.uri.fsPath).toBe("/research/topic/a.prg");
+    expect(project.uri.path).toBe("/research/topic/a.prg");
     expect(project.metadata.workbench?.id).toBe("original");
   });
 
@@ -473,7 +474,9 @@ describe("Save As", () => {
     await expect(
       draft.saveAs(URI.file("/research/draft.prg"), { includeThumbnail: false, createNew: true }),
     ).rejects.toThrow("already exists");
-    expect(writeFile).toHaveBeenCalledWith("/research/draft.prg", expect.any(Uint8Array), { createNew: true });
+    expect(writeFile).toHaveBeenCalledWith(URI.file("/research/draft.prg").fsPath, expect.any(Uint8Array), {
+      createNew: true,
+    });
     expect(draft.uri.scheme).toBe("draft");
     expect(draft.projectState).toBe(ProjectState.Unsaved);
   });
@@ -484,6 +487,6 @@ describe("Save As", () => {
     await expect(project.saveAs(URI.file("/Users/me/Desktop/b.prg"), { includeThumbnail: false })).rejects.toThrow();
     expect(toast.error).toHaveBeenCalledOnce();
     expect(files.size).toBe(0);
-    expect(project.uri.fsPath).toBe("/research/topic/a.prg");
+    expect(project.uri.path).toBe("/research/topic/a.prg");
   });
 });

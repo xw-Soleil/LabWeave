@@ -1011,5 +1011,6 @@ describe("Open Project Runtime Host", () => {
       focusedElement.remove();
       rmSync(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+    // 要起六次命令行进程，云端的 Windows 上一次要 8 秒左右
+  }, 300_000);
 });

@@ -87,6 +87,26 @@ async function createProjectFixture(
   return projectPath;
 }
 
+/** 命令行会把路径还原成唯一的写法；Windows 的临时目录可能是短写法（RUNNER~1），只有 native 会还原它 */
+const canonicalPath = (path: string) => realpathSync.native(path);
+
+/** 造一个放好设置的用户目录，返回让命令行改用它的环境变量 */
+function createSettingsEnvironment(settings: object): Record<string, string> {
+  const home = mkdtempSync(join(tmpdir(), "project-graph-cli-settings-"));
+  temporaryDirectories.push(home);
+  const environment = {
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: join(home, "AppData", "Roaming"),
+    XDG_DATA_HOME: join(home, ".local", "share"),
+    COREPACK_HOME: process.env.COREPACK_HOME ?? join(homedir(), ".cache/node/corepack"),
+  };
+  const [directory] = resolveProjectGraphAppDataDirectories(process.platform, environment, home);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "settings.json"), JSON.stringify(settings));
+  return environment;
+}
+
 function createFakeOwnershipHelper(source: string): string {
   const directory = mkdtempSync(join(tmpdir(), "project-graph-ownership-helper-fixture-"));
   temporaryDirectories.push(directory);
@@ -380,7 +400,8 @@ async function createCancellableOpenProjectHost(projectPath: string) {
 }
 
 // Closed-project calls start a fresh Node worker and Vite runtime on every invocation.
-describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
+// 每次调用都要起一个新进程，云端的 Windows 上一次要 8 秒左右；这个时限只用来发现卡死
+describe("Project Graph CLI process contract", { timeout: 300_000 }, () => {
   it("keeps PDF excerpt and source paths in a closed workspace dump without opening the PDF", async () => {
     const projectPath = await createProjectFixture("2.7.0", [
       {
@@ -408,9 +429,9 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
     expect(readFileSync(projectPath)).toEqual(before);
   });
   // 做汇报的工具读的是项目文件夹里 .workbench/ 下的记录：程序没开、直接读文件时也要读得到
-  it("reads the activity log, snapshots and annotations of a closed workspace", { timeout: 90_000 }, async () => {
+  it("reads the activity log, snapshots and annotations of a closed workspace", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
-    const folder = realpathSync(dirname(projectPath));
+    const folder = canonicalPath(dirname(projectPath));
     const projectName = folder.split(/[\\/]/).pop()!;
     const write = (path: string, content: string) => {
       mkdirSync(dirname(join(folder, path)), { recursive: true });
@@ -457,18 +478,7 @@ describe("Project Graph CLI process contract", { timeout: 15_000 }, () => {
         },
       ]),
     );
-    const settingsHome = mkdtempSync(join(tmpdir(), "project-graph-cli-settings-"));
-    temporaryDirectories.push(settingsHome);
-    const environment = {
-      HOME: settingsHome,
-      USERPROFILE: settingsHome,
-      APPDATA: join(settingsHome, "AppData", "Roaming"),
-      XDG_DATA_HOME: join(settingsHome, ".local", "share"),
-      COREPACK_HOME: process.env.COREPACK_HOME ?? join(homedir(), ".cache/node/corepack"),
-    };
-    const [settingsDirectory] = resolveProjectGraphAppDataDirectories(process.platform, environment, settingsHome);
-    mkdirSync(settingsDirectory, { recursive: true });
-    writeFileSync(join(settingsDirectory, "settings.json"), JSON.stringify({ researchFolderPath: folder }));
+    const environment = createSettingsEnvironment({ researchFolderPath: folder });
     const before = readFileSync(projectPath);
     const invoke = async (tool: string, input: object) => {
       const result = await runCliAsyncWithEnvironment(
@@ -744,7 +754,6 @@ if (command === "try-hold-project") {
         stderr: "",
       });
     },
-    15_000,
   );
 
   it.skipIf(productionEntry || process.platform === "win32")(
@@ -845,7 +854,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       { code: "PROJECT_LOAD_FAILED", message: "Project file could not be loaded." },
       1,
     );
-  }, 15_000);
+  });
 
   it("does not create legacy ownership sidecars in the Project directory", async () => {
     const projectPath = await createProjectFixture();
@@ -862,7 +871,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       chmodSync(directory, 0o755);
     }
-  }, 15_000);
+  });
 
   it("invokes get_all_nodes against a closed current-schema Project without rewriting it", async () => {
     const projectPath = await createProjectFixture();
@@ -960,7 +969,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       expect.objectContaining({ ref: "n1", type: "TextNode", text: "Source" }),
     ]);
     expect(readFileSync(projectPath)).toEqual(before);
-  }, 15_000);
+  });
 
   it("reads and edits legacy formula cards as text cards in a closed project", async () => {
     const stage = createMutationStage();
@@ -1002,7 +1011,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
     expect(reopened).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(reopened.stdout)[0]).toMatchObject({ type: "TextNode", text });
-  }, 20_000);
+  });
 
   it.each([
     ["delete_selected_nodes", "{}"],
@@ -1128,7 +1137,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
     expect(tree).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(tree.stdout)).toEqual({ success: true, nodeCount: 1 });
-  }, 90_000);
+  });
 
   it("preserves recognize_image dependency failure as its normal result", async () => {
     const projectPath = await createProjectFixture("2.7.0", [
@@ -1169,7 +1178,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     expect(result).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(result.stdout)).toEqual({ success: false, error: "图片数据未找到（附件可能已丢失）" });
     expect(readFileSync(projectPath)).toEqual(before);
-  }, 15_000);
+  });
 
   it("uses the saved model credentials and attachment for recognize_image", async () => {
     const attachmentId = "66666666-6666-4666-8666-666666666666";
@@ -1238,18 +1247,11 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     const address = modelServer.address();
     if (!address || typeof address === "string") throw new Error("Expected a model fixture address");
 
-    const settingsHome = mkdtempSync(join(tmpdir(), "project-graph-cli-settings-"));
-    temporaryDirectories.push(settingsHome);
-    const settingsDirectory = join(settingsHome, "Library", "Application Support", "com.ai4know.researchworkbench");
-    mkdirSync(settingsDirectory, { recursive: true });
-    writeFileSync(
-      join(settingsDirectory, "settings.json"),
-      JSON.stringify({
-        aiApiBaseUrl: `http://127.0.0.1:${address.port}/v1`,
-        aiApiKey: "fixture-api-key",
-        aiModel: "fixture-model",
-      }),
-    );
+    const environment = createSettingsEnvironment({
+      aiApiBaseUrl: `http://127.0.0.1:${address.port}/v1`,
+      aiApiKey: "fixture-api-key",
+      aiModel: "fixture-model",
+    });
 
     try {
       expect(runCli("tool", "invoke", "get_all_nodes", "--project", projectPath, "--input", "{}")).toMatchObject({
@@ -1257,7 +1259,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         stderr: "",
       });
       const result = await runCliAsyncWithEnvironment(
-        { HOME: settingsHome, COREPACK_HOME: process.env.COREPACK_HOME ?? join(homedir(), ".cache/node/corepack") },
+        environment,
         "tool",
         "invoke",
         "recognize_image",
@@ -1293,7 +1295,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       await new Promise<void>((resolve, reject) => modelServer.close((error) => (error ? reject(error) : resolve())));
     }
-  }, 45_000);
+  });
 
   it("rejects newer and implicit legacy formats without rewriting the Project", async () => {
     const newerProjectPath = await createProjectFixture("99.0.0");
@@ -1316,7 +1318,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
     expect(readFileSync(newerProjectPath)).toEqual(newerBefore);
     expect(readFileSync(legacyProjectPath)).toEqual(legacyBefore);
-  }, 15_000);
+  });
 
   it("allows a legacy read-only invocation to upgrade only in memory", async () => {
     const projectPath = await createProjectFixture("2.6.0");
@@ -1335,7 +1337,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
 
     expect(result).toMatchObject({ status: 0, stdout: '{"objects":[]}\n', stderr: "" });
     expect(readFileSync(projectPath)).toEqual(before);
-  }, 15_000);
+  });
 
   it("restores stable Project Object References across independent CLI processes", async () => {
     const projectPath = await createProjectFixture("2.7.0", [
@@ -1374,7 +1376,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         },
       ],
     });
-  }, 300_000);
+  });
 
   it("keeps snapshots for two different Projects updated concurrently", async () => {
     const firstProjectPath = await createProjectFixture("2.7.0", createMutationStage().slice(0, 1));
@@ -1392,15 +1394,15 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     expect(Object.keys(store)).toEqual(
       expect.arrayContaining(
         [firstProjectPath, secondProjectPath].map(
-          (projectPath) => `project:${URI.file(realpathSync(projectPath)).toString()}:references`,
+          (projectPath) => `project:${URI.file(canonicalPath(projectPath)).toString()}:references`,
         ),
       ),
     );
-  }, 30_000);
+  });
 
   it("fails explicitly when a Project Object Reference snapshot is invalid", async () => {
     const projectPath = await createProjectFixture();
-    const key = `project:${URI.file(realpathSync(projectPath)).toString()}:references`;
+    const key = `project:${URI.file(canonicalPath(projectPath)).toString()}:references`;
     writeFileSync(
       getReferenceStorePath(),
       JSON.stringify({
@@ -1452,7 +1454,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       chmodSync(getReferenceStorePath(), 0o644);
     }
-  }, 15_000);
+  });
 
   it("persists a representative closed Project mutation through the shared executor", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1485,7 +1487,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     expect(value.objects).toContainEqual(
       expect.objectContaining({ ref: "e1", type: "LineEdge", sourceRef: "n1", targetRef: "n2", text: "persisted" }),
     );
-  }, 20_000);
+  });
 
   it("places text at coordinates and groups it in a closed Project, then reopens the Project with the group", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1552,7 +1554,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       ],
     });
     expect(JSON.parse(twice.stdout)).toMatchObject({ success: false, error: { code: "duplicate_refs" } });
-  }, 30_000);
+  });
 
   it("expands a closed Project tree without desktop-only effects or services", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1571,7 +1573,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         '{"ref":"n1","text":"Child"}',
       ),
     ).toMatchObject({ status: 0, stdout: '{"success":true,"nodeCount":1}\n', stderr: "" });
-  }, 20_000);
+  });
 
   it("preserves a stale Project Object Reference error after a deleted object is saved", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1601,7 +1603,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       },
       1,
     );
-  }, 20_000);
+  });
 
   it("does not save a normal semantic failure when the Project remains unchanged", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1632,7 +1634,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       },
     ]);
     expect(readFileSync(projectPath)).toEqual(beforeMutation);
-  }, 15_000);
+  });
 
   it("persists a mutating tool's partial result exactly as returned", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1669,7 +1671,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         expect.objectContaining({ ref: "e1", type: "LineEdge", sourceRef: "n1", targetRef: "n2" }),
       ]),
     });
-  }, 20_000);
+  });
 
   it("does not save the Project or new references when the shared executor throws", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1699,7 +1701,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
     expect(readFileSync(projectPath)).toEqual(projectBefore);
     expect(readFileSync(getReferenceStorePath())).toEqual(referencesBefore);
-  }, 15_000);
+  });
 
   it("does not save new references when Project.save() fails", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1728,7 +1730,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       chmodSync(projectPath, 0o644);
     }
-  }, 15_000);
+  });
 
   it("reports a saved Project when the following reference snapshot save fails", async () => {
     const projectPath = await createProjectFixture("2.7.0", createMutationStage());
@@ -1768,7 +1770,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         expect.objectContaining({ type: "LineEdge", sourceRef: "n1", targetRef: "n2" }),
       ]),
     });
-  }, 20_000);
+  });
 
   it("upgrades a legacy Project only when a closed mutation explicitly allows it", async () => {
     const projectPath = await createProjectFixture("2.6.0", createMutationStage());
@@ -1809,7 +1811,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     expect(JSON.parse(currentFormatReload.stdout)).toMatchObject({
       objects: expect.arrayContaining([expect.objectContaining({ type: "LineEdge" })]),
     });
-  }, 25_000);
+  });
 
   it("rejects a closed mutation against a newer Project even when upgrade is allowed", async () => {
     const projectPath = await createProjectFixture("99.0.0", createMutationStage());
@@ -1830,7 +1832,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       1,
     );
     expect(readFileSync(projectPath)).toEqual(before);
-  }, 15_000);
+  });
 
   it("returns PROJECT_BUSY instead of reading a Project held by an unconnectable owner", async () => {
     const projectPath = await createProjectFixture();
@@ -1845,7 +1847,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       await releaseProjectOwnership(holder);
     }
-  }, 15_000);
+  });
 
   it("attaches an equivalent Project Path to the live Open Project without reading the persisted fallback", async () => {
     const projectPath = await createProjectFixture();
@@ -1872,7 +1874,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       expect(result).toMatchObject({ status: 0, stdout: `${JSON.stringify(liveResult)}\n`, stderr: "" });
       expect(host.requests).toEqual([
         {
-          projectPath: realpathSync(projectPath),
+          projectPath: canonicalPath(projectPath),
           toolName: "get_all_nodes",
           input: {},
         },
@@ -1882,7 +1884,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       await host.close();
     }
-  }, 15_000);
+  });
 
   it("routes the complete 19/6/4 built-in tool matrix to the matching Open Project", async () => {
     const projectPath = await createProjectFixture();
@@ -1906,7 +1908,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
       expect(host.requests).toEqual(
         expect.arrayContaining(
           openProjectToolMatrix.map(({ name, input }) => ({
-            projectPath: realpathSync(projectPath),
+            projectPath: canonicalPath(projectPath),
             toolName: name,
             input,
           })),
@@ -1917,7 +1919,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       await host.close();
     }
-  }, 60_000);
+  });
 
   it("requires an Open Project before entering any selection or viewport handler", async () => {
     const projectPath = await createProjectFixture();
@@ -1949,7 +1951,7 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     );
     expect(existsSync(executorReadyPath)).toBe(false);
     expect(readFileSync(projectPath)).toEqual(before);
-  }, 45_000);
+  });
 
   it("returns a structured error when a connectable Open Project host disconnects without using the closed route", async () => {
     const projectPath = await createProjectFixture();
@@ -1980,9 +1982,10 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
     } finally {
       await host.close();
     }
-  }, 15_000);
+  });
 
-  it.each(["SIGINT", "SIGTERM"] as const)(
+  // Windows 上 kill 是直接结束进程，没法模拟用户按 Ctrl+C
+  it.skipIf(process.platform === "win32").each(["SIGINT", "SIGTERM"] as const)(
     "reports handled %s cancellation without stdout or protocol noise",
     async (signal) => {
       const projectPath = await createProjectFixture();
@@ -2011,31 +2014,33 @@ process.stdout.write(JSON.stringify({ status: "error", code: "PROJECT_LOAD_FAILE
         await host.close();
       }
     },
-    15_000,
   );
 
-  it("does not save a closed Project or print partial success after handled cancellation", async () => {
-    const projectPath = await createProjectFixture("2.7.0", createMutationStage());
-    const projectBefore = readFileSync(projectPath);
-    const invocation = spawnCliEntryProcess(
-      {},
-      "tool",
-      "invoke",
-      "create_edges",
-      "--project",
-      projectPath,
-      "--input",
-      JSON.stringify({ edges: [{ sourceRef: "n1", targetRef: "n2" }] }),
-    );
+  it.skipIf(process.platform === "win32")(
+    "does not save a closed Project or print partial success after handled cancellation",
+    async () => {
+      const projectPath = await createProjectFixture("2.7.0", createMutationStage());
+      const projectBefore = readFileSync(projectPath);
+      const invocation = spawnCliEntryProcess(
+        {},
+        "tool",
+        "invoke",
+        "create_edges",
+        "--project",
+        projectPath,
+        "--input",
+        JSON.stringify({ edges: [{ sourceRef: "n1", targetRef: "n2" }] }),
+      );
 
-    await waitForProjectLock(projectPath);
-    invocation.child.kill("SIGTERM");
+      await waitForProjectLock(projectPath);
+      invocation.child.kill("SIGTERM");
 
-    await expect(invocation.result).resolves.toEqual({
-      status: 130,
-      stdout: "",
-      stderr: '{"code":"CANCELLED","message":"Project Graph CLI invocation was cancelled."}\n',
-    });
-    expect(readFileSync(projectPath)).toEqual(projectBefore);
-  }, 15_000);
+      await expect(invocation.result).resolves.toEqual({
+        status: 130,
+        stdout: "",
+        stderr: '{"code":"CANCELLED","message":"Project Graph CLI invocation was cancelled."}\n',
+      });
+      expect(readFileSync(projectPath)).toEqual(projectBefore);
+    },
+  );
 });

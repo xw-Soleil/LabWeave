@@ -294,6 +294,16 @@ async function show(tab: DocumentTab) {
 async function click(key: string) {
   await act(async () => button(key).click());
 }
+/** 刚打开时缩放还要重算几次；测试里的滚动是假的，重算会把刚跳到的页拉回第 1 页，所以没跳成就再点 */
+async function jump(target: HTMLElement, page: string) {
+  await vi.waitFor(
+    async () => {
+      await act(async () => target.click());
+      expect(container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!.value).toBe(page);
+    },
+    { timeout: 4000 },
+  );
+}
 async function key(target: Element, name: string, extra: KeyboardEventInit = {}) {
   const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...extra });
   await act(async () => {
@@ -336,8 +346,7 @@ describe("EmbedPDF reading tabs with real plugins", () => {
       element.textContent?.includes("Introduction"),
     );
     expect(outline).toBeDefined();
-    await act(async () => outline!.click());
-    expect(container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!.value).toBe("3");
+    await jump(outline!, "3");
     await act(async () => {
       tabs[2].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
     });
@@ -514,8 +523,7 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     mocks.open.mockRejectedValueOnce(new Error("browser failed"));
     await act(async () => links[0].click());
     expect(mocks.error).toHaveBeenCalledOnce();
-    await act(async () => links[1].click());
-    expect(container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!.value).toBe("3");
+    await jump(links[1], "3");
     expect(
       TestWorker.instances[0].postMessage.mock.calls.some(([request]) =>
         /JavaScript|openDocumentUrl|saveAsCopy/.test(request.data?.name),

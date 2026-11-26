@@ -38,6 +38,8 @@ describe("React's development performance tracks", () => {
 
   it("are turned off before anything that could load React", () => {
     const main = readFileSync(resolve(__dirname, "../../main.tsx"), "utf8");
-    expect(main.split("\n").find((line) => line.startsWith("import"))).toBe('import "./core/research/ReactDevTracks";');
+    expect(main.split(/\r?\n/).find((line) => line.startsWith("import"))).toBe(
+      'import "./core/research/ReactDevTracks";',
+    );
   });
 });
