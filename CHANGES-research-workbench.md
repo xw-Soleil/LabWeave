@@ -1463,4 +1463,5 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - `PdfView.test.tsx`：点目录或内部链接以后没跳到就再点一次（打开时的缩放会把页面拉回第一页，机器一慢就撞上）。
 - `app/src-tauri/src/project_ownership.rs` 里那条查锁文件名的测试：Windows 上的值单写一份。
 - `PdfAnnotationEngine.test.ts`（2026-11-25 补）：读 PDF 页码标签那条要现加载整个 pdf.js，GitHub 的 Windows 机器平时就要 3 秒，有一次跑了 7.7 秒，超过默认的 5 秒上限而没过。单独把这条的上限放到 60 秒，只用来发现卡死。
+- `MarkdownLivePreview.test.tsx`（2026-11-25 补）：编辑器建好或改了字以后只给 Markdown 解析 20 毫秒，没解析完的留到后台接着做。GitHub 的 macOS 机器有一次慢了，提示框晚一步才画出来，测试查的时候还没有；收尾把假的 `ResizeObserver` 拆掉以后它才去画，又多报一个没人接住的错误。测试里建好编辑器、改完字以后先让它解析完再查。让测试里的时钟每看一次就过去 50 毫秒可以稳定复现（改之前 2 条没过，改之后 5 条全过）。`MarkdownTable.test.tsx` 建编辑器的写法一样，同样拖慢也会失败，一并补上。
 - `MarkdownTable.test.tsx`（2026-11-25 补）：测试用的假浏览器不会量文字位置（`Range.getClientRects`）。编辑器在表格格子拿到焦点后过一会儿会自己去量，机器慢时测试还没收尾就量到了，报出一个没人接住的错误，测试全过也会被判整步失败。测试里补上这个功能（返回空结果）。让测试故意晚 0.6 秒收尾可以稳定复现，补上以后连跑三次不再出现。

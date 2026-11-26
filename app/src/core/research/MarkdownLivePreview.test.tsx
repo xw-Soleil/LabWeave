@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
@@ -42,19 +43,28 @@ describe("live preview block widgets", () => {
     vi.unstubAllGlobals();
   });
 
+  // 编辑器建好时只给 Markdown 解析 20 毫秒，没解析完的留到后台接着做。机器慢时提示框、公式晚一步才画出来，
+  // 那时测试已经查过了，甚至已经收尾把假的 ResizeObserver 拆掉了。所以建好以后先让它解析完
+  const parsed = (view: EditorView) => {
+    forceParsing(view, view.state.doc.length, 5_000);
+    return view;
+  };
+
   it("keeps a callout's drawing when it goes away and comes back, and unmounts it with the editor", async () => {
     let view!: EditorView;
     await act(async () => {
-      view = new EditorView({
-        parent: host,
-        state: EditorState.create({
-          doc: `Intro\n\n${CALLOUT}\n\nEnd`,
-          extensions: [
-            markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }),
-            livePreview(() => config),
-          ],
+      view = parsed(
+        new EditorView({
+          parent: host,
+          state: EditorState.create({
+            doc: `Intro\n\n${CALLOUT}\n\nEnd`,
+            extensions: [
+              markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }),
+              livePreview(() => config),
+            ],
+          }),
         }),
-      });
+      );
     });
     const drawn = host.querySelector<HTMLElement>(".cm-lp-embed")!;
     expect(drawn.querySelector(".rendered")?.textContent).toBe(CALLOUT);
@@ -62,9 +72,15 @@ describe("live preview block widgets", () => {
 
     // 删掉再撤回来（滚出视野再滚回来也是这样）：拿回原来那块，不重新画一遍 Markdown
     const from = "Intro\n\n".length;
-    await act(async () => view.dispatch({ changes: { from, to: from + CALLOUT.length } }));
+    await act(async () => {
+      view.dispatch({ changes: { from, to: from + CALLOUT.length } });
+      parsed(view);
+    });
     expect(host.querySelector(".cm-lp-embed")).toBeNull();
-    await act(async () => view.dispatch({ changes: { from, insert: CALLOUT } }));
+    await act(async () => {
+      view.dispatch({ changes: { from, insert: CALLOUT } });
+      parsed(view);
+    });
     expect(host.querySelector(".cm-lp-embed")).toBe(drawn);
     expect(drawn.querySelector(".rendered")?.textContent).toBe(CALLOUT);
 
@@ -73,14 +89,19 @@ describe("live preview block widgets", () => {
   });
 
   const open = (doc: string, at = doc.length) =>
-    new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc,
-        selection: { anchor: at },
-        extensions: [markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }), livePreview(() => config)],
+    parsed(
+      new EditorView({
+        parent: host,
+        state: EditorState.create({
+          doc,
+          selection: { anchor: at },
+          extensions: [
+            markdown({ base: markdownLanguage, extensions: [frontmatterSyntax] }),
+            livePreview(() => config),
+          ],
+        }),
       }),
-    });
+    );
 
   it("shows formula source in code colours with the drawn formula kept underneath", () => {
     const doc = "Text\n\n$$\n\\sum_k x^2\n$$\n\nEnd";

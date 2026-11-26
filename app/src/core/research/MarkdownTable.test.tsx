@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { history } from "@codemirror/commands";
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
@@ -85,6 +86,8 @@ describe("Markdown table in live preview", () => {
           extensions: [history(), markdown({ base: markdownLanguage }), livePreview(() => config)],
         }),
       });
+      // 编辑器建好时只给 Markdown 解析 20 毫秒，机器慢时表格晚一步才画出来。先让它解析完
+      forceParsing(view, view.state.doc.length, 5_000);
     });
   });
 
