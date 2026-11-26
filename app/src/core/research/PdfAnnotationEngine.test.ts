@@ -108,6 +108,8 @@ describe("annotation coordinates against the installed PDFium engine", () => {
     },
   );
 
+  // 这条要现加载整个 pdf.js：GitHub 的 Windows 机器平时就要 3 秒，慢的时候 7 秒多，默认的 5 秒
+  // 不够。这里的上限只用来发现卡死
   it("reads Roman and prefixed PDF page labels offline through the existing pdf.js metadata API", async () => {
     const network = vi.fn(() => {
       throw new Error("network forbidden");
@@ -123,7 +125,7 @@ describe("annotation coordinates against the installed PDFium engine", () => {
       await loading.destroy();
       vi.unstubAllGlobals();
     }
-  });
+  }, 60_000);
 });
 
 describe.skipIf(!process.env.LABWEAVE_ANNOTATION_REPORT)("annotation model performance probe", () => {
