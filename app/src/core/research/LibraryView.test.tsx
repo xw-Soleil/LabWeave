@@ -116,6 +116,20 @@ afterEach(async () => {
 });
 
 describe("the literature list", () => {
+  it("keeps the toolbar out of the list column, where its buttons used to cover the selected title", async () => {
+    vi.stubGlobal("CSS", { escape: (value: string) => value });
+    mocks.snapshot = library(1);
+    await act(async () => root.render(<LibraryView />));
+    await act(async () => rows()[0].click());
+
+    // jsdom does not measure boxes, so this can only pin the structure: the toolbar sits above
+    // both the list and the details pane instead of being squeezed into the list column.
+    const info = container.querySelector('button[title="library.info"]')!;
+    const title = container.querySelector('textarea[aria-label="library.fields.title"]')!;
+    expect(info.closest("section, aside")).toBeNull();
+    expect(title.closest("aside")).not.toBeNull();
+  });
+
   it("draws the first screen at once and the rest straight after", async () => {
     vi.useFakeTimers();
     mocks.snapshot = library(45);

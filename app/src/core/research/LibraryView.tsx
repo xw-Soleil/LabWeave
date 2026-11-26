@@ -367,7 +367,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
 
   return (
     <div
-      className="bg-background flex h-full min-h-0 pt-9 text-[13px]"
+      className="bg-background grid h-full min-h-0 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_minmax(0,1fr)] pt-9 text-[13px]"
       onPointerEnter={() => {
         if (Date.now() - lastEnter.current < 1500) return;
         lastEnter.current = Date.now();
@@ -375,7 +375,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
       }}
     >
       {layout.tree && (
-        <aside className="bg-foreground/[0.02] flex w-56 shrink-0 flex-col border-r">
+        <aside className="bg-foreground/[0.02] col-start-1 row-span-2 flex min-h-0 w-56 flex-col border-r">
           <CollectionPane
             root={root}
             snapshot={snapshot}
@@ -391,18 +391,19 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
           <TagPane snapshot={snapshot} counts={counts} selected={tags} onChange={setTags} />
         </aside>
       )}
-      <section className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-10 shrink-0 items-center gap-1 px-3">
-          <ToolButton
-            icon={PanelLeft}
-            label={t("library.collections")}
-            active={layout.tree}
-            onClick={() => toggleLayout("tree")}
-          />
-          <ToolButton icon={Plus} label={t("library.newItem")} onClick={newItem} />
-          <ToolButton icon={Upload} label={t("library.importPdf")} onClick={importPdf} />
-          <ToolButton icon={WandSparkles} label={t("library.addById")} onClick={addById} />
-          <span className="flex-1" />
+      {/* 工具栏横跨列表和信息栏：只占列表那一栏时，窗口一窄，右边的按钮就会盖到信息栏上 */}
+      <div className="col-span-2 col-start-2 row-start-1 flex min-h-10 flex-wrap items-center gap-1 px-3">
+        <ToolButton
+          icon={PanelLeft}
+          label={t("library.collections")}
+          active={layout.tree}
+          onClick={() => toggleLayout("tree")}
+        />
+        <ToolButton icon={Plus} label={t("library.newItem")} onClick={newItem} />
+        <ToolButton icon={Upload} label={t("library.importPdf")} onClick={importPdf} />
+        <ToolButton icon={WandSparkles} label={t("library.addById")} onClick={addById} />
+        {/* 放不下时这三个一起换到下一行，仍然靠右 */}
+        <div className="ml-auto flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
@@ -424,6 +425,8 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
             onClick={() => toggleLayout("info")}
           />
         </div>
+      </div>
+      <section className="col-start-2 row-start-2 flex min-w-0 flex-col">
         <div className="px-3 pb-2">
           <div className="bg-foreground/[0.04] flex h-8 items-center gap-2 rounded-md px-2.5">
             <Search className="text-muted-foreground size-3.5 shrink-0" />
@@ -499,7 +502,7 @@ function LibraryBrowser({ root, onChangeRoot }: { root: string; onChangeRoot: ()
         </div>
       </section>
       {layout.info && (
-        <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l">
+        <aside className="col-start-3 row-start-2 flex w-72 flex-col overflow-y-auto border-l">
           {current ? (
             <InfoPane
               key={current.key}
