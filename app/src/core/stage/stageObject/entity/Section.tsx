@@ -12,6 +12,11 @@ import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializ
 import { Line, Rectangle, Shape } from "@graphif/shapes";
 import { Value } from "platejs";
 
+/** 调范围的小方块管哪几条边：x 是 -1 左、1 右、0 不动；y 是 -1 上、1 下、0 不动 */
+export type SectionResizeHandle = { x: -1 | 0 | 1; y: -1 | 0 | 1 };
+const SIDES = [-1, 0, 1] as const;
+const ENDS = [-1, 1] as const;
+
 @passExtraAtArg1
 @passObject
 export class Section extends ConnectableEntity {
@@ -157,11 +162,13 @@ export class Section extends ConnectableEntity {
    *   自动调整大小为 标题+padding，位置为 当前碰撞箱外接矩形的左上角
    */
   adjustLocationAndSize() {
-    const content = this.getContentBounds(this.manualBounds ? 0 : 30);
+    // 手动拖大过的框不会缩回去；里面的内容挪到框外时照样跟着撑大
+    const content = this.getContentBounds();
     this.setBounds(this.manualBounds ? Rectangle.getBoundingRectangle([this.manualBounds, content]) : content);
   }
 
-  private getContentBounds(padding: number) {
+  /** 正好包住里面内容（四周留白 30）的范围，也是手动调范围时能缩到的最小范围 */
+  private getContentBounds() {
     let rectangle: Rectangle;
     const titleSize = getTextSize(this.text, Renderer.FONT_SIZE);
 
@@ -193,9 +200,8 @@ export class Section extends ConnectableEntity {
         }
       }
       // 调整展开状态
-      rectangle = Rectangle.getBoundingRectangle(bounds, padding);
+      rectangle = Rectangle.getBoundingRectangle(bounds, 30);
       rectangle.size.x = Math.max(rectangle.size.x, titleSize.x + Renderer.NODE_PADDING * 2);
-      rectangle.size.y = Math.max(rectangle.size.y, Renderer.NODE_PADDING * 2);
       // 留白范围在上面调整
       rectangle.location = rectangle.location.subtract(new Vector(0, titleBarHeight));
       rectangle.size = rectangle.size.add(new Vector(0, titleBarHeight));
@@ -230,19 +236,53 @@ export class Section extends ConnectableEntity {
     );
   }
 
-  beginResize(point: Vector) {
-    if (!this.canResize) return null;
-    if (this.details.length && this.isMouseInDetailsButton(point)) return null;
-    const start = this.rectangle;
-    const tolerance = Math.min(6 / this.project.camera.currentScale, start.width / 4, start.height / 4);
-    if (!start.expandFromCenter(tolerance).isPointIn(point)) return null;
-    const left = Math.abs(point.x - start.left) <= tolerance;
-    const right = Math.abs(point.x - start.right) <= tolerance;
-    const top = Math.abs(point.y - start.top) <= tolerance;
-    const bottom = Math.abs(point.y - start.bottom) <= tolerance;
-    if (!(left || right || top || bottom)) return null;
+  /**
+   * 选中后用来调范围的小方块：四个角，边够长时再加四条边的中点。
+   * 只有拖它们才调范围；边框其余地方照旧是挪动整个分组框。
+   */
+  getResizeHandles(): { handle: SectionResizeHandle; location: Vector }[] {
+    if (!this.canResize) return [];
+    const rect = this.rectangle;
+    // 边在屏幕上短于 48 像素时，中点的小方块会和角上的挤在一起
+    const room = 48 / this.project.camera.currentScale;
+    const handles: { handle: SectionResizeHandle; location: Vector }[] = [];
+    for (const x of rect.width >= room ? SIDES : ENDS) {
+      for (const y of rect.height >= room ? SIDES : ENDS) {
+        if (x === 0 && y === 0) continue;
+        const location = new Vector(rect.center.x + (x * rect.width) / 2, rect.center.y + (y * rect.height) / 2);
+        if (this.details.length && this.isMouseInDetailsButton(location)) continue;
+        handles.push({ handle: { x, y }, location });
+      }
+    }
+    return handles;
+  }
 
-    const content = this.getContentBounds(0);
+  /** 丢掉手动调的范围，回到自动贴合内容。本来就是自动贴合的返回 false */
+  fitToContent(): boolean {
+    if (!this.manualBounds) return false;
+    this.manualBounds = undefined;
+    this.adjustLocationAndSize();
+    this.updateFatherSectionByMove();
+    return true;
+  }
+
+  /** 这个位置按在哪个小方块上（比画出来的略大一圈，好点中） */
+  findResizeHandle(point: Vector): SectionResizeHandle | null {
+    const reach = 7 / this.project.camera.currentScale;
+    const hit = this.getResizeHandles().find(
+      ({ location }) => Math.abs(location.x - point.x) <= reach && Math.abs(location.y - point.y) <= reach,
+    );
+    return hit?.handle ?? null;
+  }
+
+  /**
+   * 开始拖一个小方块调范围。只能往外拖大，或者缩回到正好包住内容为止，里面的内容不动。
+   * @param point 按下的位置
+   */
+  beginResize(handle: SectionResizeHandle, point: Vector) {
+    if (!this.canResize) return null;
+    const start = this.rectangle;
+    const content = this.getContentBounds();
     const maxTopLeft = this.children.length ? content.leftTop : start.rightBottom.subtract(content.size);
     const minBottomRight = this.children.length ? content.rightBottom : start.leftTop.add(content.size);
     return {
@@ -250,10 +290,10 @@ export class Section extends ConnectableEntity {
         const delta = location.subtract(point);
         this.setBounds(
           Rectangle.fromEdges(
-            left ? Math.min(start.left + delta.x, maxTopLeft.x) : start.left,
-            top ? Math.min(start.top + delta.y, maxTopLeft.y) : start.top,
-            right ? Math.max(start.right + delta.x, minBottomRight.x) : start.right,
-            bottom ? Math.max(start.bottom + delta.y, minBottomRight.y) : start.bottom,
+            handle.x < 0 ? Math.min(start.left + delta.x, maxTopLeft.x) : start.left,
+            handle.y < 0 ? Math.min(start.top + delta.y, maxTopLeft.y) : start.top,
+            handle.x > 0 ? Math.max(start.right + delta.x, minBottomRight.x) : start.right,
+            handle.y > 0 ? Math.max(start.bottom + delta.y, minBottomRight.y) : start.bottom,
           ),
         );
       },
@@ -261,7 +301,12 @@ export class Section extends ConnectableEntity {
         const bounds = this.rectangle;
         if (bounds.size.equals(start.size) && bounds.location.equals(start.location)) return false;
         if (!this.project.stage.includes(this)) return false;
-        this.manualBounds = bounds;
+        // 缩回到正好包住内容：回到自动贴合，以后内容少了框还会跟着缩
+        const fitted = this.getContentBounds();
+        this.manualBounds =
+          this.children.length && bounds.size.equals(fitted.size) && bounds.location.equals(fitted.location)
+            ? undefined
+            : bounds;
         const siblings = this.parentSection?.children ?? this.project.stageManager.getTopLevelEntities();
         const enclosed = siblings.filter((entity) => {
           if (entity === this || (entity instanceof ImageNode && entity.isBackground)) return false;

@@ -326,6 +326,9 @@ export class ControllerUtils {
       if (isResizableEntity(selectedEntity) && selectedEntity.getResizeHandleRect().isPointIn(clickedLocation)) {
         return true;
       }
+      if (selectedEntity instanceof Section && selectedEntity.findResizeHandle(clickedLocation)) {
+        return true;
+      }
     }
     return false;
   }

@@ -146,7 +146,7 @@ export class Controller {
         this.mousedown(event);
         this.camera.mousedown(event);
         this.isCameraPointerGesture = this.camera.isUsingMouseGrabMove;
-        if (!this.isCameraPointerGesture && !this.sectionEdit.tryStartResize(event))
+        if (!this.isCameraPointerGesture)
           this.dispatch((c) => {
             if (c !== this.camera) c.mousedown(event);
           });
@@ -154,13 +154,11 @@ export class Controller {
       move: (event) => {
         this.resetCountdownTimer();
         if (this.isCameraPointerGesture) this.camera.mousemove(event);
-        else if (this.sectionEdit.isResizing) this.sectionEdit.mousemove(event);
         else this.dispatch((c) => c.mousemove(event));
       },
       up: (event) => {
         this.mouseup(event);
         if (this.isCameraPointerGesture) this.camera.mouseup(event);
-        else if (this.sectionEdit.isResizing) this.sectionEdit.mouseup(event);
         else this.dispatch((c) => c.mouseup(event));
       },
       doubleClick: (event) => {

@@ -163,13 +163,16 @@ describe("StageManager.updateReferences", () => {
     expect(node.sectionDepth).toBe(1);
   });
 
-  it("resizes a section around new siblings without moving nodes or changing edge endpoints", () => {
+  it("resizes a section only from its handles, takes in new siblings, and leaves nodes and edges alone", () => {
+    const setCursorName = vi.fn();
     const project = {
       stage: [],
       camera: { currentScale: 1 },
       sectionMethods: { isEntityCoveredByBigTitleSection: () => false },
       renderer: { transformView2World: (point: Vector) => point },
       historyManager: { recordStep: vi.fn() },
+      controller: { setCursorName, camera: { isPreGrabbingWhenSpace: false } },
+      mouseInteraction: { updateByMouseMove: vi.fn() },
     } as unknown as Project;
     project.stageManager = new StageManager(project);
     project.sectionInOutManager = new SectionInOutManager(project);
@@ -187,10 +190,32 @@ describe("StageManager.updateReferences", () => {
     const nodes = [original, added, partial];
     const positions = nodes.map((node) => node.rectangle.clone());
 
+    // 四个角加四条边的中点；框在屏幕上很小时只留四个角
+    expect(group.getResizeHandles()).toHaveLength(8);
+    project.camera.currentScale = 0.25;
+    expect(group.getResizeHandles()).toHaveLength(4);
+    project.camera.currentScale = 1;
+
     const controller = new ControllerSectionEditClass(project);
     const pointer = (x: number, y: number) => ({ button: 0, clientX: x, clientY: y }) as MouseEvent;
-    expect(controller.tryStartResize(pointer(start.right, start.center.y))).toBe(true);
     const release = pointer(450, start.center.y + 50);
+    // 边框上不是小方块的地方：不调范围，留给「拖边框挪动」
+    const onBorder = pointer(start.right, start.top + 25);
+    expect(group.findResizeHandle(new Vector(onBorder.clientX, onBorder.clientY))).toBeNull();
+    controller.mousedown(onBorder);
+    controller.mousemove(release);
+    controller.mouseup(release);
+    expect(group.rectangle).toEqual(start);
+    expect(project.historyManager.recordStep).not.toHaveBeenCalled();
+
+    // 移到右边中点的小方块上，鼠标变成左右箭头；移开就变回去
+    const rightHandle = pointer(start.right, start.center.y);
+    controller.mousemove(rightHandle);
+    expect(setCursorName).toHaveBeenLastCalledWith("ew-resize");
+    controller.mousemove(pointer(start.right + 100, start.center.y));
+    expect(setCursorName).toHaveBeenLastCalledWith("default");
+
+    controller.mousedown(rightHandle);
     controller.mousemove(release);
     expect(group.children).toEqual([original]);
     controller.mouseup(release);
@@ -210,16 +235,32 @@ describe("StageManager.updateReferences", () => {
     expect(reopened.rectangle).toEqual(group.rectangle);
     expect(reopened.children.map((child) => child.collisionBox.getRectangle())).toEqual(positions.slice(0, 2));
 
-    const shrink = group.beginResize(group.rectangle.leftTop)!;
-    shrink.update(group.rectangle.rightBottom);
-    shrink.finish();
-    expect(group.rectangle.leftTop).toEqual(original.rectangle.leftTop);
-    expect(group.rectangle.rightBottom).toEqual(new Vector(450, start.bottom));
+    // 往回缩：最多缩到正好包住里面的内容（四周留白 30），内容不动
+    const shrink = group.beginResize({ x: 1, y: 1 }, group.rectangle.rightBottom)!;
+    shrink.update(group.rectangle.leftTop);
+    expect(shrink.finish()).toBe(true);
+    expect(group.rectangle).toEqual(
+      Rectangle.fromEdges(start.left, start.top, added.rectangle.right + 30, start.bottom),
+    );
     expect(nodes.map((node) => node.rectangle)).toEqual(positions);
-    expect(group.beginResize(group.rectangle.center)).toBeNull();
-    expect(group.beginResize(group.rectangle.leftTop)!.finish()).toBe(false);
+    const fitted = group.rectangle;
+    // 再拖大一次，然后双击小方块：丢掉手动调的范围，回到正好包住内容
+    const grow = group.beginResize({ x: 0, y: 1 }, new Vector(fitted.center.x, fitted.bottom))!;
+    grow.update(new Vector(fitted.center.x, fitted.bottom + 200));
+    grow.finish();
+    expect(group.rectangle.bottom).toBe(fitted.bottom + 200);
+    controller.mouseDoubleClick(pointer(group.rectangle.right, group.rectangle.bottom));
+    expect(group.rectangle).toEqual(fitted);
+    // 回到自动贴合以后，内容少了，框跟着缩
+    group.children.splice(group.children.indexOf(added), 1);
+    group.adjustLocationAndSize();
+    expect(group.rectangle).toEqual(start);
+
+    expect(group.findResizeHandle(group.rectangle.center)).toBeNull();
+    expect(group.beginResize({ x: -1, y: -1 }, group.rectangle.leftTop)!.finish()).toBe(false);
     group.locked = true;
-    expect(group.beginResize(group.rectangle.leftTop)).toBeNull();
+    expect(group.getResizeHandles()).toEqual([]);
+    expect(group.beginResize({ x: -1, y: -1 }, group.rectangle.leftTop)).toBeNull();
   });
 
   it("assigns symmetric shifting indexes to multi-edges of the same geometry group", () => {

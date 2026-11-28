@@ -1473,3 +1473,14 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 代价：信息栏比原来矮一行工具栏的高度（约 40 像素；换成两行时约 76 像素）。
 - 测试：`LibraryView.test.tsx` 加一条，钉住「工具栏不在列表那一栏里」。测试环境不会量位置，重叠与否是在开发版里按 1000、1200、1500 三种宽度截图确认的。
 - 第一版改动由飞书反馈机器人（Codex）生成，Claude 审过后改了三处：右边三个按钮成组换行、分类栏补上高度限制、测试不再检查样式类名。
+
+### 119. 分组框可以手动调范围（2026-11-28）
+
+- 原来分组框的范围只能自动贴合里面的内容。想留出空白、或者把后来加的内容圈进来，只能删掉分组框重新建。
+- 现在选中展开着的分组框，四个角和四条边的中点各有一个小方块（框在屏幕上很小时只留四个角）。拖小方块调范围，鼠标移上去变成对应方向的双向箭头；边框其余地方和标题条照旧是拖着挪动整个分组框。
+- 往外拖大后，新圈进来的同层内容自动进组；往回最多缩到正好包住内容（四周留白 30，和自动贴合时一样），里面内容的大小、位置、连线都不动。缩到头就回到自动贴合；双击任一小方块也回到自动贴合。锁定的、折叠的、被锁定分组框包着的不能调。
+- `app/src/core/stage/stageObject/entity/Section.tsx`：加 `manualBounds`（手动范围，存进文件，旧文件没有这一项就是自动贴合）、`getResizeHandles`、`findResizeHandle`、`beginResize`、`fitToContent`、`translateBounds`（整体平移时手动范围跟着走）。
+- `ControllerSectionEdit.tsx`：按下、拖动、松开、双击和鼠标样式都在这个控制器里；`utilsControl.tsx` 的 `isClickedResizeRect` 认得这些小方块，挪动和框选两个控制器看到按在小方块上会自己让开，和图片、文字节点调大小走的是同一条路。`SectionRenderer.tsx` 画小方块。`cursors.tsx` 补 `ew-resize`。
+- `copyEngineUtils.tsx`、`SectionCollisionSolver.tsx`：平移分组框改成调 `translateBounds`，不再各自改边框。
+- 测试：`StageManager.test.ts` 加一条，查小方块个数、按在边框别处不调范围、鼠标样式、拖大后圈进新内容、存取、缩到头回自动贴合、双击恢复、锁定后不能调。小方块的样子和各步的结果是在开发版里截图确认的。
+- 第一版改动由飞书反馈机器人（Codex）生成。它是「选中后整条边框都能拖着调范围」，结果选中的分组框没法再拖边框挪动（没有标题的完全挪不了），而且只有四角画了几乎看不见的小方块、鼠标不变样子。Claude 保留了它的数据部分，把交互重做成上面这样，并把最小范围的留白从 0 改回 30。
