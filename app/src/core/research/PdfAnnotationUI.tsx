@@ -893,8 +893,8 @@ export function PdfAnnotationSidebar({
   }, [scan]);
   const filtered = filterAnnotations(c.items, query, color);
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-col gap-2 border-b p-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-col gap-2 border-b p-2">
         <Input
           aria-label={t("annotation.filter")}
           placeholder={t("annotation.filter")}
@@ -903,7 +903,7 @@ export function PdfAnnotationSidebar({
         />
         <Colors value={color} onChange={(next) => setColor(next === color ? "" : next)} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto overscroll-contain p-3 [&::-webkit-scrollbar]:w-2.5!">
         {!filtered.length && <p className="text-muted-foreground text-sm">{t("annotation.empty")}</p>}
         {filtered.map((item) => (
           <AnnotationCard key={item.id} item={item} c={c} jump={jump} onSend={onSend} />

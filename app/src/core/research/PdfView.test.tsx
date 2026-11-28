@@ -355,6 +355,38 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     expect(container.querySelector("aside")).toBeNull();
   });
 
+  it("resizes the sidebar from its divider and keeps the chosen width across sidebar tabs", async () => {
+    await show(new DocumentTab("/sample.pdf", "pdf"));
+    const sidebar = container.querySelector("aside")!;
+    const divider = sidebar.querySelector<HTMLElement>('[role="separator"]')!;
+    const tabs = sidebar.querySelectorAll('[role="tab"]');
+    const selectTab = (index: number) =>
+      act(async () => tabs[index].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+    await selectTab(1);
+    const initialWidth = parseFloat(sidebar.style.width);
+    const capture = new Set<number>();
+    divider.setPointerCapture = (id) => capture.add(id);
+    divider.hasPointerCapture = (id) => capture.has(id);
+    const pointer = (type: string, clientX: number) =>
+      act(async () =>
+        divider.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, isPrimary: true, clientX })),
+      );
+    await pointer("pointerdown", 330);
+    await pointer("pointermove", 2000);
+    expect(sidebar.style.width).toBe(`${divider.getAttribute("aria-valuemax")}px`);
+    await pointer("pointermove", -1000);
+    expect(sidebar.style.width).toBe(`${divider.getAttribute("aria-valuemin")}px`);
+    await pointer("pointermove", 410);
+    await pointer("pointerup", 410);
+    capture.clear();
+    await pointer("pointermove", 510);
+    expect(sidebar.style.width).toBe(`${initialWidth + 80}px`);
+    await selectTab(2);
+    expect(sidebar.style.width).toBe(`${initialWidth + 80}px`);
+    await key(divider, "ArrowLeft");
+    expect(sidebar.style.width).toBe(`${initialWidth + 64}px`);
+  });
+
   it.each(["fit-width", "fit-page"])("restores %s and recalculates it on viewport resize", async (mode) => {
     const tab = new DocumentTab("/r/a.pdf", "pdf");
     tab.pdfLocation = { page: 3, scale: mode };
