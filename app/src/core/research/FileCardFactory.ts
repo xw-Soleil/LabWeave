@@ -1,7 +1,5 @@
-import { Dialog } from "@/components/ui/dialog";
 import type { Project } from "@/core/Project";
 import { cardText, extractFileCardContent, extractPdfCardContent } from "@/core/research/FileCardContent";
-import { annotationHeaderHeight } from "@/core/research/ImageCardAnnotation";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import { fileKindOf } from "@/core/research/ResearchShell";
@@ -216,18 +214,6 @@ function buildFileCard(project: Project, file: ParsedFile, location: Vector): Fi
   return card;
 }
 
-export async function promptImageCaption(project: Project, card: FileCardNode) {
-  const input = await Dialog.input(cardText("caption.title"), cardText("caption.description"), {
-    defaultValue: card.caption,
-    placeholder: cardText("caption.placeholder"),
-  });
-  if (input === undefined) return;
-  const caption = input.trim();
-  if (caption === card.caption) return;
-  card.caption = caption;
-  project.historyManager.recordStep();
-}
-
 /**
  * 只处理 pdf / image / markdown；从 worldPos（第一张卡片的左上角）起排成网格。
  * 加到舞台后调一次 updateReferences 和一次 historyManager.recordStep()，这样工程才会被标记为未保存。
@@ -278,10 +264,7 @@ export async function createFileCards(
 
     const columns = Math.max(1, Math.ceil(Math.sqrt(parsed.length)));
     // 图片卡片大小不一，格子按这批里最大的卡片算，免得叠在一起
-    const sizes = parsed.map((file) => {
-      const size = fileCardSize(file);
-      return file.fileKind === "image" ? size.add(new Vector(0, annotationHeaderHeight)) : size;
-    });
+    const sizes = parsed.map(fileCardSize);
     const cellWidth = Math.max(...sizes.map((size) => size.x)) + GRID_GAP;
     const cellHeight = Math.max(...sizes.map((size) => size.y)) + GRID_GAP;
     const cards = parsed.map((file, index) =>

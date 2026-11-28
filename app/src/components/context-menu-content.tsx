@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/context-menu";
 import { Project } from "@/core/Project";
 import { ACTIVITY_MARKS, noteCardMarks } from "@/core/research/ActivityLog";
-import { promptImageCaption, refreshFileCard, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { refreshFileCard, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { editImageCardCaption } from "@/core/research/ImageCardCaption";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
 import { researchContextMenu, RESEARCH_CONTEXT_ACTIONS } from "@/core/research/ResearchContextMenu";
@@ -477,7 +478,8 @@ export default function MyContextMenuContent() {
       )}
       {imageCard && (
         <>
-          <Item onClick={() => void promptImageCaption(p, imageCard)}>
+          {/* 等菜单收起、焦点还回去以后再开输入框，不然输入框刚出来就失去焦点，等于没开 */}
+          <Item onClick={() => setTimeout(() => void editImageCardCaption(p, imageCard), 120)}>
             <LucideIcons.Captions />
             {tResearch(imageCard.caption ? "card.caption.editMenu" : "card.caption.menu")}
           </Item>

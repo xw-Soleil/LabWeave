@@ -1473,3 +1473,15 @@ This program is a **modified version** of Project Graph (graphif/project-graph, 
 - 代价：信息栏比原来矮一行工具栏的高度（约 40 像素；换成两行时约 76 像素）。
 - 测试：`LibraryView.test.tsx` 加一条，钉住「工具栏不在列表那一栏里」。测试环境不会量位置，重叠与否是在开发版里按 1000、1200、1500 三种宽度截图确认的。
 - 第一版改动由飞书反馈机器人（Codex）生成，Claude 审过后改了三处：右边三个按钮成组换行、分类栏补上高度限制、测试不再检查样式类名。
+
+### 120. 图片卡片：说明写在图下面，图上不再压字（2026-11-28）
+
+- 原来图片卡片的标题压在图的左下角，「外部文件」「文件不见了」压在右上角，会盖住图例、图注和坐标轴上的字；标题只能写一行，要弹一个窗口填。
+- 现在标题改叫「说明」，画在图片下面，像论文里的图注：可以写多行，卡片跟着变高；没写就什么都没有，卡片就是图本身。右键「加图片说明… / 改图片说明…」或者双击已有的说明，在图下面原位写，点别处或按 Esc 结束，清空就是不要。双击图片本身照旧是打开原文件。
+- 「外部文件」并进鼠标移上去时卡片上方的那行字里（「外部文件 · 文件名 · 双击打开」）；原文件不见了时，那行「文件名 · 原文件不见了」一直显示，不用等鼠标移上去，红色描边照旧。
+- 旧白板里填过的图片标题、从 PDF 框下来的图自带的「论文名 · 第几页」，都自动变成图下面的说明，文件格式不变（还是 `caption` 这一项）。
+- `app/src/core/stage/stageObject/entity/FileCardNode.tsx`：有说明时卡片外框是图和说明两个矩形（`captionRectangle`、`setCaption`、`ensureCaptionLayout`）。连线端点只认图片本身（`connectionRectangle`），说明变长变短，指进图里的箭头位置不变；这个属性加在 `ConnectableEntity.tsx` 上，默认就是整个外框，`Edge.tsx`、`ImageEdgeEndpoints.ts` 改成读它。
+- 新文件 `app/src/core/research/ImageCardCaption.ts`：原位编辑。`inputElement.tsx` 的 `textarea` 多一个可选参数，用来关掉节点文字编辑才有的快捷键，让回车能换行。
+- `FileCardRenderer.tsx`：去掉压在图上的小块，加画说明；选中、悬停时图和说明合起来只描一圈。`FileCardFactory.ts` 去掉弹窗填标题的 `promptImageCaption`。文案：「图片标题」改叫「图片说明」，去掉弹窗用的两条。
+- 测试：`FileCardNode.test.ts`、`FileCardRenderer.test.ts` 各加一条，`ImageEdgeEndpoints.test.ts` 的假实体补上新属性。样子和原位编辑是在开发版里截图确认的。
+- 第一版改动由飞书反馈机器人（Codex）生成。它是在每张图片下面常驻一条「▸ 添加批注」、点开写批注，另加了两项数据，并把原有的图片标题改成鼠标移上去才显示。Claude 保留了「说明放在图下面、连线只认图片」这部分，其余重做成上面这样：不加新数据，标题和批注并成一样东西，没写就不显示。

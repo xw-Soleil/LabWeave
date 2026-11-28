@@ -1,10 +1,5 @@
 import { Project } from "@/core/Project";
-import {
-  annotationFontSize,
-  annotationHeaderHeight,
-  annotationLineHeight,
-  annotationPadding,
-} from "@/core/research/ImageCardAnnotation";
+import { captionFontSize, captionLineHeight, captionPadding } from "@/core/research/ImageCardCaption";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import type { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
@@ -41,15 +36,12 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
   @serializable
   pageCount: number;
   /**
-   * 图片卡片可选的标题，悬停时和文件名一起显示；空串表示不显示。
+   * 图片卡片可选的说明（标题、图注、自己的理解都写在这），显示在图片下面，可以多行；空串表示没有。
    * 和文件名、title 无关：改文件名不影响它，名字奇怪的图也不用为了好看去改名。
+   * 要改它用 setCaption，图片下面那一块的大小才会跟着变。
    */
   @serializable
   caption: string;
-  @serializable
-  annotation: string;
-  @serializable
-  annotationExpanded: boolean;
   /**
    * PDF 摘录卡片：从 PDF 里圈一段话或框一块图发上来的，记着第几页（从 1 数）和对应的那条批注，
    * 双击跳回原处。普通文件卡片是 0 和 ""。圈的字放在 excerpt，框的图放在 attachmentId。
@@ -108,37 +100,73 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     return this.collisionBox.getRectangle().center;
   }
 
-  /** 图片和批注各占一个矩形，原图的缩放和连线端点始终以第一个矩形为准。 */
+  /**
+   * 卡片本身（图片卡片就是那张图）的矩形。图片卡片写了说明时，说明在它下面另占一个矩形，
+   * 两个合起来才是整张卡片的外框；原图的缩放和连线端点始终以这个矩形为准。
+   */
   public get rectangle(): Rectangle {
     return this.collisionBox.shapes[0] as Rectangle;
   }
 
-  get annotationRectangle(): Rectangle | undefined {
+  /** 图片下面放说明的那一块；没写说明（也不在编辑）时没有 */
+  get captionRectangle(): Rectangle | undefined {
     return this.collisionBox.shapes[1] as Rectangle | undefined;
   }
 
-  private layoutAnnotation(height?: number) {
-    if (this.fileKind !== "image" && !this.canResize) return;
-    const rect = this.rectangle;
-    if (height === undefined) {
-      height = annotationHeaderHeight;
-      if (this.annotationExpanded) {
-        const width = rect.width - 2 * annotationPadding;
-        const lines = this.annotation
-          ? this.project.textRenderer.layoutClampedLines(this.annotation, annotationFontSize, width, Infinity).length
-          : 1;
-        height += Math.ceil(2 * annotationPadding + lines * annotationFontSize * annotationLineHeight);
-      }
+  /** 连线只认图片本身：加了说明、说明变长，箭头指的位置都不变 */
+  override get connectionRectangle(): Rectangle {
+    return this.rectangle;
+  }
+
+  /** 能带说明的卡片：图片，和从 PDF 里框下来的图 */
+  get canCaption(): boolean {
+    return this.fileKind === "image" || this.canResize;
+  }
+
+  /**
+   * 按现在的说明重排图片下面那一块：没有说明就去掉，有就按字数和卡片宽度定高度
+   * @param keepOpen 正在编辑时，说明是空的也留出一行
+   */
+  private layoutCaption(keepOpen = false) {
+    if (!this.canCaption || (!this.caption && !keepOpen)) {
+      this.collisionBox.shapes.length = 1;
+      return;
     }
+    const rect = this.rectangle;
+    const lines = this.caption
+      ? this.project.textRenderer.layoutClampedLines(
+          this.caption,
+          captionFontSize,
+          rect.width - 2 * captionPadding,
+          Infinity,
+        ).length
+      : 1;
+    const height = Math.ceil(2 * captionPadding + lines * captionFontSize * captionLineHeight);
     this.collisionBox.shapes[1] = new Rectangle(rect.leftBottom, new Vector(rect.width, height));
   }
 
-  setAnnotation(text: string, expanded: boolean) {
-    if (this.annotation === text && this.annotationExpanded === expanded) return;
-    this.annotation = text;
-    this.annotationExpanded = expanded;
-    this.layoutAnnotation();
+  /** 图片挪了位置：说明那一块跟着走，高度不变 */
+  private captionFollowsImage() {
+    const caption = this.captionRectangle;
+    if (!caption) return;
+    const rect = this.rectangle;
+    this.collisionBox.shapes[1] = new Rectangle(rect.leftBottom, new Vector(rect.width, caption.height));
+  }
+
+  /** 改说明。空串表示不要说明，图片下面那一块随之消失 */
+  setCaption(text: string, keepOpen = false) {
+    this.caption = text;
+    this.layoutCaption(keepOpen);
     this.updateFatherSectionByMove();
+  }
+
+  /**
+   * 渲染时调用：旧文件里的图片标题只有文字、没有下面那一块，第一次画的时候补上。
+   * 量文字要用到渲染器，构造时还没有，所以放在这里。
+   */
+  ensureCaptionLayout(): void {
+    if (!this.canCaption || !this.caption || this.captionRectangle) return;
+    this.setCaption(this.caption);
   }
 
   move(delta: Vector): void {
@@ -150,7 +178,7 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const newRectangle = this.rectangle.clone();
     newRectangle.location = location.clone();
     this.collisionBox.shapes[0] = newRectangle;
-    this.layoutAnnotation(this.annotationRectangle?.height);
+    this.captionFollowsImage();
     this.updateFatherSectionByMove();
   }
 
@@ -168,7 +196,7 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const newWidth = Math.max(rect.size.x + delta.x, minWidth);
     const newHeight = newWidth / aspectRatio;
     this.collisionBox.shapes[0] = new Rectangle(rect.location.clone(), new Vector(newWidth, newHeight));
-    this.layoutAnnotation();
+    this.layoutCaption();
     this.updateFatherSectionByMove();
   }
 
@@ -215,7 +243,7 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const fitted = FileCardNode.fitImageInBox(rect, width, height);
     if (fitted.size.x === rect.size.x && fitted.size.y === rect.size.y) return;
     this.collisionBox.shapes[0] = fitted;
-    this.layoutAnnotation();
+    this.layoutCaption();
     this.updateFatherSectionByMove();
   }
 
@@ -237,8 +265,6 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
       excerpt = "",
       pageCount = 0,
       caption = "",
-      annotation = "",
-      annotationExpanded = false,
       pdfPage = 0,
       pdfAnnotation = "",
       collisionBox = new CollisionBox([
@@ -257,12 +283,9 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     this.excerpt = excerpt.slice(0, FileCardNode.maxExcerptLength);
     this.pageCount = pageCount;
     this.caption = caption;
-    this.annotation = annotation;
-    this.annotationExpanded = annotationExpanded;
     this.pdfPage = pdfPage;
     this.pdfAnnotation = pdfAnnotation;
     this.color = color;
     this.collisionBox = collisionBox;
-    this.layoutAnnotation(this.annotationRectangle?.height);
   }
 }

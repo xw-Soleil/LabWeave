@@ -33,10 +33,9 @@ vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsM
 
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
 import { InputElement } from "@/core/render/domElement/inputElement";
-import { editImageCardAnnotation } from "@/core/research/ImageCardAnnotation";
+import { editImageCardCaption } from "@/core/research/ImageCardCaption";
 import { diffItems, sidecarItems } from "@/core/research/ProjectRecord";
 import { ControllerEntityResizeClass } from "@/core/service/controlService/controller/concrete/ControllerEntityResize";
-import { connectionRectangle } from "@/core/stage/stageObject/association/Edge";
 import { HistoryManager } from "@/core/stage/stageManager/StageHistoryManager";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Color, Vector } from "@graphif/data-structures";
@@ -130,8 +129,6 @@ describe("FileCardNode serialization", () => {
       excerpt: "",
       pageCount: 0,
       caption: "",
-      annotation: "",
-      annotationExpanded: false,
       pdfPage: 0,
       pdfAnnotation: "",
       details: [],
@@ -157,7 +154,7 @@ describe("FileCardNode serialization", () => {
   });
 });
 
-it("edits below the picture, grows with the text, and keeps the note when moved, reopened or collapsed", async () => {
+it("writes the caption under the picture, grows with the text, and keeps edges anchored to the picture", async () => {
   const board = {
     ...project,
     camera: { currentScale: 2, stopImmediately: vi.fn() },
@@ -172,40 +169,57 @@ it("edits below the picture, grows with the text, and keeps the note when moved,
   };
   board.inputElement = new InputElement(board as never);
   const original = new Rectangle(new Vector(30, 40), new Vector(300, 160));
-  const card = new FileCardNode(board as never, {
-    fileKind: "image",
-    caption: "Figure",
-    collisionBox: new CollisionBox([original]),
-  });
-  const collapsed = card.annotationRectangle!;
-  expect(collapsed.top).toBe(original.bottom);
-  const editing = editImageCardAnnotation(board as never, card);
-  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="annotation"]')!;
-  expect(parseFloat(input.style.top)).toBeGreaterThan(original.bottom * 2 + 20);
+  const card = new FileCardNode(board as never, { fileKind: "image", collisionBox: new CollisionBox([original]) });
+  // 没写说明：卡片就是图本身，下面什么都没有
+  expect(card.captionRectangle).toBeUndefined();
+  expect(card.collisionBox.getRectangle()).toEqual(original);
+
+  const editing = editImageCardCaption(board as never, card);
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="caption.title"]')!;
+  // 输入框压在图片正下方，和图一样宽
+  expect(parseFloat(input.style.top)).toBe(original.bottom * 2 + 20);
   expect(input.style.width).toBe("600px");
   expect(board.controller.isCameraLocked).toBe(true);
   input.value = "Line one";
   input.dispatchEvent(new Event("input"));
-  const oneLine = card.annotationRectangle!.height;
+  const oneLine = card.captionRectangle!.height;
   input.value += "\nLine two\nLine three";
   input.dispatchEvent(new Event("input"));
-  expect(card.annotationRectangle!.height).toBeGreaterThan(oneLine);
-  expect(connectionRectangle(card)).toEqual(original);
+  expect(card.captionRectangle!.height).toBeGreaterThan(oneLine);
+  // 整张卡片把说明算进去了，连线仍然只认图片本身
+  expect(card.collisionBox.getRectangle().bottom).toBe(card.captionRectangle!.bottom);
+  expect(card.connectionRectangle).toEqual(original);
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   await editing;
   expect(input.isConnected).toBe(false);
+  expect(card.caption).toBe("Line one\nLine two\nLine three");
   expect(board.historyManager.recordStep).toHaveBeenCalledOnce();
   expect(board.controller.isCameraLocked).toBe(false);
+
   card.move(new Vector(5, 7));
   const [restored] = deserialize(structuredClone(serialize([card])), board) as FileCardNode[];
-  expect(restored.annotationExpanded).toBe(true);
-  expect(restored.annotationRectangle!.location).toEqual(restored.rectangle.leftBottom);
-  expect(restored.collisionBox.isContainsPoint(restored.annotationRectangle!.center)).toBe(true);
-  restored.setAnnotation(restored.annotation, false);
-  expect(restored.annotationRectangle!.height).toBe(collapsed.height);
+  expect(restored.caption).toBe(card.caption);
+  expect(restored.captionRectangle!.location).toEqual(restored.rectangle.leftBottom);
   expect(restored.rectangle.size).toEqual(original.size);
-  expect(restored.caption).toBe("Figure");
-  expect(restored.annotation).toBe("Line one\nLine two\nLine three");
+
+  // 清空说明：下面那一块消失，卡片又只剩图
+  restored.setCaption("");
+  expect(restored.captionRectangle).toBeUndefined();
+  expect(restored.collisionBox.getRectangle()).toEqual(restored.rectangle);
+
+  // 旧文件里的图片标题只有文字、没有下面那一块，第一次画的时候补上
+  const legacy = new FileCardNode(board as never, {
+    fileKind: "image",
+    caption: "Figure",
+    collisionBox: new CollisionBox([original.clone()]),
+  });
+  expect(legacy.captionRectangle).toBeUndefined();
+  legacy.ensureCaptionLayout();
+  expect(legacy.captionRectangle!.top).toBe(original.bottom);
+  // PDF、笔记卡片不带说明
+  const pdf = new FileCardNode(board as never, { fileKind: "pdf", caption: "Figure" });
+  pdf.ensureCaptionLayout();
+  expect(pdf.captionRectangle).toBeUndefined();
 });
 
 describe("image card size", () => {
@@ -291,6 +305,8 @@ describe("PDF boxed-region card resize", () => {
       projectState: 0,
       emit: vi.fn(),
       renderer: { transformView2World: (v: Vector) => v },
+      // 卡片带着「Fluid Net · p. 6」这行说明，调大小时要按新宽度重排它
+      textRenderer: { layoutClampedLines: (value: string) => value.split("\n") },
       stageManager: {
         getSelectedEntities: () => board.stage.filter((item) => item.isSelected),
         updateReferences: vi.fn(),

@@ -1,7 +1,6 @@
 import type { Project } from "@/core/Project";
 import { Settings } from "@/core/service/Settings";
 import type { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
-import { connectionRectangle } from "@/core/stage/stageObject/association/Edge";
 import { LineEdge } from "@/core/stage/stageObject/association/LineEdge";
 import { ConnectPoint } from "@/core/stage/stageObject/entity/ConnectPoint";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
@@ -71,7 +70,7 @@ export function endpointLocation(edge: LineEdge, end: EdgeEnd): Vector {
 
 /** 端点的默认位置：从这头卡片的中心朝另一头瞄准的点画线，和边框的交点 */
 export function defaultEndpointLocation(edge: LineEdge, end: EdgeEnd): Vector {
-  const rect = connectionRectangle(entityOf(edge, end));
+  const rect = entityOf(edge, end).connectionRectangle;
   const otherAim = end === "source" ? edge.targetLocation : edge.sourceLocation;
   return rect.getLineIntersectionPoint(new Line(rect.center, otherAim));
 }
@@ -173,7 +172,7 @@ export function findEndpointHandle(project: Project, worldLocation: Vector): End
 export function dragEndpointTo(project: Project, handle: EndpointHandle, worldLocation: Vector) {
   const { edge, end } = handle;
   const entity = entityOf(edge, end);
-  const rect = connectionRectangle(entity);
+  const rect = entity.connectionRectangle;
   const rate = canAimInside(entity)
     ? rateForDrag(rect, defaultEndpointLocation(edge, end), worldLocation, project.camera.currentScale)
     : rateForBorderDrag(rect, worldLocation, project.camera.currentScale);
@@ -189,7 +188,7 @@ export function resetEndpoint(handle: EndpointHandle): boolean {
 
 /** 端点在图里面（不在边框上） */
 export function pointsInside(edge: LineEdge, end: EdgeEnd): boolean {
-  const rect = connectionRectangle(entityOf(edge, end));
+  const rect = entityOf(edge, end).connectionRectangle;
   const point = endpointLocation(edge, end);
   const margin = 0.5;
   return (

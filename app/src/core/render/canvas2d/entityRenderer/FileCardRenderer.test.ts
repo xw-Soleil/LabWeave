@@ -5,14 +5,12 @@ const settings = vi.hoisted(() => ({ protectingPrivacy: false, ignoreTextNodeTex
 vi.mock("@/core/service/Settings", () => ({ Settings: settings }));
 vi.mock("@/core/research/FileCardFactory", () => ({
   fileNameOf: (path: string) => path.split("/").at(-1),
-  resolveFileCardPath: (_project: unknown, card: { sourcePath: string }) => card.sourcePath,
+  resolveFileCardPath: () => "/r/a.pdf",
   scheduleFileCardMissingCheck: vi.fn(),
 }));
-vi.mock("@/core/research/ResearchFolder", () => ({
-  ResearchFolder: { getRoot: () => "/r", isInside: (path: string) => !path.startsWith("../") },
-}));
+vi.mock("@/core/research/ResearchFolder", () => ({ ResearchFolder: { getRoot: () => "/r", isInside: () => true } }));
 vi.mock("@/core/research/FileCardContent", () => ({
-  cardText: (key: string, options?: { name: string }) => (options ? `${options.name} · ${key}` : key),
+  cardText: (key: string) => key,
   stripExtension: (name: string) => name.replace(/\.[^.]+$/, ""),
   joinPdfLines: (text: string) => text.replace(/\n/g, " "),
 }));
@@ -22,7 +20,7 @@ vi.mock("@/utils/superellipse", () => ({ superellipseRect: vi.fn() }));
 import { renderFileCard } from "./FileCardRenderer";
 
 function fixture(
-  kind: "pdf" | "markdown" | "image",
+  kind: "pdf" | "markdown",
   bitmap: { width: number; height: number } | undefined = { width: 200, height: 300 },
 ) {
   const project = {
@@ -44,10 +42,7 @@ function fixture(
     shapeRenderer: { renderRect: vi.fn(), renderResizeArrow: vi.fn() },
     collisionBoxRenderer: { render: vi.fn() },
     imageRenderer: { renderImageElement: vi.fn() },
-    canvas: {
-      element: { matches: vi.fn(() => true) },
-      ctx: { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), clip: vi.fn(), fill: vi.fn() },
-    },
+    canvas: { ctx: { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), clip: vi.fn() } },
   };
   const card = {
     fileKind: kind,
@@ -57,59 +52,15 @@ function fixture(
     pageCount: 99,
     bitmap: bitmap as { width: number; height: number } | undefined,
     ensureThumbnail: vi.fn(),
+    ensureCaptionLayout: vi.fn(),
+    canCaption: false,
+    captionRectangle: undefined as Rectangle | undefined,
     rectangle: new Rectangle(Vector.getZero(), new Vector(240, 340)),
     color: Color.Transparent,
-    collisionBox: { isContainsPoint: vi.fn(() => false) },
+    collisionBox: { isContainsPoint: () => false },
   };
   return { project, card };
 }
-
-describe("image card annotations and hover labels", () => {
-  it.each(["image", "pdf"] as const)("keeps the note below the %s image and shows its source only on hover", (kind) => {
-    settings.protectingPrivacy = false;
-    const { project, card } = fixture(kind, { width: 240, height: 340 });
-    const footer = new Rectangle(card.rectangle.leftBottom, new Vector(card.rectangle.width, 75));
-    Object.assign(card, {
-      pdfPage: kind === "pdf" ? 1 : 0,
-      attachmentId: "thumbnail",
-      sourcePath: "../figure.png",
-      caption: "Figure",
-      annotation: "First line\nSecond line",
-      annotationExpanded: true,
-      annotationRectangle: footer,
-    });
-    const draw = () => {
-      project.textRenderer.renderFittedText.mockClear();
-      renderFileCard(project as never, card as never);
-      return project.textRenderer.renderFittedText.mock.calls;
-    };
-    expect(draw().map(([label]) => label)).toEqual(["▾ annotation"]);
-    const [[note, at]] = project.textRenderer.renderClampedMultiLineText.mock.calls;
-    expect(note).toBe("First line\nSecond line");
-    expect(at.y).toBeGreaterThan(footer.top);
-    expect(project.imageRenderer.renderImageElement).toHaveBeenCalledWith(card.bitmap, card.rectangle.location, 1);
-
-    card.collisionBox.isContainsPoint.mockReturnValue(true);
-    const [, caption, hint] = draw();
-    expect(caption[0]).toBe("Figure");
-    expect(hint[0]).toMatchObject({ head: "external · ", body: "figure", tail: ".png · openHint" });
-    for (const [, location] of [caption, hint]) expect(location.y).toBeGreaterThan(footer.bottom);
-    card.rectangle.location = new Vector(0, 100);
-    footer.location = card.rectangle.leftBottom;
-    for (const [, location, size] of draw().slice(1)) expect(location.y + size).toBeLessThan(card.rectangle.top);
-    card.collisionBox.isContainsPoint.mockReturnValue(false);
-    expect(draw()).toHaveLength(1);
-
-    card.collisionBox.isContainsPoint.mockReturnValue(true);
-    project.canvas.element.matches.mockReturnValue(false);
-    expect(draw()).toHaveLength(1);
-    project.canvas.element.matches.mockReturnValue(true);
-    settings.protectingPrivacy = true;
-    project.textRenderer.renderClampedMultiLineText.mockClear();
-    expect(draw()).toHaveLength(0);
-    expect(project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
-  });
-});
 
 describe("PDF cover cards", () => {
   beforeEach(() => {
@@ -248,5 +199,37 @@ describe("PDF quote cards", () => {
     });
     renderFileCard(ordinaryImage.project as never, ordinaryImage.card as never);
     expect(ordinaryImage.project.shapeRenderer.renderResizeArrow).not.toHaveBeenCalled();
+  });
+
+  it("writes an image's caption under the picture, leaves the picture free of labels, and outlines both as one card", () => {
+    const picture = new Rectangle(new Vector(100, 50), new Vector(300, 200));
+    const captionArea = new Rectangle(picture.leftBottom, new Vector(300, 31));
+    const whole = new Rectangle(picture.location, new Vector(300, 231));
+    const image = quote({
+      fileKind: "image",
+      pdfPage: 0,
+      attachmentId: "img",
+      excerpt: "",
+      bitmap: { width: 300, height: 200 },
+      caption: "Figure 2: accuracy",
+      isSelected: true,
+      canResize: false,
+      canCaption: true,
+      rectangle: picture,
+      captionRectangle: captionArea,
+      collisionBox: { isContainsPoint: () => false, getRectangle: () => whole },
+    });
+    renderFileCard(image.project as never, image.card as never);
+
+    const { renderClampedMultiLineText, renderFittedText } = image.project.textRenderer;
+    expect(renderClampedMultiLineText).toHaveBeenCalledOnce();
+    const [text, location] = renderClampedMultiLineText.mock.calls[0];
+    expect(text).toBe("Figure 2: accuracy");
+    expect((location as Vector).y).toBeGreaterThan(picture.bottom);
+    // 图上不再压标题、「外部文件」这些小块；鼠标没移上去时也没有别的字
+    expect(renderFittedText).not.toHaveBeenCalled();
+    // 选中时图和说明合起来只描一圈
+    const [outlined] = image.project.collisionBoxRenderer.render.mock.calls[0];
+    expect((outlined as { getRectangle(): Rectangle }).getRectangle()).toEqual(whole);
   });
 });

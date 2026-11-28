@@ -3585,8 +3585,6 @@ research:
     missingHint: "{{name}} · Original file not found"
     missingToast: "File missing: {{path}}"
     openHint: "{{name}} · Double-click to open"
-    annotation: Note
-    addAnnotation: Add note
     unsupported: "These files can't become cards (only PDF, images and Markdown): {{names}}"
     readProblem: "\"{{name}}\": {{problem}}"
     readFailed: "Some files could not be read:\n{{details}}"
@@ -3599,8 +3597,6 @@ research:
       menu: Add image caption…
       editMenu: Edit image caption…
       title: Image caption
-      description: Hover over the card to see the caption beside the image. Leave it empty to hide it.
-      placeholder: "e.g. Accuracy of model B on the new data"
   drop:
     title: Place on the board
     hint: Release to place the files on the board
