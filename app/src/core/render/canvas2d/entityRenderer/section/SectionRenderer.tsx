@@ -276,6 +276,21 @@ export class SectionRenderer {
         this.project.stageStyleManager.currentStyle.CollideBoxSelected,
         section.isEditingTitle,
       );
+      if (section.canResize) {
+        const rect = section.rectangle;
+        const style = this.project.stageStyleManager.currentStyle;
+        const radius = Math.min(4 / this.project.camera.currentScale, rect.width / 4, rect.height / 4);
+        for (const corner of rect.getFroePoints()) {
+          if (section.details.length && section.isMouseInDetailsButton(corner)) continue;
+          const handle = new Rectangle(corner, Vector.getZero()).expandFromCenter(radius);
+          this.project.shapeRenderer.renderRect(
+            this.project.renderer.transformWorld2View(handle),
+            style.Background,
+            style.CollideBoxSelected,
+            1,
+          );
+        }
+      }
       // 锁定且选中时：在碰撞箱矩形右上角画半透明绿色三角形（右上角点、右边上四分之一点、上边右四分之一点）
       if (section.locked && !section.isEditingTitle) {
         const rect = section.collisionBox.getRectangle();
