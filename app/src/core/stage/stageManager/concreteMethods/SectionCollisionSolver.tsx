@@ -115,8 +115,14 @@ export class SectionCollisionSolver {
    * 因此跳过。调用方应在调用前过滤掉锁定的同级 Section。
    */
   private rawShiftEntityTree(entity: Entity, delta: Vector): void {
-    // 锁定 Section 的 collisionBox 是每次重新计算的临时值，无法原地修改
-    if (entity instanceof Section && entity.locked) return;
+    if (entity instanceof Section) {
+      if (entity.locked) return;
+      entity.translateBounds(delta);
+      for (const child of entity.children) {
+        this.rawShiftEntityTree(child, delta);
+      }
+      return;
+    }
 
     for (const shape of entity.collisionBox.shapes) {
       if (shape instanceof Line) {
@@ -124,13 +130,6 @@ export class SectionCollisionSolver {
         shape.end = shape.end.add(delta);
       } else if (shape instanceof Rectangle) {
         shape.location = shape.location.add(delta);
-      }
-    }
-
-    // Section 需要递归平移所有子节点
-    if (entity instanceof Section) {
-      for (const child of entity.children) {
-        this.rawShiftEntityTree(child, delta);
       }
     }
   }

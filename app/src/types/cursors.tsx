@@ -20,6 +20,7 @@ export enum CursorNameEnum {
   SwResize = "sw-resize",
   WResize = "w-resize",
   NsResize = "ns-resize",
+  EwResize = "ew-resize",
   NeswResize = "nesw-resize",
   NwseResize = "nwse-resize",
   ColResize = "col-resize",

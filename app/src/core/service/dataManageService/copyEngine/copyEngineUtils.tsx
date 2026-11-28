@@ -120,15 +120,7 @@ export namespace CopyEngineUtils {
       return;
     }
     if (entity instanceof Section) {
-      // 锁定时 collisionBox 是现算的临时对象，折叠时拿到的是折叠后那份；展开、折叠两份都要平移，空分组框就靠它们定位
-      const { locked, isCollapsed } = entity;
-      entity.locked = false;
-      entity.isCollapsed = false;
-      shiftShapes(entity.collisionBox, delta);
-      entity.isCollapsed = true;
-      shiftShapes(entity.collisionBox, delta);
-      entity.locked = locked;
-      entity.isCollapsed = isCollapsed;
+      entity.translateBounds(delta);
       return;
     }
     shiftShapes(entity.collisionBox, delta);

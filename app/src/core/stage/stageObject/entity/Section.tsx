@@ -5,11 +5,17 @@ import { ConnectableEntity } from "@/core/stage/stageObject/abstract/Connectable
 import { Entity } from "@/core/stage/stageObject/abstract/StageEntity";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { MultiTargetUndirectedEdge } from "@/core/stage/stageObject/association/MutiTargetUndirectedEdge";
+import { ImageNode } from "@/core/stage/stageObject/entity/ImageNode";
 import { getTextSize } from "@/utils/font";
 import { Color, Vector } from "@graphif/data-structures";
 import { id, passExtraAtArg1, passObject, serializable } from "@graphif/serializer";
 import { Line, Rectangle, Shape } from "@graphif/shapes";
 import { Value } from "platejs";
+
+/** 调范围的小方块管哪几条边：x 是 -1 左、1 右、0 不动；y 是 -1 上、1 下、0 不动 */
+export type SectionResizeHandle = { x: -1 | 0 | 1; y: -1 | 0 | 1 };
+const SIDES = [-1, 0, 1] as const;
+const ENDS = [-1, 1] as const;
 
 @passExtraAtArg1
 @passObject
@@ -25,6 +31,8 @@ export class Section extends ConnectableEntity {
   private _collisionBoxWhenCollapsed: CollisionBox;
   @serializable
   private _collisionBoxNormal: CollisionBox;
+  @serializable
+  private manualBounds?: Rectangle;
 
   public get isEditingTitle() {
     return this._isEditingTitle;
@@ -93,6 +101,7 @@ export class Section extends ConnectableEntity {
       text = "",
       collisionBox = new CollisionBox([new Rectangle(new Vector(0, 0), new Vector(0, 0))]),
       _collisionBoxNormal: collisionBoxNormal = undefined as CollisionBox | undefined,
+      manualBounds = undefined as Rectangle | undefined,
       color = Color.Transparent,
       locked = false,
       isCollapsed = false,
@@ -115,6 +124,7 @@ export class Section extends ConnectableEntity {
       this._collisionBoxNormal = new CollisionBox(shapes);
     }
     this._collisionBoxWhenCollapsed = collisionBox;
+    this.manualBounds = manualBounds;
 
     this.color = color;
     this.text = text;
@@ -152,6 +162,13 @@ export class Section extends ConnectableEntity {
    *   自动调整大小为 标题+padding，位置为 当前碰撞箱外接矩形的左上角
    */
   adjustLocationAndSize() {
+    // 手动拖大过的框不会缩回去；里面的内容挪到框外时照样跟着撑大
+    const content = this.getContentBounds();
+    this.setBounds(this.manualBounds ? Rectangle.getBoundingRectangle([this.manualBounds, content]) : content);
+  }
+
+  /** 正好包住里面内容（四周留白 30）的范围，也是手动调范围时能缩到的最小范围 */
+  private getContentBounds() {
     let rectangle: Rectangle;
     const titleSize = getTextSize(this.text, Renderer.FONT_SIZE);
 
@@ -159,7 +176,7 @@ export class Section extends ConnectableEntity {
 
     if (this.children.length === 0) {
       rectangle = new Rectangle(
-        this.collisionBox.getRectangle().location,
+        this.manualBounds?.location ?? this._collisionBoxNormal.getRectangle().location,
         new Vector(Math.max(titleSize.x + Renderer.NODE_PADDING * 2, 100), 100),
       );
     } else {
@@ -190,6 +207,11 @@ export class Section extends ConnectableEntity {
       rectangle.size = rectangle.size.add(new Vector(0, titleBarHeight));
     }
 
+    return rectangle;
+  }
+
+  private setBounds(rectangle: Rectangle) {
+    const titleBarHeight = this.text === "" ? 0 : 50;
     this._collisionBoxNormal.shapes = rectangle.getBoundingLines();
     // 群友需求：希望分组框扩大交互范围，标题也能拖动
     if (titleBarHeight > 0) {
@@ -198,6 +220,107 @@ export class Section extends ConnectableEntity {
     }
     // 调整折叠状态
     this._collisionBoxWhenCollapsed = this.collapsedCollisionBox();
+  }
+
+  get canResize() {
+    return (
+      this.isSelected &&
+      !this.isCollapsed &&
+      !this.locked &&
+      !this.nearestLockedAncestorSection &&
+      !this.isHiddenBySectionCollapse &&
+      !this.isEditingTitle &&
+      !Settings.viewerMode &&
+      Settings.mouseLeftMode === "selectAndMove" &&
+      !this.project.sectionMethods.isEntityCoveredByBigTitleSection(this)
+    );
+  }
+
+  /**
+   * 选中后用来调范围的小方块：四个角，边够长时再加四条边的中点。
+   * 只有拖它们才调范围；边框其余地方照旧是挪动整个分组框。
+   */
+  getResizeHandles(): { handle: SectionResizeHandle; location: Vector }[] {
+    if (!this.canResize) return [];
+    const rect = this.rectangle;
+    // 边在屏幕上短于 48 像素时，中点的小方块会和角上的挤在一起
+    const room = 48 / this.project.camera.currentScale;
+    const handles: { handle: SectionResizeHandle; location: Vector }[] = [];
+    for (const x of rect.width >= room ? SIDES : ENDS) {
+      for (const y of rect.height >= room ? SIDES : ENDS) {
+        if (x === 0 && y === 0) continue;
+        const location = new Vector(rect.center.x + (x * rect.width) / 2, rect.center.y + (y * rect.height) / 2);
+        if (this.details.length && this.isMouseInDetailsButton(location)) continue;
+        handles.push({ handle: { x, y }, location });
+      }
+    }
+    return handles;
+  }
+
+  /** 丢掉手动调的范围，回到自动贴合内容。本来就是自动贴合的返回 false */
+  fitToContent(): boolean {
+    if (!this.manualBounds) return false;
+    this.manualBounds = undefined;
+    this.adjustLocationAndSize();
+    this.updateFatherSectionByMove();
+    return true;
+  }
+
+  /** 这个位置按在哪个小方块上（比画出来的略大一圈，好点中） */
+  findResizeHandle(point: Vector): SectionResizeHandle | null {
+    const reach = 7 / this.project.camera.currentScale;
+    const hit = this.getResizeHandles().find(
+      ({ location }) => Math.abs(location.x - point.x) <= reach && Math.abs(location.y - point.y) <= reach,
+    );
+    return hit?.handle ?? null;
+  }
+
+  /**
+   * 开始拖一个小方块调范围。只能往外拖大，或者缩回到正好包住内容为止，里面的内容不动。
+   * @param point 按下的位置
+   */
+  beginResize(handle: SectionResizeHandle, point: Vector) {
+    if (!this.canResize) return null;
+    const start = this.rectangle;
+    const content = this.getContentBounds();
+    const maxTopLeft = this.children.length ? content.leftTop : start.rightBottom.subtract(content.size);
+    const minBottomRight = this.children.length ? content.rightBottom : start.leftTop.add(content.size);
+    return {
+      update: (location: Vector) => {
+        const delta = location.subtract(point);
+        this.setBounds(
+          Rectangle.fromEdges(
+            handle.x < 0 ? Math.min(start.left + delta.x, maxTopLeft.x) : start.left,
+            handle.y < 0 ? Math.min(start.top + delta.y, maxTopLeft.y) : start.top,
+            handle.x > 0 ? Math.max(start.right + delta.x, minBottomRight.x) : start.right,
+            handle.y > 0 ? Math.max(start.bottom + delta.y, minBottomRight.y) : start.bottom,
+          ),
+        );
+      },
+      finish: () => {
+        const bounds = this.rectangle;
+        if (bounds.size.equals(start.size) && bounds.location.equals(start.location)) return false;
+        if (!this.project.stage.includes(this)) return false;
+        // 缩回到正好包住内容：回到自动贴合，以后内容少了框还会跟着缩
+        const fitted = this.getContentBounds();
+        this.manualBounds =
+          this.children.length && bounds.size.equals(fitted.size) && bounds.location.equals(fitted.location)
+            ? undefined
+            : bounds;
+        const siblings = this.parentSection?.children ?? this.project.stageManager.getTopLevelEntities();
+        const enclosed = siblings.filter((entity) => {
+          if (entity === this || (entity instanceof ImageNode && entity.isBackground)) return false;
+          const rect = entity.collisionBox.getRectangle();
+          return rect.isAbsoluteIn(bounds) && !rect.isAbsoluteIn(start);
+        });
+        if (enclosed.length) {
+          this.project.sectionInOutManager.goInSection(enclosed, this);
+        } else {
+          for (let parent = this.parentSection; parent; parent = parent.parentSection) parent.adjustLocationAndSize();
+        }
+        return true;
+      },
+    };
   }
   /**
    * 根据自身的折叠状态调整子节点的状态
@@ -254,19 +377,24 @@ export class Section extends ConnectableEntity {
     return this.rectangle.location.clone().add(this.rectangle.size.clone().multiply(0.5));
   }
 
+  translateBounds(delta: Vector) {
+    if (this.manualBounds) this.manualBounds = this.manualBounds.translate(delta);
+    for (const shape of [...this._collisionBoxNormal.shapes, ...this._collisionBoxWhenCollapsed.shapes]) {
+      if (shape instanceof Line) {
+        shape.start = shape.start.add(delta);
+        shape.end = shape.end.add(delta);
+      } else if (shape instanceof Rectangle) {
+        shape.location = shape.location.add(delta);
+      }
+    }
+  }
+
   move(delta: Vector): void {
     const outermostMove = this.project.sectionMoveDepth === 0;
     this.project.sectionMoveDepth++;
     try {
       // 让自己移动
-      for (const shape of this.collisionBox.shapes) {
-        if (shape instanceof Line) {
-          shape.start = shape.start.add(delta);
-          shape.end = shape.end.add(delta);
-        } else if (shape instanceof Rectangle) {
-          shape.location = shape.location.add(delta);
-        }
-      }
+      this.translateBounds(delta);
       // 让内部元素也移动
       for (const child of this.children) {
         // 跳过已被选中的子元素，避免重复移动（解决速度叠加bug）

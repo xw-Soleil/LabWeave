@@ -276,6 +276,19 @@ export class SectionRenderer {
         this.project.stageStyleManager.currentStyle.CollideBoxSelected,
         section.isEditingTitle,
       );
+      // 调范围的小方块：白底、选中色的实线边，在屏幕上大小固定，白板缩到多小都点得中
+      const style = this.project.stageStyleManager.currentStyle;
+      const half = 4.5 / this.project.camera.currentScale;
+      for (const { location } of section.getResizeHandles()) {
+        const handle = new Rectangle(location.subtract(Vector.same(half)), Vector.same(half * 2));
+        this.project.shapeRenderer.renderRect(
+          this.project.renderer.transformWorld2View(handle),
+          style.Background,
+          style.CollideBoxSelected.toNewAlpha(1),
+          1.5,
+          2,
+        );
+      }
       // 锁定且选中时：在碰撞箱矩形右上角画半透明绿色三角形（右上角点、右边上四分之一点、上边右四分之一点）
       if (section.locked && !section.isEditingTitle) {
         const rect = section.collisionBox.getRectangle();
