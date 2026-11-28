@@ -41,7 +41,7 @@ import { useZoom, useZoomCapability, ZoomMode, ZoomPluginPackage } from "@embedp
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-shell";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelLeft, Search, X, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { DocumentTab, documentError, documentText as t } from "./DocumentTab";
 import {
@@ -334,6 +334,24 @@ export function PdfReaderContent({
   const { canCopyContents } = useDocumentPermissions(tab.id);
   const [sidebar, setSidebar] = useState(true);
   const [sidebarPage, setSidebarPage] = useState("thumbnails");
+  const [readerWidth, setReaderWidth] = useState(0);
+  const [preferredSidebarWidth, setPreferredSidebarWidth] = useState<number>();
+  const dragOffset = useRef(0);
+  useLayoutEffect(() => {
+    const reader = host.current!;
+    const measure = () => setReaderWidth(reader.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(reader);
+    return () => observer.disconnect();
+  }, []);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+  // 窄于 240 时批注卡片里的颜色圆点会竖着排成一列；宽过一半，论文本身就没法读了
+  const minWidth = Math.min(240, Math.floor(readerWidth / 3));
+  const maxWidth = Math.max(minWidth, Math.floor(readerWidth / 2));
+  const clampWidth = (width: number) => Math.min(maxWidth, Math.max(minWidth, width));
+  const defaultWidth = sidebarPage === "annotations" ? 320 : 240;
+  const sidebarWidth = clampWidth(preferredSidebarWidth ?? defaultWidth);
   const [bookmarks, setBookmarks] = useState<PdfBookmarkObject[] | null>(null);
   const [jump, setJump] = useState(String(initialLocation.page));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -770,11 +788,13 @@ export function PdfReaderContent({
       <div className="flex min-h-0 flex-1">
         {sidebar && (
           <aside
-            className={cn("bg-card max-w-[45%] shrink-0 border-r", sidebarPage === "annotations" ? "w-80" : "w-56")}
+            id={`pdf-sidebar-${tab.id}`}
+            className="bg-card relative flex min-w-0 shrink-0 border-r"
+            style={{ width: sidebarWidth }}
             aria-label={t("pdf.sidebar")}
           >
-            <Tabs value={sidebarPage} onValueChange={setSidebarPage} className="h-full min-h-0 gap-0">
-              <TabsList variant="line" className="w-full shrink-0 border-b">
+            <Tabs value={sidebarPage} onValueChange={setSidebarPage} className="min-h-0 min-w-0 flex-1 gap-0">
+              <TabsList variant="line" className="w-full shrink-0 justify-start overflow-x-auto border-b">
                 <TabsTrigger value="thumbnails">{t("pdf.thumbnails")}</TabsTrigger>
                 <TabsTrigger value="outline">{t("pdf.outline")}</TabsTrigger>
                 <TabsTrigger value="annotations">{t("pdf.annotations")}</TabsTrigger>
@@ -829,6 +849,45 @@ export function PdfReaderContent({
                 <PdfAnnotationSidebar controller={annotations} jump={scrollToSpot} onSend={sendToBoard} />
               </TabsContent>
             </Tabs>
+            {/* 和程序两侧面板的拖动条一个样子：压在分界线上，平时看不见，移上去或拖着时亮一条线；双击回到默认宽度 */}
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-label={t("pdf.resizeSidebar")}
+              title={t("pdf.resizeSidebar")}
+              aria-controls={`pdf-sidebar-${tab.id}`}
+              aria-orientation="vertical"
+              aria-valuemin={minWidth}
+              aria-valuemax={maxWidth}
+              aria-valuenow={sidebarWidth}
+              className="group/resize absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none outline-none"
+              onPointerDown={(event) => {
+                if (event.button !== 0 || !event.isPrimary) return;
+                // 不拦的话，拖的时候会把两边的文字选中
+                event.preventDefault();
+                dragOffset.current = event.clientX - sidebarWidth;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setResizingSidebar(true);
+              }}
+              onPointerMove={(event) => {
+                if (event.isPrimary && event.currentTarget.hasPointerCapture(event.pointerId))
+                  setPreferredSidebarWidth(clampWidth(event.clientX - dragOffset.current));
+              }}
+              onLostPointerCapture={() => setResizingSidebar(false)}
+              onDoubleClick={() => setPreferredSidebarWidth(undefined)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                setPreferredSidebarWidth(clampWidth(sidebarWidth + (event.key === "ArrowLeft" ? -16 : 16)));
+              }}
+            >
+              <div
+                className={cn(
+                  "bg-primary pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full opacity-0 transition-opacity group-hover/resize:opacity-100 group-focus-visible/resize:opacity-100",
+                  resizingSidebar && "opacity-100",
+                )}
+              />
+            </div>
           </aside>
         )}
         <div ref={readingArea} className="bg-muted relative min-h-0 min-w-0 flex-1">
