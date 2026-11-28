@@ -216,8 +216,34 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
   private updateFontSizeCache(): void {
     this.fontSizeCache = Renderer.FONT_SIZE * 2 ** (this.fontScaleLevel / 2);
     if (this.fontSizeCache >= 2) {
-      // 确保指数变化的过程中字体不会变小到0
-      this.fontSizeCache = Math.floor(this.fontSizeCache);
+      // 确保指数变化的过程中字体不会变小到0。
+      // 加一点零头再取整：由字号反推出来的 fontScaleLevel 算回去可能是 27.9999…，不加就成了 27
+      this.fontSizeCache = Math.floor(this.fontSizeCache + 1e-6);
+    }
+  }
+
+  /** 常用字号：放大、缩小按这张表一档一档走（照 Word），也是右键菜单里列出来的那几个 */
+  static readonly FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96, 128, 192, 256];
+
+  /**
+   * 把字号定成 size。文件里存的仍是 fontScaleLevel（旧文件不用动），所以它可以不是整数
+   * @param anchorRate 可选。缩放时保持固定的锚点（矩形内比例，如 (0.5,0.5) 为中心）。不传则保持左上角不变。
+   */
+  public setFontSize(size: number, anchorRate?: Vector): void {
+    this.fontScaleLevel = 2 * Math.log2(size / Renderer.FONT_SIZE);
+    this.updateFontSizeCache();
+    if (this.sizeAdjust === "auto") {
+      const oldRect = this.rectangle.clone();
+      this.adjustSizeByText();
+      if (anchorRate) {
+        this._adjustLocationToKeepAnchor(oldRect, anchorRate);
+      }
+    } else if (this.sizeAdjust === "manual") {
+      this.resizeHandle(Vector.getZero());
+      if (anchorRate) {
+        const oldRect = this.rectangle.clone();
+        this._adjustLocationToKeepAnchor(oldRect, new Vector(anchorRate.x, 0));
+      }
     }
   }
 
@@ -255,48 +281,16 @@ export class TextNode extends ConnectableEntity implements ResizeAble {
     }
   }
 
-  /**
-   * 放大字体
-   * @param anchorRate 可选。缩放时保持固定的锚点（矩形内比例，如 (0.5,0.5) 为中心）。不传则保持左上角不变。
-   */
+  /** 放大到常用字号里的下一档；已经是最大一档就不动 */
   public increaseFontSize(anchorRate?: Vector): void {
-    this.fontScaleLevel++;
-    this.updateFontSizeCache();
-    if (this.sizeAdjust === "auto") {
-      const oldRect = this.rectangle.clone();
-      this.adjustSizeByText();
-      if (anchorRate) {
-        this._adjustLocationToKeepAnchor(oldRect, anchorRate);
-      }
-    } else if (this.sizeAdjust === "manual") {
-      this.resizeHandle(Vector.getZero());
-      if (anchorRate) {
-        const oldRect = this.rectangle.clone();
-        this._adjustLocationToKeepAnchor(oldRect, new Vector(anchorRate.x, 0));
-      }
-    }
+    const next = TextNode.FONT_SIZES.find((size) => size > this.getFontSize());
+    if (next) this.setFontSize(next, anchorRate);
   }
 
-  /**
-   * 缩小字体
-   * @param anchorRate 可选。缩放时保持固定的锚点（矩形内比例）。不传则保持左上角不变。
-   */
+  /** 缩小到常用字号里的上一档；已经是最小一档就不动 */
   public decreaseFontSize(anchorRate?: Vector): void {
-    this.fontScaleLevel--;
-    this.updateFontSizeCache();
-    if (this.sizeAdjust === "auto") {
-      const oldRect = this.rectangle.clone();
-      this.adjustSizeByText();
-      if (anchorRate) {
-        this._adjustLocationToKeepAnchor(oldRect, anchorRate);
-      }
-    } else if (this.sizeAdjust === "manual") {
-      this.resizeHandle(Vector.getZero());
-      if (anchorRate) {
-        const oldRect = this.rectangle.clone();
-        this._adjustLocationToKeepAnchor(oldRect, new Vector(anchorRate.x, 0));
-      }
-    }
+    const previous = TextNode.FONT_SIZES.filter((size) => size < this.getFontSize()).at(-1);
+    if (previous) this.setFontSize(previous, anchorRate);
   }
 
   /**

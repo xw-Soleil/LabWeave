@@ -24,6 +24,7 @@ import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { ImageNode, rotateSelectedImageNodes } from "@/core/stage/stageObject/entity/ImageNode";
 import { TextNode, type TextNodeAlign } from "@/core/stage/stageObject/entity/TextNode";
 import { activeResourceTabAtom } from "@/state";
+import { cn } from "@/utils/cn";
 import ColorPaletteWindow from "@/sub/ColorPaletteWindow";
 import ColorWindow from "@/sub/ColorWindow";
 import { Color } from "@graphif/data-structures";
@@ -98,6 +99,108 @@ const Group = ContextMenuGroup;
 const Sub = ContextMenuSub;
 const SubTrigger = ContextMenuSubTrigger;
 const SubContent = ContextMenuSubContent;
+
+/**
+ * 字号这一行（照 Word）：一个显示当前字号的框，能直接填数字，点箭头展开常用字号；旁边两个按钮一档一档调。
+ * 它不是菜单项，点了不关菜单，可以看着白板连着调。选中的几个节点字号不一样时框里留空。
+ */
+function FontSizeRow({ project, nodes }: { project: Project; nodes: TextNode[] }) {
+  const { t } = useTranslation("contextMenu");
+  const [, redraw] = useState(0);
+  const [listOpen, setListOpen] = useState(false);
+  const [draft, setDraft] = useState<string>();
+  const sizes = new Set(nodes.map((node) => node.getFontSize()));
+  const shared = sizes.size === 1 ? [...sizes][0] : undefined;
+  const apply = (change: () => void) => {
+    project.controller.resetCountdownTimer();
+    change();
+    setDraft(undefined);
+    redraw((count) => count + 1);
+  };
+  const commit = () => {
+    const size = Number(draft);
+    // 半截数字（想填 48 才敲了个 4）不当真
+    if (draft !== undefined && Number.isFinite(size) && size >= 6 && size <= 512) {
+      apply(() => TextNodeSmartTools.setSelectedTextNodesFontSize(project, size));
+    } else setDraft(undefined);
+  };
+  return (
+    // 菜单会把字母、数字键当成「跳到某一项」，方向键当成换项；这一行里的键盘输入不往上传
+    <div className="px-2 py-1" onKeyDown={(event) => event.stopPropagation()}>
+      {/* 左边留的空和图标、文字的位置，同上下几项带勾的菜单项对齐 */}
+      <div className="flex items-center gap-2 pl-6 [&>svg]:size-4 [&>svg]:shrink-0">
+        <LucideIcons.ALargeSmall />
+        <span className="flex-1 text-sm">{t("fontSize")}</span>
+        <div className="border-input focus-within:border-ring flex h-7 items-center rounded-md border">
+          <input
+            aria-label={t("fontSize")}
+            inputMode="numeric"
+            className="w-9 bg-transparent pl-1.5 text-center text-sm tabular-nums outline-none"
+            value={draft ?? shared ?? ""}
+            placeholder="—"
+            onChange={(event) => setDraft(event.target.value.replace(/[^\d.]/g, ""))}
+            onFocus={(event) => event.target.select()}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commit();
+              else if (event.key === "Escape") setDraft(undefined);
+            }}
+          />
+          <button
+            type="button"
+            aria-label={t("fontSizeList")}
+            title={t("fontSizeList")}
+            aria-expanded={listOpen}
+            className="text-muted-foreground hover:text-foreground flex h-full cursor-pointer items-center px-1"
+            onClick={() => setListOpen((open) => !open)}
+          >
+            <LucideIcons.ChevronDown className={cn("size-3.5 transition-transform", listOpen && "rotate-180")} />
+          </button>
+        </div>
+        <KeyTooltip keyId="increaseFontSize">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={t("increaseFontSize")}
+            onClick={() => apply(() => TextNodeSmartTools.stepSelectedTextNodesFontSize(project, "increase"))}
+          >
+            <LucideIcons.AArrowUp />
+          </Button>
+        </KeyTooltip>
+        <KeyTooltip keyId="decreaseFontSize">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={t("decreaseFontSize")}
+            onClick={() => apply(() => TextNodeSmartTools.stepSelectedTextNodesFontSize(project, "decrease"))}
+          >
+            <LucideIcons.AArrowDown />
+          </Button>
+        </KeyTooltip>
+      </div>
+      {listOpen && (
+        <div className="mt-1 grid grid-cols-6 gap-0.5">
+          {TextNode.FONT_SIZES.map((size) => (
+            <button
+              key={size}
+              type="button"
+              aria-pressed={size === shared}
+              className={cn(
+                "hover:bg-accent cursor-pointer rounded px-1 py-1 text-xs tabular-nums",
+                size === shared && "bg-accent font-medium",
+              )}
+              onClick={() => apply(() => TextNodeSmartTools.setSelectedTextNodesFontSize(project, size))}
+            >
+              {size}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * 右键菜单
@@ -539,14 +642,7 @@ export default function MyContextMenuContent() {
               <LucideIcons.AlignRight />
               {t("textAlignRight")}
             </CheckboxItem>
-            <Item inset onSelect={() => TextNodeSmartTools.stepSelectedTextNodesFontSize(p, "increase")}>
-              <LucideIcons.AArrowUp />
-              {t("increaseFontSize")}
-            </Item>
-            <Item inset onSelect={() => TextNodeSmartTools.stepSelectedTextNodesFontSize(p, "decrease")}>
-              <LucideIcons.AArrowDown />
-              {t("decreaseFontSize")}
-            </Item>
+            <FontSizeRow project={p} nodes={textNodes} />
             <CheckboxItem checked={allBold} onSelect={() => TextNodeSmartTools.toggleSelectedTextNodesBold(p)}>
               <LucideIcons.Bold />
               {t("toggleBold")}
