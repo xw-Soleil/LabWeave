@@ -2898,6 +2898,7 @@ research:
       readingArea: PDF reading area
       toggleSidebar: Toggle reading sidebar
       sidebar: Reading sidebar
+      resizeSidebar: Drag to resize the sidebar, double-click to reset
       thumbnails: Thumbnails
       outline: Outline
       annotations: Annotations

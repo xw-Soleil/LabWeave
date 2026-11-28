@@ -3017,6 +3017,7 @@ research:
       readingArea: PDF 阅读区
       toggleSidebar: 显示或收起阅读侧栏
       sidebar: 阅读侧栏
+      resizeSidebar: 拖动调整侧栏宽度，双击恢复默认
       thumbnails: 缩略图
       outline: 大纲
       annotations: 批注

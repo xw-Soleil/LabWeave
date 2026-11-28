@@ -903,7 +903,7 @@ export function PdfAnnotationSidebar({
         />
         <Colors value={color} onChange={(next) => setColor(next === color ? "" : next)} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto overscroll-contain p-3 [&::-webkit-scrollbar]:w-2.5!">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto overscroll-contain p-3">
         {!filtered.length && <p className="text-muted-foreground text-sm">{t("annotation.empty")}</p>}
         {filtered.map((item) => (
           <AnnotationCard key={item.id} item={item} c={c} jump={jump} onSend={onSend} />

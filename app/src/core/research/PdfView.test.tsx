@@ -385,6 +385,8 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     expect(sidebar.style.width).toBe(`${initialWidth + 80}px`);
     await key(divider, "ArrowLeft");
     expect(sidebar.style.width).toBe(`${initialWidth + 64}px`);
+    await act(async () => divider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(sidebar.style.width).toBe("320px");
   });
 
   it.each(["fit-width", "fit-page"])("restores %s and recalculates it on viewport resize", async (mode) => {
