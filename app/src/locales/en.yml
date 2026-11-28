@@ -1484,8 +1484,10 @@ contextMenu:
   textAlignLeft: Align Left
   textAlignCenter: Align Center
   textAlignRight: Align Right
-  increaseFontSize: Larger Font Size
-  decreaseFontSize: Smaller Font Size
+  fontSize: Font Size
+  fontSizeList: Common sizes
+  increaseFontSize: Increase Font Size
+  decreaseFontSize: Decrease Font Size
   toggleBold: Bold
   rotateClockwise90: Rotate 90° Right
   rotateCounterClockwise90: Rotate 90° Left

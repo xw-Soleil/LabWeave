@@ -21,11 +21,15 @@ export const RESEARCH_CONTEXT_ACTIONS = new Set([
   "straightenSelectedEdges",
 ]);
 
+/** 这两项现在在文字那一段的「字号」一行里（字号框加两个按钮），自定义清单里留着的不再重复列一遍 */
+const inFontSizeRow = new Set(["increaseFontSize", "decreaseFontSize"]);
+
 /** Old saved icon grids must not hide the common labeled commands. Keep other custom items. */
 export function researchContextMenu(config: MenuItem[]): MenuItem[] {
   const stripCommon = (items: MenuItem[]): MenuItem[] =>
     items.flatMap((item) => {
-      if (RESEARCH_CONTEXT_ACTIONS.has(item.id) || item.id.startsWith("research-common-")) return [];
+      if (RESEARCH_CONTEXT_ACTIONS.has(item.id) || inFontSizeRow.has(item.id) || item.id.startsWith("research-common-"))
+        return [];
       if (!item.children) return [item];
       const children = stripCommon(item.children);
       return children.some((child) => child.type !== "separator") ? [{ ...item, children }] : [];

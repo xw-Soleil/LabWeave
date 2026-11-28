@@ -255,7 +255,7 @@ describe("TextNode horizontal alignment and typography", () => {
     expect(project.stage.map((n) => n.textAlign)).toEqual(["right", "right"]);
 
     TextNodeSmartTools.stepSelectedTextNodesFontSize(project as never, "increase");
-    expect(project.stage.map((n) => n.fontScaleLevel)).toEqual([1, 1]);
+    expect(project.stage.map((n) => n.getFontSize())).toEqual([36, 36]);
 
     TextNodeSmartTools.toggleSelectedTextNodesBold(project as never);
     expect(project.stage.map((n) => n.isBold())).toEqual([true, true]);
@@ -263,13 +263,76 @@ describe("TextNode horizontal alignment and typography", () => {
     // 依次撤销：加粗 -> 字号 -> 对齐
     project.historyManager.undo();
     expect(project.stage.map((n) => n.isBold())).toEqual([false, false]);
-    expect(project.stage.map((n) => n.fontScaleLevel)).toEqual([1, 1]);
+    expect(project.stage.map((n) => n.getFontSize())).toEqual([36, 36]);
 
     project.historyManager.undo();
-    expect(project.stage.map((n) => n.fontScaleLevel)).toEqual([0, 0]);
+    expect(project.stage.map((n) => n.getFontSize())).toEqual([32, 32]);
     expect(project.stage.map((n) => n.textAlign)).toEqual(["right", "right"]);
 
     project.historyManager.undo();
     expect(project.stage.map((n) => n.textAlign)).toEqual(["left", "left"]);
+  });
+
+  it("takes any font size, steps through the common sizes, and still reads the half-step levels in old files", () => {
+    const project = {
+      stage: [] as TextNode[],
+      projectState: 0,
+      emit: vi.fn(),
+      graphMethods: { edgeParentArray: () => [] },
+      stageManager: {
+        getSelectedEntities: () => project.stage.filter((node) => node.isSelected),
+        updateReferences: vi.fn(),
+      },
+      historyManager: null as unknown as HistoryManager,
+    };
+    const make = (uuid: string, fontScaleLevel = 0) =>
+      new TextNode(project as never, {
+        uuid,
+        text: "卡片",
+        fontScaleLevel,
+        collisionBox: new CollisionBox([new Rectangle(new Vector(0, 0), new Vector(0, 0))]),
+      });
+    const node = make("n1");
+    expect(node.getFontSize()).toBe(32);
+    // 存的是由字号反推出来的级别，算回去不能差一号
+    for (const size of TextNode.FONT_SIZES) {
+      node.setFontSize(size);
+      expect(node.getFontSize()).toBe(size);
+    }
+    node.setFontSize(28);
+    node.increaseFontSize();
+    expect(node.getFontSize()).toBe(32);
+    node.decreaseFontSize();
+    node.decreaseFontSize();
+    expect(node.getFontSize()).toBe(24);
+    // 填的字号不在常用的那几个里：往最近的一档走
+    node.setFontSize(30);
+    node.increaseFontSize();
+    expect(node.getFontSize()).toBe(32);
+    // 到头就不动
+    node.setFontSize(256);
+    node.increaseFontSize();
+    expect(node.getFontSize()).toBe(256);
+    node.setFontSize(8);
+    node.decreaseFontSize();
+    expect(node.getFontSize()).toBe(8);
+
+    // 旧文件里的一级是 32 × √2，显示成 45
+    const old = make("n2", 1);
+    expect(old.getFontSize()).toBe(45);
+    old.increaseFontSize();
+    expect(old.getFontSize()).toBe(48);
+    old.setFontScaleLevel(1);
+    old.decreaseFontSize();
+    expect(old.getFontSize()).toBe(36);
+
+    node.isSelected = true;
+    old.isSelected = true;
+    project.stage = [node, old];
+    project.historyManager = new HistoryManager(project as never);
+    TextNodeSmartTools.setSelectedTextNodesFontSize(project as never, 20);
+    expect(project.stage.map((n) => n.getFontSize())).toEqual([20, 20]);
+    project.historyManager.undo();
+    expect(project.stage.map((n) => n.getFontSize())).toEqual([8, 36]);
   });
 });

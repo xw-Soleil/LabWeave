@@ -162,8 +162,10 @@ contextMenu:
   textAlignLeft: 靠左對齊
   textAlignCenter: 居中對齊
   textAlignRight: 靠右對齊
-  increaseFontSize: 字號大一檔
-  decreaseFontSize: 字號小一檔
+  fontSize: 字號
+  fontSizeList: 常用字號
+  increaseFontSize: 增大字號
+  decreaseFontSize: 減小字號
   toggleBold: 加粗
   rotateClockwise90: 向右轉 90°
   rotateCounterClockwise90: 向左轉 90°

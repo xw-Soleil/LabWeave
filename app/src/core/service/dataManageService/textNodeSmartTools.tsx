@@ -53,6 +53,15 @@ export namespace TextNodeSmartTools {
     project.historyManager.recordStep();
   }
 
+  export function setSelectedTextNodesFontSize(project: Project, size: number): void {
+    const textNodes = project.stageManager.getSelectedEntities().filter((node) => node instanceof TextNode);
+    if (textNodes.every((node) => node.getFontSize() === size)) return;
+    for (const node of textNodes) {
+      node.setFontSize(size, getAnchorRateForTextNode(project, node));
+    }
+    project.historyManager.recordStep();
+  }
+
   export function toggleSelectedTextNodesBold(project: Project): void {
     const textNodes = project.stageManager.getSelectedEntities().filter((node) => node instanceof TextNode);
     if (textNodes.length === 0) return;
