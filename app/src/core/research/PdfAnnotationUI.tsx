@@ -35,7 +35,7 @@ import {
   Underline,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { toast } from "sonner";
 import { BoardMenu } from "./BoardMenu";
 import type { BoardChoice } from "./BoardPicker";
@@ -338,25 +338,48 @@ function Colors({
   onChange,
   disabled = false,
   stacked = false,
+  fit = false,
 }: {
   value: string;
   onChange: (color: string) => void;
   disabled?: boolean;
   /** 选区菜单里用：平时几个圆点叠在一起，鼠标移上去才散开（照 Agentero），不占一长条 */
   stacked?: boolean;
+  /**
+   * 批注侧栏里用：占满这一行剩下的宽度。放得下就全摊开；侧栏拖窄了放不下，就按宽度收紧、叠起来，
+   * 鼠标移上去再弹开（弹开时会盖到右边的按钮上，由用到它的那一行把按钮淡出）
+   */
+  fit?: boolean;
 }) {
   const [spread, setSpread] = useState(false);
-  if (stacked) {
+  const [room, setRoom] = useState(Infinity);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!fit || !element) return;
+    const measure = () => setRoom(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fit]);
+  if (stacked || fit) {
     const colors = Object.entries(annotationColors);
+    const gaps = colors.length - 1;
     // 聚拢时相邻两个圆点叠住一半，散开后各自分开
-    const step = spread ? 20 : 8;
+    const loose = 20;
+    const resting = fit ? Math.min(loose, Math.max(8, Math.floor((room - 28) / gaps))) : 8;
+    const step = spread ? loose : resting;
     const motion = "duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)] motion-reduce:transition-none";
     return (
       <div
+        ref={box}
         role="group"
         aria-label={t("annotation.color")}
-        className={cn("relative h-7 shrink-0 transition-[width]", motion)}
-        style={{ width: 28 + (colors.length - 1) * step }}
+        // peer、data-covers：同一行后面的按钮靠它们知道圆点弹开后盖过来了
+        className={cn("relative h-7", fit ? "peer min-w-0 flex-1" : "shrink-0 transition-[width]", !fit && motion)}
+        style={fit ? undefined : { width: 28 + gaps * step }}
+        data-covers={fit && spread && room < 28 + gaps * loose}
         onPointerEnter={() => setSpread(true)}
         onPointerLeave={() => setSpread(false)}
         onFocusCapture={() => setSpread(true)}
@@ -843,8 +866,8 @@ function AnnotationCard({
       </CardContent>
       {(!readOnly || sendable) && (
         <CardFooter className="justify-between gap-1 px-3">
-          {readOnly ? <span /> : <Colors value={item.color} onChange={(color) => c.edit(item.id, { color })} />}
-          <div className="flex gap-1">
+          {readOnly ? <span /> : <Colors fit value={item.color} onChange={(color) => c.edit(item.id, { color })} />}
+          <div className="flex gap-1 transition-opacity duration-150 peer-data-[covers=true]:pointer-events-none peer-data-[covers=true]:opacity-0">
             {sendable && (
               <BoardMenu onPick={(board) => onSend(item, board)}>
                 <Button
@@ -901,7 +924,9 @@ export function PdfAnnotationSidebar({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <Colors value={color} onChange={(next) => setColor(next === color ? "" : next)} />
+        <div className="flex">
+          <Colors fit value={color} onChange={(next) => setColor(next === color ? "" : next)} />
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto overscroll-contain p-3">
         {!filtered.length && <p className="text-muted-foreground text-sm">{t("annotation.empty")}</p>}
