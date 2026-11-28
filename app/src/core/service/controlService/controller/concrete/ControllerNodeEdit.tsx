@@ -15,6 +15,7 @@ import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { cardText } from "@/core/research/FileCardContent";
 import { refreshFileCardMissing, resolveFileCardPath } from "@/core/research/FileCardFactory";
 import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
+import { annotationHeaderHeight, editImageCardAnnotation } from "@/core/research/ImageCardAnnotation";
 import { openDocumentFile } from "@/core/research/DocumentTab";
 import { toast } from "sonner";
 /**
@@ -89,7 +90,7 @@ export class ControllerNodeEditClass extends ControllerClass {
       }
       MediaPlaybackManager.togglePlay(this.project, clickedEntity);
     } else if (clickedEntity instanceof FileCardNode) {
-      await this.openFileCardSource(clickedEntity);
+      if (!clickedEntity.annotationRectangle?.isPointIn(pressLocation)) await this.openFileCardSource(clickedEntity);
     }
   };
 
@@ -115,7 +116,35 @@ export class ControllerNodeEditClass extends ControllerClass {
       return;
     }
 
-    const pressLocation = this.project.renderer.transformView2World(new Vector(event.clientX, event.clientY));
+    const viewLocation = new Vector(event.clientX, event.clientY);
+    const pressLocation = this.project.renderer.transformView2World(viewLocation);
+    if (
+      !Settings.protectingPrivacy &&
+      Settings.mouseLeftMode === "selectAndMove" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      this.lastMouseDownClientLocation &&
+      this.lastMouseDownClientLocation.distance(viewLocation) <= 5
+    ) {
+      const card = this.project.stageManager.findEntityByLocation(pressLocation);
+      const downLocation = this.project.renderer.transformView2World(this.lastMouseDownClientLocation);
+      if (
+        card instanceof FileCardNode &&
+        card.annotationRectangle?.isPointIn(pressLocation) &&
+        card.annotationRectangle.isPointIn(downLocation) &&
+        !findEndpointHandle(this.project, pressLocation)
+      ) {
+        if (pressLocation.y < card.annotationRectangle.top + annotationHeaderHeight && card.annotation) {
+          card.setAnnotation(card.annotation, !card.annotationExpanded);
+          this.project.historyManager.recordStep();
+        } else {
+          void editImageCardAnnotation(this.project, card);
+        }
+        return;
+      }
+    }
     for (const entity of this.project.stageManager.getEntities()) {
       // 必须有详细信息才显示详细信息按钮，进而点进去，否则会误触
       if (

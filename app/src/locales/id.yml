@@ -2569,6 +2569,9 @@ projectOwnership:
   ok: OK
 
 research:
+  card:
+    annotation: Catatan
+    addAnnotation: Tambah catatan
   fileMenu:
     open: Buka
     reveal: Buka folder lokasi

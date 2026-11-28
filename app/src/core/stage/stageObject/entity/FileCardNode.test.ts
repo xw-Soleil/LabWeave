@@ -7,6 +7,8 @@ vi.mock("@/core/Project", () => ({
   service: () => () => undefined,
 }));
 vi.mock("@/core/render/canvas2d/renderer", () => ({ Renderer: { FONT_SIZE: 24 } }));
+vi.mock("@/core/service/controlService/shortcutKeysEngine/KeyBindsUI", () => ({ KeyBindsUI: {} }));
+vi.mock("@/core/research/FileCardContent", () => ({ cardText: (key: string) => key }));
 vi.mock("@/core/service/feedbackService/SoundService", () => ({ SoundService: { play: {} } }));
 vi.mock("@/core/research/LegacyMathCards", async () => ({
   deserializeStageObjects: (await import("@graphif/serializer")).deserialize,
@@ -30,8 +32,11 @@ vi.mock("@/core/service/Settings", () => ({
 vi.mock("@/core/stage/stageObject/tools/entityDetailsManager", () => ({ DetailsManager: class DetailsManager {} }));
 
 import { buildAiSidecar } from "@/core/research/AiSidecarBuilder";
+import { InputElement } from "@/core/render/domElement/inputElement";
+import { editImageCardAnnotation } from "@/core/research/ImageCardAnnotation";
 import { diffItems, sidecarItems } from "@/core/research/ProjectRecord";
 import { ControllerEntityResizeClass } from "@/core/service/controlService/controller/concrete/ControllerEntityResize";
+import { connectionRectangle } from "@/core/stage/stageObject/association/Edge";
 import { HistoryManager } from "@/core/stage/stageManager/StageHistoryManager";
 import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { Color, Vector } from "@graphif/data-structures";
@@ -125,6 +130,8 @@ describe("FileCardNode serialization", () => {
       excerpt: "",
       pageCount: 0,
       caption: "",
+      annotation: "",
+      annotationExpanded: false,
       pdfPage: 0,
       pdfAnnotation: "",
       details: [],
@@ -148,6 +155,57 @@ describe("FileCardNode serialization", () => {
     const [restored] = deserialize(structuredClone(serialize([card])), project) as FileCardNode[];
     expect(restored).toMatchObject({ pdfPage: 5, pdfAnnotation: "ABCD1234", excerpt: "原文一段" });
   });
+});
+
+it("edits below the picture, grows with the text, and keeps the note when moved, reopened or collapsed", async () => {
+  const board = {
+    ...project,
+    camera: { currentScale: 2, stopImmediately: vi.fn() },
+    entityMoveManager: { stopImmediately: vi.fn() },
+    controller: { isCameraLocked: false, resetCountdownTimer: vi.fn() },
+    canvas: { viewToClient: (v: Vector) => v.add(new Vector(10, 20)), viewToClientScale: () => Vector.same(1) },
+    renderer: { transformWorld2View: (v: Vector) => v.multiply(2) },
+    stageStyleManager: { currentStyle: { Background: Color.White, StageObjectBorder: Color.Black } },
+    historyManager: { recordStep: vi.fn() },
+    textRenderer: { layoutClampedLines: (value: string) => value.split("\n") },
+    inputElement: null as unknown as InputElement,
+  };
+  board.inputElement = new InputElement(board as never);
+  const original = new Rectangle(new Vector(30, 40), new Vector(300, 160));
+  const card = new FileCardNode(board as never, {
+    fileKind: "image",
+    caption: "Figure",
+    collisionBox: new CollisionBox([original]),
+  });
+  const collapsed = card.annotationRectangle!;
+  expect(collapsed.top).toBe(original.bottom);
+  const editing = editImageCardAnnotation(board as never, card);
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="annotation"]')!;
+  expect(parseFloat(input.style.top)).toBeGreaterThan(original.bottom * 2 + 20);
+  expect(input.style.width).toBe("600px");
+  expect(board.controller.isCameraLocked).toBe(true);
+  input.value = "Line one";
+  input.dispatchEvent(new Event("input"));
+  const oneLine = card.annotationRectangle!.height;
+  input.value += "\nLine two\nLine three";
+  input.dispatchEvent(new Event("input"));
+  expect(card.annotationRectangle!.height).toBeGreaterThan(oneLine);
+  expect(connectionRectangle(card)).toEqual(original);
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await editing;
+  expect(input.isConnected).toBe(false);
+  expect(board.historyManager.recordStep).toHaveBeenCalledOnce();
+  expect(board.controller.isCameraLocked).toBe(false);
+  card.move(new Vector(5, 7));
+  const [restored] = deserialize(structuredClone(serialize([card])), board) as FileCardNode[];
+  expect(restored.annotationExpanded).toBe(true);
+  expect(restored.annotationRectangle!.location).toEqual(restored.rectangle.leftBottom);
+  expect(restored.collisionBox.isContainsPoint(restored.annotationRectangle!.center)).toBe(true);
+  restored.setAnnotation(restored.annotation, false);
+  expect(restored.annotationRectangle!.height).toBe(collapsed.height);
+  expect(restored.rectangle.size).toEqual(original.size);
+  expect(restored.caption).toBe("Figure");
+  expect(restored.annotation).toBe("Line one\nLine two\nLine three");
 });
 
 describe("image card size", () => {

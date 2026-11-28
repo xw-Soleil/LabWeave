@@ -2,6 +2,12 @@ import { splitFileName } from "@/components/ui/file-name";
 import type { Project } from "@/core/Project";
 import { cardText, joinPdfLines, stripExtension } from "@/core/research/FileCardContent";
 import { fileNameOf, resolveFileCardPath, scheduleFileCardMissingCheck } from "@/core/research/FileCardFactory";
+import {
+  annotationFontSize,
+  annotationHeaderHeight,
+  annotationLineHeight,
+  annotationPadding,
+} from "@/core/research/ImageCardAnnotation";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
@@ -179,18 +185,14 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
   );
 }
 
-/**
- * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
- * PDF 只画标题和完整首页；Markdown 画标题和开头文字。PDF 摘录卡片：框的图同图片卡片，圈的字画成一段引文。
- * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
- */
 export function renderFileCard(project: Project, card: FileCardNode): void {
   card.ensureThumbnail();
   scheduleFileCardMissingCheck(project, card);
 
   // PDF 里框下来的图和图片卡片一个画法；圈下来的字没有图，画成引文
-  if ((card.fileKind === "image" || card.pdfPage > 0) && card.bitmap && !Settings.protectingPrivacy) {
-    renderImageCard(project, card, card.bitmap);
+  if (card.fileKind === "image" || (card.pdfPage > 0 && card.attachmentId)) {
+    renderImageCard(project, card, Settings.protectingPrivacy ? undefined : card.bitmap);
+    renderImageAnnotation(project, card);
   } else if (card.pdfPage > 0 && !card.attachmentId) {
     renderQuoteCard(project, card);
   } else {
@@ -281,57 +283,50 @@ function renderQuoteCard(project: Project, card: FileCardNode) {
   }
 }
 
-// 图片卡片上浮着的小块（外部文件、文件不见了、用户填的标题），尺寸是世界坐标
-const IMAGE_CORNER_RADIUS = 8;
-const CHIP_MARGIN = 8;
-const CHIP_HEIGHT = 20;
-const CHIP_PADDING_X = 7;
-const CHIP_RADIUS = 6;
-const CHIP_FONT_SIZE = 12;
-
-/** 浮在图片上的小块：不透明底色保证在什么图上都看得清；放不下时文字省略 */
-function renderImageChip(
-  project: Project,
-  text: string,
-  rect: Rectangle,
-  corner: "topRight" | "bottomLeft",
-  textColor: Color,
-) {
-  const cameraScale = project.camera.currentScale;
+function renderImageAnnotation(project: Project, card: FileCardNode) {
+  const footer = card.annotationRectangle;
+  if (!footer) return;
+  const scale = project.camera.currentScale;
   const style = project.stageStyleManager.currentStyle;
-  const maxWidth = rect.size.x - CHIP_MARGIN * 2;
-  if (maxWidth <= CHIP_PADDING_X * 2) return;
-  const width = Math.min(getTextSize(text, CHIP_FONT_SIZE).x + CHIP_PADDING_X * 2, maxWidth);
-  const location =
-    corner === "topRight"
-      ? new Vector(rect.right - CHIP_MARGIN - width, rect.top + CHIP_MARGIN)
-      : new Vector(rect.left + CHIP_MARGIN, rect.bottom - CHIP_MARGIN - CHIP_HEIGHT);
   project.shapeRenderer.renderRect(
-    project.renderer.transformWorld2View(new Rectangle(location, new Vector(width, CHIP_HEIGHT))),
-    style.Background.toNewAlpha(0.9),
-    Color.Transparent,
-    0,
-    CHIP_RADIUS * cameraScale,
+    project.renderer.transformWorld2View(footer),
+    style.Background,
+    style.StageObjectBorder.toNewAlpha(0.16),
+    scale,
+    4 * scale,
   );
+  if (Settings.protectingPrivacy || annotationFontSize * scale <= Settings.ignoreTextNodeTextRenderLessThanFontSize)
+    return;
+  const toView = (y: number) =>
+    project.renderer.transformWorld2View(footer.location.add(new Vector(annotationPadding, y)));
+  const width = (footer.width - 2 * annotationPadding) * scale;
+  const label = cardText(card.annotation || card.annotationExpanded ? "annotation" : "addAnnotation");
   project.textRenderer.renderFittedText(
-    text,
-    project.renderer.transformWorld2View(location.add(new Vector(CHIP_PADDING_X, (CHIP_HEIGHT - CHIP_FONT_SIZE) / 2))),
-    CHIP_FONT_SIZE * cameraScale,
-    (width - CHIP_PADDING_X * 2) * cameraScale,
-    textColor,
+    `${card.annotationExpanded ? "▾" : "▸"} ${label}`,
+    toView((annotationHeaderHeight - annotationFontSize) / 2),
+    annotationFontSize * scale,
+    width,
+    style.StageObjectBorder,
   );
+  if (card.annotationExpanded && card.annotation) {
+    project.textRenderer.renderClampedMultiLineText(
+      card.annotation,
+      toView(annotationHeaderHeight + annotationPadding),
+      annotationFontSize * scale,
+      width,
+      style.StageObjectBorder,
+      annotationLineHeight,
+      Infinity,
+    );
+  }
 }
 
-/**
- * 图片卡片：整张图铺满卡片（卡片和图片比例不一致时居中、不裁切），不写类型和文件名。
- * 用户填了标题才在左下角浮一小块；外部文件、文件不见了在右上角浮一小块。
- */
-function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitmap) {
+function renderImageCard(project: Project, card: FileCardNode, bitmap?: ImageBitmap) {
   const style = project.stageStyleManager.currentStyle;
   const cameraScale = project.camera.currentScale;
   const rect = card.rectangle;
   const viewRect = project.renderer.transformWorld2View(rect);
-  const radius = IMAGE_CORNER_RADIUS * cameraScale;
+  const radius = 8 * cameraScale;
 
   if (card.isSelected) {
     project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxSelected);
@@ -348,24 +343,14 @@ function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitm
     ctx.fill();
     // 预览图通常比画出来的大，缩小时用高质量插值，图表里的细线和小字不发毛
     ctx.imageSmoothingQuality = "high";
-    const scale = Math.min(rect.size.x / bitmap.width, rect.size.y / bitmap.height);
-    const size = new Vector(bitmap.width * scale, bitmap.height * scale);
-    project.imageRenderer.renderImageElement(
-      bitmap,
-      project.renderer.transformWorld2View(rect.center.subtract(size.multiply(0.5))),
-      scale,
-    );
-
-    if (CHIP_FONT_SIZE * cameraScale > Settings.ignoreTextNodeTextRenderLessThanFontSize) {
-      const textColor = style.StageObjectBorder;
-      if (card.missing) {
-        renderImageChip(project, cardText("missing"), rect, "topRight", MISSING_COLOR);
-      } else if (isExternalFileCard(project, card)) {
-        renderImageChip(project, cardText("external"), rect, "topRight", textColor.toNewAlpha(0.75));
-      }
-      if (card.caption) {
-        renderImageChip(project, card.caption, rect, "bottomLeft", textColor);
-      }
+    if (bitmap) {
+      const scale = Math.min(rect.size.x / bitmap.width, rect.size.y / bitmap.height);
+      const size = new Vector(bitmap.width * scale, bitmap.height * scale);
+      project.imageRenderer.renderImageElement(
+        bitmap,
+        project.renderer.transformWorld2View(rect.center.subtract(size.multiply(0.5))),
+        scale,
+      );
     }
   } finally {
     ctx.restore();
@@ -538,22 +523,43 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
 /** 「文件名 · 双击打开」：宽度不超过卡片，放不下时省略文件名中间，扩展名和后面的话保留 */
 function renderHoverState(project: Project, card: FileCardNode) {
   const mouseLocation = project.renderer.transformView2World(MouseLocation.vector());
-  if (!card.collisionBox.isContainsPoint(mouseLocation)) return;
+  if (!card.collisionBox.isContainsPoint(mouseLocation) || !project.canvas.element.matches(":hover")) return;
   const style = project.stageStyleManager.currentStyle;
   const cameraScale = project.camera.currentScale;
   if (!card.isSelected) {
     project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxPreSelected);
   }
   if (HINT_FONT_SIZE * cameraScale <= Settings.ignoreTextNodeTextRenderLessThanFontSize) return;
-  const template = cardText(card.missing ? "missingHint" : "openHint", { name: HINT_NAME_SLOT });
+  const footer = card.annotationRectangle;
+  if (footer && Settings.protectingPrivacy) return;
+  const hint = cardText(card.missing ? "missingHint" : "openHint", { name: HINT_NAME_SLOT });
+  const template =
+    footer && !card.missing && isExternalFileCard(project, card) ? `${cardText("external")} · ${hint}` : hint;
   const slot = template.indexOf(HINT_NAME_SLOT);
   const { stem, ext } = splitFileName(fileNameOf(card.sourcePath));
+  const line = (HINT_FONT_SIZE + HINT_GAP) * cameraScale;
+  const caption = footer && card.caption;
+  let hintPosition = project.renderer.transformWorld2View(card.rectangle.location).subtract(new Vector(0, line));
+  if (footer && hintPosition.y < (caption ? line : 0)) {
+    hintPosition = project.renderer
+      .transformWorld2View(footer.leftBottom)
+      .add(new Vector(0, HINT_GAP * cameraScale + (caption ? line : 0)));
+  }
+  if (caption) {
+    project.textRenderer.renderFittedText(
+      caption,
+      hintPosition.subtract(new Vector(0, line)),
+      HINT_FONT_SIZE * cameraScale,
+      card.rectangle.width * cameraScale,
+      style.StageObjectBorder,
+    );
+  }
   project.textRenderer.renderFittedText(
     // 文案里没有 {{name}}（比如还没重新生成的繁体文案）时原样显示
     slot < 0
       ? template
       : { head: template.slice(0, slot), body: stem, tail: ext + template.slice(slot + HINT_NAME_SLOT.length) },
-    project.renderer.transformWorld2View(card.rectangle.location.add(new Vector(0, -HINT_FONT_SIZE - HINT_GAP))),
+    hintPosition,
     HINT_FONT_SIZE * cameraScale,
     card.rectangle.size.x * cameraScale,
     card.missing ? MISSING_COLOR : style.StageObjectBorder,

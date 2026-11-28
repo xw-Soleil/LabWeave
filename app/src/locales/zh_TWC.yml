@@ -1179,7 +1179,7 @@ settings:
   researchOutsideFileMode:
     title: 研究資料夾外的檔案
     description: |
-      把研究資料夾外的論文、圖片、筆記拖到白板上時怎麼處理。複製進來的檔案跟著研究資料夾走；直接引用不佔空間，但原檔案一動卡片就會打不開，卡片右上角會標「外部檔案」
+      把研究資料夾外的論文、圖片、筆記拖到白板上時怎麼處理。複製進來的檔案跟著研究資料夾走；直接引用不佔空間，但原檔案一動卡片就會打不開。滑鼠移到卡片上就能看到「外部檔案」標記。
     options:
       ask: 每次問我
       copy: 總是複製到「導入」資料夾
@@ -2504,6 +2504,9 @@ projectOwnership:
   ok: 確定
 
 research:
+  card:
+    annotation: 註記
+    addAnnotation: 新增註記
   fileMenu:
     open: 開啟
     reveal: 開啟所在資料夾

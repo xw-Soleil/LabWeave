@@ -5,12 +5,14 @@ const settings = vi.hoisted(() => ({ protectingPrivacy: false, ignoreTextNodeTex
 vi.mock("@/core/service/Settings", () => ({ Settings: settings }));
 vi.mock("@/core/research/FileCardFactory", () => ({
   fileNameOf: (path: string) => path.split("/").at(-1),
-  resolveFileCardPath: () => "/r/a.pdf",
+  resolveFileCardPath: (_project: unknown, card: { sourcePath: string }) => card.sourcePath,
   scheduleFileCardMissingCheck: vi.fn(),
 }));
-vi.mock("@/core/research/ResearchFolder", () => ({ ResearchFolder: { getRoot: () => "/r", isInside: () => true } }));
+vi.mock("@/core/research/ResearchFolder", () => ({
+  ResearchFolder: { getRoot: () => "/r", isInside: (path: string) => !path.startsWith("../") },
+}));
 vi.mock("@/core/research/FileCardContent", () => ({
-  cardText: (key: string) => key,
+  cardText: (key: string, options?: { name: string }) => (options ? `${options.name} · ${key}` : key),
   stripExtension: (name: string) => name.replace(/\.[^.]+$/, ""),
   joinPdfLines: (text: string) => text.replace(/\n/g, " "),
 }));
@@ -20,7 +22,7 @@ vi.mock("@/utils/superellipse", () => ({ superellipseRect: vi.fn() }));
 import { renderFileCard } from "./FileCardRenderer";
 
 function fixture(
-  kind: "pdf" | "markdown",
+  kind: "pdf" | "markdown" | "image",
   bitmap: { width: number; height: number } | undefined = { width: 200, height: 300 },
 ) {
   const project = {
@@ -42,7 +44,10 @@ function fixture(
     shapeRenderer: { renderRect: vi.fn(), renderResizeArrow: vi.fn() },
     collisionBoxRenderer: { render: vi.fn() },
     imageRenderer: { renderImageElement: vi.fn() },
-    canvas: { ctx: { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), clip: vi.fn() } },
+    canvas: {
+      element: { matches: vi.fn(() => true) },
+      ctx: { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), clip: vi.fn(), fill: vi.fn() },
+    },
   };
   const card = {
     fileKind: kind,
@@ -54,10 +59,57 @@ function fixture(
     ensureThumbnail: vi.fn(),
     rectangle: new Rectangle(Vector.getZero(), new Vector(240, 340)),
     color: Color.Transparent,
-    collisionBox: { isContainsPoint: () => false },
+    collisionBox: { isContainsPoint: vi.fn(() => false) },
   };
   return { project, card };
 }
+
+describe("image card annotations and hover labels", () => {
+  it.each(["image", "pdf"] as const)("keeps the note below the %s image and shows its source only on hover", (kind) => {
+    settings.protectingPrivacy = false;
+    const { project, card } = fixture(kind, { width: 240, height: 340 });
+    const footer = new Rectangle(card.rectangle.leftBottom, new Vector(card.rectangle.width, 75));
+    Object.assign(card, {
+      pdfPage: kind === "pdf" ? 1 : 0,
+      attachmentId: "thumbnail",
+      sourcePath: "../figure.png",
+      caption: "Figure",
+      annotation: "First line\nSecond line",
+      annotationExpanded: true,
+      annotationRectangle: footer,
+    });
+    const draw = () => {
+      project.textRenderer.renderFittedText.mockClear();
+      renderFileCard(project as never, card as never);
+      return project.textRenderer.renderFittedText.mock.calls;
+    };
+    expect(draw().map(([label]) => label)).toEqual(["▾ annotation"]);
+    const [[note, at]] = project.textRenderer.renderClampedMultiLineText.mock.calls;
+    expect(note).toBe("First line\nSecond line");
+    expect(at.y).toBeGreaterThan(footer.top);
+    expect(project.imageRenderer.renderImageElement).toHaveBeenCalledWith(card.bitmap, card.rectangle.location, 1);
+
+    card.collisionBox.isContainsPoint.mockReturnValue(true);
+    const [, caption, hint] = draw();
+    expect(caption[0]).toBe("Figure");
+    expect(hint[0]).toMatchObject({ head: "external · ", body: "figure", tail: ".png · openHint" });
+    for (const [, location] of [caption, hint]) expect(location.y).toBeGreaterThan(footer.bottom);
+    card.rectangle.location = new Vector(0, 100);
+    footer.location = card.rectangle.leftBottom;
+    for (const [, location, size] of draw().slice(1)) expect(location.y + size).toBeLessThan(card.rectangle.top);
+    card.collisionBox.isContainsPoint.mockReturnValue(false);
+    expect(draw()).toHaveLength(1);
+
+    card.collisionBox.isContainsPoint.mockReturnValue(true);
+    project.canvas.element.matches.mockReturnValue(false);
+    expect(draw()).toHaveLength(1);
+    project.canvas.element.matches.mockReturnValue(true);
+    settings.protectingPrivacy = true;
+    project.textRenderer.renderClampedMultiLineText.mockClear();
+    expect(draw()).toHaveLength(0);
+    expect(project.textRenderer.renderClampedMultiLineText).not.toHaveBeenCalled();
+  });
+});
 
 describe("PDF cover cards", () => {
   beforeEach(() => {

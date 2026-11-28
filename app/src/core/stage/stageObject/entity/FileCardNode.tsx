@@ -1,4 +1,10 @@
 import { Project } from "@/core/Project";
+import {
+  annotationFontSize,
+  annotationHeaderHeight,
+  annotationLineHeight,
+  annotationPadding,
+} from "@/core/research/ImageCardAnnotation";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { ConnectableEntity } from "@/core/stage/stageObject/abstract/ConnectableEntity";
 import type { ResizeAble } from "@/core/stage/stageObject/abstract/StageObjectInterface";
@@ -35,11 +41,15 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
   @serializable
   pageCount: number;
   /**
-   * 图片卡片可选的标题，用户自己填，显示在图片左下角的一小块里；空串表示不显示。
+   * 图片卡片可选的标题，悬停时和文件名一起显示；空串表示不显示。
    * 和文件名、title 无关：改文件名不影响它，名字奇怪的图也不用为了好看去改名。
    */
   @serializable
   caption: string;
+  @serializable
+  annotation: string;
+  @serializable
+  annotationExpanded: boolean;
   /**
    * PDF 摘录卡片：从 PDF 里圈一段话或框一块图发上来的，记着第几页（从 1 数）和对应的那条批注，
    * 双击跳回原处。普通文件卡片是 0 和 ""。圈的字放在 excerpt，框的图放在 attachmentId。
@@ -98,19 +108,41 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     return this.collisionBox.getRectangle().center;
   }
 
-  /**
-   * 只读，获取节点的矩形
-   * 若要修改节点的矩形，请使用 moveTo等 方法
-   */
+  /** 图片和批注各占一个矩形，原图的缩放和连线端点始终以第一个矩形为准。 */
   public get rectangle(): Rectangle {
     return this.collisionBox.shapes[0] as Rectangle;
   }
 
-  move(delta: Vector): void {
-    const newRectangle = this.rectangle.clone();
-    newRectangle.location = newRectangle.location.add(delta);
-    this.collisionBox.shapes[0] = newRectangle;
+  get annotationRectangle(): Rectangle | undefined {
+    return this.collisionBox.shapes[1] as Rectangle | undefined;
+  }
+
+  private layoutAnnotation(height?: number) {
+    if (this.fileKind !== "image" && !this.canResize) return;
+    const rect = this.rectangle;
+    if (height === undefined) {
+      height = annotationHeaderHeight;
+      if (this.annotationExpanded) {
+        const width = rect.width - 2 * annotationPadding;
+        const lines = this.annotation
+          ? this.project.textRenderer.layoutClampedLines(this.annotation, annotationFontSize, width, Infinity).length
+          : 1;
+        height += Math.ceil(2 * annotationPadding + lines * annotationFontSize * annotationLineHeight);
+      }
+    }
+    this.collisionBox.shapes[1] = new Rectangle(rect.leftBottom, new Vector(rect.width, height));
+  }
+
+  setAnnotation(text: string, expanded: boolean) {
+    if (this.annotation === text && this.annotationExpanded === expanded) return;
+    this.annotation = text;
+    this.annotationExpanded = expanded;
+    this.layoutAnnotation();
     this.updateFatherSectionByMove();
+  }
+
+  move(delta: Vector): void {
+    this.moveTo(this.rectangle.location.add(delta));
     this.updateOtherEntityLocationByMove();
   }
 
@@ -118,6 +150,7 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const newRectangle = this.rectangle.clone();
     newRectangle.location = location.clone();
     this.collisionBox.shapes[0] = newRectangle;
+    this.layoutAnnotation(this.annotationRectangle?.height);
     this.updateFatherSectionByMove();
   }
 
@@ -135,11 +168,12 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const newWidth = Math.max(rect.size.x + delta.x, minWidth);
     const newHeight = newWidth / aspectRatio;
     this.collisionBox.shapes[0] = new Rectangle(rect.location.clone(), new Vector(newWidth, newHeight));
+    this.layoutAnnotation();
     this.updateFatherSectionByMove();
   }
 
   getResizeHandleRect(): Rectangle {
-    const rect = this.collisionBox.getRectangle();
+    const rect = this.rectangle;
     return new Rectangle(new Vector(rect.right - 25, rect.bottom - 25), new Vector(25, 25));
   }
 
@@ -181,6 +215,8 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     const fitted = FileCardNode.fitImageInBox(rect, width, height);
     if (fitted.size.x === rect.size.x && fitted.size.y === rect.size.y) return;
     this.collisionBox.shapes[0] = fitted;
+    this.layoutAnnotation();
+    this.updateFatherSectionByMove();
   }
 
   dispose(): void {
@@ -201,6 +237,8 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
       excerpt = "",
       pageCount = 0,
       caption = "",
+      annotation = "",
+      annotationExpanded = false,
       pdfPage = 0,
       pdfAnnotation = "",
       collisionBox = new CollisionBox([
@@ -219,9 +257,12 @@ export class FileCardNode extends ConnectableEntity implements ResizeAble {
     this.excerpt = excerpt.slice(0, FileCardNode.maxExcerptLength);
     this.pageCount = pageCount;
     this.caption = caption;
+    this.annotation = annotation;
+    this.annotationExpanded = annotationExpanded;
     this.pdfPage = pdfPage;
     this.pdfAnnotation = pdfAnnotation;
     this.color = color;
     this.collisionBox = collisionBox;
+    this.layoutAnnotation(this.annotationRectangle?.height);
   }
 }

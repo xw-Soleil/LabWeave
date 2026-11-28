@@ -1,6 +1,7 @@
 import { Dialog } from "@/components/ui/dialog";
 import type { Project } from "@/core/Project";
 import { cardText, extractFileCardContent, extractPdfCardContent } from "@/core/research/FileCardContent";
+import { annotationHeaderHeight } from "@/core/research/ImageCardAnnotation";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import { isTemporaryWorkspace } from "./TemporaryWorkspace";
 import { fileKindOf } from "@/core/research/ResearchShell";
@@ -215,7 +216,6 @@ function buildFileCard(project: Project, file: ParsedFile, location: Vector): Fi
   return card;
 }
 
-/** 右键「图片标题…」：填了就显示在图片左下角，清空就不显示；不改文件名 */
 export async function promptImageCaption(project: Project, card: FileCardNode) {
   const input = await Dialog.input(cardText("caption.title"), cardText("caption.description"), {
     defaultValue: card.caption,
@@ -278,7 +278,10 @@ export async function createFileCards(
 
     const columns = Math.max(1, Math.ceil(Math.sqrt(parsed.length)));
     // 图片卡片大小不一，格子按这批里最大的卡片算，免得叠在一起
-    const sizes = parsed.map(fileCardSize);
+    const sizes = parsed.map((file) => {
+      const size = fileCardSize(file);
+      return file.fileKind === "image" ? size.add(new Vector(0, annotationHeaderHeight)) : size;
+    });
     const cellWidth = Math.max(...sizes.map((size) => size.x)) + GRID_GAP;
     const cellHeight = Math.max(...sizes.map((size) => size.y)) + GRID_GAP;
     const cards = parsed.map((file, index) =>

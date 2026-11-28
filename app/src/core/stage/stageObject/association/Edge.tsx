@@ -5,6 +5,14 @@ import { Vector } from "@graphif/data-structures";
 import { serializable } from "@graphif/serializer";
 import { Line, Rectangle } from "@graphif/shapes";
 import { ConnectPoint } from "../entity/ConnectPoint";
+import { FileCardNode } from "../entity/FileCardNode";
+
+export function connectionRectangle(entity: ConnectableEntity): Rectangle {
+  // 图片上的端点比例以原图为准，展开批注不能改变箭头指向的位置。
+  return entity instanceof FileCardNode && entity.annotationRectangle
+    ? entity.rectangle
+    : entity.collisionBox.getRectangle();
+}
 
 /**
  * 连接两个实体的有向边
@@ -55,8 +63,8 @@ export abstract class Edge extends ConnectableAssociation {
    * 但对于图片节点，如果rate是精确值（不是旧的默认值），则直接使用内部位置
    */
   get bodyLine(): Line {
-    const sourceRectangle = this.source.collisionBox.getRectangle();
-    const targetRectangle = this.target.collisionBox.getRectangle();
+    const sourceRectangle = connectionRectangle(this.source);
+    const targetRectangle = connectionRectangle(this.target);
 
     const cached = this.bodyLineCache;
     if (
@@ -122,13 +130,13 @@ export abstract class Edge extends ConnectableAssociation {
    * 获取该连线的起始点位置对应的世界坐标
    */
   get sourceLocation(): Vector {
-    return this.source.collisionBox.getRectangle().getInnerLocationByRateVector(this.sourceRectangleRate);
+    return connectionRectangle(this.source).getInnerLocationByRateVector(this.sourceRectangleRate);
   }
   /**
    * 获取该连线的终止点位置对应的世界坐标
    */
   get targetLocation(): Vector {
-    return this.target.collisionBox.getRectangle().getInnerLocationByRateVector(this.targetRectangleRate);
+    return connectionRectangle(this.target).getInnerLocationByRateVector(this.targetRectangleRate);
   }
 
   @serializable
