@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { PdfActionType, PdfAnnotationSubtype, PdfZoomMode } from "@embedpdf/models";
+import { PdfActionType, PdfAnnotationSubtype, PdfZoomMode, type PdfPageObject } from "@embedpdf/models";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,7 +43,7 @@ vi.mock("./PdfDocument", async (original) => ({
   }),
 }));
 vi.mock("@/core/research/ResearchFolder", () => ({
-  ResearchFolder: { ensureRootRegistered: vi.fn() },
+  ResearchFolder: { ensureRootRegistered: vi.fn(), isInside: () => false },
   notifyResearchFilesChanged: vi.fn(),
 }));
 vi.mock("@/core/service/Settings", () => ({ Settings: {} }));
@@ -60,7 +60,8 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: mocks.writeT
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 import { activeTabAtom, store, tabsAtom } from "@/state";
 import { readingContextAtom } from "./ReadingContext";
-import { DocumentTab } from "./DocumentTab";
+import * as documentFile from "./DocumentFile";
+import { DocumentTab, openDocumentFile } from "./DocumentTab";
 import DocumentView from "./DocumentView";
 import { annotationColors, newAnnotation } from "./PdfAnnotations";
 
@@ -334,6 +335,46 @@ describe("EmbedPDF reading tabs with real plugins", () => {
     await show(first);
     expect(container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!.value).toBe("6");
     expect(container.textContent).toContain("180%");
+  });
+
+  it("scrolls a reused reader to each excerpt after its viewport becomes visible", async () => {
+    const tab = new DocumentTab("/paper.pdf", "pdf");
+    vi.spyOn(documentFile, "identifyDocument").mockResolvedValue({ path: tab.path, key: tab.path });
+    const page: PdfPageObject = { index: 2, size: { width: 600, height: 800 }, rotation: 0, objectNumber: 3 };
+    const regions = [560, 410].map((top) =>
+      newAnnotation("image", annotationColors.yellow, { pageIndex: 2, rects: [[50, top - 40, 150, top]] }, page, {
+        runs: [],
+      }),
+    );
+    mocks.annotationLoad.mockResolvedValueOnce({ annotations: regions, revision: null });
+    tab.pdfLocation = { page: 6, scale: 1 };
+    await show(tab);
+    const viewport = container.querySelector<HTMLElement>(".pg-document-pdf")!;
+    vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(6600);
+    const pageInput = container.querySelector<HTMLInputElement>('[aria-label="document.page"]')!;
+    expect(pageInput.value).toBe("6");
+    const openRegion = (annotationId: string) =>
+      act(async () => {
+        expect(await openDocumentFile(tab.path, { pdf: { page: 3, annotationId } })).toBe(tab);
+      });
+
+    store.set(activeTabAtom, undefined);
+    const width = vi.spyOn(viewport, "clientWidth", "get").mockReturnValue(0);
+    await openRegion(regions[0].id);
+    expect(store.get(activeTabAtom)).toBe(tab);
+    expect(tab.pdfTarget?.annotationId).toBe(regions[0].id);
+    width.mockReturnValue(800);
+    await act(async () => resize.forEach((callback) => callback()));
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(tab.pdfTarget).toBeUndefined();
+      expect(pageInput.value).toBe("3");
+    });
+    const firstTop = viewport.scrollTop;
+
+    await openRegion(regions[1].id);
+    await vi.waitFor(() => expect(viewport.scrollTop - firstTop).toBeCloseTo(150));
+    expect(store.get(tabsAtom)).toEqual([tab]);
   });
 
   it("shows the outline, jumps to a bookmark, and opens the empty annotation sidebar", async () => {

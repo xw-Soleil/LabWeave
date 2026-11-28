@@ -358,7 +358,8 @@ export function PdfReaderContent({
       restored = true;
       // The v2 zoom plugin only recalculates automatic modes when the viewport mounts.
       zoom.requestZoom(zoom.getState().zoomLevel);
-      scroll.scrollToPage({ pageNumber: Math.min(initialLocation.page, pages), behavior: "instant" });
+      if (!tab.pdfTarget)
+        scroll.scrollToPage({ pageNumber: Math.min(initialLocation.page, pages), behavior: "instant" });
       setLaidOut(true);
     };
     const offLayout = scrollApi.onLayoutReady((event) => {
@@ -394,20 +395,41 @@ export function PdfReaderContent({
   );
   // 白板上的摘录卡片双击过来：等版面和批注都好了，选中那条批注并滚过去；批注删了就只翻到那一页
   const target = tab.pdfTarget;
+  const item = target?.annotationId ? annotations.items.find((value) => value.id === target.annotationId) : undefined;
+  const revealTarget = !!item && (annotations.selected !== item.id || !sidebar || sidebarPage !== "annotations");
   useEffect(() => {
-    if (!target || !laidOut || tab.loadingAnnotations) return;
-    tab.pdfTarget = undefined;
-    const item = target.annotationId ? annotations.items.find((value) => value.id === target.annotationId) : undefined;
-    const pageObject = pdf.pages[item ? item.position.pageIndex : target.page - 1];
-    if (!pageObject) return;
-    if (!item) {
-      scrollToSpot(pageObject.index);
+    if (item && revealTarget && !tab.loadingAnnotations) annotations.select(item.id);
+  }, [item, revealTarget, annotations, tab.loadingAnnotations]);
+  useEffect(() => {
+    if (!target || !laidOut || !scroll || revealTarget || tab.loadingAnnotations) return;
+    const viewport = host.current?.querySelector<HTMLElement>(".pg-document-pdf");
+    if (!viewport) return;
+    const pageObject = pdf.pages[item ? item.position.pageIndex : Math.min(target.page, pdf.pages.length) - 1];
+    if (!pageObject) {
+      tab.pdfTarget = undefined;
       return;
     }
-    annotations.select(item.id);
-    const { origin } = pdfRectToReader(pageObject, annotationBounds(item.position));
-    scrollToSpot(pageObject.index, origin.x, origin.y);
-  }, [target, laidOut, tab, tab.loadingAnnotations, annotations, pdf, scrollToSpot]);
+    const origin = item && pdfRectToReader(pageObject, annotationBounds(item.position)).origin;
+    // 激活标签、展开批注栏都会改变阅读区大小，等阅读器按新尺寸排好页再滚动。
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      const { clientWidth, clientHeight } = viewport;
+      if (!clientWidth || !clientHeight) return;
+      frame = requestAnimationFrame(() => {
+        if (tab.pdfTarget !== target || viewport.clientWidth !== clientWidth || viewport.clientHeight !== clientHeight)
+          return;
+        scrollToSpot(pageObject.index, origin?.x, origin?.y);
+        tab.pdfTarget = undefined;
+        observer.disconnect();
+      });
+    });
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [target, laidOut, scroll, revealTarget, tab, tab.loadingAnnotations, item, pdf, scrollToSpot]);
   useEffect(() => setJump(String(page)), [page]);
   useEffect(() => updateReadingContext(tab, { page, pageCount: pages }), [tab, page, pages]);
   useEffect(() => {
