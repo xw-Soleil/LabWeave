@@ -2,10 +2,12 @@ import { splitFileName } from "@/components/ui/file-name";
 import type { Project } from "@/core/Project";
 import { cardText, joinPdfLines, stripExtension } from "@/core/research/FileCardContent";
 import { fileNameOf, resolveFileCardPath, scheduleFileCardMissingCheck } from "@/core/research/FileCardFactory";
+import { captionFontSize, captionLineHeight, captionPadding } from "@/core/research/ImageCardCaption";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
 import type { FileKind } from "@/core/research/ResearchShell";
 import { MouseLocation } from "@/core/service/controlService/MouseLocation";
 import { Settings } from "@/core/service/Settings";
+import { CollisionBox } from "@/core/stage/stageObject/collisionBox/collisionBox";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { getTextSize } from "@/utils/font";
 import { superellipseRect } from "@/utils/superellipse";
@@ -183,9 +185,11 @@ function renderThumbnail(project: Project, card: FileCardNode, box: Rectangle) {
  * 文件卡片。图片卡片整张就是图片；PDF、笔记（以及还没做出预览图、开着隐私保护的图片）
  * PDF 只画标题和完整首页；Markdown 画标题和开头文字。PDF 摘录卡片：框的图同图片卡片，圈的字画成一段引文。
  * 原文件不见了时卡片描红，右上角显示「文件不见了」。文件名在鼠标移上去时显示在卡片上方。
+ * 图片卡片的图上不压任何字：说明写在图下面，「外部文件」并进鼠标移上去的那行字里，「文件不见了」那行字一直显示。
  */
 export function renderFileCard(project: Project, card: FileCardNode): void {
   card.ensureThumbnail();
+  card.ensureCaptionLayout();
   scheduleFileCardMissingCheck(project, card);
 
   // PDF 里框下来的图和图片卡片一个画法；圈下来的字没有图，画成引文
@@ -196,7 +200,34 @@ export function renderFileCard(project: Project, card: FileCardNode): void {
   } else {
     renderDocumentCard(project, card);
   }
+  renderImageCaption(project, card);
   renderHoverState(project, card);
+}
+
+/** 选中、鼠标移上去时描的那圈框。带说明的图片卡片是图和说明两个矩形，合起来只描一圈 */
+function renderCardOutline(project: Project, card: FileCardNode, color: Color) {
+  project.collisionBoxRenderer.render(
+    card.captionRectangle ? new CollisionBox([card.collisionBox.getRectangle()]) : card.collisionBox,
+    color,
+  );
+}
+
+/** 图片下面的说明：像论文里的图注，不压在图上，颜色比正文淡一点。没写就没有这一块 */
+function renderImageCaption(project: Project, card: FileCardNode) {
+  const area = card.captionRectangle;
+  if (!area || !card.caption) return;
+  const cameraScale = project.camera.currentScale;
+  if (Settings.protectingPrivacy || captionFontSize * cameraScale <= Settings.ignoreTextNodeTextRenderLessThanFontSize)
+    return;
+  project.textRenderer.renderClampedMultiLineText(
+    card.caption,
+    project.renderer.transformWorld2View(area.location.add(Vector.same(captionPadding))),
+    captionFontSize * cameraScale,
+    (area.width - 2 * captionPadding) * cameraScale,
+    project.stageStyleManager.currentStyle.StageObjectBorder.toNewAlpha(0.8),
+    captionLineHeight,
+    Infinity,
+  );
 }
 
 function renderQuoteCard(project: Project, card: FileCardNode) {
@@ -281,50 +312,10 @@ function renderQuoteCard(project: Project, card: FileCardNode) {
   }
 }
 
-// 图片卡片上浮着的小块（外部文件、文件不见了、用户填的标题），尺寸是世界坐标
 const IMAGE_CORNER_RADIUS = 8;
-const CHIP_MARGIN = 8;
-const CHIP_HEIGHT = 20;
-const CHIP_PADDING_X = 7;
-const CHIP_RADIUS = 6;
-const CHIP_FONT_SIZE = 12;
-
-/** 浮在图片上的小块：不透明底色保证在什么图上都看得清；放不下时文字省略 */
-function renderImageChip(
-  project: Project,
-  text: string,
-  rect: Rectangle,
-  corner: "topRight" | "bottomLeft",
-  textColor: Color,
-) {
-  const cameraScale = project.camera.currentScale;
-  const style = project.stageStyleManager.currentStyle;
-  const maxWidth = rect.size.x - CHIP_MARGIN * 2;
-  if (maxWidth <= CHIP_PADDING_X * 2) return;
-  const width = Math.min(getTextSize(text, CHIP_FONT_SIZE).x + CHIP_PADDING_X * 2, maxWidth);
-  const location =
-    corner === "topRight"
-      ? new Vector(rect.right - CHIP_MARGIN - width, rect.top + CHIP_MARGIN)
-      : new Vector(rect.left + CHIP_MARGIN, rect.bottom - CHIP_MARGIN - CHIP_HEIGHT);
-  project.shapeRenderer.renderRect(
-    project.renderer.transformWorld2View(new Rectangle(location, new Vector(width, CHIP_HEIGHT))),
-    style.Background.toNewAlpha(0.9),
-    Color.Transparent,
-    0,
-    CHIP_RADIUS * cameraScale,
-  );
-  project.textRenderer.renderFittedText(
-    text,
-    project.renderer.transformWorld2View(location.add(new Vector(CHIP_PADDING_X, (CHIP_HEIGHT - CHIP_FONT_SIZE) / 2))),
-    CHIP_FONT_SIZE * cameraScale,
-    (width - CHIP_PADDING_X * 2) * cameraScale,
-    textColor,
-  );
-}
 
 /**
- * 图片卡片：整张图铺满卡片（卡片和图片比例不一致时居中、不裁切），不写类型和文件名。
- * 用户填了标题才在左下角浮一小块；外部文件、文件不见了在右上角浮一小块。
+ * 图片卡片：整张图铺满卡片（卡片和图片比例不一致时居中、不裁切），不写类型和文件名，图上也不压别的字。
  */
 function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitmap) {
   const style = project.stageStyleManager.currentStyle;
@@ -334,7 +325,7 @@ function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitm
   const radius = IMAGE_CORNER_RADIUS * cameraScale;
 
   if (card.isSelected) {
-    project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxSelected);
+    renderCardOutline(project, card, style.CollideBoxSelected);
   }
 
   const ctx = project.canvas.ctx;
@@ -355,18 +346,6 @@ function renderImageCard(project: Project, card: FileCardNode, bitmap: ImageBitm
       project.renderer.transformWorld2View(rect.center.subtract(size.multiply(0.5))),
       scale,
     );
-
-    if (CHIP_FONT_SIZE * cameraScale > Settings.ignoreTextNodeTextRenderLessThanFontSize) {
-      const textColor = style.StageObjectBorder;
-      if (card.missing) {
-        renderImageChip(project, cardText("missing"), rect, "topRight", MISSING_COLOR);
-      } else if (isExternalFileCard(project, card)) {
-        renderImageChip(project, cardText("external"), rect, "topRight", textColor.toNewAlpha(0.75));
-      }
-      if (card.caption) {
-        renderImageChip(project, card.caption, rect, "bottomLeft", textColor);
-      }
-    }
   } finally {
     ctx.restore();
   }
@@ -538,14 +517,19 @@ function renderCardContent(project: Project, card: FileCardNode, textColor: Colo
 /** 「文件名 · 双击打开」：宽度不超过卡片，放不下时省略文件名中间，扩展名和后面的话保留 */
 function renderHoverState(project: Project, card: FileCardNode) {
   const mouseLocation = project.renderer.transformView2World(MouseLocation.vector());
-  if (!card.collisionBox.isContainsPoint(mouseLocation)) return;
+  const hovered = card.collisionBox.isContainsPoint(mouseLocation);
+  // 图片卡片的图上不压字，「原文件不见了」只能靠这行字说，所以不等鼠标移上去就显示
+  if (!hovered && !(card.missing && card.canCaption)) return;
   const style = project.stageStyleManager.currentStyle;
   const cameraScale = project.camera.currentScale;
-  if (!card.isSelected) {
-    project.collisionBoxRenderer.render(card.collisionBox, style.CollideBoxPreSelected);
+  if (hovered && !card.isSelected) {
+    renderCardOutline(project, card, style.CollideBoxPreSelected);
   }
   if (HINT_FONT_SIZE * cameraScale <= Settings.ignoreTextNodeTextRenderLessThanFontSize) return;
-  const template = cardText(card.missing ? "missingHint" : "openHint", { name: HINT_NAME_SLOT });
+  const hint = cardText(card.missing ? "missingHint" : "openHint", { name: HINT_NAME_SLOT });
+  // 别的卡片把「外部文件」写在卡片里，图片卡片写在这行字的开头
+  const template =
+    card.canCaption && !card.missing && isExternalFileCard(project, card) ? `${cardText("external")} · ${hint}` : hint;
   const slot = template.indexOf(HINT_NAME_SLOT);
   const { stem, ext } = splitFileName(fileNameOf(card.sourcePath));
   project.textRenderer.renderFittedText(

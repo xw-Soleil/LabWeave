@@ -152,10 +152,13 @@ export class InputElement {
      * 不传（undefined）则为自动宽度模式（auto 节点使用）。
      */
     fixedWidth?: number,
+    /** 普通文本编辑保留原生换行和撤销，不触发节点的生长或删除快捷键。 */
+    plainTextLabel?: string,
   ): Promise<string> {
     return new Promise((resolve) => {
       const textareaElement = document.createElement("textarea");
       textareaElement.value = defaultValue;
+      if (plainTextLabel) textareaElement.setAttribute("aria-label", plainTextLabel);
 
       textareaElement.id = "pg-textarea";
       textareaElement.autocomplete = "off"; // 禁止使用自动填充内容，防止影响输入体验
@@ -226,6 +229,7 @@ export class InputElement {
         finish();
       };
       setTimeout(() => {
+        if (isFinished) return;
         if (exitOnWheel) {
           document.body.addEventListener("wheel", onOutsideWheel);
         }
@@ -316,6 +320,13 @@ export class InputElement {
 
       textareaElement.addEventListener("keydown", (event) => {
         event.stopPropagation();
+        if (plainTextLabel) {
+          if (event.key === "Escape" && !event.isComposing && !isComposing) {
+            event.preventDefault();
+            finish();
+          }
+          return;
+        }
         if (isMac) {
           // 补充mac平台快捷键，home/end移动到行首/行尾
           // shift+home/end 选中当前光标位置到行首/行尾

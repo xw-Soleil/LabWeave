@@ -17,8 +17,17 @@ vi.mock("@/core/service/Settings", () => ({
 vi.mock("@/utils/font", () => ({ getMultiLineTextSize: () => new Vector(20, 20) }));
 vi.mock("../abstract/ConnectableEntity", () => ({ ConnectableEntity: class {} }));
 vi.mock("../entity/ConnectPoint", () => ({ ConnectPoint: class {} }));
-vi.mock("../entity/TextNode", () => ({ TextNode: class {} }));
-vi.mock("../entity/Section", () => ({ Section: class {} }));
+// 真的节点从 ConnectableEntity 继承 connectionRectangle；这里的类是空壳，照它的默认做法补上
+const stub = vi.hoisted(() => ({
+  Entity: class {
+    collisionBox!: { getRectangle(): unknown };
+    get connectionRectangle() {
+      return this.collisionBox.getRectangle();
+    }
+  },
+}));
+vi.mock("../entity/TextNode", () => ({ TextNode: class extends stub.Entity {} }));
+vi.mock("../entity/Section", () => ({ Section: class extends stub.Entity {} }));
 vi.mock("../entity/ImageNode", () => ({ ImageNode: class {} }));
 
 import { CollisionBox } from "../collisionBox/collisionBox";

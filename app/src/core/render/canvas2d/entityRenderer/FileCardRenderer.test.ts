@@ -52,6 +52,9 @@ function fixture(
     pageCount: 99,
     bitmap: bitmap as { width: number; height: number } | undefined,
     ensureThumbnail: vi.fn(),
+    ensureCaptionLayout: vi.fn(),
+    canCaption: false,
+    captionRectangle: undefined as Rectangle | undefined,
     rectangle: new Rectangle(Vector.getZero(), new Vector(240, 340)),
     color: Color.Transparent,
     collisionBox: { isContainsPoint: () => false },
@@ -196,5 +199,37 @@ describe("PDF quote cards", () => {
     });
     renderFileCard(ordinaryImage.project as never, ordinaryImage.card as never);
     expect(ordinaryImage.project.shapeRenderer.renderResizeArrow).not.toHaveBeenCalled();
+  });
+
+  it("writes an image's caption under the picture, leaves the picture free of labels, and outlines both as one card", () => {
+    const picture = new Rectangle(new Vector(100, 50), new Vector(300, 200));
+    const captionArea = new Rectangle(picture.leftBottom, new Vector(300, 31));
+    const whole = new Rectangle(picture.location, new Vector(300, 231));
+    const image = quote({
+      fileKind: "image",
+      pdfPage: 0,
+      attachmentId: "img",
+      excerpt: "",
+      bitmap: { width: 300, height: 200 },
+      caption: "Figure 2: accuracy",
+      isSelected: true,
+      canResize: false,
+      canCaption: true,
+      rectangle: picture,
+      captionRectangle: captionArea,
+      collisionBox: { isContainsPoint: () => false, getRectangle: () => whole },
+    });
+    renderFileCard(image.project as never, image.card as never);
+
+    const { renderClampedMultiLineText, renderFittedText } = image.project.textRenderer;
+    expect(renderClampedMultiLineText).toHaveBeenCalledOnce();
+    const [text, location] = renderClampedMultiLineText.mock.calls[0];
+    expect(text).toBe("Figure 2: accuracy");
+    expect((location as Vector).y).toBeGreaterThan(picture.bottom);
+    // 图上不再压标题、「外部文件」这些小块；鼠标没移上去时也没有别的字
+    expect(renderFittedText).not.toHaveBeenCalled();
+    // 选中时图和说明合起来只描一圈
+    const [outlined] = image.project.collisionBoxRenderer.render.mock.calls[0];
+    expect((outlined as { getRectangle(): Rectangle }).getRectangle()).toEqual(whole);
   });
 });

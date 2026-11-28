@@ -70,7 +70,7 @@ export function endpointLocation(edge: LineEdge, end: EdgeEnd): Vector {
 
 /** 端点的默认位置：从这头卡片的中心朝另一头瞄准的点画线，和边框的交点 */
 export function defaultEndpointLocation(edge: LineEdge, end: EdgeEnd): Vector {
-  const rect = entityOf(edge, end).collisionBox.getRectangle();
+  const rect = entityOf(edge, end).connectionRectangle;
   const otherAim = end === "source" ? edge.targetLocation : edge.sourceLocation;
   return rect.getLineIntersectionPoint(new Line(rect.center, otherAim));
 }
@@ -172,7 +172,7 @@ export function findEndpointHandle(project: Project, worldLocation: Vector): End
 export function dragEndpointTo(project: Project, handle: EndpointHandle, worldLocation: Vector) {
   const { edge, end } = handle;
   const entity = entityOf(edge, end);
-  const rect = entity.collisionBox.getRectangle();
+  const rect = entity.connectionRectangle;
   const rate = canAimInside(entity)
     ? rateForDrag(rect, defaultEndpointLocation(edge, end), worldLocation, project.camera.currentScale)
     : rateForBorderDrag(rect, worldLocation, project.camera.currentScale);
@@ -188,7 +188,7 @@ export function resetEndpoint(handle: EndpointHandle): boolean {
 
 /** 端点在图里面（不在边框上） */
 export function pointsInside(edge: LineEdge, end: EdgeEnd): boolean {
-  const rect = entityOf(edge, end).collisionBox.getRectangle();
+  const rect = entityOf(edge, end).connectionRectangle;
   const point = endpointLocation(edge, end);
   const margin = 0.5;
   return (

@@ -3597,8 +3597,6 @@ research:
       menu: Add image caption…
       editMenu: Edit image caption…
       title: Image caption
-      description: Shown at the bottom-left of the image. Leave it empty to hide it. The file name doesn't change.
-      placeholder: "e.g. Accuracy of model B on the new data"
   drop:
     title: Place on the board
     hint: Release to place the files on the board

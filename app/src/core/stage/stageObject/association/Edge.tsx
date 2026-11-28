@@ -55,8 +55,8 @@ export abstract class Edge extends ConnectableAssociation {
    * 但对于图片节点，如果rate是精确值（不是旧的默认值），则直接使用内部位置
    */
   get bodyLine(): Line {
-    const sourceRectangle = this.source.collisionBox.getRectangle();
-    const targetRectangle = this.target.collisionBox.getRectangle();
+    const sourceRectangle = this.source.connectionRectangle;
+    const targetRectangle = this.target.connectionRectangle;
 
     const cached = this.bodyLineCache;
     if (
@@ -122,13 +122,13 @@ export abstract class Edge extends ConnectableAssociation {
    * 获取该连线的起始点位置对应的世界坐标
    */
   get sourceLocation(): Vector {
-    return this.source.collisionBox.getRectangle().getInnerLocationByRateVector(this.sourceRectangleRate);
+    return this.source.connectionRectangle.getInnerLocationByRateVector(this.sourceRectangleRate);
   }
   /**
    * 获取该连线的终止点位置对应的世界坐标
    */
   get targetLocation(): Vector {
-    return this.target.collisionBox.getRectangle().getInnerLocationByRateVector(this.targetRectangleRate);
+    return this.target.connectionRectangle.getInnerLocationByRateVector(this.targetRectangleRate);
   }
 
   @serializable

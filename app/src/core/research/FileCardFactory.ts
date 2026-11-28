@@ -1,4 +1,3 @@
-import { Dialog } from "@/components/ui/dialog";
 import type { Project } from "@/core/Project";
 import { cardText, extractFileCardContent, extractPdfCardContent } from "@/core/research/FileCardContent";
 import { ResearchFolder } from "@/core/research/ResearchFolder";
@@ -213,19 +212,6 @@ function buildFileCard(project: Project, file: ParsedFile, location: Vector): Fi
   });
   card.missingCheckedAt = performance.now();
   return card;
-}
-
-/** 右键「图片标题…」：填了就显示在图片左下角，清空就不显示；不改文件名 */
-export async function promptImageCaption(project: Project, card: FileCardNode) {
-  const input = await Dialog.input(cardText("caption.title"), cardText("caption.description"), {
-    defaultValue: card.caption,
-    placeholder: cardText("caption.placeholder"),
-  });
-  if (input === undefined) return;
-  const caption = input.trim();
-  if (caption === card.caption) return;
-  card.caption = caption;
-  project.historyManager.recordStep();
 }
 
 /**

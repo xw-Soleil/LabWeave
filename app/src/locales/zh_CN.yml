@@ -1306,7 +1306,7 @@ settings:
   researchOutsideFileMode:
     title: 研究文件夹外的文件
     description: |
-      把研究文件夹外的论文、图片、笔记拖到白板上时怎么处理。复制进来的文件跟着研究文件夹走；直接引用不占空间，但原文件一动卡片就会打不开，卡片右上角会标「外部文件」
+      把研究文件夹外的论文、图片、笔记拖到白板上时怎么处理。复制进来的文件跟着研究文件夹走；直接引用不占空间，但原文件一动卡片就会打不开，卡片右上角会标「外部文件」（图片卡片是鼠标移上去时才显示）
     options:
       ask: 每次问我
       copy: 总是复制到「导入」文件夹
@@ -3713,11 +3713,9 @@ research:
     thumbnailFailed: "缩略图没做出来：{{error}}"
     targetClosed: 要放卡片的白板已经关掉了，{{count}} 张卡片没有放上去，请重新拖一次
     caption:
-      menu: 加图片标题…
-      editMenu: 改图片标题…
-      title: 图片标题
-      description: 显示在图片左下角。清空就不显示。不会改文件名。
-      placeholder: 比如：B 模型在新数据上的准确率
+      menu: 加图片说明…
+      editMenu: 改图片说明…
+      title: 图片说明
   drop:
     title: 放到白板上
     hint: 松开鼠标，把文件放到白板上

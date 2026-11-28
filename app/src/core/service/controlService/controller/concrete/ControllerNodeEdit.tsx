@@ -14,6 +14,7 @@ import { Renderer } from "@/core/render/canvas2d/renderer";
 import { FileCardNode } from "@/core/stage/stageObject/entity/FileCardNode";
 import { cardText } from "@/core/research/FileCardContent";
 import { refreshFileCardMissing, resolveFileCardPath } from "@/core/research/FileCardFactory";
+import { editImageCardCaption } from "@/core/research/ImageCardCaption";
 import { findEndpointHandle } from "@/core/research/ImageEdgeEndpoints";
 import { openDocumentFile } from "@/core/research/DocumentTab";
 import { toast } from "sonner";
@@ -89,7 +90,12 @@ export class ControllerNodeEditClass extends ControllerClass {
       }
       MediaPlaybackManager.togglePlay(this.project, clickedEntity);
     } else if (clickedEntity instanceof FileCardNode) {
-      await this.openFileCardSource(clickedEntity);
+      // 双击图片下面的说明是改说明，双击图片本身才是打开原文件
+      if (clickedEntity.captionRectangle?.isPointIn(pressLocation)) {
+        void editImageCardCaption(this.project, clickedEntity);
+      } else {
+        await this.openFileCardSource(clickedEntity);
+      }
     }
   };
 

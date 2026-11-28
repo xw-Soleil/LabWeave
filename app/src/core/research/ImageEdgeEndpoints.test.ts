@@ -39,13 +39,16 @@ import {
 } from "./ImageEdgeEndpoints";
 
 function entity<T extends object>(prototype: T, x: number, fields: Record<string, unknown> = {}) {
-  return Object.assign(Object.create(prototype), {
+  const made = Object.assign(Object.create(prototype), {
     uuid: crypto.randomUUID(),
     collisionBox: new CollisionBox([new Rectangle(new Vector(x, 0), new Vector(200, 100))]),
     isHiddenBySectionCollapse: false,
     clipConnectionToBoundary: false,
     ...fields,
   });
+  // 真的实体从 ConnectableEntity 继承这个属性；这里的类都换成了空壳，照它的默认做法补上
+  Object.defineProperty(made, "connectionRectangle", { get: () => made.collisionBox.getRectangle() });
+  return made;
 }
 
 /** 文字卡片在 (0,0)–(200,100)，图片在 (400,0)–(600,100)，连线从文字指向图片 */
