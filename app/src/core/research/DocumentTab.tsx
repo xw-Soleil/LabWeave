@@ -299,11 +299,7 @@ export async function openDocumentFile(
           }
         }
       }
-      if (existing) {
-        TabWorkspace.focus(existing.id);
-        return existing;
-      }
-      return TabWorkspace.open(new DocumentTab(identified.path, kind));
+      return existing ?? new DocumentTab(identified.path, kind);
     });
     opening.set(key, task);
   }
@@ -319,6 +315,8 @@ export async function openDocumentFile(
       tab.pdfTarget = options.pdf;
       tab.changed();
     }
+    if (TabWorkspace.get(tab.id)) TabWorkspace.focus(tab.id);
+    else TabWorkspace.open(tab);
     return tab;
   } finally {
     if (opening.get(key) === task) opening.delete(key);
